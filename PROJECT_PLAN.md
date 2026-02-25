@@ -51,7 +51,7 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
 - [x] **Phase 1**: Foundation — env, config, logger, db, package.json
 - [x] **Phase 2**: AI Providers — claude CLI, ollama with tools, router
 - [x] **Phase 3**: Memory — dual-sector FTS5, salience decay
-- [ ] **Phase 4**: Voice — speaches sidecar, piper TTS, faster-whisper STT
+- [x] **Phase 4**: Voice — speaches sidecar, piper TTS, faster-whisper STT
 - [ ] **Phase 5**: Telegram — grammy bot, formatter, handlers
 - [ ] **Phase 6**: Matrix — bot-sdk, synapse docker config
 - [ ] **Phase 7**: Scheduler — cron tasks, CLI management

@@ -1,0 +1,25 @@
+services:
+  speaches:
+    image: speaches/speaches:latest
+    container_name: clauded-speaches
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - speaches-models:/root/.cache
+    environment:
+      - WHISPER_MODEL=whisper-small
+      - PIPER_VOICE=en_US-lessac-medium
+    healthcheck:
+      test: ["CMD", "curl", "-fSs", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+volumes:
+  speaches-models:
