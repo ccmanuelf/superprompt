@@ -55,7 +55,7 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
 - [x] **Phase 5**: Telegram — grammy bot, formatter, handlers
 - [x] **Phase 6**: Matrix — bot-sdk, synapse docker config
 - [x] **Phase 7**: Scheduler — cron tasks, CLI management
-- [ ] **Phase 8**: Media — download, process, cleanup
+- [x] **Phase 8**: Media — download, process, cleanup
 - [ ] **Phase 9**: Docker — containerization, compose orchestration
 - [ ] **Phase 10**: Service — setup wizard, launchd/systemd, status check
 - [ ] **Phase 11**: Tests — vitest suite, coverage
