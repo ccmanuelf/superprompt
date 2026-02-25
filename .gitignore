@@ -1,0 +1,11 @@
+.DS_Store
+.claude/
+node_modules/
+dist/
+store/
+workspace/
+*.log
+.env
+.env.local
+.env.production
+.env.development

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook: scan staged files for potential secrets/keys
+# Prevents accidental commits of API keys, tokens, passwords, and private keys.
+#
+
+set -euo pipefail
+
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No color
+
+# Patterns that indicate secrets (case-insensitive grep -E)
+SECRET_PATTERNS=(
+  # API keys and tokens (actual values, not variable names or examples)
+  'sk-[a-zA-Z0-9]{20,}'                        # OpenAI / Anthropic secret keys
+  'sk-ant-[a-zA-Z0-9-]{20,}'                    # Anthropic API keys
+  'xoxb-[0-9]+-[a-zA-Z0-9]+'                    # Slack bot tokens
+  'ghp_[a-zA-Z0-9]{36}'                         # GitHub personal access tokens
+  'gho_[a-zA-Z0-9]{36}'                         # GitHub OAuth tokens
+  'github_pat_[a-zA-Z0-9_]{80,}'                # GitHub fine-grained PATs
+
+  # Private keys
+  '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'
+  '-----BEGIN PGP PRIVATE KEY BLOCK-----'
+
+  # Telegram bot tokens (numeric:alphanumeric pattern)
+  '[0-9]{8,10}:[a-zA-Z0-9_-]{35}'
+
+  # Generic high-entropy secrets assigned to variables
+  '(password|secret|token|api_key|apikey|access_key|private_key)\s*[:=]\s*['\''"][a-zA-Z0-9+/=]{20,}['\''"]'
+
+  # AWS keys
+  'AKIA[0-9A-Z]{16}'
+
+  # Base64-encoded long secrets (64+ chars in quotes, likely not code)
+  '(SECRET|TOKEN|KEY|PASSWORD)\s*=\s*['\''"][A-Za-z0-9+/=]{40,}['\''"]'
+)
+
+# Files to always skip (binary, docs with example patterns, etc.)
+SKIP_PATTERNS='\.md$|\.txt$|\.gitignore$|\.yml$|\.yaml$|package-lock\.json$|\.png$|\.jpg$|\.gif$|\.ico$'
+
+found_secrets=0
+
+for pattern in "${SECRET_PATTERNS[@]}"; do
+  # Search staged files only (exclude markdown/docs/config where examples live)
+  matches=$(git diff --cached --diff-filter=ACMR -U0 -- . \
+    ':!*.md' ':!*.txt' ':!*.example' ':!.env.example' ':!.githooks/*' \
+    | grep -iE "^\+" \
+    | grep -iE "$pattern" \
+    || true)
+
+  if [ -n "$matches" ]; then
+    if [ "$found_secrets" -eq 0 ]; then
+      echo -e "${RED}=== SECRET LEAK DETECTED ===${NC}"
+      echo ""
+    fi
+    echo -e "${YELLOW}Pattern:${NC} $pattern"
+    echo "$matches" | head -5
+    echo ""
+    found_secrets=$((found_secrets + 1))
+  fi
+done
+
+# Also check for .env files being committed (they should never be)
+env_files=$(git diff --cached --name-only | grep -E '^\.env$|^\.env\.(local|production|development)$' || true)
+if [ -n "$env_files" ]; then
+  echo -e "${RED}=== .env FILE DETECTED ===${NC}"
+  echo "These files should NOT be committed:"
+  echo "$env_files"
+  echo ""
+  found_secrets=$((found_secrets + 1))
+fi
+
+if [ "$found_secrets" -gt 0 ]; then
+  echo -e "${RED}Commit blocked: $found_secrets potential secret(s) found.${NC}"
+  echo "Review the matches above. If they are false positives (e.g., example values),"
+  echo "you can bypass with: git commit --no-verify"
+  echo ""
+  exit 1
+fi
+
+exit 0
