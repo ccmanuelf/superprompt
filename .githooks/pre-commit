@@ -47,7 +47,7 @@ for pattern in "${SECRET_PATTERNS[@]}"; do
   matches=$(git diff --cached --diff-filter=ACMR -U0 -- . \
     ':!*.md' ':!*.txt' ':!*.example' ':!.env.example' ':!.githooks/*' \
     | grep -iE "^\+" \
-    | grep -iE "$pattern" \
+    | grep -iE -e "$pattern" \
     || true)
 
   if [ -n "$matches" ]; then
