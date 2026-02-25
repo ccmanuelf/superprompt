@@ -58,7 +58,7 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
 - [x] **Phase 8**: Media — download, process, cleanup
 - [x] **Phase 9**: Docker — containerization, compose orchestration
 - [x] **Phase 10**: Service — setup wizard, launchd/systemd, status check
-- [ ] **Phase 11**: Tests — vitest suite, coverage
+- [x] **Phase 11**: Tests — vitest suite, coverage
 - [ ] **Phase 12**: Integration — index.ts, e2e validation
 
 ---
