@@ -53,7 +53,7 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
 - [x] **Phase 3**: Memory — dual-sector FTS5, salience decay
 - [x] **Phase 4**: Voice — speaches sidecar, piper TTS, faster-whisper STT
 - [x] **Phase 5**: Telegram — grammy bot, formatter, handlers
-- [ ] **Phase 6**: Matrix — bot-sdk, synapse docker config
+- [x] **Phase 6**: Matrix — bot-sdk, synapse docker config
 - [ ] **Phase 7**: Scheduler — cron tasks, CLI management
 - [ ] **Phase 8**: Media — download, process, cleanup
 - [ ] **Phase 9**: Docker — containerization, compose orchestration

@@ -1,0 +1,44 @@
+server_name: "clauded.local"
+pid_file: /data/homeserver.pid
+public_baseurl: "http://localhost:8008/"
+
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: false
+    resources:
+      - names: [client, federation]
+        compress: false
+
+database:
+  name: sqlite3
+  args:
+    database: /data/homeserver.db
+
+# CRITICAL: Disable federation for personal use
+federation_domain_whitelist: []
+allow_public_rooms_over_federation: false
+
+# Allow registration only during setup (disable after bot account is created)
+enable_registration: false
+enable_registration_without_verification: false
+
+# Rate limiting (relaxed for personal use)
+rc_message:
+  per_second: 10
+  burst_count: 50
+
+# Media storage
+media_store_path: /data/media_store
+max_upload_size: 50M
+
+# Logging
+log_config: "/data/clauded.local.log.config"
+
+# Signing key (auto-generated on first run)
+signing_key_path: "/data/clauded.local.signing.key"
+
+# Trusted key servers (empty since no federation)
+trusted_key_servers: []
+suppress_key_server_warning: true
