@@ -48,7 +48,7 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
 ## Completion Status
 
 - [x] **Phase 0**: Project Setup — plan, reference docs, CLAUDE.md
-- [ ] **Phase 1**: Foundation — env, config, logger, db, package.json
+- [x] **Phase 1**: Foundation — env, config, logger, db, package.json
 - [ ] **Phase 2**: AI Providers — claude CLI, ollama with tools, router
 - [ ] **Phase 3**: Memory — dual-sector FTS5, salience decay
 - [ ] **Phase 4**: Voice — speaches sidecar, piper TTS, faster-whisper STT

@@ -2,8 +2,13 @@
 .claude/
 node_modules/
 dist/
-store/
-workspace/
+store/*
+!store/.gitkeep
+workspace/*
+!workspace/.gitkeep
+!workspace/uploads/
+workspace/uploads/*
+!workspace/uploads/.gitkeep
 *.log
 .env
 .env.local

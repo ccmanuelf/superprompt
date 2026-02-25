@@ -7,7 +7,7 @@ All versions below are confirmed compatible and should be used exactly as specif
 | Package | Version | Purpose | Notes |
 |---------|---------|---------|-------|
 | `grammy` | `^1.40.0` | Telegram bot framework | Stable, well-maintained. Supports all Telegram Bot API features. |
-| `@vector-im/matrix-bot-sdk` | `^0.8.0` | Matrix bot SDK | Element's maintained fork of matrix-bot-sdk. Active development. |
+| `@vector-im/matrix-bot-sdk` | `0.8.0-element.3` | Matrix bot SDK | Element's maintained fork. Latest stable is a prerelease tag. |
 | `better-sqlite3` | `^12.6.0` | SQLite database | Synchronous API, WAL mode support, FTS5 included. |
 | `pino` | `^10.3.0` | Structured logger | JSON output, fast, low overhead. |
 | `pino-pretty` | `^13.0.0` | Dev log formatter | Human-readable logs during development. |
