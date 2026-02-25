@@ -1,0 +1,14 @@
+node_modules
+dist
+store
+workspace
+.git
+.claude
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+REBUILD_PROMPT.md
+reference
+prompts

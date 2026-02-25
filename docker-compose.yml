@@ -1,0 +1,80 @@
+services:
+  # ── clauded bot ──────────────────────────────────────────────
+  clauded:
+    build:
+      context: .
+      dockerfile: docker/clauded.dockerfile
+    container_name: clauded-bot
+    env_file:
+      - .env
+      - docker/.env.docker
+    volumes:
+      # Claude CLI credentials (read-only for security)
+      - ${HOME}/.claude:/home/clauded/.claude:ro
+      # Persistent data
+      - ./store:/app/store
+      # Temp media uploads
+      - ./workspace:/app/workspace
+    depends_on:
+      speaches:
+        condition: service_healthy
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    # SECURITY: no access to sensitive host directories
+    # Only ~/.claude (ro), ./store (rw), ./workspace (rw) are mounted
+
+  # ── Speaches voice sidecar ─────────────────────────────────
+  speaches:
+    image: speaches/speaches:latest
+    container_name: clauded-speaches
+    volumes:
+      - speaches-models:/root/.cache
+    environment:
+      - WHISPER_MODEL=whisper-small
+      - PIPER_VOICE=en_US-lessac-medium
+    healthcheck:
+      test: ["CMD", "curl", "-fSs", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # ── Synapse Matrix homeserver (optional) ───────────────────
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: clauded-synapse
+    volumes:
+      - synapse-data:/data
+      - ./docker/synapse/homeserver.yaml:/data/homeserver.yaml:ro
+    environment:
+      - SYNAPSE_CONFIG_PATH=/data/homeserver.yaml
+    ports:
+      # Localhost only — not exposed to network
+      - "127.0.0.1:8008:8008"
+    healthcheck:
+      test: ["CMD", "curl", "-fSs", "http://localhost:8008/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    profiles:
+      # Only starts when explicitly requested: docker compose --profile matrix up
+      - matrix
+
+networks:
+  clauded-net:
+    driver: bridge
+
+volumes:
+  speaches-models:
+  synapse-data:

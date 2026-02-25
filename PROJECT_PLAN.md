@@ -56,7 +56,7 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
 - [x] **Phase 6**: Matrix — bot-sdk, synapse docker config
 - [x] **Phase 7**: Scheduler — cron tasks, CLI management
 - [x] **Phase 8**: Media — download, process, cleanup
-- [ ] **Phase 9**: Docker — containerization, compose orchestration
+- [x] **Phase 9**: Docker — containerization, compose orchestration
 - [ ] **Phase 10**: Service — setup wizard, launchd/systemd, status check
 - [ ] **Phase 11**: Tests — vitest suite, coverage
 - [ ] **Phase 12**: Integration — index.ts, e2e validation
