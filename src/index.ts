@@ -130,8 +130,18 @@ async function main(): Promise<void> {
     logger.info('Matrix bot created');
   }
 
-  // 10. Initialize scheduler
-  const stopScheduler = initScheduler(router);
+  // 10. Initialize scheduler with Telegram notification callback
+  const notifyFn = async (chatId: string, text: string): Promise<void> => {
+    if (telegramBot) {
+      const { formatForTelegram, splitMessage } = await import('./platforms/telegram.js');
+      const formatted = formatForTelegram(text);
+      const chunks = splitMessage(formatted);
+      for (const chunk of chunks) {
+        await telegramBot.api.sendMessage(chatId, chunk, { parse_mode: 'HTML' });
+      }
+    }
+  };
+  const stopScheduler = initScheduler(router, notifyFn);
   cleanups.push(stopScheduler);
 
   // 11. Register signal handlers for graceful shutdown

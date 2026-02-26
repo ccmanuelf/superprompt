@@ -1,10 +1,12 @@
+import { randomBytes } from 'node:crypto';
 import { Bot, Context, InputFile } from 'grammy';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { ProviderRouter } from '../providers/router.js';
 import { buildMemoryContext, saveConversationTurn } from '../memory.js';
-import { getMemoriesByChatId } from '../db.js';
+import { getMemoriesByChatId, createTask, getTasksByChat, getTask, pauseTask, resumeTask, deleteTask } from '../db.js';
 import { transcribeAudio, synthesizeSpeech, voiceCapabilities } from '../voice.js';
+import { computeNextRun, validateCron } from '../scheduler.js';
 
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -301,15 +303,164 @@ export function createTelegramBot(router: ProviderRouter): Bot {
 
   bot.command('schedule', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
-    // Placeholder — full implementation in Phase 7
-    await ctx.reply(
-      'Scheduler commands:\n' +
-        '/schedule list — Show active tasks\n' +
-        '/schedule create "prompt" "cron" — Create task\n' +
-        '/schedule pause <id> — Pause task\n' +
-        '/schedule resume <id> — Resume task\n' +
-        '/schedule delete <id> — Delete task',
-    );
+    const chatId = String(ctx.chat.id);
+    const text = ctx.message?.text ?? '';
+    // Strip "/schedule" prefix and trim
+    const args = text.replace(/^\/schedule(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const tasks = getTasksByChat(chatId);
+        if (tasks.length === 0) {
+          await ctx.reply('No scheduled tasks.');
+          return;
+        }
+        const lines = tasks.map((t) => {
+          const next = new Date(t.next_run).toLocaleString();
+          return `<code>${t.id.slice(0, 8)}</code> [<b>${t.status}</b>] ${escapeHtml(t.prompt.slice(0, 50))}${t.prompt.length > 50 ? '...' : ''}\n  ⏰ <code>${t.schedule}</code> → next: ${next}`;
+        });
+        const msg = `<b>Scheduled tasks (${tasks.length}):</b>\n\n${lines.join('\n\n')}`;
+        const chunks = splitMessage(msg);
+        for (const chunk of chunks) {
+          await ctx.reply(chunk, { parse_mode: 'HTML' });
+        }
+        return;
+      }
+
+      case 'show': {
+        const taskId = parts[1];
+        if (!taskId) {
+          await ctx.reply('Usage: /schedule show &lt;id&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        // Match by prefix
+        const tasks = getTasksByChat(chatId);
+        const task = tasks.find((t) => t.id.startsWith(taskId));
+        if (!task) {
+          await ctx.reply('Task not found.');
+          return;
+        }
+        const next = new Date(task.next_run).toLocaleString();
+        const lastRun = task.last_run ? new Date(task.last_run).toLocaleString() : 'never';
+        const lastResult = task.last_result ? escapeHtml(task.last_result.slice(0, 500)) : '(none)';
+        const msg =
+          `<b>Task</b> <code>${task.id.slice(0, 8)}</code>\n` +
+          `<b>Status:</b> ${task.status}\n` +
+          `<b>Prompt:</b> ${escapeHtml(task.prompt)}\n` +
+          `<b>Schedule:</b> <code>${task.schedule}</code>\n` +
+          `<b>Next run:</b> ${next}\n` +
+          `<b>Last run:</b> ${lastRun}\n` +
+          `<b>Last result:</b>\n${lastResult}`;
+        const chunks = splitMessage(msg);
+        for (const chunk of chunks) {
+          await ctx.reply(chunk, { parse_mode: 'HTML' });
+        }
+        return;
+      }
+
+      case 'create': {
+        // Extract two quoted strings: "prompt" "cron"
+        const match = args.match(/^create\s+"([^"]+)"\s+"([^"]+)"$/i);
+        if (!match) {
+          await ctx.reply(
+            'Usage: /schedule create "prompt" "cron"\n\n' +
+              'Example:\n<code>/schedule create "What time is it?" "*/5 * * * *"</code>',
+            { parse_mode: 'HTML' },
+          );
+          return;
+        }
+        const [, prompt, cron] = match;
+        const error = validateCron(cron);
+        if (error) {
+          await ctx.reply(`Invalid cron: ${escapeHtml(error)}`, { parse_mode: 'HTML' });
+          return;
+        }
+        const id = randomBytes(8).toString('hex');
+        const nextRun = computeNextRun(cron);
+        createTask(id, chatId, prompt, cron, nextRun);
+        await ctx.reply(
+          `Task created: <code>${id.slice(0, 8)}</code>\n` +
+            `Prompt: ${escapeHtml(prompt)}\n` +
+            `Schedule: <code>${cron}</code>\n` +
+            `Next run: ${new Date(nextRun).toLocaleString()}`,
+          { parse_mode: 'HTML' },
+        );
+        return;
+      }
+
+      case 'pause': {
+        const taskId = parts[1];
+        if (!taskId) {
+          await ctx.reply('Usage: /schedule pause &lt;id&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const tasks = getTasksByChat(chatId);
+        const task = tasks.find((t) => t.id.startsWith(taskId));
+        if (!task) {
+          await ctx.reply('Task not found.');
+          return;
+        }
+        pauseTask(task.id);
+        await ctx.reply(`Task <code>${task.id.slice(0, 8)}</code> paused.`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'resume': {
+        const taskId = parts[1];
+        if (!taskId) {
+          await ctx.reply('Usage: /schedule resume &lt;id&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const tasks = getTasksByChat(chatId);
+        const task = tasks.find((t) => t.id.startsWith(taskId));
+        if (!task) {
+          await ctx.reply('Task not found.');
+          return;
+        }
+        const nextRun = computeNextRun(task.schedule);
+        resumeTask(task.id);
+        await ctx.reply(
+          `Task <code>${task.id.slice(0, 8)}</code> resumed.\nNext run: ${new Date(nextRun).toLocaleString()}`,
+          { parse_mode: 'HTML' },
+        );
+        return;
+      }
+
+      case 'delete': {
+        const taskId = parts[1];
+        if (!taskId) {
+          await ctx.reply('Usage: /schedule delete &lt;id&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const tasks = getTasksByChat(chatId);
+        const task = tasks.find((t) => t.id.startsWith(taskId));
+        if (!task) {
+          await ctx.reply('Task not found.');
+          return;
+        }
+        deleteTask(task.id);
+        await ctx.reply(`Task <code>${task.id.slice(0, 8)}</code> deleted.`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>Scheduler commands:</b>\n\n' +
+            '/schedule list — Show all tasks\n' +
+            '/schedule show &lt;id&gt; — Task details + last result\n' +
+            '/schedule create "prompt" "cron" — Create task\n' +
+            '/schedule pause &lt;id&gt; — Pause task\n' +
+            '/schedule resume &lt;id&gt; — Resume task\n' +
+            '/schedule delete &lt;id&gt; — Delete task\n\n' +
+            '<b>Cron examples:</b>\n' +
+            '<code>*/5 * * * *</code> — every 5 minutes\n' +
+            '<code>0 9 * * *</code> — daily at 9am\n' +
+            '<code>0 9 * * 1-5</code> — weekdays at 9am',
+          { parse_mode: 'HTML' },
+        );
+    }
   });
 
   // ── Voice Handler ─────────────────────────────────────────

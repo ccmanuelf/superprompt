@@ -3,9 +3,12 @@ import { getDueTasks, updateTaskAfterRun, type ScheduledTask } from './db.js';
 import { logger } from './logger.js';
 import type { ProviderRouter } from './providers/router.js';
 
+export type NotifyFn = (chatId: string, text: string) => Promise<void>;
+
 const POLL_INTERVAL_MS = 60_000; // Poll every 60 seconds
 
 let pollTimer: ReturnType<typeof setInterval> | undefined;
+let notifyCallback: NotifyFn | undefined;
 
 /**
  * Compute the next run timestamp for a cron expression.
@@ -65,6 +68,15 @@ async function runTask(
     const nextRun = computeNextRun(task.schedule);
     updateTaskAfterRun(task.id, nextRun, resultText.slice(0, 1000));
 
+    // Notify the user with the result
+    if (notifyCallback) {
+      try {
+        await notifyCallback(task.chat_id, resultText);
+      } catch (err) {
+        logger.warn({ err, taskId: task.id }, 'Failed to notify user of scheduled task result');
+      }
+    }
+
     logger.info(
       { taskId: task.id, nextRun: new Date(nextRun).toISOString() },
       'Scheduled task completed',
@@ -93,7 +105,9 @@ async function runTask(
  * @param router - The provider router to send task messages through.
  * @returns A function to stop the scheduler.
  */
-export function initScheduler(router: ProviderRouter): () => void {
+export function initScheduler(router: ProviderRouter, notifyFn?: NotifyFn): () => void {
+  notifyCallback = notifyFn;
+
   logger.info(
     { pollIntervalMs: POLL_INTERVAL_MS },
     'Scheduler initialized',
