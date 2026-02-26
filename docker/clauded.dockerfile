@@ -34,6 +34,9 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY package.json ./
 
+# Copy runtime files (banner, system prompt)
+COPY banner.txt CLAUDED.md ./
+
 # Create runtime directories
 RUN mkdir -p /app/store /app/workspace/uploads && \
     chown -R clauded:clauded /app

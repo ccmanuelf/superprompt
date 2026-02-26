@@ -1,6 +1,6 @@
 services:
   speaches:
-    image: speaches/speaches:latest
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
     container_name: clauded-speaches
     ports:
       - "127.0.0.1:8000:8000"

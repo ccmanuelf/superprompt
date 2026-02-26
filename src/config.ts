@@ -5,7 +5,10 @@ import { readEnvFile } from './env.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const env = readEnvFile();
+// Read .env, then merge Docker override (.env.docker) if present
+const baseEnv = readEnvFile();
+const dockerOverride = readEnvFile(resolve(__dirname, '..', '.env.docker'));
+const env = { ...baseEnv, ...dockerOverride };
 
 /** Absolute path to the project root directory */
 export const PROJECT_ROOT = resolve(__dirname, '..');

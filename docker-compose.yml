@@ -11,13 +11,16 @@ services:
     volumes:
       # Claude CLI credentials (read-only for security)
       - ${HOME}/.claude:/home/clauded/.claude:ro
+      # Config files (readEnvFile reads from disk, not process.env)
+      - ./.env:/app/.env:ro
+      - ./docker/.env.docker:/app/.env.docker:ro
       # Persistent data
       - ./store:/app/store
       # Temp media uploads
       - ./workspace:/app/workspace
     depends_on:
       speaches:
-        condition: service_healthy
+        condition: service_started
     networks:
       - clauded-net
     restart: unless-stopped
@@ -26,7 +29,7 @@ services:
 
   # ── Speaches voice sidecar ─────────────────────────────────
   speaches:
-    image: speaches/speaches:latest
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
     container_name: clauded-speaches
     volumes:
       - speaches-models:/root/.cache
@@ -34,11 +37,11 @@ services:
       - WHISPER_MODEL=whisper-small
       - PIPER_VOICE=en_US-lessac-medium
     healthcheck:
-      test: ["CMD", "curl", "-fSs", "http://localhost:8000/health"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 120s
     networks:
       - clauded-net
     restart: unless-stopped
