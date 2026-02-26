@@ -8,9 +8,11 @@ services:
     env_file:
       - .env
       - docker/.env.docker
+    environment:
+      # Claude CLI auth — uses subscription (Max) via long-lived OAuth token
+      # Generated with: claude setup-token
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
     volumes:
-      # Claude CLI credentials (read-only for security)
-      - ${HOME}/.claude:/home/clauded/.claude:ro
       # Config files (readEnvFile reads from disk, not process.env)
       - ./.env:/app/.env:ro
       - ./docker/.env.docker:/app/.env.docker:ro
@@ -34,8 +36,8 @@ services:
     volumes:
       - speaches-models:/root/.cache
     environment:
-      - WHISPER_MODEL=whisper-small
-      - PIPER_VOICE=en_US-lessac-medium
+      # Models are loaded via API and cached in speaches-models volume
+      - UVICORN_HOST=0.0.0.0
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s

@@ -12,6 +12,8 @@ export interface AIResponse {
   provider: 'claude' | 'ollama';
   model?: string;
   thinkingContent?: string;
+  /** Set when Claude CLI reports a stale/missing session ID */
+  staleSession?: boolean;
 }
 
 export interface AIProvider {

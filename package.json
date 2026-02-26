@@ -15,10 +15,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@vector-im/matrix-bot-sdk": "0.8.0-element.3",
     "better-sqlite3": "^12.6.0",
     "cron-parser": "^5.5.0",
+    "franc-min": "^6.2.0",
     "grammy": "^1.40.0",
-    "@vector-im/matrix-bot-sdk": "0.8.0-element.3",
     "ollama": "^0.5.0",
     "openai": "^4.80.0",
     "pino": "^10.3.0",

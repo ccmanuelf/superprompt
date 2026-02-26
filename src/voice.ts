@@ -1,7 +1,15 @@
 import OpenAI from 'openai';
+import { franc } from 'franc-min';
 import { createReadStream, renameSync } from 'node:fs';
 import { config } from './config.js';
 import { logger } from './logger.js';
+
+/** Map detected language (ISO 639-3) to Kokoro voice ID */
+const VOICE_MAP: Record<string, { voice: string; lang: string }> = {
+  spa: { voice: 'ef_dora', lang: 'es' },
+  eng: { voice: 'af_heart', lang: 'en' },
+};
+const DEFAULT_VOICE = VOICE_MAP.eng;
 
 const speachesClient = new OpenAI({
   baseURL: config.SPEACHES_URL,
@@ -27,7 +35,7 @@ export async function transcribeAudio(audioPath: string): Promise<string> {
 
   const transcription = await speachesClient.audio.transcriptions.create({
     file: createReadStream(finalPath),
-    model: 'whisper-small',
+    model: 'Systran/faster-whisper-small',
     language: 'en',
   });
 
@@ -40,15 +48,21 @@ export async function transcribeAudio(audioPath: string): Promise<string> {
 }
 
 /**
- * Synthesize text to speech via Speaches (Piper TTS).
+ * Synthesize text to speech via Speaches (Kokoro TTS).
  * Returns an MP3 audio buffer ready to send as a voice message.
+ *
+ * Automatically detects language (English/Spanish) and selects
+ * the matching Kokoro voice.
  */
 export async function synthesizeSpeech(text: string): Promise<Buffer> {
-  logger.debug({ textLength: text.length }, 'Synthesizing speech');
+  const detected = franc(text);
+  const { voice, lang } = VOICE_MAP[detected] ?? DEFAULT_VOICE;
+
+  logger.debug({ textLength: text.length, detected, voice, lang }, 'Synthesizing speech');
 
   const response = await speachesClient.audio.speech.create({
-    model: 'piper',
-    voice: 'en_US-lessac-medium',
+    model: 'speaches-ai/Kokoro-82M-v1.0-ONNX',
+    voice,
     input: text,
     response_format: 'mp3',
   });

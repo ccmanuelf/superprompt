@@ -17,9 +17,13 @@ Available tools: web_search, read_file, run_command, query_memory, save_memory, 
 When you learn something important about the user, use save_memory to remember it.
 When you need information from past conversations, use query_memory.
 
-Always provide a final text response after using tools — don't end with just a tool call.`;
+Always provide a final text response after using tools — don't end with just a tool call.
 
-const CHAT_MODEL_SYSTEM_PROMPT = `You are clauded, a helpful AI assistant with strong reasoning capabilities. Be helpful, concise, and accurate.`;
+IMPORTANT: Always respond in the same language the user's latest message is written in. If they switch languages, you switch too — immediately, without being asked.`;
+
+const CHAT_MODEL_SYSTEM_PROMPT = `You are clauded, a helpful AI assistant with strong reasoning capabilities. Be helpful, concise, and accurate.
+
+IMPORTANT: Always respond in the same language the user's latest message is written in. If they switch languages, you switch too — immediately, without being asked.`;
 
 /**
  * Heuristic to detect if a message likely needs tool calls.
@@ -72,7 +76,16 @@ export class OllamaProvider implements AIProvider {
   private client: Ollama;
 
   constructor() {
-    this.client = new Ollama({ host: config.OLLAMA_HOST });
+    // Custom fetch with 10-minute timeout (model loading can be slow)
+    const timeoutFetch: typeof fetch = (input, init) =>
+      fetch(input, {
+        ...init,
+        signal: init?.signal ?? AbortSignal.timeout(600_000),
+      });
+    this.client = new Ollama({
+      host: config.OLLAMA_HOST,
+      fetch: timeoutFetch,
+    });
   }
 
   async sendMessage(params: SendMessageParams): Promise<AIResponse> {

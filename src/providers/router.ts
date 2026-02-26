@@ -10,6 +10,8 @@ import {
   clearSession,
 } from '../db.js';
 
+const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
+
 export class ProviderRouter {
   private claude: ClaudeProvider;
   private ollama: OllamaProvider;
@@ -51,10 +53,35 @@ export class ProviderRouter {
       'Routing message',
     );
 
+    // Inject language hint for Claude (Ollama has it in its own system prompts)
+    const systemPrompt = provider.name === 'claude'
+      ? [params.systemPrompt, LANGUAGE_HINT].filter(Boolean).join('\n\n')
+      : params.systemPrompt;
+
     const response = await provider.sendMessage({
       ...params,
       sessionId,
+      systemPrompt,
     });
+
+    // Handle stale Claude session — clear and retry without --resume
+    if (response.staleSession && sessionId) {
+      logger.warn({ chatId, sessionId }, 'Stale Claude session detected, retrying without --resume');
+      clearSession(chatId);
+
+      const retryResponse = await provider.sendMessage({
+        ...params,
+        sessionId: undefined,
+        systemPrompt,
+      });
+
+      // Persist new session ID from retry
+      if (retryResponse.newSessionId) {
+        setSession(chatId, retryResponse.newSessionId, provider.name);
+      }
+
+      return retryResponse;
+    }
 
     // Persist new session ID for Claude
     if (response.newSessionId) {

@@ -13,6 +13,8 @@ interface StreamJsonEvent {
   subtype?: string;
   // result events
   result?: string;
+  is_error?: boolean;
+  errors?: string[];
   // content events
   content?: string;
   // For assistant message start
@@ -61,6 +63,7 @@ export class ClaudeProvider implements AIProvider {
       let stderr = '';
       let newSessionId: string | undefined;
       let resultText = '';
+      let isStaleSession = false;
       let typingInterval: ReturnType<typeof setInterval> | undefined;
 
       // Refresh typing indicator every 4s
@@ -89,9 +92,17 @@ export class ClaudeProvider implements AIProvider {
               newSessionId = event.session_id;
             }
 
-            // Capture result text
+            // Capture result text (check for errors in result events)
             if (event.type === 'result' && event.result) {
               resultText = event.result;
+            }
+            if (event.type === 'result' && event.is_error) {
+              const errorStr = JSON.stringify({ result: event.result, errors: event.errors });
+              logger.warn({ event: errorStr }, 'Claude CLI returned error result');
+              // Detect stale session ID errors (message can be in result or errors array)
+              if (errorStr.includes('No conversation found with session ID')) {
+                isStaleSession = true;
+              }
             }
 
             // Capture content blocks (streaming text)
@@ -143,13 +154,14 @@ export class ClaudeProvider implements AIProvider {
 
         if (code !== 0 && !resultText) {
           logger.error(
-            { code, stderr: stderr.slice(0, 500) },
+            { code, stderr: stderr.slice(0, 500), stdout: stdout.slice(0, 500) },
             'Claude CLI exited with error',
           );
           resolve({
             text: `Claude CLI error (exit ${code}): ${stderr.slice(0, 200) || 'Unknown error'}`,
             provider: 'claude',
             newSessionId,
+            staleSession: isStaleSession,
           });
           return;
         }
@@ -158,6 +170,7 @@ export class ClaudeProvider implements AIProvider {
           text: resultText || null,
           newSessionId,
           provider: 'claude',
+          staleSession: isStaleSession,
         });
       });
 
