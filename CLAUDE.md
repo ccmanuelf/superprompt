@@ -21,9 +21,10 @@ Check `PROJECT_PLAN.md` for which phases are complete. Each phase has a checkbox
 All decisions are documented in `reference/decisions.md`. Do NOT re-discuss them. Summary:
 
 - **AI**: Claude via `claude -p` subprocess (subscription, no SDK) + Ollama (local, curated 8-tool set)
-- **Ollama models**: `bazobehram/qwen3-14b-claude-4.5-opus-high-reasoning` (chat) + `qwen3:14b` (tools)
+- **Ollama models**: `qwen3:4b` (chat) + `qwen3:latest` (tools)
 - **Messaging**: Telegram (grammy) + Matrix (matrix-bot-sdk, self-hosted Synapse)
-- **Voice**: Fully local via Speaches Docker sidecar (Piper TTS + Faster-whisper STT)
+- **Voice**: Fully local via Speaches Docker sidecar (Kokoro-82M TTS + Faster-whisper STT, auto language detection EN/ES)
+- **Claude auth**: `CLAUDE_CODE_OAUTH_TOKEN` env var (generated via `claude setup-token`)
 - **Database**: SQLite (better-sqlite3) in WAL mode with FTS5
 - **Memory**: Full dual-sector (semantic + episodic) with salience decay
 - **Infra**: Docker required (sandboxes `--dangerously-skip-permissions`)
@@ -67,7 +68,7 @@ These apply to ALL generated code across ALL phases:
 | `reference/dependency-versions.md` | Pinned package versions |
 | `reference/ollama-tools.md` | Tool definitions, agentic loop pattern, model config |
 | `reference/matrix-setup.md` | Synapse deployment, bot SDK usage |
-| `reference/voice-local.md` | Speaches/Piper/Faster-whisper integration |
+| `reference/voice-local.md` | Speaches/Kokoro-82M/Faster-whisper integration with language detection |
 
 ## Secret Leak Prevention
 

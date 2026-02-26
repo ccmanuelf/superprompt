@@ -19,9 +19,9 @@ All decisions below were researched and confirmed during planning. They should N
 |----------|--------|-----------|
 | Claude integration | **CLI subprocess** (`claude -p`) | The Agent SDK (`@anthropic-ai/claude-agent-sdk`) now requires API keys. CLI subprocess uses the Claude subscription directly — no extra cost. |
 | Claude permissions | `--dangerously-skip-permissions` inside Docker | Required for autonomous operation. Docker sandboxing prevents damage. |
-| Ollama chat model | `bazobehram/qwen3-14b-claude-4.5-opus-high-reasoning` | 9GB Q4_K_M, fine-tuned for Claude-style reasoning, 40k context. Best reasoning quality for chat. |
-| Ollama tool model | `qwen3:14b` (official) | Confirmed tool calling support. Official model has better tool compliance than fine-tunes. |
-| Ollama dual-model | Auto-switch based on message intent | Chat-only → fine-tuned model (better reasoning). Tool-needed → official model (better compliance). |
+| Ollama chat model | `qwen3:4b` | Lightweight, sufficient for chat-only reasoning on 32GB Mac. Originally planned 14B but switched for memory headroom. |
+| Ollama tool model | `qwen3:latest` (8B) | Latest Qwen3 with optimized tool calling support. |
+| Ollama dual-model | Auto-switch based on message intent | Chat-only → qwen3:4b (fast). Tool-needed → qwen3:latest (better tool compliance). |
 | Ollama tool set | 8 curated tools | NOT a full Claude Code replica. Focused, predictable, testable. |
 | Agent SDK | **NOT USED** | Removed entirely. Requires API key, breaks subscription model. |
 
@@ -46,11 +46,11 @@ All decisions below were researched and confirmed during planning. They should N
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| STT engine | **Faster-whisper** via Speaches | Fully local, no API keys, no cloud dependency. Comparable quality to Groq's whisper. |
-| TTS engine | **Piper** via Speaches | Fully local, ~500ms synthesis, natural voice quality. No ElevenLabs cost/dependency. |
-| Voice sidecar | **Speaches** Docker container | Single container wraps both Piper and Faster-whisper behind OpenAI-compatible API. |
-| Whisper model | `whisper-small` | ~850MB RAM, 3-6s for 30s audio. Good balance for 32GB Mac. |
-| Piper voice | `en_US-lessac-medium` | ~63MB model, natural English voice, fast synthesis. |
+| STT engine | **Faster-whisper** via Speaches | Model: `Systran/faster-whisper-small`. Auto-detects language (99 langs). Fully local. |
+| TTS engine | **Kokoro-82M** via Speaches | Model: `speaches-ai/Kokoro-82M-v1.0-ONNX`. Ranked #1 in TTS Arena. Replaces Piper (much more natural). |
+| TTS voices | `af_heart` (EN), `ef_dora` (ES) | Auto-selected via `franc-min` language detection on the response text. |
+| Voice sidecar | **Speaches** Docker container (`ghcr.io/speaches-ai/speaches:latest-cpu`) | Models loaded via POST API on startup (entrypoint.sh), cached in named volume. |
+| Claude auth in Docker | `CLAUDE_CODE_OAUTH_TOKEN` env var | Generated via `claude setup-token` (valid 1 year). Replaces mounting `~/.claude` (Keychain inaccessible from Docker). |
 
 ---
 

@@ -4,14 +4,14 @@
 
 clauded uses two Ollama models with automatic switching:
 
-- **Chat model** (`OLLAMA_CHAT_MODEL`): `bazobehram/qwen3-14b-claude-4.5-opus-high-reasoning`
+- **Chat model** (`OLLAMA_CHAT_MODEL`): `qwen3:4b`
   - Used for general conversation, reasoning, analysis
-  - Better quality responses for non-tool tasks
+  - Lightweight, fast responses for chat-only messages
   - Thinking mode enabled by default (`think: true`)
 
-- **Tool model** (`OLLAMA_TOOL_MODEL`): `qwen3:14b`
+- **Tool model** (`OLLAMA_TOOL_MODEL`): `qwen3:latest` (8B)
   - Used when the message requires tool calls
-  - Official Qwen3 with confirmed tool calling support
+  - Latest Qwen3 with optimized tool calling support
   - Thinking mode enabled
 
 ### Routing Heuristic

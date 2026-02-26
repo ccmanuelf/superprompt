@@ -1,4 +1,4 @@
-# Local Voice — Speaches + Piper TTS + Faster-whisper STT
+# Local Voice — Speaches + Kokoro-82M TTS + Faster-whisper STT
 
 ## Architecture
 
@@ -14,66 +14,85 @@
 │             │                           │
 │  ┌──────────┴──────────┐                │
 │  │  Faster-whisper      │  (STT engine) │
-│  │  Piper               │  (TTS engine) │
+│  │  Kokoro-82M          │  (TTS engine) │
 │  └─────────────────────┘                │
 └─────────────────────────────────────────┘
 ```
 
 - Single Docker container provides both STT and TTS
 - API is OpenAI-compatible — use the `openai` npm package
-- Models are cached in a Docker volume (persist across restarts)
+- Models loaded via POST to `/v1/models/{model_id}` on first use, then cached in a Docker named volume
+- The entrypoint script (`docker/entrypoint.sh`) auto-loads both models on container startup
 
 ---
 
 ## Docker Compose Configuration
 
-### `docker/speaches.yml`
+Speaches is defined as a service in the main `docker-compose.yml`:
 
 ```yaml
 services:
   speaches:
-    image: speaches/speaches:latest
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
     container_name: clauded-speaches
-    ports:
-      - "127.0.0.1:8000:8000"
     volumes:
       - speaches-models:/root/.cache
     environment:
-      - WHISPER_MODEL=whisper-small
-      - PIPER_VOICE=en_US-lessac-medium
+      # Models are loaded via POST API, not env vars
+      - UVICORN_HOST=0.0.0.0
     healthcheck:
-      test: ["CMD", "curl", "-fSs", "http://localhost:8000/health"]
+      # curl is NOT available in the Speaches image — use python3
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 60s  # Models need time to load on first start
+      retries: 5
+      start_period: 120s  # Models need time to load on first start
+    networks:
+      - clauded-net
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 2G  # whisper-small uses ~850MB, Piper ~200MB
+          memory: 2G
 
 volumes:
   speaches-models:
 ```
 
+### Model Loading
+
+Models are NOT configured via environment variables. They are loaded via the REST API:
+
+```bash
+# Load STT model (fully-qualified HuggingFace ID)
+curl -X POST http://localhost:8000/v1/models/Systran/faster-whisper-small
+
+# Load TTS model (fully-qualified HuggingFace ID)
+curl -X POST http://localhost:8000/v1/models/speaches-ai/Kokoro-82M-v1.0-ONNX
+```
+
+The `docker/entrypoint.sh` script does this automatically on container startup (in the background, non-blocking).
+
 ---
 
 ## Model Choices
 
-### STT: whisper-small
+### STT: Systran/faster-whisper-small
+- **Model ID**: `Systran/faster-whisper-small` (fully-qualified HuggingFace ID — NOT just `whisper-small`)
+- **Language**: Auto-detects (supports 99 languages). Do NOT set `language` param.
 - **Size**: ~850MB RAM when loaded
 - **Speed**: ~3-6 seconds for 30 seconds of audio (on Apple Silicon)
-- **Quality**: Good accuracy for English, acceptable for other languages
-- **Alternative**: `whisper-base` if memory is tight (~400MB, slightly lower quality)
-- **Alternative**: `whisper-medium` for better quality (~1.5GB, ~6-10s processing)
+- **Quality**: Excellent accuracy across EN, ES, and many other languages
 
-### TTS: Piper with en_US-lessac-medium
-- **Size**: ~63MB model file
-- **Speed**: ~500ms synthesis for a paragraph
-- **Quality**: Natural-sounding, good prosody
-- **Format**: Outputs WAV, convert to OGG/MP3 for messaging
-- **Alternative voices**: `en_US-amy-medium`, `en_GB-alan-medium`
+### TTS: Kokoro-82M (replaces Piper)
+- **Model ID**: `speaches-ai/Kokoro-82M-v1.0-ONNX` (ONNX-optimized for CPU)
+- **Quality**: Ranked #1 in TTS Arena. Much more natural than Piper.
+- **Speed**: ~200-300ms synthesis for a paragraph
+- **Voices**: Auto-selected based on detected text language:
+  - `af_heart` — American English female (Grade A)
+  - `ef_dora` — Spanish female
+- **Language detection**: Uses `franc-min` library (ISO 639-3 codes)
+- **All available voices**: 53 voices across EN, ES, FR, IT, PT, JA, ZH, HI (see Speaches API)
 
 ---
 
@@ -83,11 +102,10 @@ volumes:
 
 ```typescript
 import OpenAI from 'openai';
-import fs from 'node:fs';
-import path from 'node:path';
+import { createReadStream, renameSync } from 'node:fs';
 
 const speachesClient = new OpenAI({
-  baseURL: config.SPEACHES_URL || 'http://localhost:8000/v1',
+  baseURL: config.SPEACHES_URL,
   apiKey: 'not-needed', // Speaches doesn't require auth
 });
 
@@ -97,31 +115,41 @@ export async function transcribeAudio(audioPath: string): Promise<string> {
   let finalPath = audioPath;
   if (audioPath.endsWith('.oga')) {
     finalPath = audioPath.replace(/\.oga$/, '.ogg');
-    fs.renameSync(audioPath, finalPath);
+    renameSync(audioPath, finalPath);
   }
 
+  // Omit language param — Faster-whisper auto-detects (supports 99 languages)
   const transcription = await speachesClient.audio.transcriptions.create({
-    file: fs.createReadStream(finalPath),
-    model: 'whisper-small',
-    language: 'en', // Set explicitly for better accuracy
+    file: createReadStream(finalPath),
+    model: 'Systran/faster-whisper-small',
   });
 
   return transcription.text;
 }
 ```
 
-### TTS — Synthesize Speech
+### TTS — Synthesize Speech (with language detection)
 
 ```typescript
+import { franc } from 'franc-min';
+
+const VOICE_MAP: Record<string, { voice: string; lang: string }> = {
+  spa: { voice: 'ef_dora', lang: 'es' },
+  eng: { voice: 'af_heart', lang: 'en' },
+};
+const DEFAULT_VOICE = VOICE_MAP.eng;
+
 export async function synthesizeSpeech(text: string): Promise<Buffer> {
+  const detected = franc(text);
+  const { voice } = VOICE_MAP[detected] ?? DEFAULT_VOICE;
+
   const response = await speachesClient.audio.speech.create({
-    model: 'piper',
-    voice: 'en_US-lessac-medium',
+    model: 'speaches-ai/Kokoro-82M-v1.0-ONNX',
+    voice,
     input: text,
     response_format: 'mp3',
   });
 
-  // Response is a ReadableStream, convert to Buffer
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
@@ -134,15 +162,16 @@ export async function voiceCapabilities(): Promise<{
   stt: boolean;
   tts: boolean;
 }> {
+  const baseUrl = config.SPEACHES_URL.replace(/\/v1\/?$/, '');
   try {
-    const response = await fetch(
-      `${config.SPEACHES_URL || 'http://localhost:8000'}/health`
-    );
+    const response = await fetch(`${baseUrl}/health`, {
+      signal: AbortSignal.timeout(3000),
+    });
     if (response.ok) {
       return { stt: true, tts: true };
     }
   } catch {
-    // Speaches not reachable
+    // Speaches not reachable — graceful degradation
   }
   return { stt: false, tts: false };
 }
@@ -155,9 +184,10 @@ export async function voiceCapabilities(): Promise<{
 ### Telegram Voice Notes
 1. User sends voice note → Telegram delivers `.oga` file
 2. Bot downloads via `bot.api.getFile(file_id)` → saves to `workspace/uploads/`
-3. Call `transcribeAudio(filePath)` → get text
+3. Call `transcribeAudio(filePath)` → get text (language auto-detected)
 4. Prepend `[Voice transcribed]: ` to message, process normally
 5. If `forceVoiceReply` is set, call `synthesizeSpeech(response)` → send as voice note
+6. TTS voice auto-matches the language of the AI response
 
 ### Matrix Voice Messages
 1. User sends `m.audio` event with `mxc://` URL
@@ -173,19 +203,21 @@ export async function voiceCapabilities(): Promise<{
 
 ## Known Gotchas
 
-1. **Cold start latency**: First request after container start takes 10-30s while models load. The health check with `start_period: 60s` handles this.
+1. **Model IDs are fully-qualified HuggingFace IDs**: Use `Systran/faster-whisper-small` not `whisper-small`, and `speaches-ai/Kokoro-82M-v1.0-ONNX` not `kokoro`. The short names return 404.
 
-2. **OGA → OGG rename**: Telegram voice notes use `.oga` extension. Faster-whisper requires `.ogg`. They are the same Opus codec in Ogg container — just rename.
+2. **Models loaded via API, not env vars**: Speaches does NOT use `WHISPER_MODEL` or `PIPER_VOICE` env vars. Models must be loaded via POST to `/v1/models/{model_id}`.
 
-3. **Memory usage**: whisper-small holds ~850MB in RAM permanently. Piper loads models on demand (~200MB per voice). Total: ~1-1.5GB for the Speaches container.
+3. **No curl in Speaches image**: Docker healthcheck must use `python3 -c "import urllib.request; ..."` instead of `curl`.
 
-4. **Audio format**: Speaches STT accepts: wav, mp3, ogg, flac, webm. Speaches TTS outputs: mp3, wav, ogg, flac.
+4. **OGA → OGG rename**: Telegram voice notes use `.oga` extension. Faster-whisper requires `.ogg`. They are the same Opus codec in Ogg container — just rename.
 
-5. **Language detection**: Setting `language: 'en'` explicitly improves accuracy and speed. Without it, whisper runs language detection first.
+5. **Language auto-detection**: STT auto-detects language (omit `language` param). TTS uses `franc-min` to detect response text language and select the matching Kokoro voice.
 
-6. **Long audio**: Faster-whisper handles long audio well (uses VAD for chunking). No need to split audio manually.
+6. **Cold start latency**: First request after container start takes 10-30s while models load. The entrypoint preloads models in the background. `start_period: 120s` in healthcheck handles this.
 
-7. **Concurrent requests**: Speaches handles one request at a time per model. For a single-user bot, this is fine. STT and TTS can run concurrently since they're different models.
+7. **Memory usage**: Faster-whisper-small ~850MB + Kokoro-82M ~200MB. Total: ~1-1.5GB for the Speaches container.
+
+8. **Concurrent requests**: Speaches handles one request at a time per model. For a single-user bot, this is fine. STT and TTS can run concurrently since they're different models.
 
 ---
 
@@ -196,33 +228,27 @@ export async function voiceCapabilities(): Promise<{
 # Check Speaches is running
 curl http://localhost:8000/health
 
-# Test STT
+# Load models (if not already loaded by entrypoint)
+curl -X POST http://localhost:8000/v1/models/Systran/faster-whisper-small
+curl -X POST http://localhost:8000/v1/models/speaches-ai/Kokoro-82M-v1.0-ONNX
+
+# List loaded models
+curl http://localhost:8000/v1/models
+
+# Test STT (auto-detects language)
 curl -X POST http://localhost:8000/v1/audio/transcriptions \
   -F "file=@test.ogg" \
-  -F "model=whisper-small"
+  -F "model=Systran/faster-whisper-small"
 
-# Test TTS
+# Test TTS (English)
 curl -X POST http://localhost:8000/v1/audio/speech \
   -H "Content-Type: application/json" \
-  -d '{"model":"piper","voice":"en_US-lessac-medium","input":"Hello world"}' \
-  --output test.mp3
-```
+  -d '{"model":"speaches-ai/Kokoro-82M-v1.0-ONNX","voice":"af_heart","input":"Hello world"}' \
+  --output test_en.mp3
 
-### Unit Test (Mocked)
-```typescript
-// Mock the openai client
-vi.mock('openai', () => ({
-  default: vi.fn().mockImplementation(() => ({
-    audio: {
-      transcriptions: {
-        create: vi.fn().mockResolvedValue({ text: 'Hello world' }),
-      },
-      speech: {
-        create: vi.fn().mockResolvedValue({
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
-        }),
-      },
-    },
-  })),
-}));
+# Test TTS (Spanish)
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"model":"speaches-ai/Kokoro-82M-v1.0-ONNX","voice":"ef_dora","input":"Hola mundo"}' \
+  --output test_es.mp3
 ```

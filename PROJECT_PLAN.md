@@ -23,24 +23,26 @@ A TypeScript project with:
 
 ### Hardware Target
 Apple Silicon Mac, 32GB RAM. Ollama models:
-- **Chat mode**: `bazobehram/qwen3-14b-claude-4.5-opus-high-reasoning` (9GB Q4_K_M, fine-tuned for Claude-style reasoning, 40k context)
-- **Tool mode**: `qwen3:14b` (official, confirmed tool calling support)
-- Automatic switching: when tools are needed, router uses official qwen3:14b; for chat-only, uses the fine-tuned variant
+- **Chat mode**: `qwen3:4b` (lightweight, sufficient for chat-only reasoning)
+- **Tool mode**: `qwen3:latest` (8B, latest with optimized tool calling)
+- Automatic switching: when tools are needed, router uses qwen3:latest; for chat-only, uses qwen3:4b
 
 ### Key Decisions (Confirmed)
 - Rename: ClaudeClaw → **clauded**
 - Auth: Claude subscription via `claude -p` subprocess (NOT the Agent SDK)
+- Auth in Docker: `CLAUDE_CODE_OAUTH_TOKEN` env var (generated via `claude setup-token`, valid 1 year)
 - Docker: Required for sandboxing `--dangerously-skip-permissions`
-- Voice STT: Faster-whisper via Speaches (local) — NOT Groq
-- Voice TTS: Piper via Speaches (local) — NOT ElevenLabs
+- Voice STT: Faster-whisper (`Systran/faster-whisper-small`) via Speaches — auto-detects language
+- Voice TTS: Kokoro-82M (`speaches-ai/Kokoro-82M-v1.0-ONNX`) via Speaches — auto-selects voice per language
+- Voice language: Auto EN/ES detection via `franc-min` library
 - WhatsApp: **Dropped** entirely
 - Signal: **Dropped** (operational complexity too high)
 - Matrix: Self-hosted Synapse from day one
 - Ollama: Curated tool set (8 tools), NOT full Claude Code replica
 - Prompt style: Deterministic (no interactive questions, builds full feature set)
 - Structure: Modular prompts, one per phase
-- Ollama chat model: `bazobehram/qwen3-14b-claude-4.5-opus-high-reasoning` (fine-tuned for reasoning)
-- Ollama tool model: `qwen3:14b` (official, confirmed tool support)
+- Ollama chat model: `qwen3:4b` (lightweight chat)
+- Ollama tool model: `qwen3:latest` (optimized tool calling)
 - Git: GitHub repo, push after each completed phase
 
 ---
@@ -51,7 +53,7 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
 - [x] **Phase 1**: Foundation — env, config, logger, db, package.json
 - [x] **Phase 2**: AI Providers — claude CLI, ollama with tools, router
 - [x] **Phase 3**: Memory — dual-sector FTS5, salience decay
-- [x] **Phase 4**: Voice — speaches sidecar, piper TTS, faster-whisper STT
+- [x] **Phase 4**: Voice — speaches sidecar, Kokoro-82M TTS, faster-whisper STT, auto language detection
 - [x] **Phase 5**: Telegram — grammy bot, formatter, handlers
 - [x] **Phase 6**: Matrix — bot-sdk, synapse docker config
 - [x] **Phase 7**: Scheduler — cron tasks, CLI management
@@ -224,11 +226,13 @@ src/voice.ts                  — transcribeAudio(), synthesizeSpeech(), voiceCa
 docker/speaches.yml           — Docker Compose for Speaches sidecar
 ```
 
-**Spec:**
-- Speaches runs as Docker container on port 8000 (OpenAI-compatible API)
-- STT: `whisper-small` (~850MB RAM, ~3-6s for 30s audio)
-- TTS: `piper` with `en_US-lessac-medium` (~63MB, ~500ms synthesis)
-- Uses `openai` npm package pointed at `http://localhost:8000/v1`
+**Spec (updated post-deployment):**
+- Speaches image: `ghcr.io/speaches-ai/speaches:latest-cpu` on port 8000 (OpenAI-compatible API)
+- STT: `Systran/faster-whisper-small` (~850MB RAM, auto-detects language)
+- TTS: `speaches-ai/Kokoro-82M-v1.0-ONNX` with auto language detection via `franc-min`
+  - EN → `af_heart` voice, ES → `ef_dora` voice
+- Models loaded via POST API (not env vars), auto-preloaded by `docker/entrypoint.sh`
+- Uses `openai` npm package pointed at Speaches URL
 - Rename `.oga` → `.ogg` before sending
 - Graceful degradation if Speaches is down
 
@@ -331,7 +335,7 @@ docker/.env.docker
 - `clauded` container: Node 22, claude CLI, project code
 - `speaches` sidecar: Piper TTS + Faster-whisper STT (port 8000 internal)
 - `synapse` container: Matrix homeserver (port 8008 localhost)
-- Bot runs non-root, `~/.claude` mounted read-only
+- Bot runs non-root, authenticated via `CLAUDE_CODE_OAUTH_TOKEN` env var (no credential mounts needed)
 
 **Verification**: `docker compose up` starts all services
 
@@ -435,8 +439,8 @@ feat(phase-12): integration — index.ts, e2e validation
 7. **Ollama no tool_choice**: Can't force tool usage. Design prompts to encourage tool use naturally.
 8. **Matrix m.notice**: Bot responses should be m.notice (not m.text) to prevent bot-to-bot loops.
 9. **Synapse federation**: Disable federation for personal use — prevents metadata leakage.
-10. **Docker credential mounts**: Mount `~/.claude` as read-only. Never mount `~/.ssh`, `~/.aws`, etc.
+10. **Docker Claude auth**: Use `CLAUDE_CODE_OAUTH_TOKEN` env var (from `claude setup-token`). Do NOT mount `~/.claude` — OAuth tokens live in macOS Keychain, inaccessible from Docker. The entrypoint creates a minimal `~/.claude.json` with `hasCompletedOnboarding: true`.
 11. **FTS5 trigger sync**: The FTS5 virtual table needs manual triggers on INSERT/UPDATE/DELETE.
 12. **launchd ThrottleInterval**: Set to >=5s to prevent crash-restart loops.
-13. **Speaches cold start**: First request after container start takes longer (model loading). Add health check.
+13. **Speaches model loading**: Models must be loaded via `POST /v1/models/{model_id}` — NOT via env vars. The entrypoint script auto-loads both models. Healthcheck uses `python3` (curl not available in the image). Use `start_period: 120s`.
 14. **Qwen 3 thinking tokens**: Thinking mode inflates token usage. Monitor memory for long conversations.

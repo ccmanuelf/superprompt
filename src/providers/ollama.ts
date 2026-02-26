@@ -32,17 +32,23 @@ IMPORTANT: Always respond in the same language the user's latest message is writ
 function shouldUseTools(message: string): boolean {
   const lower = message.toLowerCase();
 
+  // Explicit tool requests
+  if (/\b(use tools?|search for|search the web|read the file|run command|what time|system info)\b/i.test(lower)) {
+    return true;
+  }
+
+  // Questions that need live/current data (weather, news, prices, scores, etc.)
+  if (/\b(weather|forecast|news|latest|current|today'?s|price of|stock|score)\b/i.test(lower) &&
+      /\b(what|how|tell|show|give|is the|in |at )\b/i.test(lower)) {
+    return true;
+  }
+
+  // Action verb + tool noun combination
   const actionVerbs =
     /\b(search|read|check|find|get|look\s*up|fetch|query|save|remember|run|execute|look)\b/;
   const toolNouns =
     /\b(file|url|web|time|date|memory|system|command|website|page|info|uptime|disk)\b/;
 
-  // Explicit tool requests
-  if (/\b(use tools?|search for|read the file|run command|what time|system info)\b/i.test(lower)) {
-    return true;
-  }
-
-  // Action verb + tool noun combination
   if (actionVerbs.test(lower) && toolNouns.test(lower)) {
     return true;
   }
@@ -96,7 +102,7 @@ export class OllamaProvider implements AIProvider {
       ? config.OLLAMA_TOOL_MODEL
       : config.OLLAMA_CHAT_MODEL;
 
-    logger.debug(
+    logger.info(
       { chatId, model, useTools },
       'Ollama routing decision',
     );

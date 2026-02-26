@@ -33,10 +33,10 @@ export async function transcribeAudio(audioPath: string): Promise<string> {
 
   logger.debug({ path: finalPath }, 'Transcribing audio');
 
+  // Omit language param — Faster-whisper auto-detects (supports 99 languages)
   const transcription = await speachesClient.audio.transcriptions.create({
     file: createReadStream(finalPath),
     model: 'Systran/faster-whisper-small',
-    language: 'en',
   });
 
   logger.debug(

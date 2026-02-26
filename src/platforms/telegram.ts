@@ -373,9 +373,50 @@ export function createTelegramBot(router: ProviderRouter): Bot {
 
   bot.on('message:photo', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
-    const caption = ctx.message.caption || 'User sent a photo. Describe what you see.';
-    // Photo analysis will be enhanced in Phase 8 (Media)
-    await handleMessage(ctx, `[Photo received] ${caption}`, router);
+    const caption = ctx.message.caption || 'Describe what you see in this photo.';
+
+    try {
+      // Get highest-resolution photo (last in array)
+      const photos = ctx.message.photo;
+      const photo = photos[photos.length - 1];
+      const file = await ctx.api.getFile(photo.file_id);
+      const filePath = file.file_path;
+
+      if (!filePath) {
+        await handleMessage(ctx, `[Photo received] ${caption}`, router);
+        return;
+      }
+
+      // Download to workspace/uploads/
+      const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${filePath}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        await handleMessage(ctx, `[Photo received] ${caption}`, router);
+        return;
+      }
+
+      const { UPLOADS_DIR } = await import('../config.js');
+      const { writeFileSync, mkdirSync } = await import('node:fs');
+      const { resolve } = await import('node:path');
+
+      mkdirSync(UPLOADS_DIR, { recursive: true });
+      const ext = filePath.split('.').pop() || 'jpg';
+      const localPath = resolve(UPLOADS_DIR, `${Date.now()}_photo.${ext}`);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      writeFileSync(localPath, buffer);
+
+      logger.info({ chatId: ctx.chat.id, path: localPath }, 'Photo downloaded');
+
+      // Pass file path so Claude CLI can read the image via its Read tool
+      await handleMessage(
+        ctx,
+        `The user sent a photo. It has been saved to: ${localPath}\nPlease read/view this image file and respond to: ${caption}`,
+        router,
+      );
+    } catch (err) {
+      logger.error({ err }, 'Photo handler failed');
+      await handleMessage(ctx, `[Photo received] ${caption}`, router);
+    }
   });
 
   // ── Document Handler ──────────────────────────────────────

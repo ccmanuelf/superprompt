@@ -14,6 +14,7 @@ All versions below are confirmed compatible and should be used exactly as specif
 | `ollama` | `^0.5.0` | Ollama JS SDK | Official SDK. Supports tool calling, streaming, chat API. |
 | `openai` | `^4.80.0` | OpenAI-compatible client | Used for Speaches voice API (not for OpenAI itself). |
 | `cron-parser` | `^5.5.0` | Cron expression parser | Parses cron strings, computes next run time. |
+| `franc-min` | `^6.2.0` | Language detection | Detects text language (ISO 639-3) for TTS voice selection (EN/ES). |
 
 ## Dev Dependencies
 
@@ -34,7 +35,7 @@ All versions below are confirmed compatible and should be used exactly as specif
 | `whatsapp-web.js` | WhatsApp dropped entirely (ToS violation). |
 | `@whiskeysockets/baileys` | WhatsApp dropped entirely. |
 | `groq-sdk` | Replaced by local Speaches (Faster-whisper) for STT. |
-| `elevenlabs` | Replaced by local Speaches (Piper) for TTS. |
+| `elevenlabs` | Replaced by local Speaches (Kokoro-82M) for TTS. |
 | `@anthropic-ai/tokenizer` | Not needed for current architecture. |
 
 ## System Requirements
@@ -51,12 +52,12 @@ All versions below are confirmed compatible and should be used exactly as specif
 | Image | Purpose | Notes |
 |-------|---------|-------|
 | `node:22-slim` | Bot container base | Minimal, includes npm |
-| `speaches/speaches:latest` | Voice sidecar | Bundles Piper TTS + Faster-whisper STT |
+| `ghcr.io/speaches-ai/speaches:latest-cpu` | Voice sidecar | Bundles Kokoro-82M TTS + Faster-whisper STT. Models loaded via POST API. |
 | `matrixdotorg/synapse:latest` | Matrix homeserver | Official Synapse image |
 
 ## Ollama Models
 
 | Model | Size | Purpose | Notes |
 |-------|------|---------|-------|
-| `bazobehram/qwen3-14b-claude-4.5-opus-high-reasoning` | ~9GB Q4_K_M | Chat (reasoning) | Fine-tuned for Claude-style reasoning, 40k context |
-| `qwen3:14b` | ~9GB Q4_K_M | Tool calling | Official model, confirmed tool support |
+| `qwen3:4b` | ~2.5GB | Chat | Lightweight, sufficient for chat-only reasoning |
+| `qwen3:latest` | ~4.9GB | Tool calling | Latest Qwen3 with optimized tool support |

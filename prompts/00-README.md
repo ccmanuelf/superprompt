@@ -80,6 +80,23 @@ Each prompt contains:
 3. Resume from where it left off — the prompt has the full spec
 4. Files already created don't need to be regenerated (unless broken)
 
+## Important: Prompts Are Historical
+
+All 12 phases have been executed. The prompt files reflect the **original build spec** at design time. Several details changed during deployment testing:
+
+- **TTS**: Piper → Kokoro-82M (much more natural voice quality)
+- **STT/TTS model IDs**: Now fully-qualified HuggingFace IDs
+- **Ollama models**: `qwen3:4b` (chat) + `qwen3:latest` (tools) — not 14B
+- **Claude auth in Docker**: `CLAUDE_CODE_OAUTH_TOKEN` env var, not `~/.claude` volume mount
+- **Speaches**: Models loaded via POST API, not env vars
+- **Language detection**: Auto EN/ES via `franc-min` (not in original spec)
+
+For the **actual deployed configuration**, always refer to:
+- `reference/decisions.md` — Source of truth for all decisions
+- `reference/voice-local.md` — Actual voice integration details
+- `reference/dependency-versions.md` — Actual pinned versions
+- The source code itself (especially `src/voice.ts`, `docker-compose.yml`, `docker/entrypoint.sh`)
+
 ## Reference Documents
 
 The `reference/` directory contains research artifacts:
@@ -87,4 +104,4 @@ The `reference/` directory contains research artifacts:
 - `dependency-versions.md` — Pinned package versions
 - `ollama-tools.md` — Tool definitions and agentic loop patterns
 - `matrix-setup.md` — Synapse deployment and bot SDK usage
-- `voice-local.md` — Speaches/Piper/Faster-whisper integration
+- `voice-local.md` — Speaches/Kokoro-82M/Faster-whisper integration with language detection
