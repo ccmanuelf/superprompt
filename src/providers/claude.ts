@@ -36,6 +36,7 @@ export class ClaudeProvider implements AIProvider {
       '--output-format',
       'stream-json',
       '--verbose',
+      '--dangerously-skip-permissions',
     ];
 
     if (sessionId) {

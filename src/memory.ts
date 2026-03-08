@@ -2,10 +2,11 @@ import {
   searchMemories,
   getRecentMemories,
   insertMemory,
-  touchMemory,
+  vectorSearchMemories,
   type Memory,
   getDatabase,
 } from './db.js';
+import { generateEmbedding } from './embeddings.js';
 import { logger } from './logger.js';
 
 const SEMANTIC_SIGNAL =
@@ -16,16 +17,19 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * Build a memory context string to prepend to user messages.
  *
- * 1. FTS5 search the user message (top 3)
- * 2. Fetch recent memories (top 5)
- * 3. Deduplicate by id
+ * Hybrid search:
+ * 1. FTS5 keyword search (top 3)
+ * 2. Vector similarity search (top 3) — embed user message, query memories_vec
+ * 3. Merge: deduplicate by id, return top 5 combined
  * 4. Touch each result (bump accessed_at + salience)
  * 5. Return formatted string
+ *
+ * Falls back to FTS5-only if embedding generation fails.
  */
-export function buildMemoryContext(
+export async function buildMemoryContext(
   chatId: string,
   userMessage: string,
-): string {
+): Promise<string> {
   // Sanitize query for FTS5: strip non-alphanumeric, add prefix matching
   const sanitized = userMessage
     .replace(/[^\w\s]/g, '')
@@ -45,20 +49,34 @@ export function buildMemoryContext(
     }
   }
 
+  // Vector similarity search
+  let vecResults: Memory[] = [];
+  try {
+    const embedding = await generateEmbedding(userMessage);
+    if (embedding) {
+      vecResults = vectorSearchMemories(chatId, embedding, 3);
+    }
+  } catch {
+    logger.debug('Vector search failed, using FTS5 only');
+  }
+
   const recentResults = getRecentMemories(chatId, 5);
 
-  // Deduplicate by id
+  // Deduplicate by id, preserving order (FTS first, then vec, then recent)
   const seen = new Set<number>();
   const combined: Memory[] = [];
 
-  for (const m of [...ftsResults, ...recentResults]) {
+  for (const m of [...ftsResults, ...vecResults, ...recentResults]) {
     if (!seen.has(m.id)) {
       seen.add(m.id);
       combined.push(m);
     }
   }
 
-  if (combined.length === 0) return '';
+  // Take top 5
+  const top = combined.slice(0, 5);
+
+  if (top.length === 0) return '';
 
   // Touch each memory: bump accessed_at and reinforce salience (+0.1, cap 5.0)
   const db = getDatabase();
@@ -67,12 +85,12 @@ export function buildMemoryContext(
   );
 
   const now = Date.now();
-  for (const m of combined) {
+  for (const m of top) {
     touchStmt.run(now, m.id);
   }
 
   // Format context
-  const lines = combined.map(
+  const lines = top.map(
     (m) => `- ${m.content} (${m.sector})`,
   );
 
@@ -82,15 +100,16 @@ export function buildMemoryContext(
 /**
  * Analyze a conversation turn and save notable content as a memory.
  *
- * - Skips short messages (≤20 chars) and commands (starting with /)
+ * - Skips short messages (≤20 chars) and commands (starting with / or !)
  * - Detects semantic signals (personal facts, preferences) → semantic sector
  * - Otherwise stores as episodic
+ * - Generates embedding asynchronously (fire-and-forget if it fails)
  */
-export function saveConversationTurn(
+export async function saveConversationTurn(
   chatId: string,
   userMsg: string,
   assistantMsg: string,
-): void {
+): Promise<void> {
   // Skip commands and trivially short messages
   if (userMsg.startsWith('/') || userMsg.startsWith('!')) return;
   if (userMsg.length <= 20) return;
@@ -104,10 +123,18 @@ export function saveConversationTurn(
     ? userMsg
     : `User: ${truncate(userMsg, 200)} → Assistant: ${truncate(assistantMsg, 200)}`;
 
-  insertMemory(chatId, content, sector);
+  // Generate embedding (non-blocking — insert with null if it fails)
+  let embedding: number[] | null = null;
+  try {
+    embedding = await generateEmbedding(content);
+  } catch {
+    // Fire-and-forget: embedding failure is not critical
+  }
+
+  insertMemory(chatId, content, sector, undefined, embedding ?? undefined);
 
   logger.debug(
-    { chatId, sector, contentLength: content.length },
+    { chatId, sector, contentLength: content.length, hasEmbedding: !!embedding },
     'Saved conversation memory',
   );
 }
@@ -131,6 +158,19 @@ export function runDecaySweep(): void {
     .run(cutoff);
 
   // Delete memories that have decayed below threshold
+  // Also clean up their vec0 entries
+  const toDelete = db
+    .prepare('SELECT id FROM memories WHERE salience < 0.1')
+    .all() as Array<{ id: number }>;
+
+  for (const row of toDelete) {
+    try {
+      db.prepare('DELETE FROM memories_vec WHERE memory_id = ?').run(row.id);
+    } catch {
+      // best-effort
+    }
+  }
+
   const deleteResult = db
     .prepare('DELETE FROM memories WHERE salience < 0.1')
     .run();

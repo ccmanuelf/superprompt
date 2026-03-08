@@ -1,5 +1,6 @@
 import type { Tool } from 'ollama';
-import { searchMemories, getRecentMemories, type Memory } from '../../db.js';
+import { searchMemories, getRecentMemories, vectorSearchMemories, type Memory } from '../../db.js';
+import { generateEmbedding } from '../../embeddings.js';
 
 export const queryMemoryDefinition: Tool = {
   type: 'function',
@@ -29,30 +30,56 @@ function formatMemory(m: Memory): string {
   return `[${m.sector}] (${age}d ago, salience: ${m.salience.toFixed(2)}) ${m.content}`;
 }
 
-export function queryMemory(
+export async function queryMemory(
   args: { query: string; limit?: number },
   chatId: string,
-): Record<string, string | string[]> {
+): Promise<Record<string, string | string[]>> {
   const limit = args.limit ?? 5;
 
   try {
-    // Try FTS5 search first
-    let memories = searchMemories(chatId, args.query, limit);
-
-    // Fall back to recent memories if FTS5 returns nothing
-    if (memories.length === 0) {
-      memories = getRecentMemories(chatId, limit);
+    // FTS5 keyword search
+    let ftsMemories: Memory[] = [];
+    try {
+      ftsMemories = searchMemories(chatId, args.query, limit);
+    } catch {
+      // FTS5 match can fail on malformed queries
     }
 
-    if (memories.length === 0) {
-      return { result: 'No memories found for this query.' };
+    // Vector similarity search
+    let vecMemories: Memory[] = [];
+    try {
+      const embedding = await generateEmbedding(args.query);
+      if (embedding) {
+        vecMemories = vectorSearchMemories(chatId, embedding, limit);
+      }
+    } catch {
+      // Embedding/vector search failure is non-critical
+    }
+
+    // Merge and deduplicate
+    const seen = new Set<number>();
+    const combined: Memory[] = [];
+    for (const m of [...ftsMemories, ...vecMemories]) {
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        combined.push(m);
+      }
+    }
+
+    // Fall back to recent memories if both searches return nothing
+    if (combined.length === 0) {
+      const recent = getRecentMemories(chatId, limit);
+      if (recent.length === 0) {
+        return { result: 'No memories found for this query.' };
+      }
+      return { memories: recent.map(formatMemory) };
     }
 
     return {
-      memories: memories.map(formatMemory),
+      memories: combined.slice(0, limit).map(formatMemory),
     };
   } catch {
-    // FTS5 match can fail on malformed queries — fall back to recent
+    // Complete fallback to recent
     const memories = getRecentMemories(chatId, limit);
     if (memories.length === 0) {
       return { result: 'No memories found.' };

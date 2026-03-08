@@ -7,10 +7,101 @@ import {
   getSession,
   setSession,
   updateSessionProvider,
+  updateSessionOllamaModel,
   clearSession,
 } from '../db.js';
+import { getSkillSystemPrompt, getSkillAllowedTools } from '../skills.js';
 
 const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
+
+/**
+ * Claude-specific prompt that teaches it about document capabilities.
+ * The platform layer parses uploaded files and injects their text into messages,
+ * and detects DocGenRequest JSON blocks in responses to generate real files.
+ * Claude just needs to know the JSON schema to trigger document generation.
+ */
+const CLAUDE_DOCUMENT_PROMPT = `## Document Capabilities
+
+### Reading Files
+When a user uploads a document (PDF, DOCX, XLSX, CSV, PPTX, JSON, MD, TXT), the system extracts its text content and includes it in the message as "[Document: filename]" followed by the parsed content. You can analyze, summarize, and answer questions about this content directly.
+
+### Generating Documents
+When the user asks you to create or generate a document (spreadsheet, report, PDF, CSV), respond with a JSON code block in this exact format. The system will detect it and generate the actual file.
+
+**For spreadsheets (XLSX or CSV):**
+\`\`\`json
+{
+  "format": "xlsx",
+  "filename": "descriptive-name.xlsx",
+  "title": "Optional Title",
+  "content": {
+    "type": "spreadsheet",
+    "sheets": [{
+      "name": "Sheet1",
+      "headers": ["Column A", "Column B", "Column C"],
+      "rows": [
+        ["value1", 2, true],
+        ["value2", 3, false]
+      ]
+    }]
+  }
+}
+\`\`\`
+
+**For documents (DOCX or PDF):**
+\`\`\`json
+{
+  "format": "docx",
+  "filename": "descriptive-name.docx",
+  "title": "Document Title",
+  "content": {
+    "type": "document",
+    "sections": [{
+      "heading": "Section Title",
+      "paragraphs": ["Paragraph text here."],
+      "bulletPoints": ["Point 1", "Point 2"],
+      "table": {
+        "headers": ["Col A", "Col B"],
+        "rows": [["val1", "val2"]]
+      }
+    }]
+  }
+}
+\`\`\`
+
+**Charts in documents (PDF or DOCX):**
+Sections can include a "chart" field to render a visual chart. Supported types: bar, line, pie, doughnut, scatter, radar, bubble, polarArea.
+
+\`\`\`json
+{
+  "format": "pdf",
+  "filename": "report.pdf",
+  "title": "Sales Report",
+  "content": {
+    "type": "document",
+    "sections": [
+      {
+        "heading": "Revenue Overview",
+        "paragraphs": ["Quarterly revenue breakdown:"],
+        "chart": {
+          "type": "bar",
+          "title": "Quarterly Revenue",
+          "data": {
+            "labels": ["Q1", "Q2", "Q3", "Q4"],
+            "datasets": [{
+              "label": "Revenue ($K)",
+              "data": [120, 190, 150, 220],
+              "backgroundColor": ["#4BC0C0", "#FF6384", "#36A2EB", "#FFCE56"]
+            }]
+          }
+        }
+      }
+    ]
+  }
+}
+\`\`\`
+
+Supported formats: \`xlsx\`, \`docx\`, \`pdf\`, \`csv\`. Use \`csv\` format with spreadsheet content type for simple tabular data. Include any explanatory text outside the JSON code block — it will be sent alongside the file.`;
 
 export class ProviderRouter {
   private claude: ClaudeProvider;
@@ -53,15 +144,30 @@ export class ProviderRouter {
       'Routing message',
     );
 
-    // Inject language hint for Claude (Ollama has it in its own system prompts)
+    // Resolve active skill for this chat
+    const skillPrompt = getSkillSystemPrompt(chatId);
+    const allowedTools = getSkillAllowedTools(chatId);
+
+    // Inject document capabilities for both providers; language hint for Claude only (Ollama has its own)
     const systemPrompt = provider.name === 'claude'
-      ? [params.systemPrompt, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : params.systemPrompt;
+      ? [params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, LANGUAGE_HINT].filter(Boolean).join('\n\n')
+      : [params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT].filter(Boolean).join('\n\n') || undefined;
+
+    // When a skill is active, don't resume Claude sessions — the skill's system prompt
+    // needs a fresh session to take effect (resumed sessions keep their original system prompt)
+    const effectiveSessionId = (provider.name === 'claude' && skillPrompt) ? undefined : sessionId;
+
+    // Per-chat Ollama model override
+    const modelOverride = provider.name === 'ollama' && session?.ollama_model
+      ? session.ollama_model
+      : undefined;
 
     const response = await provider.sendMessage({
       ...params,
-      sessionId,
+      sessionId: effectiveSessionId,
       systemPrompt,
+      allowedTools: allowedTools ?? undefined,
+      modelOverride,
     });
 
     // Handle stale Claude session — clear and retry without --resume
@@ -73,6 +179,7 @@ export class ProviderRouter {
         ...params,
         sessionId: undefined,
         systemPrompt,
+        allowedTools: allowedTools ?? undefined,
       });
 
       // Persist new session ID from retry
@@ -129,5 +236,42 @@ export class ProviderRouter {
   getProviderName(chatId: string): string {
     const session = getSession(chatId);
     return session?.provider || config.AI_PROVIDER;
+  }
+
+  /**
+   * List available Ollama models (excluding embedding models).
+   */
+  async listOllamaModels(): Promise<{ name: string; size: string; family: string }[]> {
+    return this.ollama.listModels();
+  }
+
+  /**
+   * Switch the Ollama model for a specific chat.
+   * Validates the model exists locally before switching.
+   */
+  async switchOllamaModel(chatId: string, model: string): Promise<string> {
+    const exists = await this.ollama.modelExists(model);
+    if (!exists) {
+      return `Model "${model}" not found locally. Use /models to see available models.`;
+    }
+
+    const session = getSession(chatId);
+    if (session) {
+      updateSessionOllamaModel(chatId, model);
+    } else {
+      setSession(chatId, '', 'ollama');
+      updateSessionOllamaModel(chatId, model);
+    }
+
+    logger.info({ chatId, model }, 'Switched Ollama model');
+    return model;
+  }
+
+  /**
+   * Get the active Ollama model for a chat (per-chat override or config default).
+   */
+  getOllamaModel(chatId: string): string {
+    const session = getSession(chatId);
+    return session?.ollama_model || config.OLLAMA_CHAT_MODEL;
   }
 }

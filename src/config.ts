@@ -38,8 +38,8 @@ export const config = {
   OLLAMA_HOST: env.OLLAMA_HOST || 'http://localhost:11434',
   OLLAMA_CHAT_MODEL:
     env.OLLAMA_CHAT_MODEL ||
-    'bazobehram/qwen3-14b-claude-4.5-opus-high-reasoning',
-  OLLAMA_TOOL_MODEL: env.OLLAMA_TOOL_MODEL || 'qwen3:14b',
+    'qwen3.5:latest',
+  OLLAMA_TOOL_MODEL: env.OLLAMA_TOOL_MODEL || 'qwen3.5:latest',
 
   // Telegram
   TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN || '',

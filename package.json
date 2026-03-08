@@ -16,18 +16,32 @@
   },
   "dependencies": {
     "@vector-im/matrix-bot-sdk": "0.8.0-element.3",
+    "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.6.0",
+    "chart.js": "^4.5.1",
+    "chartjs-node-canvas": "^5.0.0",
     "cron-parser": "^5.5.0",
+    "csv-parse": "^6.1.0",
+    "docx": "^9.6.0",
+    "exceljs": "^4.4.0",
     "franc-min": "^6.2.0",
     "grammy": "^1.40.0",
+    "mammoth": "^1.11.0",
     "ollama": "^0.5.0",
     "openai": "^4.80.0",
+    "pdf-parse": "^2.4.5",
+    "pdfkit": "^0.17.2",
     "pino": "^10.3.0",
-    "pino-pretty": "^13.0.0"
+    "pino-pretty": "^13.0.0",
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "undici": "^7.22.0"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.0.0",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pdfkit": "^0.17.5",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

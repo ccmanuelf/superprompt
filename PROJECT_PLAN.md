@@ -444,3 +444,17 @@ feat(phase-12): integration — index.ts, e2e validation
 12. **launchd ThrottleInterval**: Set to >=5s to prevent crash-restart loops.
 13. **Speaches model loading**: Models must be loaded via `POST /v1/models/{model_id}` — NOT via env vars. The entrypoint script auto-loads both models. Healthcheck uses `python3` (curl not available in the image). Use `start_period: 120s`.
 14. **Qwen 3 thinking tokens**: Thinking mode inflates token usage. Monitor memory for long conversations.
+15. **sqlite-vec no triggers**: Unlike FTS5, vec0 tables don't support triggers. Embedding sync must be done programmatically in CRUD functions.
+16. **pdf-parse v2 API**: Uses `PDFParse` class with `.getText()` returning `TextResult` — not the v1 callback API.
+17. **buildMemoryContext is async**: Changed from sync to async for vector search. All callers must await it.
+
+---
+
+## Enhancement Phases (Post-MVP)
+
+- [x] **Phase A**: Hybrid Memory — sqlite-vec embeddings, hybrid FTS5+vector search
+- [x] **Phase B**: File Reading — XLSX, DOCX, PDF, CSV, PPTX, JSON, MD parsing
+- [x] **Phase C**: Document Generation — XLSX, DOCX, PDF, CSV output
+- [x] **Phase D**: Matrix Parity — schedule commands, photo/file handlers, notifications
+- [x] **Phase E**: Skills Infrastructure — registration, routing, per-skill prompts and tools
+- [x] **Phase F**: Integration Testing, Validation, Documentation updates

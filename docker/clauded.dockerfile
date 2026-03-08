@@ -2,8 +2,10 @@ FROM node:22-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies for native modules (better-sqlite3)
-RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+# Install build dependencies for native modules (better-sqlite3, canvas)
+RUN apt-get update && apt-get install -y python3 make g++ \
+    libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts=false
@@ -23,7 +25,9 @@ WORKDIR /app
 # - claude CLI: AI provider (installed via npm globally)
 # NOTE: Pin to @latest and bust cache with date to keep in sync with host
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
+    apt-get install -y --no-install-recommends \
+    curl libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+    libjpeg62-turbo libgif7 librsvg2-2 && \
     npm install -g @anthropic-ai/claude-code@latest && \
     rm -rf /var/lib/apt/lists/*
 

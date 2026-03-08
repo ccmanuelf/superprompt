@@ -37,4 +37,20 @@ SPEACHES_URL="${SPEACHES_URL:-http://speaches:8000/v1}"
   echo "[entrypoint] Speaches not available after 120s, skipping model preload"
 ) &
 
+# Pre-pull nomic-embed-text model for embeddings (non-blocking)
+OLLAMA_HOST="${OLLAMA_HOST:-http://host.docker.internal:11434}"
+(
+  for i in $(seq 1 12); do
+    if curl -sf "${OLLAMA_HOST}/api/tags" > /dev/null 2>&1; then
+      echo "[entrypoint] Ollama is reachable, pulling nomic-embed-text..."
+      curl -sf -X POST "${OLLAMA_HOST}/api/pull" -d '{"name":"nomic-embed-text","stream":false}' > /dev/null 2>&1 \
+        && echo "[entrypoint] nomic-embed-text model pulled" \
+        || echo "[entrypoint] nomic-embed-text pull failed or already present"
+      exit 0
+    fi
+    sleep 5
+  done
+  echo "[entrypoint] Ollama not reachable after 60s, skipping embed model pull"
+) &
+
 exec node dist/index.js

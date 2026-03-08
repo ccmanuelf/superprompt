@@ -15,6 +15,16 @@ All versions below are confirmed compatible and should be used exactly as specif
 | `openai` | `^4.80.0` | OpenAI-compatible client | Used for Speaches voice API (not for OpenAI itself). |
 | `cron-parser` | `^5.5.0` | Cron expression parser | Parses cron strings, computes next run time. |
 | `franc-min` | `^6.2.0` | Language detection | Detects text language (ISO 639-3) for TTS voice selection (EN/ES). |
+| `sqlite-vec` | `^0.1.6` | Vector similarity search | SQLite extension for vec0 virtual tables. Used for hybrid memory search. |
+| `exceljs` | `^4.4.0` | Read/write XLSX | Spreadsheet parsing (Phase B) and generation (Phase C). |
+| `mammoth` | `^1.11.0` | Read DOCX | Extracts raw text from Word documents. |
+| `pdf-parse` | `^2.4.5` | Read PDF | PDF text extraction with page-level access. |
+| `csv-parse` | `^6.1.0` | Read CSV | Parses CSV with auto-detection of delimiters. |
+| `adm-zip` | `^0.5.16` | Read PPTX | Zip extraction for PowerPoint slide XML. |
+| `docx` | `^9.6.0` | Write DOCX | Programmatic Word document generation. |
+| `pdfkit` | `^0.17.2` | Write PDF | Programmatic PDF generation. |
+| `chartjs-node-canvas` | `^5.0.0` | Chart rendering | Server-side Chart.js to PNG via canvas. |
+| `chart.js` | `^4.5.1` | Charting library | Peer dependency of chartjs-node-canvas. |
 
 ## Dev Dependencies
 
@@ -25,6 +35,9 @@ All versions below are confirmed compatible and should be used exactly as specif
 | `@types/node` | `^22.0.0` | Node.js type definitions | Matches Node 22 runtime. |
 | `@types/better-sqlite3` | `^7.6.0` | SQLite type definitions | |
 | `vitest` | `^3.0.0` | Test framework | Fast, ESM-native, compatible with our setup. |
+| `@types/pdfkit` | `^0.13.8` | PDFKit type definitions | |
+| `@types/adm-zip` | latest | AdmZip type definitions | |
+| `@types/pdf-parse` | latest | pdf-parse type definitions | |
 
 ## NOT Used (Explicitly Removed)
 
@@ -61,3 +74,4 @@ All versions below are confirmed compatible and should be used exactly as specif
 |-------|------|---------|-------|
 | `qwen3:4b` | ~2.5GB | Chat | Lightweight, sufficient for chat-only reasoning |
 | `qwen3:latest` | ~4.9GB | Tool calling | Latest Qwen3 with optimized tool support |
+| `nomic-embed-text` | ~274MB | Embeddings | 768-dim vectors for hybrid memory search |

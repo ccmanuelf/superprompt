@@ -72,6 +72,19 @@ describe('formatForTelegram', () => {
     expect(result).toContain('&lt;script&gt;');
   });
 
+  it('converts ***bold-italic*** to properly nested <b><i>', () => {
+    expect(formatForTelegram('***hello***')).toBe('<b><i>hello</i></b>');
+  });
+
+  it('converts ___bold-italic___ to properly nested <b><i>', () => {
+    expect(formatForTelegram('___hello___')).toBe('<b><i>hello</i></b>');
+  });
+
+  it('handles bold-italic in a sentence', () => {
+    const result = formatForTelegram('the book ***Relentless*** by Lewis');
+    expect(result).toBe('the book <b><i>Relentless</i></b> by Lewis');
+  });
+
   it('handles mixed formatting', () => {
     const input = '**bold** and *italic* and `code`';
     const result = formatForTelegram(input);

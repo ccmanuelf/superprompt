@@ -1,5 +1,6 @@
 import type { Tool } from 'ollama';
 import { insertMemory } from '../../db.js';
+import { generateEmbedding } from '../../embeddings.js';
 
 export const saveMemoryDefinition: Tool = {
   type: 'function',
@@ -26,14 +27,23 @@ export const saveMemoryDefinition: Tool = {
   },
 };
 
-export function saveMemory(
+export async function saveMemory(
   args: { content: string; sector?: string },
   chatId: string,
-): Record<string, string | number> {
+): Promise<Record<string, string | number>> {
   const sector =
     args.sector === 'episodic' ? 'episodic' : 'semantic';
 
-  const id = insertMemory(chatId, args.content, sector);
+  // Generate embedding (non-blocking, null on failure)
+  let embedding: number[] | undefined;
+  try {
+    const result = await generateEmbedding(args.content);
+    if (result) embedding = result;
+  } catch {
+    // Non-critical
+  }
+
+  const id = insertMemory(chatId, args.content, sector, undefined, embedding);
   return {
     saved: 'true',
     id,
