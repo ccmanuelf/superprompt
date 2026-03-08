@@ -4,14 +4,21 @@ import {
   AutojoinRoomsMixin,
   LogService,
 } from '@vector-im/matrix-bot-sdk';
+import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { config, STORE_DIR, UPLOADS_DIR } from '../config.js';
 import { logger } from '../logger.js';
 import { ProviderRouter } from '../providers/router.js';
 import { buildMemoryContext, saveConversationTurn } from '../memory.js';
-import { getMemoriesByChatId } from '../db.js';
+import { getMemoriesByChatId, createTask, getTasksByChat, getTask, pauseTask, resumeTask, deleteTask, listSkills, getSkillByName, setActiveSkill, clearActiveSkill, getActiveSkill, createSkill, deleteSkill, lockSkill, unlockSkill, insertSkillRevision, updateSkill, listUserTools, getUserToolByName, createUserTool, deleteUserTool, enableUserTool, disableUserTool, lockUserTool, unlockUserTool, insertToolRevision } from '../db.js';
 import { transcribeAudio, synthesizeSpeech, voiceCapabilities } from '../voice.js';
+import { computeNextRun, validateCron } from '../scheduler.js';
+import { parseFile } from '../files.js';
+import { isDocGenResponse, parseDocGenResponse, generateDocument, stripDocGenBlock } from '../docgen.js';
+import { fixSkill } from '../forge/skill-fixer.js';
+import { fixTool } from '../forge/tool-fixer.js';
+import { listRegisteredTools, loadUserTools } from '../forge/tool-registry.js';
 
 // Per-room voice mode toggle
 const voiceModeRooms = new Set<string>();
@@ -114,8 +121,8 @@ async function handleMessage(
   body: string,
   router: ProviderRouter,
 ): Promise<void> {
-  // 1. Build memory context
-  const memoryContext = buildMemoryContext(roomId, body);
+  // 1. Build memory context (hybrid: FTS5 + vector)
+  const memoryContext = await buildMemoryContext(roomId, body);
   const fullMessage = memoryContext
     ? `${memoryContext}\n\n${body}`
     : body;
@@ -132,8 +139,35 @@ async function handleMessage(
       return;
     }
 
-    // 3. Save conversation memory
-    saveConversationTurn(roomId, body, response.text);
+    // 3. Save conversation memory (with embedding, fire-and-forget)
+    saveConversationTurn(roomId, body, response.text).catch((err) => {
+      logger.warn({ err }, 'Failed to save conversation memory');
+    });
+
+    // 3b. Check for document generation request in response
+    if (isDocGenResponse(response.text)) {
+      const docReq = parseDocGenResponse(response.text);
+      if (docReq) {
+        try {
+          const result = await generateDocument(docReq);
+          const mxcUrl = await client.uploadContent(result.buffer, result.mimeType, result.filename);
+          await client.sendMessage(roomId, {
+            msgtype: 'm.file',
+            body: result.filename,
+            url: mxcUrl,
+            info: { mimetype: result.mimeType, size: result.buffer.length },
+          });
+          // Send any remaining text
+          const remainingText = stripDocGenBlock(response.text);
+          if (remainingText) {
+            await sendNotice(client, roomId, remainingText);
+          }
+          return;
+        } catch (err) {
+          logger.warn({ err }, 'Matrix document generation failed, sending raw response');
+        }
+      }
+    }
 
     // 4. Voice reply if enabled
     const shouldVoice = voiceModeRooms.has(roomId);
@@ -211,7 +245,10 @@ async function handleCommand(
           '!voice — Toggle voice replies\n' +
           '!claude — Switch to Claude\n' +
           '!ollama — Switch to Ollama\n' +
-          '!schedule — Manage scheduled tasks',
+          '!schedule — Manage scheduled tasks\n' +
+          '!skill — Manage AI skills\n' +
+          '!tool — Manage tools (list, fix, etc.)\n' +
+          '!reload — Reload user tools from DB',
       );
       return true;
 
@@ -271,18 +308,466 @@ async function handleCommand(
       return true;
     }
 
-    case '!schedule':
-      await sendNotice(
-        client,
-        roomId,
-        'Scheduler commands:\n' +
-          '!schedule list — Show active tasks\n' +
-          '!schedule create "prompt" "cron" — Create task\n' +
-          '!schedule pause <id> — Pause task\n' +
-          '!schedule resume <id> — Resume task\n' +
-          '!schedule delete <id> — Delete task',
-      );
+    case '!schedule': {
+      const schedArgs = command.replace(/^!schedule\s*/, '').trim();
+      const schedParts = schedArgs.split(/\s+/);
+      const subcommand = schedParts[0]?.toLowerCase() || 'help';
+
+      switch (subcommand) {
+        case 'list': {
+          const tasks = getTasksByChat(roomId);
+          if (tasks.length === 0) {
+            await sendNotice(client, roomId, 'No scheduled tasks.');
+            return true;
+          }
+          const lines = tasks.map((t) => {
+            const next = new Date(t.next_run).toLocaleString();
+            return `${t.id.slice(0, 8)} [${t.status}] ${t.prompt.slice(0, 50)}${t.prompt.length > 50 ? '...' : ''}\n  ⏰ ${t.schedule} → next: ${next}`;
+          });
+          await sendNotice(client, roomId, `Scheduled tasks (${tasks.length}):\n\n${lines.join('\n\n')}`);
+          return true;
+        }
+
+        case 'show': {
+          const taskId = schedParts[1];
+          if (!taskId) {
+            await sendNotice(client, roomId, 'Usage: !schedule show <id>');
+            return true;
+          }
+          const tasks = getTasksByChat(roomId);
+          const task = tasks.find((t) => t.id.startsWith(taskId));
+          if (!task) {
+            await sendNotice(client, roomId, 'Task not found.');
+            return true;
+          }
+          const next = new Date(task.next_run).toLocaleString();
+          const lastRun = task.last_run ? new Date(task.last_run).toLocaleString() : 'never';
+          const lastResult = task.last_result ? task.last_result.slice(0, 500) : '(none)';
+          await sendNotice(
+            client,
+            roomId,
+            `Task ${task.id.slice(0, 8)}\nStatus: ${task.status}\nPrompt: ${task.prompt}\nSchedule: ${task.schedule}\nNext run: ${next}\nLast run: ${lastRun}\nLast result:\n${lastResult}`,
+          );
+          return true;
+        }
+
+        case 'create': {
+          const match = schedArgs.match(/^create\s+"([^"]+)"\s+"([^"]+)"$/i);
+          if (!match) {
+            await sendNotice(
+              client,
+              roomId,
+              'Usage: !schedule create "prompt" "cron"\n\nExample:\n!schedule create "What time is it?" "*/5 * * * *"',
+            );
+            return true;
+          }
+          const [, prompt, cron] = match;
+          const error = validateCron(cron);
+          if (error) {
+            await sendNotice(client, roomId, `Invalid cron: ${error}`);
+            return true;
+          }
+          const id = randomBytes(8).toString('hex');
+          const nextRun = computeNextRun(cron);
+          createTask(id, roomId, prompt, cron, nextRun);
+          await sendNotice(
+            client,
+            roomId,
+            `Task created: ${id.slice(0, 8)}\nPrompt: ${prompt}\nSchedule: ${cron}\nNext run: ${new Date(nextRun).toLocaleString()}`,
+          );
+          return true;
+        }
+
+        case 'pause': {
+          const taskId = schedParts[1];
+          if (!taskId) {
+            await sendNotice(client, roomId, 'Usage: !schedule pause <id>');
+            return true;
+          }
+          const tasks = getTasksByChat(roomId);
+          const task = tasks.find((t) => t.id.startsWith(taskId));
+          if (!task) {
+            await sendNotice(client, roomId, 'Task not found.');
+            return true;
+          }
+          pauseTask(task.id);
+          await sendNotice(client, roomId, `Task ${task.id.slice(0, 8)} paused.`);
+          return true;
+        }
+
+        case 'resume': {
+          const taskId = schedParts[1];
+          if (!taskId) {
+            await sendNotice(client, roomId, 'Usage: !schedule resume <id>');
+            return true;
+          }
+          const tasks = getTasksByChat(roomId);
+          const task = tasks.find((t) => t.id.startsWith(taskId));
+          if (!task) {
+            await sendNotice(client, roomId, 'Task not found.');
+            return true;
+          }
+          const nextRun = computeNextRun(task.schedule);
+          resumeTask(task.id);
+          await sendNotice(
+            client,
+            roomId,
+            `Task ${task.id.slice(0, 8)} resumed.\nNext run: ${new Date(nextRun).toLocaleString()}`,
+          );
+          return true;
+        }
+
+        case 'delete': {
+          const taskId = schedParts[1];
+          if (!taskId) {
+            await sendNotice(client, roomId, 'Usage: !schedule delete <id>');
+            return true;
+          }
+          const tasks = getTasksByChat(roomId);
+          const task = tasks.find((t) => t.id.startsWith(taskId));
+          if (!task) {
+            await sendNotice(client, roomId, 'Task not found.');
+            return true;
+          }
+          deleteTask(task.id);
+          await sendNotice(client, roomId, `Task ${task.id.slice(0, 8)} deleted.`);
+          return true;
+        }
+
+        default:
+          await sendNotice(
+            client,
+            roomId,
+            'Scheduler commands:\n\n' +
+              '!schedule list — Show all tasks\n' +
+              '!schedule show <id> — Task details + last result\n' +
+              '!schedule create "prompt" "cron" — Create task\n' +
+              '!schedule pause <id> — Pause task\n' +
+              '!schedule resume <id> — Resume task\n' +
+              '!schedule delete <id> — Delete task\n\n' +
+              'Cron examples:\n' +
+              '*/5 * * * * — every 5 minutes\n' +
+              '0 9 * * * — daily at 9am\n' +
+              '0 9 * * 1-5 — weekdays at 9am',
+          );
+          return true;
+      }
+    }
+
+    case '!skill': {
+      const skillArgs = command.replace(/^!skill\s*/, '').trim();
+      const skillParts = skillArgs.split(/\s+/);
+      const skillSub = skillParts[0]?.toLowerCase() || 'help';
+
+      switch (skillSub) {
+        case 'list': {
+          const skills = listSkills();
+          const lines = skills.map((s) => {
+            const builtin = s.is_builtin ? ' (built-in)' : '';
+            return `${s.name}${builtin} — ${s.description}`;
+          });
+          await sendNotice(client, roomId, `Available skills (${skills.length}):\n\n${lines.join('\n')}`);
+          return true;
+        }
+
+        case 'show': {
+          const name = skillParts[1];
+          if (!name) {
+            await sendNotice(client, roomId, 'Usage: !skill show <name>');
+            return true;
+          }
+          const skill = getSkillByName(name.toLowerCase());
+          if (!skill) {
+            await sendNotice(client, roomId, 'Skill not found.');
+            return true;
+          }
+          const tools = skill.allowed_tools
+            ? JSON.parse(skill.allowed_tools).join(', ')
+            : 'all';
+          await sendNotice(
+            client,
+            roomId,
+            `Skill: ${skill.name}\nBuilt-in: ${skill.is_builtin ? 'Yes' : 'No'}\nDescription: ${skill.description}\nTools: ${tools}\nSystem prompt:\n${skill.system_prompt.slice(0, 500)}${skill.system_prompt.length > 500 ? '...' : ''}`,
+          );
+          return true;
+        }
+
+        case 'use': {
+          const name = skillParts[1];
+          if (!name) {
+            await sendNotice(client, roomId, 'Usage: !skill use <name>');
+            return true;
+          }
+          const skill = getSkillByName(name.toLowerCase());
+          if (!skill) {
+            await sendNotice(client, roomId, 'Skill not found. Use !skill list to see available skills.');
+            return true;
+          }
+          setActiveSkill(roomId, skill.id);
+          await sendNotice(client, roomId, `Skill activated: ${skill.name}\n${skill.description}`);
+          return true;
+        }
+
+        case 'off':
+          clearActiveSkill(roomId);
+          await sendNotice(client, roomId, 'Skill deactivated. Back to default behavior.');
+          return true;
+
+        case 'current': {
+          const active = getActiveSkill(roomId);
+          if (!active) {
+            await sendNotice(client, roomId, 'No skill active (using default).');
+          } else {
+            await sendNotice(client, roomId, `Active skill: ${active.name}\n${active.description}`);
+          }
+          return true;
+        }
+
+        case 'create': {
+          const match = skillArgs.match(/^create\s+(\S+)\s+"([^"]+)"\s+"([^"]+)"$/i);
+          if (!match) {
+            await sendNotice(
+              client,
+              roomId,
+              'Usage: !skill create name "description" "system prompt"\n\nExample:\n!skill create myskill "My custom skill" "You are a helpful pirate assistant."',
+            );
+            return true;
+          }
+          const [, skillName, desc, prompt] = match;
+          const existing = getSkillByName(skillName.toLowerCase());
+          if (existing) {
+            await sendNotice(client, roomId, `Skill "${skillName}" already exists.`);
+            return true;
+          }
+          const id = `custom-${skillName.toLowerCase()}`;
+          createSkill(id, skillName.toLowerCase(), desc, prompt, null, false);
+          await sendNotice(client, roomId, `Custom skill created: ${skillName}\nActivate with: !skill use ${skillName}`);
+          return true;
+        }
+
+        case 'delete': {
+          const name = skillParts[1];
+          if (!name) {
+            await sendNotice(client, roomId, 'Usage: !skill delete <name>');
+            return true;
+          }
+          const skill = getSkillByName(name.toLowerCase());
+          if (!skill) {
+            await sendNotice(client, roomId, 'Skill not found.');
+            return true;
+          }
+          try {
+            deleteSkill(skill.id);
+            await sendNotice(client, roomId, `Skill "${name}" deleted.`);
+          } catch (err) {
+            await sendNotice(client, roomId, err instanceof Error ? err.message : 'Failed to delete skill.');
+          }
+          return true;
+        }
+
+        case 'fix': {
+          const fixName = skillParts[1];
+          if (!fixName) {
+            await sendNotice(client, roomId, 'Usage: !skill fix <name> <feedback>');
+            return true;
+          }
+          const fixSkillObj = getSkillByName(fixName.toLowerCase());
+          if (!fixSkillObj) {
+            await sendNotice(client, roomId, 'Skill not found.');
+            return true;
+          }
+          const feedback = skillParts.slice(2).join(' ');
+          if (!feedback) {
+            await sendNotice(client, roomId, 'Please provide feedback.');
+            return true;
+          }
+          await sendNotice(client, roomId, `Fixing skill "${fixName}"...`);
+          const fixResult = await fixSkill(fixSkillObj.id, feedback, roomId, router);
+          if ('error' in fixResult) {
+            await sendNotice(client, roomId, fixResult.error);
+          } else {
+            await sendNotice(client, roomId, `${fixResult.summary}\n\nNew prompt preview:\n${fixResult.newPrompt.slice(0, 300)}${fixResult.newPrompt.length > 300 ? '...' : ''}`);
+          }
+          return true;
+        }
+
+        case 'lock': {
+          const name = skillParts[1];
+          if (!name) { await sendNotice(client, roomId, 'Usage: !skill lock <name>'); return true; }
+          const skill = getSkillByName(name.toLowerCase());
+          if (!skill) { await sendNotice(client, roomId, 'Skill not found.'); return true; }
+          lockSkill(skill.id);
+          await sendNotice(client, roomId, `Skill "${name}" locked.`);
+          return true;
+        }
+
+        case 'unlock': {
+          const name = skillParts[1];
+          if (!name) { await sendNotice(client, roomId, 'Usage: !skill unlock <name>'); return true; }
+          const skill = getSkillByName(name.toLowerCase());
+          if (!skill) { await sendNotice(client, roomId, 'Skill not found.'); return true; }
+          unlockSkill(skill.id);
+          await sendNotice(client, roomId, `Skill "${name}" unlocked.`);
+          return true;
+        }
+
+        default:
+          await sendNotice(
+            client,
+            roomId,
+            'Skill commands:\n\n' +
+              '!skill list — Show all skills\n' +
+              '!skill show <name> — Skill details\n' +
+              '!skill use <name> — Activate a skill\n' +
+              '!skill off — Deactivate current skill\n' +
+              '!skill current — Show active skill\n' +
+              '!skill create name "desc" "prompt" — Create custom skill\n' +
+              '!skill fix <name> <feedback> — AI-rewrite skill prompt\n' +
+              '!skill lock <name> — Lock skill\n' +
+              '!skill unlock <name> — Unlock skill\n' +
+              '!skill delete <name> — Delete custom skill',
+          );
+          return true;
+      }
+    }
+
+    case '!tool': {
+      const toolArgs = command.replace(/^!tool\s*/, '').trim();
+      const toolParts = toolArgs.split(/\s+/);
+      const toolSub = toolParts[0]?.toLowerCase() || 'help';
+
+      switch (toolSub) {
+        case 'list': {
+          const allTools = listRegisteredTools();
+          const userTools = listUserTools();
+          const lines: string[] = [];
+          for (const t of allTools) {
+            const userInfo = userTools.find((u) => u.name === t.name);
+            const extra: string[] = [t.source];
+            if (userInfo) {
+              if (!userInfo.enabled) extra.push('disabled');
+              if (userInfo.locked) extra.push('locked');
+            }
+            lines.push(`${t.name} — ${t.description} [${extra.join(', ')}]`);
+          }
+          for (const t of userTools) {
+            if (!allTools.some((a) => a.name === t.name)) {
+              lines.push(`${t.name} — ${t.description} [${t.tool_type}, disabled]`);
+            }
+          }
+          await sendNotice(client, roomId, `Available tools (${lines.length}):\n\n${lines.join('\n')}`);
+          return true;
+        }
+
+        case 'show': {
+          const name = toolParts[1];
+          if (!name) { await sendNotice(client, roomId, 'Usage: !tool show <name>'); return true; }
+          const userTool = getUserToolByName(name.toLowerCase());
+          if (userTool) {
+            await sendNotice(client, roomId,
+              `Tool: ${userTool.name}\nType: ${userTool.tool_type}\nDescription: ${userTool.description}\nEnabled: ${userTool.enabled ? 'Yes' : 'No'}\nLocked: ${userTool.locked ? 'Yes' : 'No'}`);
+            return true;
+          }
+          const builtinMatch = listRegisteredTools().find((t) => t.name === name.toLowerCase());
+          if (builtinMatch) {
+            await sendNotice(client, roomId, `Tool: ${builtinMatch.name}\nType: ${builtinMatch.source}\nDescription: ${builtinMatch.description}`);
+            return true;
+          }
+          await sendNotice(client, roomId, 'Tool not found.');
+          return true;
+        }
+
+        case 'enable': {
+          const name = toolParts[1];
+          if (!name) { await sendNotice(client, roomId, 'Usage: !tool enable <name>'); return true; }
+          const tool = getUserToolByName(name.toLowerCase());
+          if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
+          enableUserTool(tool.id);
+          loadUserTools();
+          await sendNotice(client, roomId, `Tool "${name}" enabled.`);
+          return true;
+        }
+
+        case 'disable': {
+          const name = toolParts[1];
+          if (!name) { await sendNotice(client, roomId, 'Usage: !tool disable <name>'); return true; }
+          const tool = getUserToolByName(name.toLowerCase());
+          if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
+          disableUserTool(tool.id);
+          loadUserTools();
+          await sendNotice(client, roomId, `Tool "${name}" disabled.`);
+          return true;
+        }
+
+        case 'lock': {
+          const name = toolParts[1];
+          if (!name) { await sendNotice(client, roomId, 'Usage: !tool lock <name>'); return true; }
+          const tool = getUserToolByName(name.toLowerCase());
+          if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
+          lockUserTool(tool.id);
+          await sendNotice(client, roomId, `Tool "${name}" locked.`);
+          return true;
+        }
+
+        case 'unlock': {
+          const name = toolParts[1];
+          if (!name) { await sendNotice(client, roomId, 'Usage: !tool unlock <name>'); return true; }
+          const tool = getUserToolByName(name.toLowerCase());
+          if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
+          unlockUserTool(tool.id);
+          await sendNotice(client, roomId, `Tool "${name}" unlocked.`);
+          return true;
+        }
+
+        case 'fix': {
+          const fixName = toolParts[1];
+          if (!fixName) { await sendNotice(client, roomId, 'Usage: !tool fix <name> <feedback>'); return true; }
+          const tool = getUserToolByName(fixName.toLowerCase());
+          if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
+          const feedback = toolParts.slice(2).join(' ');
+          if (!feedback) { await sendNotice(client, roomId, 'Please provide feedback.'); return true; }
+          await sendNotice(client, roomId, `Fixing tool "${fixName}"...`);
+          const result = await fixTool(tool.id, feedback, roomId, router);
+          if ('error' in result) {
+            await sendNotice(client, roomId, result.error);
+          } else {
+            await sendNotice(client, roomId, result.summary);
+          }
+          return true;
+        }
+
+        case 'delete': {
+          const name = toolParts[1];
+          if (!name) { await sendNotice(client, roomId, 'Usage: !tool delete <name>'); return true; }
+          const tool = getUserToolByName(name.toLowerCase());
+          if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
+          if (tool.locked) { await sendNotice(client, roomId, 'Tool is locked. Unlock it first.'); return true; }
+          deleteUserTool(tool.id);
+          loadUserTools();
+          await sendNotice(client, roomId, `Tool "${name}" deleted.`);
+          return true;
+        }
+
+        default:
+          await sendNotice(client, roomId,
+            'Tool commands:\n\n' +
+            '!tool list — Show all tools\n' +
+            '!tool show <name> — Tool details\n' +
+            '!tool enable <name> — Enable a tool\n' +
+            '!tool disable <name> — Disable a tool\n' +
+            '!tool lock <name> — Lock tool\n' +
+            '!tool unlock <name> — Unlock tool\n' +
+            '!tool fix <name> <feedback> — AI-fix tool\n' +
+            '!tool delete <name> — Delete user tool');
+          return true;
+      }
+    }
+
+    case '!reload': {
+      const count = loadUserTools();
+      await sendNotice(client, roomId, `Reloaded. ${count} user tools active.`);
       return true;
+    }
 
     default:
       return false;
@@ -385,17 +870,88 @@ export async function createMatrixBot(
       return;
     }
 
-    // Handle images
+    // Handle images — download from MXC
     if (msgtype === 'm.image') {
-      const body = (content.body as string) || 'User sent an image.';
-      await handleMessage(client, roomId, `[Image received] ${body}`, router);
+      const caption = (content.body as string) || 'Describe what you see in this photo.';
+      const mxcUrl = content.url as string;
+      const imageInfo = content.info as Record<string, unknown> | undefined;
+      const imageMime = (imageInfo?.mimetype as string) || 'image/jpeg';
+
+      if (mxcUrl) {
+        try {
+          const imageData = await client.downloadContent(mxcUrl);
+          const buffer = Buffer.isBuffer(imageData.data)
+            ? imageData.data
+            : Buffer.from(imageData.data as ArrayBuffer);
+
+          mkdirSync(UPLOADS_DIR, { recursive: true });
+          const ext = imageMime.split('/')[1] || 'jpg';
+          const localPath = resolve(UPLOADS_DIR, `${Date.now()}_photo.${ext}`);
+          writeFileSync(localPath, buffer);
+
+          logger.info({ roomId, path: localPath }, 'Matrix photo downloaded');
+
+          await handleMessage(
+            client,
+            roomId,
+            `The user sent a photo. It has been saved to: ${localPath}\nPlease read/view this image file and respond to: ${caption}`,
+            router,
+          );
+          return;
+        } catch (err) {
+          logger.error({ err }, 'Matrix photo handler failed');
+        }
+      }
+
+      await handleMessage(client, roomId, `[Image received] ${caption}`, router);
       return;
     }
 
-    // Handle files
+    // Handle files — download and parse
     if (msgtype === 'm.file') {
-      const body = (content.body as string) || 'unknown';
-      await handleMessage(client, roomId, `[File received: ${body}]`, router);
+      const fileName = (content.body as string) || 'unknown';
+      const mxcUrl = content.url as string;
+      const fileInfo = content.info as Record<string, unknown> | undefined;
+      const fileSize = (fileInfo?.size as number) || 0;
+      const fileMime = (fileInfo?.mimetype as string) || undefined;
+
+      if (fileSize > 50 * 1024 * 1024) {
+        await sendNotice(client, roomId, 'File is too large (max 50MB).');
+        return;
+      }
+
+      if (mxcUrl) {
+        try {
+          const fileData = await client.downloadContent(mxcUrl);
+          const buffer = Buffer.isBuffer(fileData.data)
+            ? fileData.data
+            : Buffer.from(fileData.data as ArrayBuffer);
+
+          mkdirSync(UPLOADS_DIR, { recursive: true });
+          const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const localPath = resolve(UPLOADS_DIR, `${Date.now()}_${safeName}`);
+          writeFileSync(localPath, buffer);
+
+          const parsed = await parseFile(localPath, fileMime);
+
+          if (parsed.error) {
+            await handleMessage(client, roomId, `[File received: ${fileName}] (Could not parse: ${parsed.error})`, router);
+            return;
+          }
+
+          const meta: string[] = [`[Document: ${fileName}]`];
+          if (parsed.pageCount) meta.push(`Pages: ${parsed.pageCount}`);
+          if (parsed.sheetCount) meta.push(`Sheets: ${parsed.sheetCount}`);
+          if (parsed.truncated) meta.push('(Content was truncated)');
+
+          await handleMessage(client, roomId, `${meta.join(' | ')}\n\n${parsed.text}`, router);
+          return;
+        } catch (err) {
+          logger.error({ err }, 'Matrix file handler failed');
+        }
+      }
+
+      await handleMessage(client, roomId, `[File received: ${fileName}]`, router);
       return;
     }
 

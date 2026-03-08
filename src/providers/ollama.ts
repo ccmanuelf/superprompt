@@ -1,8 +1,9 @@
+import { Agent } from 'undici';
 import { Ollama, type Message, type Tool } from 'ollama';
 import type { AIProvider, AIResponse, SendMessageParams } from './types.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
-import { toolDefinitions, executeTool } from './tools/index.js';
+import { getToolDefinitions, executeTool } from './tools/index.js';
 
 const MAX_ITERATIONS = 10;
 const MAX_HISTORY_TURNS = 20; // 20 turns = 40 messages (user + assistant)
@@ -10,9 +11,13 @@ const MAX_HISTORY_MESSAGES = MAX_HISTORY_TURNS * 2;
 
 const TOOL_MODEL_SYSTEM_PROMPT = `You are clauded, a helpful AI assistant. You have access to tools that let you interact with the system.
 
+IMPORTANT: You DO have access to real-time web search via the web_search tool. When the user asks about current events, recent news, real-time data, or anything beyond your training cutoff, you MUST call web_search instead of saying you cannot access the internet. Never claim you lack internet access — you have it through your tools.
+
 When the user asks you to do something that requires tools, use them. Don't say you can't do something if there's a tool that can help.
 
-Available tools: web_search, read_file, run_command, query_memory, save_memory, get_time, system_info, summarize_url.
+Available built-in tools: web_search, read_file, run_command, query_memory, save_memory, get_time, system_info, summarize_url, parse_file, generate_document, read_bot_logs.
+
+Additional user-created tools may also be available. Check the tool list for the full set of tools you can use.
 
 When you learn something important about the user, use save_memory to remember it.
 When you need information from past conversations, use query_memory.
@@ -33,7 +38,7 @@ function shouldUseTools(message: string): boolean {
   const lower = message.toLowerCase();
 
   // Explicit tool requests
-  if (/\b(use tools?|search for|search the web|read the file|run command|what time|system info)\b/i.test(lower)) {
+  if (/\b(use tools?|search for|search the web|read the file|run command|what time|system info|generate|create|export as|make a)\b/i.test(lower)) {
     return true;
   }
 
@@ -45,9 +50,9 @@ function shouldUseTools(message: string): boolean {
 
   // Action verb + tool noun combination
   const actionVerbs =
-    /\b(search|read|check|find|get|look\s*up|fetch|query|save|remember|run|execute|look)\b/;
+    /\b(search|read|check|find|get|look\s*up|fetch|query|save|remember|run|execute|look|generate|create|export|build|make|produce|write)\b/;
   const toolNouns =
-    /\b(file|url|web|time|date|memory|system|command|website|page|info|uptime|disk)\b/;
+    /\b(file|url|web|time|date|memory|system|command|website|page|info|uptime|disk|document|spreadsheet|pdf|csv|xlsx|docx)\b/;
 
   if (actionVerbs.test(lower) && toolNouns.test(lower)) {
     return true;
@@ -82,11 +87,20 @@ export class OllamaProvider implements AIProvider {
   private client: Ollama;
 
   constructor() {
-    // Custom fetch with 10-minute timeout (model loading can be slow)
+    // Custom fetch with 10-minute timeout.
+    // Node's built-in undici has a default headersTimeout of ~5min which
+    // causes premature timeout on slow Ollama inference. Use explicit Agent.
+    const dispatcher = new Agent({
+      headersTimeout: 600_000,
+      bodyTimeout: 600_000,
+    });
+
     const timeoutFetch: typeof fetch = (input, init) =>
       fetch(input, {
         ...init,
         signal: init?.signal ?? AbortSignal.timeout(600_000),
+        // @ts-expect-error dispatcher is a valid undici option for Node's fetch
+        dispatcher,
       });
     this.client = new Ollama({
       host: config.OLLAMA_HOST,
@@ -94,13 +108,31 @@ export class OllamaProvider implements AIProvider {
     });
   }
 
-  async sendMessage(params: SendMessageParams): Promise<AIResponse> {
-    const { message, chatId, onTyping } = params;
+  async listModels(): Promise<{ name: string; size: string; family: string }[]> {
+    const response = await this.client.list();
+    return response.models
+      .filter((m) => !m.name.includes('nomic-embed-text'))
+      .map((m) => ({
+        name: m.name,
+        size: m.details?.parameter_size || 'unknown',
+        family: m.details?.family || 'unknown',
+      }));
+  }
 
-    const useTools = shouldUseTools(message);
-    const model = useTools
-      ? config.OLLAMA_TOOL_MODEL
-      : config.OLLAMA_CHAT_MODEL;
+  async modelExists(name: string): Promise<boolean> {
+    const models = await this.listModels();
+    return models.some((m) => m.name === name);
+  }
+
+  async sendMessage(params: SendMessageParams): Promise<AIResponse> {
+    const { message, chatId, onTyping, allowedTools, modelOverride, images, skipTools } = params;
+
+    const useTools = skipTools ? false : shouldUseTools(message);
+    const model = modelOverride
+      ? modelOverride
+      : useTools
+        ? config.OLLAMA_TOOL_MODEL
+        : config.OLLAMA_CHAT_MODEL;
 
     logger.info(
       { chatId, model, useTools },
@@ -109,22 +141,30 @@ export class OllamaProvider implements AIProvider {
 
     const history = getHistory(chatId);
 
-    // Add user message to history
-    history.push({ role: 'user', content: message });
+    // Add user message to history (with images if provided)
+    const userMessage: Message = { role: 'user', content: message };
+    if (images?.length) {
+      userMessage.images = images;
+    }
+    history.push(userMessage);
 
     try {
       let result: AIResponse;
+
+      // Filter tools by skill's allowedTools list
+      const tools = getToolDefinitions(allowedTools || undefined);
 
       if (useTools) {
         result = await this.runAgenticLoop(
           chatId,
           model,
           history,
-          toolDefinitions,
+          tools,
           onTyping,
+          params.systemPrompt,
         );
       } else {
-        result = await this.runChatTurn(model, history, onTyping);
+        result = await this.runChatTurn(model, history, onTyping, params.systemPrompt);
       }
 
       trimHistory(history);
@@ -146,11 +186,16 @@ export class OllamaProvider implements AIProvider {
     model: string,
     history: Message[],
     onTyping?: () => void,
+    extraSystemPrompt?: string,
   ): Promise<AIResponse> {
     if (onTyping) onTyping();
 
+    const systemContent = extraSystemPrompt
+      ? `${CHAT_MODEL_SYSTEM_PROMPT}\n\n${extraSystemPrompt}`
+      : CHAT_MODEL_SYSTEM_PROMPT;
+
     const messages: Message[] = [
-      { role: 'system', content: CHAT_MODEL_SYSTEM_PROMPT },
+      { role: 'system', content: systemContent },
       ...history,
     ];
 
@@ -182,15 +227,21 @@ export class OllamaProvider implements AIProvider {
     history: Message[],
     tools: Tool[],
     onTyping?: () => void,
+    extraSystemPrompt?: string,
   ): Promise<AIResponse> {
+    const systemContent = extraSystemPrompt
+      ? `${TOOL_MODEL_SYSTEM_PROMPT}\n\n${extraSystemPrompt}`
+      : TOOL_MODEL_SYSTEM_PROMPT;
+
     // Build message list with system prompt
     const messages: Message[] = [
-      { role: 'system', content: TOOL_MODEL_SYSTEM_PROMPT },
+      { role: 'system', content: systemContent },
       ...history,
     ];
 
     let iterations = 0;
     let thinkingContent: string | undefined;
+    const generatedFiles: { path: string; filename: string; mimeType: string }[] = [];
 
     while (iterations < MAX_ITERATIONS) {
       iterations++;
@@ -234,6 +285,7 @@ export class OllamaProvider implements AIProvider {
           provider: 'ollama',
           model,
           thinkingContent,
+          generatedFiles: generatedFiles.length ? generatedFiles : undefined,
         };
       }
 
@@ -248,6 +300,16 @@ export class OllamaProvider implements AIProvider {
         );
 
         const result = await executeTool(toolName, toolArgs, chatId);
+
+        // Capture generated files for the platform layer to send
+        if (result && typeof result === 'object' && '__docgen' in result) {
+          const docResult = result as { path: string; filename: string; mimeType: string };
+          generatedFiles.push({
+            path: docResult.path,
+            filename: docResult.filename,
+            mimeType: docResult.mimeType,
+          });
+        }
 
         messages.push({
           role: 'tool',
@@ -276,6 +338,7 @@ export class OllamaProvider implements AIProvider {
       provider: 'ollama',
       model,
       thinkingContent,
+      generatedFiles: generatedFiles.length ? generatedFiles : undefined,
     };
   }
 }

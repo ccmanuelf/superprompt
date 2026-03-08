@@ -23,7 +23,8 @@ import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from '
 import { resolve } from 'node:path';
 import { config, PROJECT_ROOT, STORE_DIR } from './config.js';
 import { logger } from './logger.js';
-import { initDatabase, closeDatabase } from './db.js';
+import { initDatabase, closeDatabase, getUnembeddedMemoryCount } from './db.js';
+import { initBuiltinSkills } from './skills.js';
 import { runDecaySweep } from './memory.js';
 import { cleanupOldUploads } from './media.js';
 import { ProviderRouter } from './providers/router.js';
@@ -95,6 +96,24 @@ async function main(): Promise<void> {
   initDatabase();
   logger.info('Database initialized');
 
+  // 4b. Initialize skills
+  initBuiltinSkills();
+
+  // 4d. Register builtin tools and load user tools
+  const { registerBuiltinTools } = await import('./providers/tools/index.js');
+  const { loadUserTools } = await import('./forge/tool-registry.js');
+  registerBuiltinTools();
+  loadUserTools();
+
+  // 4c. Check for unembedded memories
+  const unembedded = getUnembeddedMemoryCount();
+  if (unembedded > 0) {
+    logger.warn(
+      { count: unembedded },
+      'Memories without embeddings found. Run: npx tsx scripts/backfill-embeddings.ts',
+    );
+  }
+
   // 5. Run memory decay sweep + schedule recurring sweep
   runDecaySweep();
   const decayInterval = setInterval(() => {
@@ -130,9 +149,20 @@ async function main(): Promise<void> {
     logger.info('Matrix bot created');
   }
 
-  // 10. Initialize scheduler with Telegram notification callback
+  // 10. Initialize scheduler with dual-platform notification callback
   const notifyFn = async (chatId: string, text: string): Promise<void> => {
-    if (telegramBot) {
+    // Matrix room IDs start with '!' — route to Matrix
+    if (chatId.startsWith('!') && matrixClient) {
+      const { formatForMatrix } = await import('./platforms/matrix.js');
+      const html = formatForMatrix(text);
+      await matrixClient.sendMessage(chatId, {
+        msgtype: 'm.notice',
+        body: text,
+        format: 'org.matrix.custom.html',
+        formatted_body: html,
+      });
+    } else if (telegramBot) {
+      // Telegram chat IDs are numeric
       const { formatForTelegram, splitMessage } = await import('./platforms/telegram.js');
       const formatted = formatForTelegram(text);
       const chunks = splitMessage(formatted);

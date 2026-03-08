@@ -1,7 +1,9 @@
 import Database from 'better-sqlite3';
+import * as sqliteVec from 'sqlite-vec';
 import { resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { STORE_DIR } from './config.js';
+import { logger } from './logger.js';
 
 let db: Database.Database;
 
@@ -13,6 +15,9 @@ export function initDatabase(): Database.Database {
   db = new Database(resolve(STORE_DIR, 'clauded.db'));
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+
+  // Load sqlite-vec extension for vector similarity search
+  sqliteVec.load(db);
 
   createTables();
   return db;
@@ -72,7 +77,100 @@ function createTables(): void {
 
     CREATE INDEX IF NOT EXISTS idx_memories_salience
       ON memories(salience);
+
+    -- Skills system
+    CREATE TABLE IF NOT EXISTS skills (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL,
+      system_prompt TEXT NOT NULL,
+      allowed_tools TEXT,
+      is_builtin INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_skills (
+      chat_id TEXT PRIMARY KEY,
+      skill_id TEXT NOT NULL,
+      activated_at INTEGER NOT NULL,
+      FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+    );
   `);
+
+  // Migration: add embedding column if it doesn't exist
+  const cols = db.prepare("PRAGMA table_info(memories)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'embedding')) {
+    db.exec('ALTER TABLE memories ADD COLUMN embedding BLOB');
+    logger.info('Migration: added embedding column to memories');
+  }
+
+  // Migration: add ollama_model column to sessions if it doesn't exist
+  const sessionCols = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+  if (!sessionCols.some((c) => c.name === 'ollama_model')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN ollama_model TEXT');
+    logger.info('Migration: added ollama_model column to sessions');
+  }
+
+  // Migration: add source_file and locked columns to skills if they don't exist
+  const skillCols = db.prepare("PRAGMA table_info(skills)").all() as Array<{ name: string }>;
+  if (!skillCols.some((c) => c.name === 'source_file')) {
+    db.exec('ALTER TABLE skills ADD COLUMN source_file TEXT');
+    logger.info('Migration: added source_file column to skills');
+  }
+  if (!skillCols.some((c) => c.name === 'locked')) {
+    db.exec('ALTER TABLE skills ADD COLUMN locked INTEGER NOT NULL DEFAULT 0');
+    logger.info('Migration: added locked column to skills');
+  }
+
+  // Migration: skill_revisions table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS skill_revisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      skill_id TEXT NOT NULL,
+      system_prompt TEXT NOT NULL,
+      revision_note TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+    );
+  `);
+
+  // Migration: user_tools table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_tools (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL,
+      tool_type TEXT NOT NULL CHECK(tool_type IN ('declarative_http', 'generated_code')),
+      config TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      locked INTEGER NOT NULL DEFAULT 0,
+      source_file TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tool_revisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tool_id TEXT NOT NULL,
+      config TEXT NOT NULL,
+      revision_note TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (tool_id) REFERENCES user_tools(id) ON DELETE CASCADE
+    );
+  `);
+
+  // Create vec0 virtual table for vector similarity search (768 dims = nomic-embed-text)
+  try {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS memories_vec USING vec0(
+        memory_id INTEGER PRIMARY KEY,
+        embedding float[768]
+      );
+    `);
+  } catch (err) {
+    logger.warn({ err }, 'Could not create memories_vec table (sqlite-vec may not be loaded)');
+  }
 
   // FTS5 sync triggers — keep memories_fts in sync with memories table
   db.exec(`
@@ -96,6 +194,7 @@ export interface Session {
   chat_id: string;
   session_id: string;
   provider: string;
+  ollama_model: string | null;
   updated_at: number;
 }
 
@@ -129,6 +228,15 @@ export function updateSessionProvider(
   ).run(provider, Date.now(), chatId);
 }
 
+export function updateSessionOllamaModel(
+  chatId: string,
+  model: string | null,
+): void {
+  db.prepare(
+    `UPDATE sessions SET ollama_model = ?, updated_at = ? WHERE chat_id = ?`,
+  ).run(model, Date.now(), chatId);
+}
+
 export function clearSession(chatId: string): void {
   db.prepare('DELETE FROM sessions WHERE chat_id = ?').run(chatId);
 }
@@ -144,6 +252,7 @@ export interface Memory {
   salience: number;
   created_at: number;
   accessed_at: number;
+  embedding?: Buffer | null;
 }
 
 export function insertMemory(
@@ -151,15 +260,36 @@ export function insertMemory(
   content: string,
   sector: 'semantic' | 'episodic',
   topicKey?: string,
+  embedding?: number[],
 ): number {
   const now = Date.now();
+  const embeddingBlob = embedding
+    ? Buffer.from(new Float32Array(embedding).buffer)
+    : null;
+
   const result = db
     .prepare(
-      `INSERT INTO memories (chat_id, topic_key, content, sector, salience, created_at, accessed_at)
-       VALUES (?, ?, ?, ?, 1.0, ?, ?)`,
+      `INSERT INTO memories (chat_id, topic_key, content, sector, salience, created_at, accessed_at, embedding)
+       VALUES (?, ?, ?, ?, 1.0, ?, ?, ?)`,
     )
-    .run(chatId, topicKey ?? null, content, sector, now, now);
-  return result.lastInsertRowid as number;
+    .run(chatId, topicKey ?? null, content, sector, now, now, embeddingBlob);
+
+  const memoryId = Number(result.lastInsertRowid);
+
+  // Sync to vec0 table if embedding was provided
+  if (embedding) {
+    try {
+      // sqlite-vec vec0 requires INTEGER affinity — use CAST to ensure JS number
+      // isn't bound as REAL by better-sqlite3
+      db.prepare(
+        'INSERT INTO memories_vec (memory_id, embedding) VALUES (CAST(? AS INTEGER), ?)',
+      ).run(memoryId, embeddingBlob);
+    } catch (err) {
+      logger.warn({ err, memoryId }, 'Failed to insert into memories_vec');
+    }
+  }
+
+  return memoryId;
 }
 
 export function searchMemories(
@@ -209,6 +339,12 @@ export function getMemoriesByChatId(chatId: string): Memory[] {
 }
 
 export function deleteMemory(id: number): void {
+  // Remove from vec0 first (no cascade trigger support)
+  try {
+    db.prepare('DELETE FROM memories_vec WHERE memory_id = ?').run(id);
+  } catch {
+    // memories_vec may not exist or row may not be there
+  }
   db.prepare('DELETE FROM memories WHERE id = ?').run(id);
 }
 
@@ -217,10 +353,88 @@ export function decayMemories(decayFactor: number = 0.98): number {
     .prepare('UPDATE memories SET salience = salience * ? WHERE salience > 0.1')
     .run(decayFactor);
 
+  // Get IDs that will be deleted so we can clean up vec0
+  const toDelete = db
+    .prepare('SELECT id FROM memories WHERE salience <= 0.1')
+    .all() as Array<{ id: number }>;
+
+  if (toDelete.length > 0) {
+    const ids = toDelete.map((r) => r.id);
+    for (const id of ids) {
+      try {
+        db.prepare('DELETE FROM memories_vec WHERE memory_id = ?').run(id);
+      } catch {
+        // best-effort vec0 cleanup
+      }
+    }
+  }
+
   // Delete memories that have decayed below threshold
   db.prepare('DELETE FROM memories WHERE salience <= 0.1').run();
 
   return result.changes;
+}
+
+/**
+ * Vector similarity search using sqlite-vec.
+ * Returns memories ordered by cosine distance (closest first).
+ */
+export function vectorSearchMemories(
+  chatId: string,
+  embedding: number[],
+  limit: number = 5,
+): Memory[] {
+  try {
+    const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
+    return db
+      .prepare(
+        `SELECT m.* FROM memories m
+         JOIN memories_vec v ON v.memory_id = m.id
+         WHERE m.chat_id = ? AND m.salience > 0.1
+         AND v.embedding MATCH ?
+         AND v.k = ?
+         ORDER BY v.distance`,
+      )
+      .all(chatId, embeddingBlob, limit) as Memory[];
+  } catch (err) {
+    logger.warn({ err }, 'Vector search failed, returning empty results');
+    return [];
+  }
+}
+
+/**
+ * Get count of memories without embeddings (for startup warning / backfill).
+ */
+export function getUnembeddedMemoryCount(): number {
+  const row = db
+    .prepare('SELECT COUNT(*) as count FROM memories WHERE embedding IS NULL')
+    .get() as { count: number };
+  return row.count;
+}
+
+/**
+ * Get memories without embeddings for backfill.
+ */
+export function getUnembeddedMemories(limit: number = 10): Memory[] {
+  return db
+    .prepare('SELECT * FROM memories WHERE embedding IS NULL LIMIT ?')
+    .all(limit) as Memory[];
+}
+
+/**
+ * Update a memory's embedding (for backfill).
+ */
+export function updateMemoryEmbedding(id: number, embedding: number[]): void {
+  const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
+  db.prepare('UPDATE memories SET embedding = ? WHERE id = ?').run(embeddingBlob, id);
+
+  try {
+    // Try to insert into vec0; if exists, delete first
+    db.prepare('DELETE FROM memories_vec WHERE memory_id = CAST(? AS INTEGER)').run(id);
+    db.prepare('INSERT INTO memories_vec (memory_id, embedding) VALUES (CAST(? AS INTEGER), ?)').run(id, embeddingBlob);
+  } catch (err) {
+    logger.warn({ err, id }, 'Failed to update memories_vec for backfill');
+  }
 }
 
 // ── Scheduled Tasks CRUD ────────────────────────────────────
@@ -297,6 +511,286 @@ export function getTask(id: string): ScheduledTask | undefined {
   return db
     .prepare('SELECT * FROM scheduled_tasks WHERE id = ?')
     .get(id) as ScheduledTask | undefined;
+}
+
+// ── Skills CRUD ─────────────────────────────────────────────
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  allowed_tools: string | null;
+  is_builtin: number;
+  source_file: string | null;
+  locked: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SkillRevision {
+  id: number;
+  skill_id: string;
+  system_prompt: string;
+  revision_note: string | null;
+  created_at: number;
+}
+
+export function createSkill(
+  id: string,
+  name: string,
+  description: string,
+  systemPrompt: string,
+  allowedTools?: string[] | null,
+  isBuiltin: boolean = false,
+  sourceFile?: string,
+): void {
+  const now = Date.now();
+  db.prepare(
+    `INSERT OR REPLACE INTO skills (id, name, description, system_prompt, allowed_tools, is_builtin, source_file, locked, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+  ).run(
+    id,
+    name,
+    description,
+    systemPrompt,
+    allowedTools ? JSON.stringify(allowedTools) : null,
+    isBuiltin ? 1 : 0,
+    sourceFile ?? null,
+    now,
+    now,
+  );
+}
+
+/**
+ * Insert a skill only if it doesn't exist (for built-in seeding).
+ * Preserves user modifications across restarts.
+ */
+export function createSkillIfNotExists(
+  id: string,
+  name: string,
+  description: string,
+  systemPrompt: string,
+  allowedTools?: string[] | null,
+  isBuiltin: boolean = false,
+): void {
+  const now = Date.now();
+  db.prepare(
+    `INSERT OR IGNORE INTO skills (id, name, description, system_prompt, allowed_tools, is_builtin, source_file, locked, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?, ?)`,
+  ).run(
+    id,
+    name,
+    description,
+    systemPrompt,
+    allowedTools ? JSON.stringify(allowedTools) : null,
+    isBuiltin ? 1 : 0,
+    now,
+    now,
+  );
+}
+
+export function getSkill(id: string): Skill | undefined {
+  return db.prepare('SELECT * FROM skills WHERE id = ?').get(id) as Skill | undefined;
+}
+
+export function getSkillByName(name: string): Skill | undefined {
+  return db.prepare('SELECT * FROM skills WHERE name = ?').get(name) as Skill | undefined;
+}
+
+export function listSkills(): Skill[] {
+  return db.prepare('SELECT * FROM skills ORDER BY is_builtin DESC, name ASC').all() as Skill[];
+}
+
+export function updateSkill(
+  id: string,
+  updates: { name?: string; description?: string; systemPrompt?: string; allowedTools?: string[] | null },
+): void {
+  const skill = getSkill(id);
+  if (!skill) throw new Error(`Skill not found: ${id}`);
+
+  db.prepare(
+    `UPDATE skills SET
+       name = COALESCE(?, name),
+       description = COALESCE(?, description),
+       system_prompt = COALESCE(?, system_prompt),
+       allowed_tools = ?,
+       updated_at = ?
+     WHERE id = ?`,
+  ).run(
+    updates.name ?? null,
+    updates.description ?? null,
+    updates.systemPrompt ?? null,
+    updates.allowedTools !== undefined
+      ? (updates.allowedTools ? JSON.stringify(updates.allowedTools) : null)
+      : skill.allowed_tools,
+    Date.now(),
+    id,
+  );
+}
+
+export function deleteSkill(id: string): boolean {
+  const skill = getSkill(id);
+  if (!skill) return false;
+  if (skill.is_builtin) throw new Error('Cannot delete built-in skill');
+  if (skill.locked) throw new Error('Skill is locked. Unlock it first with /skill unlock');
+  db.prepare('DELETE FROM skills WHERE id = ?').run(id);
+  return true;
+}
+
+export function setActiveSkill(chatId: string, skillId: string): void {
+  db.prepare(
+    `INSERT INTO chat_skills (chat_id, skill_id, activated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(chat_id) DO UPDATE SET
+       skill_id = excluded.skill_id,
+       activated_at = excluded.activated_at`,
+  ).run(chatId, skillId, Date.now());
+}
+
+export function getActiveSkill(chatId: string): Skill | undefined {
+  const row = db
+    .prepare(
+      `SELECT s.* FROM skills s
+       JOIN chat_skills cs ON cs.skill_id = s.id
+       WHERE cs.chat_id = ?`,
+    )
+    .get(chatId) as Skill | undefined;
+  return row;
+}
+
+export function clearActiveSkill(chatId: string): void {
+  db.prepare('DELETE FROM chat_skills WHERE chat_id = ?').run(chatId);
+}
+
+// ── Skill Lock/Unlock + Revisions ───────────────────────────
+
+export function lockSkill(id: string): void {
+  db.prepare('UPDATE skills SET locked = 1, updated_at = ? WHERE id = ?').run(Date.now(), id);
+}
+
+export function unlockSkill(id: string): void {
+  db.prepare('UPDATE skills SET locked = 0, updated_at = ? WHERE id = ?').run(Date.now(), id);
+}
+
+export function insertSkillRevision(
+  skillId: string,
+  systemPrompt: string,
+  revisionNote?: string,
+): number {
+  const result = db.prepare(
+    'INSERT INTO skill_revisions (skill_id, system_prompt, revision_note, created_at) VALUES (?, ?, ?, ?)',
+  ).run(skillId, systemPrompt, revisionNote ?? null, Date.now());
+  return Number(result.lastInsertRowid);
+}
+
+export function getSkillRevisions(skillId: string, limit: number = 10): SkillRevision[] {
+  return db.prepare(
+    'SELECT * FROM skill_revisions WHERE skill_id = ? ORDER BY created_at DESC LIMIT ?',
+  ).all(skillId, limit) as SkillRevision[];
+}
+
+// ── User Tools CRUD ─────────────────────────────────────────
+
+export interface UserTool {
+  id: string;
+  name: string;
+  description: string;
+  tool_type: 'declarative_http' | 'generated_code';
+  config: string;
+  enabled: number;
+  locked: number;
+  source_file: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ToolRevision {
+  id: number;
+  tool_id: string;
+  config: string;
+  revision_note: string | null;
+  created_at: number;
+}
+
+export function createUserTool(
+  id: string,
+  name: string,
+  description: string,
+  toolType: 'declarative_http' | 'generated_code',
+  config: string,
+  sourceFile?: string,
+): void {
+  const now = Date.now();
+  db.prepare(
+    `INSERT OR REPLACE INTO user_tools (id, name, description, tool_type, config, enabled, locked, source_file, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)`,
+  ).run(id, name, description, toolType, config, sourceFile ?? null, now, now);
+}
+
+export function getUserTool(id: string): UserTool | undefined {
+  return db.prepare('SELECT * FROM user_tools WHERE id = ?').get(id) as UserTool | undefined;
+}
+
+export function getUserToolByName(name: string): UserTool | undefined {
+  return db.prepare('SELECT * FROM user_tools WHERE name = ?').get(name) as UserTool | undefined;
+}
+
+export function listUserTools(): UserTool[] {
+  return db.prepare('SELECT * FROM user_tools ORDER BY name ASC').all() as UserTool[];
+}
+
+export function updateUserTool(
+  id: string,
+  updates: { description?: string; config?: string },
+): void {
+  db.prepare(
+    `UPDATE user_tools SET
+       description = COALESCE(?, description),
+       config = COALESCE(?, config),
+       updated_at = ?
+     WHERE id = ?`,
+  ).run(updates.description ?? null, updates.config ?? null, Date.now(), id);
+}
+
+export function deleteUserTool(id: string): boolean {
+  const tool = getUserTool(id);
+  if (!tool) return false;
+  db.prepare('DELETE FROM user_tools WHERE id = ?').run(id);
+  return true;
+}
+
+export function enableUserTool(id: string): void {
+  db.prepare('UPDATE user_tools SET enabled = 1, updated_at = ? WHERE id = ?').run(Date.now(), id);
+}
+
+export function disableUserTool(id: string): void {
+  db.prepare('UPDATE user_tools SET enabled = 0, updated_at = ? WHERE id = ?').run(Date.now(), id);
+}
+
+export function lockUserTool(id: string): void {
+  db.prepare('UPDATE user_tools SET locked = 1, updated_at = ? WHERE id = ?').run(Date.now(), id);
+}
+
+export function unlockUserTool(id: string): void {
+  db.prepare('UPDATE user_tools SET locked = 0, updated_at = ? WHERE id = ?').run(Date.now(), id);
+}
+
+export function insertToolRevision(
+  toolId: string,
+  config: string,
+  revisionNote?: string,
+): number {
+  const result = db.prepare(
+    'INSERT INTO tool_revisions (tool_id, config, revision_note, created_at) VALUES (?, ?, ?, ?)',
+  ).run(toolId, config, revisionNote ?? null, Date.now());
+  return Number(result.lastInsertRowid);
+}
+
+export function getToolRevisions(toolId: string, limit: number = 10): ToolRevision[] {
+  return db.prepare(
+    'SELECT * FROM tool_revisions WHERE tool_id = ? ORDER BY created_at DESC LIMIT ?',
+  ).all(toolId, limit) as ToolRevision[];
 }
 
 // ── Cleanup ─────────────────────────────────────────────────
