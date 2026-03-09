@@ -105,6 +105,12 @@ async function main(): Promise<void> {
   registerBuiltinTools();
   loadUserTools();
 
+  // 4e. Auto-import skills & tools from forge/ directory
+  const { autoImportForge } = await import('./forge/auto-import.js');
+  autoImportForge();
+  // Reload user tools after auto-import so newly imported tools are registered
+  loadUserTools();
+
   // 4c. Check for unembedded memories
   const unembedded = getUnembeddedMemoryCount();
   if (unembedded > 0) {
@@ -147,6 +153,13 @@ async function main(): Promise<void> {
     const { createMatrixBot } = await import('./platforms/matrix.js');
     matrixClient = await createMatrixBot(router);
     logger.info('Matrix bot created');
+  }
+
+  // 9b. Start voice web server (if configured)
+  if (config.VOICE_WEB_PORT) {
+    const { startVoiceWebServer } = await import('./web/server.js');
+    const voiceWeb = startVoiceWebServer(router);
+    cleanups.push(() => voiceWeb.close());
   }
 
   // 10. Initialize scheduler with dual-platform notification callback

@@ -125,7 +125,7 @@ export class OllamaProvider implements AIProvider {
   }
 
   async sendMessage(params: SendMessageParams): Promise<AIResponse> {
-    const { message, chatId, onTyping, allowedTools, modelOverride, images, skipTools } = params;
+    const { message, chatId, onTyping, allowedTools, modelOverride, images, skipTools, isVoice } = params;
 
     const useTools = skipTools ? false : shouldUseTools(message);
     const model = modelOverride
@@ -162,9 +162,10 @@ export class OllamaProvider implements AIProvider {
           tools,
           onTyping,
           params.systemPrompt,
+          isVoice,
         );
       } else {
-        result = await this.runChatTurn(model, history, onTyping, params.systemPrompt);
+        result = await this.runChatTurn(model, history, onTyping, params.systemPrompt, isVoice);
       }
 
       trimHistory(history);
@@ -187,6 +188,7 @@ export class OllamaProvider implements AIProvider {
     history: Message[],
     onTyping?: () => void,
     extraSystemPrompt?: string,
+    isVoice?: boolean,
   ): Promise<AIResponse> {
     if (onTyping) onTyping();
 
@@ -199,12 +201,15 @@ export class OllamaProvider implements AIProvider {
       ...history,
     ];
 
+    const options: Record<string, unknown> = { num_ctx: 32768 };
+    if (isVoice) options.num_predict = 256;
+
     const response = await this.client.chat({
       model,
       messages,
       stream: false,
       think: true,
-      options: { num_ctx: 32768 },
+      options,
     });
 
     const assistantMsg: Message = {
@@ -228,6 +233,7 @@ export class OllamaProvider implements AIProvider {
     tools: Tool[],
     onTyping?: () => void,
     extraSystemPrompt?: string,
+    isVoice?: boolean,
   ): Promise<AIResponse> {
     const systemContent = extraSystemPrompt
       ? `${TOOL_MODEL_SYSTEM_PROMPT}\n\n${extraSystemPrompt}`
@@ -253,13 +259,16 @@ export class OllamaProvider implements AIProvider {
         'Agentic loop iteration',
       );
 
+      const agenticOptions: Record<string, unknown> = { num_ctx: 32768 };
+      if (isVoice) agenticOptions.num_predict = 256;
+
       const response = await this.client.chat({
         model,
         messages,
         tools,
         stream: false,
         think: true,
-        options: { num_ctx: 32768 },
+        options: agenticOptions,
       });
 
       const msg = response.message;

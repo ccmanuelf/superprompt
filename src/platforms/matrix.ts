@@ -18,6 +18,7 @@ import { parseFile } from '../files.js';
 import { isDocGenResponse, parseDocGenResponse, generateDocument, stripDocGenBlock } from '../docgen.js';
 import { fixSkill } from '../forge/skill-fixer.js';
 import { fixTool } from '../forge/tool-fixer.js';
+import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.js';
 import { listRegisteredTools, loadUserTools } from '../forge/tool-registry.js';
 
 // Per-room voice mode toggle
@@ -120,6 +121,7 @@ async function handleMessage(
   roomId: string,
   body: string,
   router: ProviderRouter,
+  isVoice: boolean = false,
 ): Promise<void> {
   // 1. Build memory context (hybrid: FTS5 + vector)
   const memoryContext = await buildMemoryContext(roomId, body);
@@ -132,6 +134,7 @@ async function handleMessage(
     const response = await router.sendMessage({
       chatId: roomId,
       message: fullMessage,
+      isVoice,
     });
 
     if (!response.text) {
@@ -169,8 +172,8 @@ async function handleMessage(
       }
     }
 
-    // 4. Voice reply if enabled
-    const shouldVoice = voiceModeRooms.has(roomId);
+    // 4. Voice reply if enabled (force when message was voice)
+    const shouldVoice = isVoice || voiceModeRooms.has(roomId);
     if (shouldVoice) {
       const caps = await voiceCapabilities();
       if (caps.tts) {
@@ -611,6 +614,16 @@ async function handleCommand(
           return true;
         }
 
+        case 'export': {
+          const name = skillParts[1];
+          if (!name) { await sendNotice(client, roomId, 'Usage: !skill export <name>'); return true; }
+          const skill = getSkillByName(name.toLowerCase());
+          if (!skill) { await sendNotice(client, roomId, 'Skill not found.'); return true; }
+          const filepath = exportSkillToMarkdown(skill);
+          await sendNotice(client, roomId, `Skill "${name}" exported to: ${filepath}`);
+          return true;
+        }
+
         default:
           await sendNotice(
             client,
@@ -622,6 +635,7 @@ async function handleCommand(
               '!skill off — Deactivate current skill\n' +
               '!skill current — Show active skill\n' +
               '!skill create name "desc" "prompt" — Create custom skill\n' +
+              '!skill export <name> — Export skill to forge/skills/\n' +
               '!skill fix <name> <feedback> — AI-rewrite skill prompt\n' +
               '!skill lock <name> — Lock skill\n' +
               '!skill unlock <name> — Unlock skill\n' +
@@ -748,11 +762,22 @@ async function handleCommand(
           return true;
         }
 
+        case 'export': {
+          const name = toolParts[1];
+          if (!name) { await sendNotice(client, roomId, 'Usage: !tool export <name>'); return true; }
+          const tool = getUserToolByName(name.toLowerCase());
+          if (!tool) { await sendNotice(client, roomId, 'User tool not found. Only user-created tools can be exported.'); return true; }
+          const filepath = exportToolToMarkdown(tool);
+          await sendNotice(client, roomId, `Tool "${name}" exported to: ${filepath}`);
+          return true;
+        }
+
         default:
           await sendNotice(client, roomId,
             'Tool commands:\n\n' +
             '!tool list — Show all tools\n' +
             '!tool show <name> — Tool details\n' +
+            '!tool export <name> — Export tool to forge/tools/\n' +
             '!tool enable <name> — Enable a tool\n' +
             '!tool disable <name> — Disable a tool\n' +
             '!tool lock <name> — Lock tool\n' +
@@ -810,12 +835,13 @@ async function handleVoiceMessage(
     const transcript = await transcribeAudio(localPath);
     logger.info({ roomId, transcript }, 'Matrix voice transcribed');
 
-    // Process as text
+    // Process as text with voice prompt tuning
     await handleMessage(
       client,
       roomId,
-      `[Voice transcribed]: ${transcript}`,
+      transcript,
       router,
+      true,
     );
   } catch (err) {
     logger.error({ err }, 'Matrix voice handler failed');

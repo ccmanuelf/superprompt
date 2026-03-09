@@ -58,6 +58,12 @@ export const config = {
   SEARXNG_URL: env.SEARXNG_URL || '',
   BRAVE_API_KEY: env.BRAVE_API_KEY || '',
 
+  // Voice Web (WebRTC browser voice chat — disabled when VOICE_WEB_PORT is 0 or unset)
+  VOICE_WEB_PORT: Number(env.VOICE_WEB_PORT) || 0,
+  VOICE_WEB_TOKEN: env.VOICE_WEB_TOKEN || '',
+  VOICE_WEB_TLS_CERT: env.VOICE_WEB_TLS_CERT || '',
+  VOICE_WEB_TLS_KEY: env.VOICE_WEB_TLS_KEY || '',
+
   // Paths
   PROJECT_ROOT,
   STORE_DIR,

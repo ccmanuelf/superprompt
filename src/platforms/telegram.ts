@@ -18,6 +18,7 @@ import { scanToolCode } from '../forge/safety-scanner.js';
 import { registerTool, loadUserTools, listRegisteredTools } from '../forge/tool-registry.js';
 import { generateToolCode } from '../forge/tool-generator.js';
 import { fixTool } from '../forge/tool-fixer.js';
+import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.js';
 
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -156,6 +157,7 @@ async function handleMessage(
   router: ProviderRouter,
   forceVoiceReply: boolean = false,
   skipTools: boolean = false,
+  isVoice: boolean = false,
 ): Promise<void> {
   const chatId = String(ctx.chat!.id);
 
@@ -183,6 +185,7 @@ async function handleMessage(
       message: fullMessage,
       onTyping: refreshTyping,
       skipTools,
+      isVoice,
     });
 
     // 4. Stop typing
@@ -958,6 +961,22 @@ export function createTelegramBot(router: ProviderRouter): Bot {
         return;
       }
 
+      case 'export': {
+        const name = parts[1];
+        if (!name) {
+          await ctx.reply('Usage: /skill export &lt;name&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const skill = getSkillByName(name);
+        if (!skill) {
+          await ctx.reply(`Skill "${name}" not found.`);
+          return;
+        }
+        const filepath = exportSkillToMarkdown(skill);
+        await ctx.reply(`Skill "${name}" exported to:\n<code>${filepath}</code>`, { parse_mode: 'HTML' });
+        return;
+      }
+
       default:
         await ctx.reply(
           '<b>Skill commands:</b>\n\n' +
@@ -968,6 +987,7 @@ export function createTelegramBot(router: ProviderRouter): Bot {
             '/skill current — Show active skill\n' +
             '/skill create name "desc" "prompt" — Create custom skill\n' +
             '/skill upload — Reply to a .md file to upload a skill\n' +
+            '/skill export &lt;name&gt; — Export skill to forge/skills/\n' +
             '/skill lock &lt;name&gt; — Lock skill (prevent edits)\n' +
             '/skill unlock &lt;name&gt; — Unlock skill\n' +
             '/skill fix &lt;name&gt; &lt;feedback&gt; — AI-rewrite skill prompt\n' +
@@ -1150,12 +1170,29 @@ export function createTelegramBot(router: ProviderRouter): Bot {
         return;
       }
 
+      case 'export': {
+        const name = parts[1];
+        if (!name) {
+          await ctx.reply('Usage: /tool export &lt;name&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const tool = getUserToolByName(name);
+        if (!tool) {
+          await ctx.reply(`User tool "${name}" not found. Only user-created tools can be exported.`);
+          return;
+        }
+        const filepath = exportToolToMarkdown(tool);
+        await ctx.reply(`Tool "${name}" exported to:\n<code>${filepath}</code>`, { parse_mode: 'HTML' });
+        return;
+      }
+
       default:
         await ctx.reply(
           '<b>Tool commands:</b>\n\n' +
             '/tool list — Show all tools\n' +
             '/tool show &lt;name&gt; — Tool details\n' +
             '/tool upload — Reply to a .md file to upload a tool\n' +
+            '/tool export &lt;name&gt; — Export tool to forge/tools/\n' +
             '/tool enable &lt;name&gt; — Enable a tool\n' +
             '/tool disable &lt;name&gt; — Disable a tool\n' +
             '/tool lock &lt;name&gt; — Lock tool (prevent edits)\n' +
@@ -1211,11 +1248,13 @@ export function createTelegramBot(router: ProviderRouter): Bot {
       const transcript = await transcribeAudio(localPath);
       logger.info({ chatId: ctx.chat.id, transcript }, 'Voice transcribed');
 
-      // Process as text with voice reply forced
+      // Process as text with voice reply forced and voice prompt tuning
       await handleMessage(
         ctx,
-        `[Voice transcribed]: ${transcript}`,
+        transcript,
         router,
+        true,
+        false,
         true,
       );
     } catch (err) {

@@ -14,6 +14,12 @@ import { getSkillSystemPrompt, getSkillAllowedTools } from '../skills.js';
 
 const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
 
+const VOICE_RESPONSE_HINT = `The user sent a voice message. Respond as if in a verbal conversation:
+- Keep responses to 1-3 sentences. Be concise.
+- No markdown formatting (no bullet points, headers, code blocks, bold, italics).
+- Speak naturally and conversationally — your response will be read aloud.
+- If the question requires a long answer, give a brief summary and offer to elaborate.`;
+
 /**
  * Claude-specific prompt that teaches it about document capabilities.
  * The platform layer parses uploaded files and injects their text into messages,
@@ -148,10 +154,13 @@ export class ProviderRouter {
     const skillPrompt = getSkillSystemPrompt(chatId);
     const allowedTools = getSkillAllowedTools(chatId);
 
+    // Inject voice hint when the message is from a voice note
+    const voiceHint = params.isVoice ? VOICE_RESPONSE_HINT : '';
+
     // Inject document capabilities for both providers; language hint for Claude only (Ollama has its own)
     const systemPrompt = provider.name === 'claude'
-      ? [params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : [params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT].filter(Boolean).join('\n\n') || undefined;
+      ? [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, LANGUAGE_HINT].filter(Boolean).join('\n\n')
+      : [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)

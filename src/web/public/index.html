@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>clauded — Voice Chat</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #14141f;
+      --border: #2a2a3a;
+      --text: #e0e0e8;
+      --text-dim: #888898;
+      --accent: #6c63ff;
+      --accent-glow: rgba(108, 99, 255, 0.3);
+      --danger: #ff4d6a;
+      --success: #4dff8f;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* ── Auth Screen ─────────────────────────── */
+    #auth-screen {
+      text-align: center;
+      padding: 2rem;
+    }
+    #auth-screen h1 {
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+      font-weight: 300;
+      letter-spacing: 0.05em;
+    }
+    #auth-screen input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      width: 280px;
+      outline: none;
+    }
+    #auth-screen input:focus { border-color: var(--accent); }
+    #auth-screen button {
+      display: block;
+      margin: 1rem auto 0;
+      padding: 0.75rem 2rem;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    #auth-screen button:hover { opacity: 0.9; }
+
+    /* ── Main Screen ─────────────────────────── */
+    #main-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 480px;
+      padding: 1.5rem;
+      height: 100vh;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      margin-bottom: 1rem;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+    }
+    .status-dot.connected { background: var(--success); }
+
+    /* ── Waveform ────────────────────────────── */
+    #waveform-container {
+      width: 100%;
+      height: 120px;
+      margin: 1rem 0;
+      position: relative;
+    }
+    #waveform {
+      width: 100%;
+      height: 100%;
+      border-radius: 12px;
+      background: var(--surface);
+    }
+
+    /* ── State Indicator ─────────────────────── */
+    #state-indicator {
+      font-size: 0.9rem;
+      color: var(--text-dim);
+      height: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    /* ── Push to Talk Button ─────────────────── */
+    #ptt-btn {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      border: 3px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    #ptt-btn:hover { border-color: var(--accent); }
+    #ptt-btn.recording {
+      border-color: var(--danger);
+      box-shadow: 0 0 30px rgba(255, 77, 106, 0.3);
+      background: rgba(255, 77, 106, 0.1);
+    }
+    #ptt-btn.processing {
+      border-color: var(--accent);
+      box-shadow: 0 0 30px var(--accent-glow);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    #ptt-btn.playing {
+      border-color: var(--success);
+      box-shadow: 0 0 30px rgba(77, 255, 143, 0.2);
+    }
+    #ptt-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    /* ── Controls ────────────────────────────── */
+    .controls {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      margin-top: 1.5rem;
+    }
+    .mode-toggle {
+      display: flex;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .mode-toggle button {
+      padding: 0.5rem 1rem;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .mode-toggle button.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    /* ── VAD Sensitivity ─────────────────────── */
+    .vad-controls {
+      display: none;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+    .vad-controls.visible { display: flex; }
+    .vad-controls input[type="range"] {
+      width: 120px;
+      accent-color: var(--accent);
+    }
+
+    /* ── Transcript ──────────────────────────── */
+    #transcript-area {
+      flex: 1;
+      width: 100%;
+      overflow-y: auto;
+      margin-top: 1.5rem;
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .message {
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      max-width: 90%;
+    }
+    .message.user {
+      background: var(--accent);
+      color: white;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+    .message.assistant {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+    .message .provider-tag {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      margin-top: 0.25rem;
+    }
+
+    /* ── Mobile ──────────────────────────────── */
+    @media (max-width: 480px) {
+      #ptt-btn { width: 120px; height: 120px; }
+      #main-screen { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Auth Screen -->
+<div id="auth-screen">
+  <h1>clauded voice</h1>
+  <input type="password" id="token-input" placeholder="Enter access token" autofocus>
+  <button id="connect-btn" onclick="connect()">Connect</button>
+</div>
+
+<!-- Main Screen -->
+<div id="main-screen">
+  <div class="status-bar">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">Disconnected</span>
+  </div>
+
+  <div id="waveform-container">
+    <canvas id="waveform"></canvas>
+  </div>
+
+  <div id="state-indicator">Ready</div>
+
+  <button id="ptt-btn" disabled>Hold to Talk</button>
+
+  <div class="controls">
+    <div class="mode-toggle">
+      <button class="active" id="ptt-mode-btn" onclick="setMode('ptt')">Push to Talk</button>
+      <button id="vad-mode-btn" onclick="setMode('vad')">Continuous</button>
+    </div>
+  </div>
+
+  <div class="vad-controls" id="vad-controls">
+    <span>Sensitivity</span>
+    <input type="range" id="vad-threshold" min="1" max="100" value="30">
+    <span id="vad-value">30</span>
+  </div>
+
+  <div id="transcript-area"></div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────
+let ws = null;
+let mediaRecorder = null;
+let audioContext = null;
+let analyser = null;
+let sourceNode = null;
+let mediaStream = null;
+let mode = 'ptt'; // 'ptt' or 'vad'
+let isRecording = false;
+let isProcessing = false;
+let isPlaying = false;
+let vadActive = false;
+let vadThreshold = 30;
+let vadSilenceTimeout = null;
+let reconnectDelay = 1000;
+let reconnectTimer = null;
+let animFrameId = null;
+let chunks = [];
+const VAD_SILENCE_MS = 1200; // silence before auto-stop
+
+// ── Elements ──────────────────────────────────────
+const authScreen = document.getElementById('auth-screen');
+const mainScreen = document.getElementById('main-screen');
+const tokenInput = document.getElementById('token-input');
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+const stateIndicator = document.getElementById('state-indicator');
+const pttBtn = document.getElementById('ptt-btn');
+const pttModeBtn = document.getElementById('ptt-mode-btn');
+const vadModeBtn = document.getElementById('vad-mode-btn');
+const vadControls = document.getElementById('vad-controls');
+const vadSlider = document.getElementById('vad-threshold');
+const vadValue = document.getElementById('vad-value');
+const transcriptArea = document.getElementById('transcript-area');
+const waveformCanvas = document.getElementById('waveform');
+const waveformCtx = waveformCanvas.getContext('2d');
+
+// Enter key to connect
+tokenInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
+
+// VAD slider
+vadSlider.addEventListener('input', () => {
+  vadThreshold = parseInt(vadSlider.value);
+  vadValue.textContent = vadThreshold;
+});
+
+// ── Connection ────────────────────────────────────
+function connect() {
+  const token = tokenInput.value.trim();
+  if (!token) return;
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${protocol}//${location.host}?token=${encodeURIComponent(token)}`;
+
+  if (ws) ws.close();
+
+  ws = new WebSocket(url);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    reconnectDelay = 1000;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  };
+
+  ws.onmessage = async (event) => {
+    if (event.data instanceof ArrayBuffer) {
+      // Binary = audio response
+      await playAudio(event.data);
+      return;
+    }
+
+    const msg = JSON.parse(event.data);
+
+    switch (msg.type) {
+      case 'ready':
+        authScreen.style.display = 'none';
+        mainScreen.style.display = 'flex';
+        setConnected(true);
+        await initAudio();
+        break;
+
+      case 'response':
+        addMessage(msg.transcript, 'user');
+        addMessage(msg.text, 'assistant', msg.provider);
+        break;
+
+      case 'status':
+        if (msg.status === 'processing') {
+          isProcessing = true;
+          updateButton();
+          stateIndicator.textContent = 'Thinking...';
+        } else if (msg.status === 'idle') {
+          isProcessing = false;
+          updateButton();
+          stateIndicator.textContent = 'Ready';
+        }
+        break;
+
+      case 'error':
+        stateIndicator.textContent = `Error: ${msg.message}`;
+        isProcessing = false;
+        updateButton();
+        break;
+
+      case 'pong':
+        break;
+    }
+  };
+
+  ws.onclose = (event) => {
+    setConnected(false);
+    if (event.code !== 4001) {
+      // Auto-reconnect with exponential backoff
+      reconnectTimer = setTimeout(() => {
+        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+        connect();
+      }, reconnectDelay);
+      stateIndicator.textContent = `Reconnecting in ${Math.round(reconnectDelay / 1000)}s...`;
+    } else {
+      // Unauthorized — go back to auth screen
+      authScreen.style.display = '';
+      mainScreen.style.display = 'none';
+      stateIndicator.textContent = 'Invalid token';
+    }
+  };
+
+  ws.onerror = () => {
+    // onclose will handle reconnection
+  };
+}
+
+function setConnected(connected) {
+  statusDot.classList.toggle('connected', connected);
+  statusText.textContent = connected ? 'Connected' : 'Disconnected';
+  pttBtn.disabled = !connected;
+  if (!connected) cleanupAudio();
+}
+
+function cleanupAudio() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+    mediaStream = null;
+  }
+  if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+  if (audioContext) {
+    audioContext.close().catch(() => {});
+    audioContext = null;
+  }
+  analyser = null;
+  if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+}
+
+// ── Audio Init ────────────────────────────────────
+async function initAudio() {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioContext = new AudioContext();
+    sourceNode = audioContext.createMediaStreamSource(mediaStream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    sourceNode.connect(analyser);
+    drawWaveform();
+  } catch (err) {
+    stateIndicator.textContent = 'Microphone access denied';
+    console.error('Mic access failed:', err);
+  }
+}
+
+// ── Recording ─────────────────────────────────────
+function startRecording() {
+  if (!mediaStream || isRecording || isProcessing || isPlaying) return;
+
+  chunks = [];
+  mediaRecorder = new MediaRecorder(mediaStream, {
+    mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : 'audio/webm',
+  });
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = () => {
+    if (chunks.length === 0) return;
+    const blob = new Blob(chunks, { type: 'audio/webm' });
+    if (blob.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
+      blob.arrayBuffer().then((buf) => ws.send(buf));
+    }
+  };
+
+  mediaRecorder.start();
+  isRecording = true;
+  updateButton();
+  stateIndicator.textContent = 'Listening...';
+}
+
+function stopRecording() {
+  if (!isRecording || !mediaRecorder) return;
+  mediaRecorder.stop();
+  isRecording = false;
+  updateButton();
+  stateIndicator.textContent = 'Processing...';
+}
+
+// ── Push to Talk ──────────────────────────────────
+pttBtn.addEventListener('pointerdown', (e) => {
+  if (mode !== 'ptt') return;
+  e.preventDefault();
+  startRecording();
+});
+pttBtn.addEventListener('pointerup', () => {
+  if (mode !== 'ptt') return;
+  stopRecording();
+});
+pttBtn.addEventListener('pointerleave', () => {
+  if (mode !== 'ptt') return;
+  stopRecording();
+});
+// Prevent context menu on long press (mobile)
+pttBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ── Mode Toggle ───────────────────────────────────
+function setMode(newMode) {
+  mode = newMode;
+  pttModeBtn.classList.toggle('active', mode === 'ptt');
+  vadModeBtn.classList.toggle('active', mode === 'vad');
+  vadControls.classList.toggle('visible', mode === 'vad');
+
+  if (mode === 'ptt') {
+    pttBtn.textContent = 'Hold to Talk';
+    stopVAD();
+  } else {
+    pttBtn.textContent = 'Listening...';
+    startVAD();
+  }
+}
+
+// ── VAD (Voice Activity Detection) ────────────────
+function startVAD() {
+  if (!analyser) return;
+  vadActive = true;
+  monitorVAD();
+}
+
+function stopVAD() {
+  vadActive = false;
+  if (vadSilenceTimeout) { clearTimeout(vadSilenceTimeout); vadSilenceTimeout = null; }
+  if (isRecording) stopRecording();
+}
+
+function monitorVAD() {
+  if (!vadActive || !analyser) return;
+
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(data);
+
+  // RMS energy
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+  const rms = Math.sqrt(sum / data.length);
+
+  // Threshold scaled: slider 1-100 maps to RMS 2-80
+  const threshold = 2 + (vadThreshold / 100) * 78;
+
+  if (rms > threshold) {
+    // Speech detected
+    if (!isRecording && !isProcessing && !isPlaying) {
+      startRecording();
+    }
+    // Reset silence timer
+    if (vadSilenceTimeout) { clearTimeout(vadSilenceTimeout); vadSilenceTimeout = null; }
+  } else if (isRecording) {
+    // Silence — start countdown to stop
+    if (!vadSilenceTimeout) {
+      vadSilenceTimeout = setTimeout(() => {
+        stopRecording();
+        vadSilenceTimeout = null;
+      }, VAD_SILENCE_MS);
+    }
+  }
+
+  requestAnimationFrame(monitorVAD);
+}
+
+// ── Audio Playback ────────────────────────────────
+async function playAudio(arrayBuffer) {
+  isPlaying = true;
+  updateButton();
+  stateIndicator.textContent = 'Speaking...';
+
+  try {
+    const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+
+    await new Promise((resolve, reject) => {
+      audio.onended = resolve;
+      audio.onerror = reject;
+      audio.play().catch(reject);
+    });
+
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Playback failed:', err);
+  }
+
+  isPlaying = false;
+  updateButton();
+  stateIndicator.textContent = 'Ready';
+
+  // Re-enable VAD monitoring after playback
+  if (mode === 'vad' && vadActive) {
+    monitorVAD();
+  }
+}
+
+// ── Waveform Visualization ────────────────────────
+function drawWaveform() {
+  // Set canvas size to match display size
+  const rect = waveformCanvas.getBoundingClientRect();
+  waveformCanvas.width = rect.width * (window.devicePixelRatio || 1);
+  waveformCanvas.height = rect.height * (window.devicePixelRatio || 1);
+  waveformCtx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+
+  function draw() {
+    animFrameId = requestAnimationFrame(draw);
+
+    const w = rect.width;
+    const h = rect.height;
+
+    waveformCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--surface');
+    waveformCtx.fillRect(0, 0, w, h);
+
+    if (!analyser) return;
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+
+    const barWidth = w / data.length;
+    const centerY = h / 2;
+
+    // Choose color based on state
+    let color = '#2a2a3a';
+    if (isRecording) color = '#ff4d6a';
+    else if (isProcessing) color = '#6c63ff';
+    else if (isPlaying) color = '#4dff8f';
+
+    waveformCtx.fillStyle = color;
+
+    for (let i = 0; i < data.length; i++) {
+      const barHeight = (data[i] / 255) * (h * 0.8);
+      const x = i * barWidth;
+      waveformCtx.fillRect(x, centerY - barHeight / 2, Math.max(barWidth - 1, 1), barHeight || 1);
+    }
+  }
+
+  draw();
+}
+
+// Handle canvas resize
+window.addEventListener('resize', () => {
+  if (animFrameId) cancelAnimationFrame(animFrameId);
+  drawWaveform();
+});
+
+// ── UI Helpers ────────────────────────────────────
+function updateButton() {
+  if (isRecording) {
+    pttBtn.className = 'recording';
+    if (mode === 'ptt') pttBtn.textContent = 'Release to Send';
+  } else if (isProcessing) {
+    pttBtn.className = 'processing';
+    pttBtn.textContent = 'Thinking...';
+  } else if (isPlaying) {
+    pttBtn.className = 'playing';
+    pttBtn.textContent = 'Speaking...';
+  } else {
+    pttBtn.className = '';
+    pttBtn.textContent = mode === 'ptt' ? 'Hold to Talk' : 'Listening...';
+  }
+}
+
+function addMessage(text, role, provider) {
+  if (!text) return;
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+  div.textContent = text;
+  if (provider && role === 'assistant') {
+    const tag = document.createElement('div');
+    tag.className = 'provider-tag';
+    tag.textContent = provider;
+    div.appendChild(tag);
+  }
+  transcriptArea.appendChild(div);
+  transcriptArea.scrollTop = transcriptArea.scrollHeight;
+}
+
+// ── Tab Visibility — pause VAD when hidden ────────
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (mode === 'vad' && vadActive) stopVAD();
+    if (isRecording) stopRecording();
+  } else {
+    if (mode === 'vad' && ws && ws.readyState === WebSocket.OPEN) startVAD();
+  }
+});
+
+// ── Keepalive ─────────────────────────────────────
+setInterval(() => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'ping' }));
+  }
+}, 30000);
+</script>
+</body>
+</html>

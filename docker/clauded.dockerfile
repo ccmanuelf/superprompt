@@ -41,6 +41,8 @@ COPY package.json ./
 
 # Copy runtime files (banner, system prompt, entrypoint)
 COPY banner.txt CLAUDED.md ./
+# Copy static web assets for voice chat (served from dist/web/public/)
+COPY src/web/public/ ./dist/web/public/
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

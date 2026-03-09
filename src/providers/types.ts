@@ -9,6 +9,8 @@ export interface SendMessageParams {
   images?: string[];
   /** Force chat-only mode (skip tool routing). Use for pre-parsed content like uploaded documents. */
   skipTools?: boolean;
+  /** When true, the message originated from a voice note — triggers concise conversational replies. */
+  isVoice?: boolean;
 }
 
 export interface GeneratedFile {
