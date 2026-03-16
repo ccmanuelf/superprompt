@@ -973,7 +973,9 @@ export function createTelegramBot(router: ProviderRouter): Bot {
           return;
         }
         const filepath = exportSkillToMarkdown(skill);
-        await ctx.reply(`Skill "${name}" exported to:\n<code>${filepath}</code>`, { parse_mode: 'HTML' });
+        await ctx.replyWithDocument(new InputFile(filepath), {
+          caption: `Skill "${name}" exported`,
+        });
         return;
       }
 
@@ -1182,7 +1184,9 @@ export function createTelegramBot(router: ProviderRouter): Bot {
           return;
         }
         const filepath = exportToolToMarkdown(tool);
-        await ctx.reply(`Tool "${name}" exported to:\n<code>${filepath}</code>`, { parse_mode: 'HTML' });
+        await ctx.replyWithDocument(new InputFile(filepath), {
+          caption: `Tool "${name}" exported`,
+        });
         return;
       }
 
@@ -1371,8 +1375,18 @@ export function createTelegramBot(router: ProviderRouter): Bot {
   bot.on('message:document', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
     const doc = ctx.message.document;
-    const caption = ctx.message.caption || '';
+    const caption = (ctx.message.caption || '').trim();
     const fileName = doc.file_name || 'unknown';
+
+    // Intercept /skill upload and /tool upload captions
+    if (caption.startsWith('/skill upload')) {
+      await handleSkillUpload(ctx);
+      return;
+    }
+    if (caption.startsWith('/tool upload')) {
+      await handleToolUpload(ctx, router);
+      return;
+    }
 
     // Check file size (Telegram API limit is 20MB for bot downloads)
     if (doc.file_size && doc.file_size > 50 * 1024 * 1024) {
