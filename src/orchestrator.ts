@@ -37,8 +37,8 @@ export interface StepResult {
   success: boolean;
 }
 
-/** Max characters from a previous step's output to pass as context */
-const MAX_STEP_CONTEXT_CHARS = 3000;
+/** Threshold above which previous step output is compressed via Filtration Analysis */
+const STEP_CONTEXT_COMPRESS_THRESHOLD = 2000;
 
 /** Maximum number of steps allowed (even if AI returns more) */
 const MAX_STEPS = 5;
@@ -81,24 +81,78 @@ export function shouldOrchestrate(message: string): boolean {
 
 /**
  * Build the step message with context from the previous step.
- * Truncates previous output to MAX_STEP_CONTEXT_CHARS to prevent context overflow.
+ * If the previous output exceeds the threshold, it is compressed using
+ * Filtration Analysis (AI-powered) rather than blindly truncated.
  *
  * Exported for testing.
  */
-export function buildStepMessage(
+export async function buildStepMessage(
   step: TaskStep,
   previousOutput: string,
-): string {
+  router?: ProviderRouter,
+  chatId?: string,
+): Promise<string> {
   if (!step.dependsOnPrevious || !previousOutput) {
     return step.instruction;
   }
 
-  // Truncate previous output to prevent context window overflow
-  const truncated = previousOutput.length > MAX_STEP_CONTEXT_CHARS
-    ? previousOutput.slice(0, MAX_STEP_CONTEXT_CHARS) + '\n...(truncated)'
-    : previousOutput;
+  let context = previousOutput;
 
-  return `Context from previous step:\n${truncated}\n\nNow: ${step.instruction}`;
+  // If output exceeds threshold, compress via Filtration Analysis
+  if (previousOutput.length > STEP_CONTEXT_COMPRESS_THRESHOLD && router && chatId) {
+    try {
+      context = await compressStepContext(previousOutput, step.instruction, router, chatId);
+      logger.debug(
+        { originalLength: previousOutput.length, compressedLength: context.length },
+        'Compressed step context via Filtration Analysis',
+      );
+    } catch (err) {
+      // Fallback: take first + last 1000 chars (preserves beginning and conclusion)
+      logger.warn({ err }, 'Filtration Analysis compression failed, using fallback');
+      const head = previousOutput.slice(0, 1000);
+      const tail = previousOutput.slice(-1000);
+      context = `${head}\n...\n${tail}`;
+    }
+  }
+
+  return `Context from previous step:\n${context}\n\nNow: ${step.instruction}`;
+}
+
+/**
+ * Compress a step's output using Filtration Analysis.
+ * Preserves the essential information (results, conclusions, data)
+ * while removing verbose explanations and filler.
+ *
+ * Exported for testing.
+ */
+export async function compressStepContext(
+  output: string,
+  nextStepInstruction: string,
+  router: ProviderRouter,
+  chatId: string,
+): Promise<string> {
+  const compressionPrompt = `Compress the following text into a concise summary that preserves ONLY what the next task needs.
+
+TEXT TO COMPRESS:
+${output}
+
+NEXT TASK: "${nextStepInstruction}"
+
+Apply Filtration Analysis:
+FILTER 1 — RELEVANCE: Keep only data, results, facts, and conclusions directly needed by the next task.
+FILTER 2 — SPECIFICS: Preserve specific names, numbers, URLs, dates, and identifiers — never generalize these.
+FILTER 3 — DISCARD: Remove greetings, explanations of methodology, caveats, and filler text.
+
+Return ONLY the compressed text. No preamble. No explanation. Maximum 800 words.`;
+
+  const response = await router.sendMessage({
+    chatId,
+    message: compressionPrompt,
+    skipTools: true,
+    systemPrompt: 'You are a text compression system. Return only the compressed output.',
+  });
+
+  return response.text || output.slice(0, 2000); // Fallback if AI returns nothing
 }
 
 /**
@@ -279,7 +333,7 @@ export async function orchestrateTask(
   let lastStepOutput = '';
 
   for (const step of steps) {
-    const stepMessage = buildStepMessage(step, lastStepOutput);
+    const stepMessage = await buildStepMessage(step, lastStepOutput, router, chatId);
 
     // Notify progress
     if (progressFn) {
