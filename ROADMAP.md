@@ -358,16 +358,64 @@ Positioned after all engineering sprints are complete so we document a stable, c
 
 **Goal:** Full development workflow from Telegram — code repos, deploy, verify visually.
 
-### Features
-- **Persistent workspace**: Docker volume for project files that survives restarts
-- **`gh` CLI in Docker**: Install, authenticate, add GitHub tools for Ollama
-- **GitHub tools**: `github_clone_repo`, `github_list_repos`, `github_read_file`, `github_create_branch`, `github_commit_push`, `github_create_pr`, `github_list_issues`, `github_list_prs`
-- **Render MCP wiring**: Connect existing Render MCP tools for deploy status, logs, service management
-- **Puppeteer**: Headless browser in Docker for `take_screenshot(url)` tool
-- **Diff preview**: Format `git diff` output nicely for Telegram before committing
+### Architecture: Hybrid MCP + Ollama Tools
 
-### Resources to evaluate
-- Render MCP server (already registered as deferred tool)
+Both providers get GitHub/Render access, each using their native mechanism:
+
+| Provider | GitHub Access | Render Access | Screenshots |
+|----------|-------------|---------------|-------------|
+| **Claude** | GitHub MCP server (full API — repos, issues, PRs, code search, diffs, commits) | Render MCP server (already registered — deploys, logs, services) | Puppeteer tool (shared) |
+| **Ollama** | `gh` CLI wrapper tools (clone, read, commit, push, create PR, list issues) | Lightweight Render status tools wrapping API | Puppeteer tool (shared) |
+
+**Why hybrid:** Claude gets the richer MCP interface for complex code review, deep diffs, and multi-file operations. Ollama gets basic `gh` CLI tools for simple operations. Auto-routing (S1) sends complex GitHub tasks to Claude, simple ones to Ollama.
+
+### Features
+
+#### 10.1 Infrastructure
+- **Persistent workspace**: Docker volume mounted at `/workspace` for project files that survive restarts
+- **`gh` CLI in Docker**: Install in Dockerfile, authenticate via `GH_TOKEN` env var
+- **Puppeteer in Docker**: Headless Chromium for screenshots (~400MB image increase)
+
+#### 10.2 GitHub MCP Server (Claude)
+- Install `@modelcontextprotocol/server-github` (or equivalent)
+- Configure in Claude Code MCP settings
+- Provides: repo contents, file read/write, issue CRUD, PR CRUD, code search, commit history, branch management
+- No custom code needed — pre-built MCP server
+
+#### 10.3 GitHub Ollama Tools
+- `github_clone_repo(owner, repo)` — clone to persistent workspace
+- `github_read_file(owner, repo, path)` — read file from repo via `gh api`
+- `github_list_issues(owner, repo, state)` — list issues
+- `github_list_prs(owner, repo, state)` — list pull requests
+- `github_create_branch(repo, branch, base)` — create branch
+- `github_commit_push(repo, message, files)` — stage, commit, push
+- `github_create_pr(repo, title, body, head, base)` — open PR
+- `github_diff(repo)` — show `git diff` formatted for Telegram
+
+#### 10.4 Render Integration
+- Wire up existing Render MCP tools for Claude (already registered as deferred)
+- Add Ollama tools: `render_deploy_status(service)`, `render_list_services()`, `render_get_logs(service)`
+- Deploy verification: after push, poll deploy status until complete
+
+#### 10.5 Screenshots
+- New shared tool: `take_screenshot(url, selector?)` — Puppeteer captures page
+- Returns image sent via Telegram `sendPhoto` / Matrix file upload
+- Optional CSS selector for capturing specific elements
+- Diff preview: `git diff` formatted as code block before committing
+
+### Files to Create/Modify
+
+| File | Change |
+|------|--------|
+| `Dockerfile` | Add `gh` CLI, Puppeteer, persistent workspace volume |
+| `docker-compose.yml` | Mount `/workspace` volume |
+| `.env.example` | Add `GH_TOKEN`, MCP config paths |
+| `src/providers/tools/github-*.ts` | New Ollama GitHub tools (6-8 files) |
+| `src/providers/tools/render-status.ts` | New Ollama Render tools |
+| `src/providers/tools/screenshot.ts` | Puppeteer screenshot tool |
+| `src/providers/tools/index.ts` | Register new tools |
+| MCP config | GitHub + Render MCP server configuration for Claude |
+| `tests/` | New: `github-tools.test.ts`, `screenshot.test.ts` |
 
 ---
 
