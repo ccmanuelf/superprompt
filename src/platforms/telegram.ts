@@ -20,6 +20,7 @@ import { generateToolCode } from '../forge/tool-generator.js';
 import { fixTool } from '../forge/tool-fixer.js';
 import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.js';
 import { buildDigest, getDigestPreference, setDigestPreference, type DigestFrequency } from '../proactive.js';
+import { shouldOrchestrate, orchestrateTask } from '../orchestrator.js';
 
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -180,6 +181,36 @@ async function handleMessage(
   typingInterval = setInterval(refreshTyping, TYPING_REFRESH_MS);
 
   try {
+    // 2b. Check for multi-step orchestration (on raw message, not memory-augmented)
+    if (!skipTools && !isVoice && shouldOrchestrate(rawText)) {
+      clearInterval(typingInterval);
+      typingInterval = undefined;
+
+      const progressFn = async (_chatId: string, text: string) => {
+        await ctx.reply(formatForTelegram(text), { parse_mode: 'HTML' });
+      };
+
+      const response = await orchestrateTask(router, chatId, fullMessage, progressFn);
+
+      // Save orchestration as conversation memory
+      if (response.text) {
+        saveConversationTurn(chatId, rawText, response.text).catch((err) => {
+          logger.warn({ err }, 'Failed to save orchestration memory');
+        });
+
+        const formatted = formatForTelegram(response.text);
+        const chunks = splitMessage(formatted);
+        for (const chunk of chunks) {
+          try {
+            await ctx.reply(chunk, { parse_mode: 'HTML' });
+          } catch {
+            await ctx.reply(chunk);
+          }
+        }
+      }
+      return;
+    }
+
     // 3. Send to AI provider
     const response = await router.sendMessage({
       chatId,

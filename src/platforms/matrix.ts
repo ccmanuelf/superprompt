@@ -21,6 +21,7 @@ import { fixTool } from '../forge/tool-fixer.js';
 import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.js';
 import { listRegisteredTools, loadUserTools } from '../forge/tool-registry.js';
 import { buildDigest, getDigestPreference, setDigestPreference, type DigestFrequency } from '../proactive.js';
+import { shouldOrchestrate, orchestrateTask } from '../orchestrator.js';
 
 // Per-room voice mode toggle
 const voiceModeRooms = new Set<string>();
@@ -131,6 +132,31 @@ async function handleMessage(
     : body;
 
   try {
+    // 1b. Check for multi-step orchestration (on raw message, not memory-augmented)
+    if (!isVoice && shouldOrchestrate(body)) {
+      const progressFn = async (_chatId: string, text: string) => {
+        await sendNotice(client, roomId, text);
+      };
+
+      const response = await orchestrateTask(router, roomId, fullMessage, progressFn);
+
+      if (response.text) {
+        saveConversationTurn(roomId, body, response.text).catch((err) => {
+          logger.warn({ err }, 'Failed to save orchestration memory');
+        });
+
+        const plain = response.text;
+        const html = formatForMatrix(response.text);
+        await client.sendMessage(roomId, {
+          msgtype: 'm.notice',
+          body: plain,
+          format: 'org.matrix.custom.html',
+          formatted_body: html,
+        });
+      }
+      return;
+    }
+
     // 2. Send to AI provider
     const response = await router.sendMessage({
       chatId: roomId,
