@@ -18,6 +18,7 @@ import { summarizeUrlDefinition, summarizeUrl } from './summarize-url.js';
 import { parseFileDefinition, parseFileTool } from './parse-file.js';
 import { generateDocumentDefinition, generateDocumentTool } from './generate-document.js';
 import { readBotLogsDefinition, readBotLogs } from './read-bot-logs.js';
+import { createReminderDefinition, createReminder } from './create-reminder.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -80,6 +81,12 @@ export function registerBuiltinTools(): void {
     {
       definition: readBotLogsDefinition,
       execute: async (args) => readBotLogs(args as { count?: number; level?: string }),
+      source: 'builtin',
+    },
+    {
+      definition: createReminderDefinition,
+      execute: async (args, chatId) =>
+        createReminder(args as { message: string; cron: string; description: string }, chatId),
       source: 'builtin',
     },
   ];

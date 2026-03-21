@@ -180,6 +180,21 @@ function createTables(): void {
       ON episodes(chat_id);
   `);
 
+  // Episode follow-up tracking (proactive messaging)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS episode_follow_ups (
+      episode_id INTEGER PRIMARY KEY,
+      followed_up_at INTEGER NOT NULL,
+      FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS digest_preferences (
+      chat_id TEXT PRIMARY KEY,
+      frequency TEXT NOT NULL DEFAULT 'off' CHECK(frequency IN ('daily', 'weekly', 'off')),
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
   // Episodes FTS5
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(

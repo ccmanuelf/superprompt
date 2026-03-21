@@ -19,6 +19,7 @@ import { registerTool, loadUserTools, listRegisteredTools } from '../forge/tool-
 import { generateToolCode } from '../forge/tool-generator.js';
 import { fixTool } from '../forge/tool-fixer.js';
 import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.js';
+import { buildDigest, getDigestPreference, setDigestPreference, type DigestFrequency } from '../proactive.js';
 
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -470,6 +471,7 @@ export function createTelegramBot(router: ProviderRouter): Bot {
         '/skill — Manage AI skills\n' +
         '/tool — Manage tools (list, upload, fix)\n' +
         '/careful — Toggle safety guardrails mode\n' +
+        '/digest — Activity digests (daily/weekly/now)\n' +
         '/reload — Reload user tools from DB',
       { parse_mode: 'HTML' },
     );
@@ -1055,6 +1057,44 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     if (!isAuthorised(ctx.chat.id)) return;
     const count = loadUserTools();
     await ctx.reply(`Reloaded. ${count} user tools active.`);
+  });
+
+  // ── Digest Command ──────────────────────────────────────
+
+  bot.command('digest', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/digest(@\w+)?/, '').trim().toLowerCase();
+
+    if (args === 'daily' || args === 'weekly' || args === 'off') {
+      setDigestPreference(chatId, args as DigestFrequency);
+      if (args === 'off') {
+        await ctx.reply('Digest disabled.');
+      } else {
+        await ctx.reply(`Digest set to <b>${args}</b>. I'll send you activity summaries.`, { parse_mode: 'HTML' });
+      }
+      return;
+    }
+
+    if (args === 'now') {
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const digest = buildDigest(chatId, DAY_MS);
+      await ctx.reply(formatForTelegram(digest), { parse_mode: 'HTML' });
+      return;
+    }
+
+    // Show current setting
+    const current = getDigestPreference(chatId);
+    await ctx.reply(
+      `Digest: <b>${current}</b>\n\n` +
+        'Usage:\n' +
+        '/digest daily — Daily activity summary\n' +
+        '/digest weekly — Weekly activity summary\n' +
+        '/digest off — Disable digests\n' +
+        '/digest now — Show digest right now',
+      { parse_mode: 'HTML' },
+    );
   });
 
   // ── Tool Command ────────────────────────────────────────

@@ -20,6 +20,7 @@ import { fixSkill } from '../forge/skill-fixer.js';
 import { fixTool } from '../forge/tool-fixer.js';
 import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.js';
 import { listRegisteredTools, loadUserTools } from '../forge/tool-registry.js';
+import { buildDigest, getDigestPreference, setDigestPreference, type DigestFrequency } from '../proactive.js';
 
 // Per-room voice mode toggle
 const voiceModeRooms = new Set<string>();
@@ -254,6 +255,7 @@ async function handleCommand(
           '!skill — Manage AI skills\n' +
           '!tool — Manage tools (list, fix, etc.)\n' +
           '!careful — Toggle safety guardrails mode\n' +
+          '!digest — Activity digests (daily/weekly/now)\n' +
           '!reload — Reload user tools from DB',
       );
       return true;
@@ -352,6 +354,25 @@ async function handleCommand(
       } else {
         setActiveSkill(roomId, skill.id);
         await sendNotice(client, roomId, 'Safety mode enabled. I will warn before destructive actions and verify results.');
+      }
+      return true;
+    }
+
+    case '!digest': {
+      const digestArgs = command.replace(/^!digest\s*/, '').trim().toLowerCase();
+      if (digestArgs === 'daily' || digestArgs === 'weekly' || digestArgs === 'off') {
+        setDigestPreference(roomId, digestArgs as DigestFrequency);
+        await sendNotice(client, roomId, digestArgs === 'off'
+          ? 'Digest disabled.'
+          : `Digest set to ${digestArgs}.`);
+      } else if (digestArgs === 'now') {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const digest = buildDigest(roomId, DAY_MS);
+        await sendNotice(client, roomId, digest);
+      } else {
+        const current = getDigestPreference(roomId);
+        await sendNotice(client, roomId,
+          `Digest: ${current}\n\nUsage: !digest daily|weekly|off|now`);
       }
       return true;
     }

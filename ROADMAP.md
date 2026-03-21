@@ -5,9 +5,9 @@
 
 ## Summary
 
-After evaluating 7 external sources against clauded's existing architecture, the original 8-sprint plan was consolidated to **3 development sprints + 1 E2E validation sweep**. Sprint 3 (Cloud Deploy) deferred pending decision on hosting provider.
+After evaluating 7 external sources against clauded's existing architecture, the roadmap was expanded to **6 development sprints + 1 E2E validation sweep + 1 cloud deploy**. Sprints S1-S2 complete.
 
-**Execution order: S1 → S2 → S4. S3 deferred.**
+**Execution order: S1 ✅ → S2 ✅ → S5 → S6 → S7 → S8 → S4 (E2E) → S3 (Cloud Deploy)**
 
 ---
 
@@ -161,7 +161,164 @@ Add the full `/help` command list to both Claude and Ollama system prompts so th
 
 ---
 
-## Sprint S3: Cloud Deployment (DEFERRED)
+## Sprint S5: Proactive Messaging — NOT STARTED
+
+**Goal:** Make clauded initiate conversations — follow-ups, reminders, digests, task completions.
+
+The bot should reach out to the user, not just respond. This is the single biggest differentiator between a chatbot and an assistant. Builds on existing scheduler infrastructure.
+
+### Planned Features
+
+#### 5.1 Follow-up system
+- When an episode has `open_threads`, schedule a follow-up check (e.g., 24-48h later)
+- Bot sends: "Hey, you mentioned wanting to revisit [topic]. Want to pick that up?"
+- Uses episode data from S1 — `open_threads` JSON field
+
+#### 5.2 Task completion notifications
+- When a scheduled task completes, notify the user with the result
+- Currently: results are stored in `last_result` but user must check via `/schedule list`
+- New: proactively send result when ready
+
+#### 5.3 Digest messages
+- Daily/weekly summary of what happened: episodes created, tasks completed, memories stored
+- Optional: user configures via `/digest daily|weekly|off`
+
+#### 5.4 Smart reminders from conversation
+- Detect "remind me" or "follow up on" in natural language
+- Auto-create a scheduled task without requiring `/schedule` syntax
+- Bot confirms: "I'll remind you about [X] on [date]"
+
+### Files to Modify
+
+| File | Change |
+|------|--------|
+| `src/scheduler.ts` | Add proactive message dispatch, follow-up scheduling |
+| `src/memory.ts` | Export open_threads from episodes for follow-up scheduling |
+| `src/platforms/telegram.ts` | Proactive send function, `/digest` command |
+| `src/platforms/matrix.ts` | Proactive send function, `!digest` command |
+| `src/providers/router.ts` | Add natural language reminder detection to COMMAND_LIST |
+| `tests/` | New: `proactive-messaging.test.ts` |
+
+---
+
+## Sprint S6: Skill Auto-Triggering — NOT STARTED
+
+**Goal:** AI detects when a skill should activate instead of requiring `/skill use <name>`.
+
+### Planned Features
+
+#### 6.1 Intent-based skill activation
+- Pattern match on message content to suggest or auto-activate skills
+- Examples:
+  - User describes a bug → auto-suggest or activate `debugger`
+  - User says "let's think about..." → auto-activate `brainstormer`
+  - User is about to do something destructive → auto-activate `careful`
+- User can override: "don't use debugger mode" → stays in general
+
+#### 6.2 Skill suggestion vs auto-activation
+- For ambiguous cases: suggest the skill instead of forcing it
+  - "This sounds like a debugging problem. Want me to switch to systematic debugging mode? (use /skill use debugger)"
+- For clear cases (e.g., "careful" when destructive action detected): auto-activate
+
+### Files to Modify
+
+| File | Change |
+|------|--------|
+| `src/skills.ts` | Add `shouldAutoTrigger(message)` function per skill |
+| `src/providers/router.ts` | Check skill triggers before sending message |
+| `src/platforms/telegram.ts` | Notify user when skill auto-activates |
+| `tests/` | New: `skill-auto-trigger.test.ts` |
+
+---
+
+## Sprint S7: Multi-Step Task Orchestration — NOT STARTED
+
+**Goal:** Break complex requests ("research X, compare with Y, draft a report") into subtasks and execute sequentially.
+
+### Planned Features
+
+#### 7.1 Task decomposition
+- Detect multi-step requests in natural language
+- Decompose into ordered subtasks with dependencies
+- Execute each subtask, passing results to the next
+
+#### 7.2 Progress tracking
+- Inform user of progress: "Step 1/3: Researching X... done. Step 2/3: Comparing with Y..."
+- Store intermediate results in episodes
+
+#### 7.3 Failure handling
+- If a subtask fails, inform user and offer to retry or skip
+- Apply circuit breaker from debugger skill (3+ failures → re-analyze)
+
+### Inspiration
+- Slate thread weaving: bounded worker threads producing episodes
+- Superpowers subagent-driven development: task decomposition with review gates
+
+### Files to Modify
+
+| File | Change |
+|------|--------|
+| `src/orchestrator.ts` | NEW — task decomposition, execution pipeline, progress tracking |
+| `src/providers/router.ts` | Detect multi-step requests, route to orchestrator |
+| `src/memory.ts` | Store intermediate results as episodes |
+| `tests/` | New: `orchestrator.test.ts` |
+
+---
+
+## Sprint S8: Context Budgeting + Self-Monitoring — NOT STARTED
+
+**Goal:** Intelligently manage context window usage and detect/correct AI failures.
+
+### Planned Features
+
+#### 8.1 Context budgeting
+- Track token usage per message (system prompt + memories + episodes + user message)
+- When approaching limits: summarize older context, drop low-relevance memories
+- Priority: system prompt > recent memories > episodes > old memories
+
+#### 8.2 Self-monitoring
+- Detect tool execution failures and retry with adjusted parameters
+- Detect when AI response is low-quality (too short, repetitive, off-topic)
+- Log quality metrics for post-hoc analysis
+
+### Inspiration
+- Slate context-as-RAM: treat context window as scarce resource to manage
+- Superpowers verification-before-completion: evidence-based quality checks
+
+### Files to Modify
+
+| File | Change |
+|------|--------|
+| `src/context-budget.ts` | NEW — token estimation, context trimming, priority ranking |
+| `src/memory.ts` | Budget-aware memory context building |
+| `src/providers/router.ts` | Pre-send context budget check |
+| `src/self-monitor.ts` | NEW — response quality checks, failure detection, retry logic |
+| `tests/` | New: `context-budget.test.ts`, `self-monitor.test.ts` |
+
+---
+
+## Sprint S4: Full E2E Validation — AFTER S5-S8
+
+**Goal:** One concentrated testing sweep covering ALL features from all sprints.
+
+### Test Scope
+
+| Area | Tests | Source |
+|------|-------|--------|
+| Tool Forge (Phase 3) | 3.1-3.12 | `scripts/e2e-voice-forge.md` |
+| Voice Web Chat (Phase 4) | 4.0-4.4 | `scripts/e2e-voice-forge.md` |
+| Cross-Feature Integration (Phase 5) | 5.1-5.6 | `scripts/e2e-voice-forge.md` |
+| Episode Compression (S1) | Verify compression triggers, episode quality, memory context inclusion |
+| Auto-Routing (S1) | Verify heuristics, override behavior, `/auto` toggle |
+| Superpowers Skills (S2) | Verify `debugger`, `brainstormer`, `careful` activation and behavior |
+| Proactive Messaging (S5) | Verify follow-ups, digests, task notifications, smart reminders |
+| Skill Auto-Triggering (S6) | Verify intent detection, auto-activation, user override |
+| Multi-Step Orchestration (S7) | Verify task decomposition, progress tracking, failure handling |
+| Context Budgeting (S8) | Verify token estimation, context trimming, self-monitoring |
+
+---
+
+## Sprint S3: Cloud Deployment — LAST
 
 **Status:** Deferred pending user decision on hosting provider.
 
@@ -174,33 +331,11 @@ Add the full `/help` command list to both Claude and Ollama system prompts so th
 
 ---
 
-## Sprint S4: Full E2E Validation
-
-**Goal:** One concentrated testing sweep covering all existing and new features.
-
-### Test Scope
-
-| Area | Tests | Source |
-|------|-------|--------|
-| Tool Forge (Phase 3) | 3.1-3.12 | `scripts/e2e-voice-forge.md` |
-| Voice Web Chat (Phase 4) | 4.0-4.4 | `scripts/e2e-voice-forge.md` |
-| Cross-Feature Integration (Phase 5) | 5.1-5.6 | `scripts/e2e-voice-forge.md` |
-| Episode Compression (S1) | New tests | Verify compression triggers, episode quality, memory context inclusion |
-| Auto-Routing (S1) | New tests | Verify heuristics, override behavior, `/auto` toggle |
-| Superpowers Skills (S2) | New tests | Verify `debugger`, `brainstormer`, `careful` activation and behavior |
-| Anti-Rationalization (S2) | New tests | Verify prompt injection, AI behavior changes |
-| Command List in Prompts (S2) | New tests | Verify AI can suggest commands |
-
----
-
 ## Deferred Enhancements (Nice to Have)
 
 | Enhancement | Source | Rationale for Deferral |
 |-------------|--------|----------------------|
 | Multi-agent routing | openclaw tutorial | Overkill for 2-provider personal assistant |
-| Proactive messaging | openclaw tutorial | Useful but not core autonomy — scheduler already handles reminders |
-| Composable workflows | Slate + Superpowers | Complex orchestration layer; evaluate after S1-S2 prove value |
-| Context budgeting | Slate | Optimization — solve after episode compression proves value |
 | Execution sandbox | open-terminal | Ollama already executes tools in-process; no need for HTTP sandbox |
 
 ---
@@ -275,8 +410,19 @@ Comprehensive evaluation of 7 external sources against clauded's architecture:
 3. **Provider override is slash-command only** — natural language does NOT override. `/claude`, `/ollama` lock; `/auto` returns to automatic.
 4. **Superpowers skills adapted for assistant context** — not direct ports of developer workflows.
 5. **Anti-rationalization rules applied globally** — not a switchable skill, always in system prompt.
-6. **Testing batched at end** — not phase-by-phase. Reduces bottleneck.
-7. **Proactive messaging deferred** — scheduler already handles basic reminders; full proactive system is nice-to-have.
+6. **Full E2E validation batched at end (S4)** — after all development sprints complete. Quick smoke tests after each sprint.
+7. **Sprint order prioritizes autonomy impact** — proactive messaging → skill auto-triggering → orchestration → optimization → E2E → deploy.
+
+## Testing Policy (enforced from S1 onward)
+
+**All tests MUST verify real-world functionality, not mocked behavior:**
+
+1. **No mocked data** — Tests use real SQLite databases (in-memory or temp files) with the same schema as production. No fake objects that bypass actual DB behavior.
+2. **No duplicated logic** — Tests import actual functions from source code. Never copy-paste patterns or classifiers into test files — if the source changes, tests must break.
+3. **Real-world scenarios** — Tests must verify the feature solves the user's actual need. An "insert + select" test is not enough — test the full flow (e.g., "insert memories → decay → compress → verify episode is searchable").
+4. **Edge cases and failure modes** — Test what happens when dependencies are unavailable (Ollama down, empty data, threshold boundaries). Verify graceful degradation.
+5. **Exported for testing** — Functions that need testing should be exported from source modules, not reimplemented in test files. Mark with `/** Exported for testing. */` comment.
+6. **Integration over isolation** — Prefer end-to-end flow tests that exercise multiple components together. Unit tests are fine for pure functions, but the real value is in integration tests that prove the feature works as a whole.
 
 ## Real-World Issues Found & Fixed (Sprint S1 review, 2026-03-18)
 

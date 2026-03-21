@@ -29,6 +29,7 @@ import { runDecaySweep } from './memory.js';
 import { cleanupOldUploads } from './media.js';
 import { ProviderRouter } from './providers/router.js';
 import { initScheduler } from './scheduler.js';
+import { initProactiveMessaging } from './proactive.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PID_FILE = resolve(STORE_DIR, 'clauded.pid');
@@ -186,6 +187,10 @@ async function main(): Promise<void> {
   };
   const stopScheduler = initScheduler(router, notifyFn);
   cleanups.push(stopScheduler);
+
+  // 10b. Initialize proactive messaging (follow-ups, digests)
+  const stopProactive = initProactiveMessaging(notifyFn);
+  cleanups.push(stopProactive);
 
   // 11. Register signal handlers for graceful shutdown
   let shuttingDown = false;

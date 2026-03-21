@@ -46,9 +46,10 @@ The user can type these commands in the chat:
 - /skill — Manage AI skills (list, use, create, fix, lock, export, upload, delete)
 - /tool — Manage tools (list, show, upload, generate, fix, enable, disable, delete)
 - /careful — Enable safety guardrails mode
+- /digest — Activity digests (daily/weekly/now/off)
 - /reload — Reload user tools from database
 
-When relevant, you can mention these commands to help the user. For example, if the user asks "can you remember this?", you might mention /memory. If they seem to want a different AI behavior, mention /skill.`;
+When relevant, you can mention these commands to help the user. For example, if the user asks "can you remember this?", you might mention /memory. If they seem to want a different AI behavior, mention /skill. If they say "remind me about X", use the create_reminder tool instead of suggesting /schedule.`;
 
 const VOICE_RESPONSE_HINT = `The user sent a voice message. Respond as if in a verbal conversation:
 - Keep responses to 1-3 sentences. Be concise.
