@@ -193,6 +193,11 @@ async function handleMessage(
     clearInterval(typingInterval);
     typingInterval = undefined;
 
+    // 4b. Send auto-trigger notice if a skill was activated for this message
+    if (response.autoTriggerNotice) {
+      await ctx.reply(formatForTelegram(response.autoTriggerNotice), { parse_mode: 'HTML' });
+    }
+
     if (!response.text) {
       await ctx.reply('(No response from AI provider)');
       return;

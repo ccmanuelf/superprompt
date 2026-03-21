@@ -7,7 +7,7 @@
 
 After evaluating 7 external sources against clauded's existing architecture, the roadmap was expanded to **6 development sprints + 1 E2E validation sweep + 1 cloud deploy**. Sprints S1-S2 complete.
 
-**Execution order: S1 ✅ → S2 ✅ → S5 → S6 → S7 → S8 → S4 (E2E) → S3 (Cloud Deploy)**
+**Execution order: S1 ✅ → S2 ✅ → S5 ✅ → S6 → S7 → S8 → S9 (Docs) → S4 (E2E) → S3 (Cloud Deploy)**
 
 ---
 
@@ -161,7 +161,7 @@ Add the full `/help` command list to both Claude and Ollama system prompts so th
 
 ---
 
-## Sprint S5: Proactive Messaging — NOT STARTED
+## Sprint S5: Proactive Messaging — COMPLETED (2026-03-18)
 
 **Goal:** Make clauded initiate conversations — follow-ups, reminders, digests, task completions.
 
@@ -297,7 +297,29 @@ The bot should reach out to the user, not just respond. This is the single bigge
 
 ---
 
-## Sprint S4: Full E2E Validation — AFTER S5-S8
+## Sprint S9: User Documentation — AFTER S8, BEFORE E2E
+
+**Goal:** Comprehensive documentation of the finished product before validation.
+
+Positioned after all engineering sprints are complete so we document a stable, complete system — not a moving target. Writing docs doubles as an implicit feature walkthrough that feeds into S4 (E2E).
+
+### Deliverables
+
+| Document | Contents |
+|----------|----------|
+| `docs/user-guide.md` | Complete user guide: getting started, all commands with examples, skills explained, tool usage, voice features, proactive messaging, auto-routing, digests, tips & tricks |
+| `docs/architecture.md` | Internal architecture: provider routing, memory lifecycle, episode compression, tool registry, auto-triggering, orchestration, context budgeting |
+| `docs/commands.md` | Quick reference card — all Telegram + Matrix commands in one place |
+| `README.md` update | Project overview, feature list, setup instructions, links to docs |
+| In-bot `/help` | Categorized command display (grouped by function, not a flat list) |
+
+### Design Principle
+
+> Document the *finished* product. The hard engineering comes first — documentation follows when the system is stable and complete. This discipline ensures docs reflect reality, not aspirations.
+
+---
+
+## Sprint S4: Full E2E Validation — AFTER S9
 
 **Goal:** One concentrated testing sweep covering ALL features from all sprints.
 
@@ -315,6 +337,7 @@ The bot should reach out to the user, not just respond. This is the single bigge
 | Skill Auto-Triggering (S6) | Verify intent detection, auto-activation, user override |
 | Multi-Step Orchestration (S7) | Verify task decomposition, progress tracking, failure handling |
 | Context Budgeting (S8) | Verify token estimation, context trimming, self-monitoring |
+| Documentation (S9) | Verify docs match actual behavior, commands reference is complete |
 
 ---
 

@@ -12,7 +12,7 @@ import {
   setAutoRoute,
   isAutoRouteEnabled,
 } from '../db.js';
-import { getSkillSystemPrompt, getSkillAllowedTools } from '../skills.js';
+import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAutoTrigger } from '../skills.js';
 
 const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
 
@@ -258,7 +258,18 @@ export class ProviderRouter {
       'Routing message',
     );
 
-    // Resolve active skill for this chat
+    // Check for auto-trigger before resolving skill
+    let autoTriggerNotice: string | undefined;
+    const triggerResult = detectSkillTrigger(params.message, chatId);
+    if (triggerResult) {
+      autoTriggerNotice = applyAutoTrigger(chatId, triggerResult);
+      logger.info(
+        { chatId, skill: triggerResult.skill.name, mode: triggerResult.mode },
+        'Skill auto-triggered',
+      );
+    }
+
+    // Resolve active skill for this chat (may now include auto-triggered skill)
     const skillPrompt = getSkillSystemPrompt(chatId);
     const allowedTools = getSkillAllowedTools(chatId);
 
@@ -305,6 +316,7 @@ export class ProviderRouter {
         setSession(chatId, retryResponse.newSessionId, provider.name);
       }
 
+      if (autoTriggerNotice) retryResponse.autoTriggerNotice = autoTriggerNotice;
       return retryResponse;
     }
 
@@ -313,6 +325,7 @@ export class ProviderRouter {
       setSession(chatId, response.newSessionId, provider.name);
     }
 
+    if (autoTriggerNotice) response.autoTriggerNotice = autoTriggerNotice;
     return response;
   }
 

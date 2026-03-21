@@ -1,6 +1,8 @@
 import {
   createSkillIfNotExists,
   getActiveSkill,
+  getSkillByName,
+  setActiveSkill,
   listSkills,
   type Skill,
 } from './db.js';
@@ -15,6 +17,85 @@ interface BuiltinSkillDef {
   systemPrompt: string;
   allowedTools: string[] | null;
 }
+
+// ── Auto-Trigger Definitions ────────────────────────────────
+
+export type TriggerMode = 'auto' | 'suggest';
+
+export interface SkillTrigger {
+  /** Skill name to activate */
+  skillName: string;
+  /** Regex patterns that indicate this skill should activate */
+  patterns: RegExp[];
+  /** 'auto' = activate silently, 'suggest' = inform user and let them decide */
+  mode: TriggerMode;
+}
+
+/**
+ * Auto-trigger definitions for built-in skills.
+ * Patterns are tested against the user's message.
+ * Only triggers when NO skill is manually active.
+ *
+ * Exported for testing.
+ */
+export const SKILL_TRIGGERS: SkillTrigger[] = [
+  {
+    skillName: 'debugger',
+    mode: 'auto',
+    patterns: [
+      // Explicit debugging language
+      /\b(debug|debugging|troubleshoot|troubleshooting)\b/i,
+      // Error descriptions — matches both "error when X" and "every time X errors"
+      /\b(error|bug|crash(es|ed|ing)?|broken|not working|fails?|failing|exception|stack\s*trace)\b.*\b(when|after|every\s*time|keeps?|always)\b/i,
+      /\b(when|after|every\s*time|keeps?|always)\b.*\b(error|bug|crash(es|ed|ing)?|broken|not working|fails?|failing|exception)\b/i,
+      // "Why does X not work" / "X stopped working"
+      /\bwhy\s+(does|is|did|doesn't|won't|can't)\b.*\b(work|function|respond|connect|load|run|start)\b/i,
+      /\b(stopped|quit|ceased)\s+working\b/i,
+      // "Fix" requests with technical context
+      /\bfix\b.*\b(error|bug|issue|problem|code|script|config|server|database|api)\b/i,
+    ],
+  },
+  {
+    skillName: 'careful',
+    mode: 'auto',
+    patterns: [
+      // Destructive operations
+      /\b(delete|remove|drop|wipe|erase|purge|destroy|reset)\s+(all|every|the\s+entire|my|the)\b/i,
+      // System-level danger
+      /\b(format|reformat)\s+(disk|drive|partition|volume)\b/i,
+      /\brm\s+-rf\b/i,
+      /\bdrop\s+(table|database|collection)\b/i,
+    ],
+  },
+  {
+    skillName: 'brainstormer',
+    mode: 'suggest',
+    patterns: [
+      // Exploratory thinking
+      /\b(brainstorm|think through|explore options|weigh|pros and cons|trade-?offs?)\b/i,
+      // Planning requests
+      /\b(how should (i|we)|what's the best (way|approach)|which option|help me decide|i'm (torn|unsure|undecided))\b/i,
+    ],
+  },
+  {
+    skillName: 'analyst',
+    mode: 'suggest',
+    patterns: [
+      // Data analysis requests
+      /\b(analyze|analyse)\s+(this|the|my)\s+(data|numbers|metrics|results|spreadsheet|csv|report)\b/i,
+      /\b(trend|pattern|correlation|outlier|distribution)\s+(analysis|in|of|from)\b/i,
+    ],
+  },
+  {
+    skillName: 'coder',
+    mode: 'suggest',
+    patterns: [
+      // Code assistance with specific language/framework mentions
+      /\b(write|create|build)\s+(a|an|the)\s+(function|class|component|script|api|endpoint|module)\b/i,
+      /\b(refactor|optimize|improve)\s+(this|the|my)\s+(code|function|class|component)\b/i,
+    ],
+  },
+];
 
 const BUILTIN_SKILLS: BuiltinSkillDef[] = [
   {
@@ -199,4 +280,81 @@ export function getSkillAllowedTools(chatId: string): string[] | null {
   } catch {
     return null;
   }
+}
+
+// ── Auto-Trigger Engine ─────────────────────────────────────
+
+/**
+ * Result of auto-trigger detection.
+ */
+export interface TriggerResult {
+  /** The skill that matched */
+  skill: Skill;
+  /** Whether to auto-activate or just suggest */
+  mode: TriggerMode;
+  /** Which pattern matched (for logging) */
+  matchedPattern: string;
+}
+
+/**
+ * Detect if a message should auto-trigger a skill.
+ * Only triggers when no skill is manually active for the chat.
+ *
+ * Returns null if no trigger matches, or a TriggerResult with the
+ * matched skill and whether to auto-activate or suggest.
+ *
+ * Exported for testing.
+ */
+export function detectSkillTrigger(
+  message: string,
+  chatId: string,
+): TriggerResult | null {
+  // Don't auto-trigger if a skill is already manually active
+  const currentSkill = resolveSkill(chatId);
+  if (currentSkill) return null;
+
+  // Don't trigger on very short messages (greetings, etc.)
+  if (message.length < 15) return null;
+
+  // Don't trigger on commands
+  if (message.startsWith('/') || message.startsWith('!')) return null;
+
+  for (const trigger of SKILL_TRIGGERS) {
+    for (const pattern of trigger.patterns) {
+      if (pattern.test(message)) {
+        const skill = getSkillByName(trigger.skillName);
+        if (!skill) continue;
+
+        logger.debug(
+          { chatId, skill: trigger.skillName, mode: trigger.mode, pattern: pattern.source },
+          'Skill auto-trigger matched',
+        );
+
+        return {
+          skill,
+          mode: trigger.mode,
+          matchedPattern: pattern.source,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Apply an auto-trigger: activate the skill for the chat.
+ * Returns a notification message to send to the user.
+ */
+export function applyAutoTrigger(
+  chatId: string,
+  trigger: TriggerResult,
+): string {
+  setActiveSkill(chatId, trigger.skill.id);
+
+  if (trigger.mode === 'auto') {
+    return `🔄 Auto-activated **${trigger.skill.name}** mode. Use /skill off to deactivate.`;
+  }
+  // 'suggest' mode — we still activate but tell the user they can turn it off
+  return `💡 Switched to **${trigger.skill.name}** mode — seems relevant for this request. Use /skill off if you prefer the default.`;
 }

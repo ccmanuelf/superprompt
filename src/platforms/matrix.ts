@@ -138,6 +138,11 @@ async function handleMessage(
       isVoice,
     });
 
+    // Send auto-trigger notice if a skill was activated for this message
+    if (response.autoTriggerNotice) {
+      await sendNotice(client, roomId, response.autoTriggerNotice);
+    }
+
     if (!response.text) {
       await sendNotice(client, roomId, '(No response from AI provider)');
       return;
