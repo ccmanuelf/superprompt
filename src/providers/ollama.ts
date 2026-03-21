@@ -15,7 +15,7 @@ IMPORTANT: You DO have access to real-time web search via the web_search tool. W
 
 When the user asks you to do something that requires tools, use them. Don't say you can't do something if there's a tool that can help.
 
-Available built-in tools: web_search, read_file, run_command, query_memory, save_memory, get_time, system_info, summarize_url, parse_file, generate_document, read_bot_logs, create_reminder.
+Available built-in tools: web_search, read_file, run_command, query_memory, save_memory, get_time, system_info, summarize_url, parse_file, generate_document, read_bot_logs, create_reminder, github_list_repos, github_read_file, github_list_issues, github_list_prs, github_clone_repo, github_diff, github_commit_push, github_create_pr, render_list_services, render_deploy_status, render_get_logs, take_screenshot.
 
 Additional user-created tools may also be available. Check the tool list for the full set of tools you can use.
 
@@ -311,13 +311,23 @@ export class OllamaProvider implements AIProvider {
         const result = await executeTool(toolName, toolArgs, chatId);
 
         // Capture generated files for the platform layer to send
-        if (result && typeof result === 'object' && '__docgen' in result) {
-          const docResult = result as { path: string; filename: string; mimeType: string };
-          generatedFiles.push({
-            path: docResult.path,
-            filename: docResult.filename,
-            mimeType: docResult.mimeType,
-          });
+        if (result && typeof result === 'object') {
+          if ('__docgen' in result) {
+            const docResult = result as { path: string; filename: string; mimeType: string };
+            generatedFiles.push({
+              path: docResult.path,
+              filename: docResult.filename,
+              mimeType: docResult.mimeType,
+            });
+          } else if ('filepath' in result && typeof (result as Record<string, unknown>).filepath === 'string') {
+            // Screenshot or other file-producing tools
+            const fileResult = result as { filepath: string; filename: string };
+            generatedFiles.push({
+              path: fileResult.filepath,
+              filename: fileResult.filename || 'screenshot.png',
+              mimeType: 'image/png',
+            });
+          }
         }
 
         messages.push({

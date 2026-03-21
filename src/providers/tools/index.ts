@@ -19,6 +19,22 @@ import { parseFileDefinition, parseFileTool } from './parse-file.js';
 import { generateDocumentDefinition, generateDocumentTool } from './generate-document.js';
 import { readBotLogsDefinition, readBotLogs } from './read-bot-logs.js';
 import { createReminderDefinition, createReminder } from './create-reminder.js';
+import {
+  githubListReposDefinition, githubListRepos,
+  githubReadFileDefinition, githubReadFile,
+  githubListIssuesDefinition, githubListIssues,
+  githubListPrsDefinition, githubListPrs,
+  githubCloneRepoDefinition, githubCloneRepo,
+  githubDiffDefinition, githubDiff,
+  githubCommitPushDefinition, githubCommitPush,
+  githubCreatePrDefinition, githubCreatePr,
+} from './github.js';
+import {
+  renderListServicesDefinition, renderListServices,
+  renderDeployStatusDefinition, renderDeployStatus,
+  renderGetLogsDefinition, renderGetLogs,
+} from './render-status.js';
+import { takeScreenshotDefinition, takeScreenshot } from './screenshot.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -87,6 +103,69 @@ export function registerBuiltinTools(): void {
       definition: createReminderDefinition,
       execute: async (args, chatId) =>
         createReminder(args as { message: string; cron: string; description: string }, chatId),
+      source: 'builtin',
+    },
+    // ── GitHub tools ──
+    {
+      definition: githubListReposDefinition,
+      execute: async (args) => githubListRepos(args as { limit?: number }),
+      source: 'builtin',
+    },
+    {
+      definition: githubReadFileDefinition,
+      execute: async (args) => githubReadFile(args as { repo: string; path: string; ref?: string }),
+      source: 'builtin',
+    },
+    {
+      definition: githubListIssuesDefinition,
+      execute: async (args) => githubListIssues(args as { repo: string; state?: string; limit?: number }),
+      source: 'builtin',
+    },
+    {
+      definition: githubListPrsDefinition,
+      execute: async (args) => githubListPrs(args as { repo: string; state?: string; limit?: number }),
+      source: 'builtin',
+    },
+    {
+      definition: githubCloneRepoDefinition,
+      execute: async (args) => githubCloneRepo(args as { repo: string; branch?: string }),
+      source: 'builtin',
+    },
+    {
+      definition: githubDiffDefinition,
+      execute: async (args) => githubDiff(args as { repo: string }),
+      source: 'builtin',
+    },
+    {
+      definition: githubCommitPushDefinition,
+      execute: async (args) => githubCommitPush(args as { repo: string; message: string; branch?: string }),
+      source: 'builtin',
+    },
+    {
+      definition: githubCreatePrDefinition,
+      execute: async (args) => githubCreatePr(args as { repo: string; title: string; body?: string; head: string; base?: string }),
+      source: 'builtin',
+    },
+    // ── Render tools ──
+    {
+      definition: renderListServicesDefinition,
+      execute: async (args) => renderListServices(args as { limit?: number }),
+      source: 'builtin',
+    },
+    {
+      definition: renderDeployStatusDefinition,
+      execute: async (args) => renderDeployStatus(args as { serviceId: string }),
+      source: 'builtin',
+    },
+    {
+      definition: renderGetLogsDefinition,
+      execute: async (args) => renderGetLogs(args as { serviceId: string; limit?: number }),
+      source: 'builtin',
+    },
+    // ── Screenshot tool ──
+    {
+      definition: takeScreenshotDefinition,
+      execute: async (args) => takeScreenshot(args as { url: string; selector?: string; fullPage?: boolean }),
       source: 'builtin',
     },
   ];

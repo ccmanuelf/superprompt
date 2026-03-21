@@ -21,15 +21,31 @@ FROM node:22-slim
 WORKDIR /app
 
 # Install runtime dependencies
-# - curl: health checks
+# - curl, git: basics
+# - gh: GitHub CLI for repo operations
 # - claude CLI: AI provider (installed via npm globally)
+# - chromium + deps: Puppeteer screenshots (set PUPPETEER_SKIP_DOWNLOAD=true to use system chromium)
 # NOTE: Pin to @latest and bust cache with date to keep in sync with host
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    curl libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
-    libjpeg62-turbo libgif7 librsvg2-2 && \
+    curl git libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+    libjpeg62-turbo libgif7 librsvg2-2 \
+    chromium libatk-bridge2.0-0 libdrm2 libxcomposite1 \
+    libxdamage1 libxrandr2 libgbm1 libasound2 libxshmfence1 \
+    libnss3 libatk1.0-0 libcups2 && \
     npm install -g @anthropic-ai/claude-code@latest && \
     rm -rf /var/lib/apt/lists/*
+
+# Install gh CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
+    apt-get update && apt-get install -y gh && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set Puppeteer to use system Chromium instead of downloading its own
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Create non-root user
 RUN groupadd -r clauded && useradd -r -g clauded -m clauded
@@ -46,8 +62,8 @@ COPY src/web/public/ ./dist/web/public/
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Create runtime directories
-RUN mkdir -p /app/store /app/workspace/uploads && \
+# Create runtime directories (repos for GitHub clones, screenshots for captures)
+RUN mkdir -p /app/store /app/workspace/uploads /app/workspace/repos /app/workspace/screenshots && \
     chown -R clauded:clauded /app
 
 # Switch to non-root user

@@ -12,6 +12,10 @@ services:
       # Claude CLI auth — uses subscription (Max) via long-lived OAuth token
       # Generated with: claude setup-token
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
+      # GitHub CLI auth (optional — for github_* tools)
+      - GH_TOKEN=${GH_TOKEN:-}
+      # Render API key (optional — for render_* tools)
+      - RENDER_API_KEY=${RENDER_API_KEY:-}
     volumes:
       # Config files (readEnvFile reads from disk, not process.env)
       - ./.env:/app/.env:ro
