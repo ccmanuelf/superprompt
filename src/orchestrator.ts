@@ -347,6 +347,7 @@ export async function orchestrateTask(
       const response = await router.sendMessage({
         chatId,
         message: stepMessage,
+        skipAutoTrigger: true, // Don't trigger skills mid-orchestration
       });
 
       const output = response.text || '(no output)';

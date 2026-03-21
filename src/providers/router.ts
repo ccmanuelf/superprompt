@@ -258,9 +258,9 @@ export class ProviderRouter {
       'Routing message',
     );
 
-    // Check for auto-trigger before resolving skill
+    // Check for auto-trigger before resolving skill (skip for orchestrator step calls)
     let autoTriggerNotice: string | undefined;
-    const triggerResult = detectSkillTrigger(params.message, chatId);
+    const triggerResult = params.skipAutoTrigger ? null : detectSkillTrigger(params.message, chatId);
     if (triggerResult) {
       autoTriggerNotice = applyAutoTrigger(chatId, triggerResult);
       logger.info(

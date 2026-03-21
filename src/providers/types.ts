@@ -11,6 +11,8 @@ export interface SendMessageParams {
   skipTools?: boolean;
   /** When true, the message originated from a voice note — triggers concise conversational replies. */
   isVoice?: boolean;
+  /** When true, skip skill auto-triggering for this message (used by orchestrator step calls). */
+  skipAutoTrigger?: boolean;
 }
 
 export interface GeneratedFile {

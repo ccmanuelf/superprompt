@@ -410,11 +410,21 @@ Rules:
   const response = await ollama.chat({
     model: config.OLLAMA_CHAT_MODEL,
     messages: [{ role: 'user', content: compressionPrompt }],
+    // think: false — compression is a structured task, not a reasoning task.
+    // With think: true, the model may spend the entire num_predict budget
+    // on thinking tokens, leaving content empty (this caused 7 empty episodes in production).
+    think: false,
     options: { temperature: 0.3, num_predict: 512 },
     stream: false,
   });
 
-  const responseText = response.message.content.trim();
+  const responseText = (response.message.content || '').trim();
+
+  // Guard: if AI returned nothing, abort — don't create empty episodes
+  if (!responseText) {
+    logger.warn({ chatId, memoryCount: memories.length }, 'Compression returned empty response, keeping original memories');
+    return null;
+  }
 
   // Parse the JSON response — handle potential markdown fences
   const jsonStr = responseText
@@ -429,6 +439,12 @@ Rules:
     // If JSON parsing fails, use the raw text as summary
     logger.warn({ responseText }, 'Episode compression returned invalid JSON, using raw text');
     parsed = { summary: truncate(responseText, 500), key_facts: [], open_threads: [] };
+  }
+
+  // Guard: if parsed summary is empty after all attempts, abort
+  if (!parsed.summary || parsed.summary.trim().length === 0) {
+    logger.warn({ chatId }, 'Compression produced empty summary, keeping original memories');
+    return null;
   }
 
   // Generate embedding for the episode summary
