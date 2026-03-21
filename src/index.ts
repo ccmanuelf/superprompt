@@ -120,10 +120,10 @@ async function main(): Promise<void> {
     );
   }
 
-  // 5. Run memory decay sweep + schedule recurring sweep
-  runDecaySweep();
+  // 5. Run memory decay sweep + schedule recurring sweep (async — fire-and-forget with logging)
+  runDecaySweep().catch((err) => logger.warn({ err }, 'Initial decay sweep failed'));
   const decayInterval = setInterval(() => {
-    runDecaySweep();
+    runDecaySweep().catch((err) => logger.warn({ err }, 'Decay sweep failed'));
   }, DAY_MS);
 
   // 6. Clean up old uploads

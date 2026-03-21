@@ -111,6 +111,10 @@ function createTables(): void {
     db.exec('ALTER TABLE sessions ADD COLUMN ollama_model TEXT');
     logger.info('Migration: added ollama_model column to sessions');
   }
+  if (!sessionCols.some((c) => c.name === 'auto_route')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN auto_route INTEGER NOT NULL DEFAULT 0');
+    logger.info('Migration: added auto_route column to sessions');
+  }
 
   // Migration: add source_file and locked columns to skills if they don't exist
   const skillCols = db.prepare("PRAGMA table_info(skills)").all() as Array<{ name: string }>;
@@ -160,6 +164,42 @@ function createTables(): void {
     );
   `);
 
+  // Episodes: compressed summaries of episodic memory groups
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS episodes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      key_facts TEXT,
+      open_threads TEXT,
+      source_count INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_episodes_chat
+      ON episodes(chat_id);
+  `);
+
+  // Episodes FTS5
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(
+      summary,
+      content_rowid=id
+    );
+
+    CREATE TRIGGER IF NOT EXISTS episodes_ai AFTER INSERT ON episodes BEGIN
+      INSERT INTO episodes_fts(rowid, summary) VALUES (new.id, new.summary);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS episodes_au AFTER UPDATE OF summary ON episodes BEGIN
+      UPDATE episodes_fts SET summary = new.summary WHERE rowid = old.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS episodes_ad AFTER DELETE ON episodes BEGIN
+      DELETE FROM episodes_fts WHERE rowid = old.id;
+    END;
+  `);
+
   // Create vec0 virtual table for vector similarity search (768 dims = nomic-embed-text)
   try {
     db.exec(`
@@ -170,6 +210,18 @@ function createTables(): void {
     `);
   } catch (err) {
     logger.warn({ err }, 'Could not create memories_vec table (sqlite-vec may not be loaded)');
+  }
+
+  // Episodes vector table
+  try {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS episodes_vec USING vec0(
+        episode_id INTEGER PRIMARY KEY,
+        embedding float[768]
+      );
+    `);
+  } catch (err) {
+    logger.warn({ err }, 'Could not create episodes_vec table (sqlite-vec may not be loaded)');
   }
 
   // FTS5 sync triggers — keep memories_fts in sync with memories table
@@ -195,6 +247,7 @@ export interface Session {
   session_id: string;
   provider: string;
   ollama_model: string | null;
+  auto_route: number;
   updated_at: number;
 }
 
@@ -239,6 +292,24 @@ export function updateSessionOllamaModel(
 
 export function clearSession(chatId: string): void {
   db.prepare('DELETE FROM sessions WHERE chat_id = ?').run(chatId);
+}
+
+export function setAutoRoute(chatId: string, enabled: boolean): void {
+  const session = getSession(chatId);
+  if (session) {
+    db.prepare('UPDATE sessions SET auto_route = ?, updated_at = ? WHERE chat_id = ?')
+      .run(enabled ? 1 : 0, Date.now(), chatId);
+  } else {
+    db.prepare(
+      `INSERT INTO sessions (chat_id, session_id, provider, auto_route, updated_at)
+       VALUES (?, '', 'claude', ?, ?)`,
+    ).run(chatId, enabled ? 1 : 0, Date.now());
+  }
+}
+
+export function isAutoRouteEnabled(chatId: string): boolean {
+  const session = getSession(chatId);
+  return session?.auto_route === 1;
 }
 
 // ── Memories CRUD ───────────────────────────────────────────
@@ -791,6 +862,140 @@ export function getToolRevisions(toolId: string, limit: number = 10): ToolRevisi
   return db.prepare(
     'SELECT * FROM tool_revisions WHERE tool_id = ? ORDER BY created_at DESC LIMIT ?',
   ).all(toolId, limit) as ToolRevision[];
+}
+
+// ── Episodes CRUD ───────────────────────────────────────────
+
+export interface Episode {
+  id: number;
+  chat_id: string;
+  summary: string;
+  key_facts: string | null;
+  open_threads: string | null;
+  source_count: number;
+  created_at: number;
+}
+
+export function insertEpisode(
+  chatId: string,
+  summary: string,
+  keyFacts: string[] | null,
+  openThreads: string[] | null,
+  sourceCount: number,
+  embedding?: number[],
+): number {
+  const now = Date.now();
+  const result = db.prepare(
+    `INSERT INTO episodes (chat_id, summary, key_facts, open_threads, source_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(
+    chatId,
+    summary,
+    keyFacts ? JSON.stringify(keyFacts) : null,
+    openThreads ? JSON.stringify(openThreads) : null,
+    sourceCount,
+    now,
+  );
+
+  const episodeId = Number(result.lastInsertRowid);
+
+  if (embedding) {
+    try {
+      const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
+      db.prepare(
+        'INSERT INTO episodes_vec (episode_id, embedding) VALUES (CAST(? AS INTEGER), ?)',
+      ).run(episodeId, embeddingBlob);
+    } catch (err) {
+      logger.warn({ err, episodeId }, 'Failed to insert into episodes_vec');
+    }
+  }
+
+  return episodeId;
+}
+
+export function searchEpisodes(
+  chatId: string,
+  query: string,
+  limit: number = 2,
+): Episode[] {
+  try {
+    return db.prepare(
+      `SELECT e.* FROM episodes e
+       JOIN episodes_fts fts ON fts.rowid = e.id
+       WHERE fts.summary MATCH ? AND e.chat_id = ?
+       ORDER BY fts.rank
+       LIMIT ?`,
+    ).all(query, chatId, limit) as Episode[];
+  } catch {
+    return [];
+  }
+}
+
+export function vectorSearchEpisodes(
+  chatId: string,
+  embedding: number[],
+  limit: number = 2,
+): Episode[] {
+  try {
+    const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
+    return db.prepare(
+      `SELECT e.* FROM episodes e
+       JOIN episodes_vec v ON v.episode_id = e.id
+       WHERE e.chat_id = ?
+       AND v.embedding MATCH ?
+       AND v.k = ?
+       ORDER BY v.distance`,
+    ).all(chatId, embeddingBlob, limit) as Episode[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get episodic memories eligible for compression.
+ * Returns memories grouped by chat_id with salience between 0.1 and 0.3
+ * (decayed enough to be candidates but not yet deleted).
+ */
+export function getCompressibleMemories(
+  chatId: string,
+  maxSalience: number = 0.3,
+): Memory[] {
+  return db.prepare(
+    `SELECT * FROM memories
+     WHERE chat_id = ? AND sector = 'episodic' AND salience > 0.1 AND salience <= ?
+     ORDER BY created_at ASC`,
+  ).all(chatId, maxSalience) as Memory[];
+}
+
+/**
+ * Get all distinct chat IDs that have compressible episodic memories.
+ */
+export function getChatsWithCompressibleMemories(maxSalience: number = 0.3): string[] {
+  const rows = db.prepare(
+    `SELECT DISTINCT chat_id FROM memories
+     WHERE sector = 'episodic' AND salience > 0.1 AND salience <= ?`,
+  ).all(maxSalience) as Array<{ chat_id: string }>;
+  return rows.map((r) => r.chat_id);
+}
+
+/**
+ * Delete specific memories by ID (used after episode compression).
+ */
+export function deleteMemories(ids: number[]): void {
+  if (ids.length === 0) return;
+
+  const transaction = db.transaction(() => {
+    for (const id of ids) {
+      try {
+        db.prepare('DELETE FROM memories_vec WHERE memory_id = ?').run(id);
+      } catch {
+        // best-effort vec0 cleanup
+      }
+      db.prepare('DELETE FROM memories WHERE id = ?').run(id);
+    }
+  });
+
+  transaction();
 }
 
 // ── Cleanup ─────────────────────────────────────────────────

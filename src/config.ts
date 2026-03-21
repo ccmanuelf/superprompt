@@ -33,6 +33,7 @@ export const config = {
 
   // AI Provider
   AI_PROVIDER: (env.AI_PROVIDER || 'claude') as 'claude' | 'ollama',
+  AUTO_ROUTE: env.AUTO_ROUTE === 'true',
 
   // Ollama
   OLLAMA_HOST: env.OLLAMA_HOST || 'http://localhost:11434',
