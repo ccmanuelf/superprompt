@@ -1,13 +1,13 @@
 # clauded — Enhancement Roadmap
 
-> Last updated: 2026-03-18
-> Previous roadmap (superseded): `memory/roadmap.md` (2026-03-13, 8 sprints)
+> Last updated: 2026-03-21
+> Previous roadmap versions: `memory/roadmap.md` (2026-03-13), ROADMAP.md (2026-03-18)
 
 ## Summary
 
-After evaluating 7 external sources against clauded's existing architecture, the roadmap was expanded to **6 development sprints + 1 E2E validation sweep + 1 cloud deploy**. Sprints S1-S2 complete.
+clauded is evolving from personal AI assistant into a **full AI partner platform ("Jarvis")**. Core autonomy sprints S1-S8 complete. Platform expansion sprints S10-S13 planned.
 
-**Execution order: S1 ✅ → S2 ✅ → S5 ✅ → S6 ✅ → S7 ✅ → S8 ✅ → S9 (Docs) → S4 (E2E) → S3 (Cloud Deploy)**
+**Execution order: S1-S8 ✅ → S10 (GitHub+Render+Screenshots) → S11 (Kanban) → S12 (Learning Coach) → S13 (Manufacturing/Research) → S9 (Docs) → S4 (E2E) → S3 (Cloud Deploy)**
 
 ---
 
@@ -354,12 +354,82 @@ Positioned after all engineering sprints are complete so we document a stable, c
 
 ---
 
-## Deferred Enhancements (Nice to Have)
+## Sprint S10: GitHub + Render + Screenshots — NOT STARTED
+
+**Goal:** Full development workflow from Telegram — code repos, deploy, verify visually.
+
+### Features
+- **Persistent workspace**: Docker volume for project files that survives restarts
+- **`gh` CLI in Docker**: Install, authenticate, add GitHub tools for Ollama
+- **GitHub tools**: `github_clone_repo`, `github_list_repos`, `github_read_file`, `github_create_branch`, `github_commit_push`, `github_create_pr`, `github_list_issues`, `github_list_prs`
+- **Render MCP wiring**: Connect existing Render MCP tools for deploy status, logs, service management
+- **Puppeteer**: Headless browser in Docker for `take_screenshot(url)` tool
+- **Diff preview**: Format `git diff` output nicely for Telegram before committing
+
+### Resources to evaluate
+- Render MCP server (already registered as deferred tool)
+
+---
+
+## Sprint S11: Kanban Collaboration Layer — NOT STARTED
+
+**Goal:** Shared project board where both human and bot track, assign, and manage work.
+
+### Features
+- **Web Kanban board**: Columns (Backlog → In Progress → Review → Done → Deferred → Cancelled)
+- **Card model**: title, description, assignee (me/bot/collaborative/noted), priority, due date, labels
+- **Proactive card creation**: Bot detects opportunities in conversation → auto-creates Backlog cards
+- **Assignment workflow**: User assigns cards via web UI or Telegram (`/board assign <id> bot`)
+- **Bot-assigned execution**: Scheduler picks up bot-assigned cards, works on them, moves to Review
+- **Notification**: Bot notifies when bot-assigned tasks complete or when blocked on collaborative tasks
+- **Telegram commands**: `/board list`, `/board add`, `/board move`, `/board assign`
+
+### Design principle
+> "Like working with a partner and distributing the workload"
+
+---
+
+## Sprint S12: Learning Coach — NOT STARTED
+
+**Goal:** Structured micro-learning sessions for languages, topics, professional growth.
+
+### Features
+- **Learning profile**: User expresses interest → bot saves goal, schedules sessions
+- **Micro-sessions** (5-10 min): Proactive messages at user-preferred time
+- **Methods**: Socratic, syntax drill, conversational practice, vocabulary building
+- **Progress tracking**: DB table for topics, sessions completed, performance, weak areas
+- **Spaced repetition**: Review schedule based on retention (Leitner system)
+- **Multi-topic**: Language (Chinese, Portuguese), Crypto, Politics, Fitness, etc.
+- **Skill**: `learning-coach` built-in skill with structured session templates
+
+### Resources to evaluate (user-provided)
+- https://github.com/edwinjojie/ai-study-coach
+- https://github.com/ShubhamMahajan880/studyAlpha-Ai-Agent
+- https://github.com/Harshal-Bsys27/ai-study-planner
+
+---
+
+## Sprint S13: Manufacturing & Research Tools — NOT STARTED
+
+**Goal:** Domain-specific professional tools for manufacturing engineering and research.
+
+### Features
+- **Citation tracking**: Summaries include source URLs/titles in structured format
+- **PPTX generation**: Slide deck creation via `pptxgenjs` library
+- **Paper gathering**: Search academic sources, compile reference lists
+- **Process simulation**: SimPy-based production line modeling via Python scripts
+- **Domain skills**: `manufacturing-expert`, `researcher` built-in skills
+- **Report enhancement**: Fill templates, review uploaded reports, create readout decks
+
+---
+
+## Deferred Enhancements
 
 | Enhancement | Source | Rationale for Deferral |
 |-------------|--------|----------------------|
-| Multi-agent routing | openclaw tutorial | Overkill for 2-provider personal assistant |
-| Execution sandbox | open-terminal | Ollama already executes tools in-process; no need for HTTP sandbox |
+| Multi-agent routing | openclaw tutorial | Telegram Forum Topics (S11) solves this differently |
+| Execution sandbox | open-terminal | Persistent workspace (S10) addresses this need |
+| Telegram Forum Topics | OpenClaw architecture | Evaluate after S11 Kanban — may combine or sequence |
 
 ---
 
