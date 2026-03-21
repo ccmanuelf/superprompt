@@ -98,6 +98,17 @@ function createTables(): void {
     );
   `);
 
+  // Migration: add auto_triggered and remaining_turns columns to chat_skills
+  const chatSkillCols = db.prepare("PRAGMA table_info(chat_skills)").all() as Array<{ name: string }>;
+  if (!chatSkillCols.some((c) => c.name === 'auto_triggered')) {
+    db.exec('ALTER TABLE chat_skills ADD COLUMN auto_triggered INTEGER NOT NULL DEFAULT 0');
+    logger.info('Migration: added auto_triggered column to chat_skills');
+  }
+  if (!chatSkillCols.some((c) => c.name === 'remaining_turns')) {
+    db.exec('ALTER TABLE chat_skills ADD COLUMN remaining_turns INTEGER NOT NULL DEFAULT -1');
+    logger.info('Migration: added remaining_turns column to chat_skills');
+  }
+
   // Migration: add embedding column if it doesn't exist
   const cols = db.prepare("PRAGMA table_info(memories)").all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === 'embedding')) {
@@ -747,6 +758,55 @@ export function getActiveSkill(chatId: string): Skill | undefined {
 
 export function clearActiveSkill(chatId: string): void {
   db.prepare('DELETE FROM chat_skills WHERE chat_id = ?').run(chatId);
+}
+
+/**
+ * Set the active skill with auto-trigger metadata.
+ * remaining_turns: how many messages before auto-deactivation (-1 = manual, never auto-deactivates)
+ */
+export function setActiveSkillAutoTriggered(
+  chatId: string,
+  skillId: string,
+  remainingTurns: number,
+): void {
+  db.prepare(
+    `INSERT INTO chat_skills (chat_id, skill_id, activated_at, auto_triggered, remaining_turns)
+     VALUES (?, ?, ?, 1, ?)
+     ON CONFLICT(chat_id) DO UPDATE SET
+       skill_id = excluded.skill_id,
+       activated_at = excluded.activated_at,
+       auto_triggered = 1,
+       remaining_turns = excluded.remaining_turns`,
+  ).run(chatId, skillId, Date.now(), remainingTurns);
+}
+
+/**
+ * Check if the current skill was auto-triggered (not manually activated).
+ */
+export function isSkillAutoTriggered(chatId: string): boolean {
+  const row = db.prepare(
+    'SELECT auto_triggered FROM chat_skills WHERE chat_id = ?',
+  ).get(chatId) as { auto_triggered: number } | undefined;
+  return row?.auto_triggered === 1;
+}
+
+/**
+ * Decrement remaining turns for an auto-triggered skill.
+ * Returns true if the skill should be deactivated (turns exhausted).
+ */
+export function decrementSkillTurns(chatId: string): boolean {
+  const row = db.prepare(
+    'SELECT remaining_turns, auto_triggered FROM chat_skills WHERE chat_id = ?',
+  ).get(chatId) as { remaining_turns: number; auto_triggered: number } | undefined;
+
+  if (!row || !row.auto_triggered) return false;
+  if (row.remaining_turns <= 0 && row.remaining_turns !== -1) return true;
+  if (row.remaining_turns === -1) return false; // Manual, never expires
+
+  const newTurns = row.remaining_turns - 1;
+  db.prepare('UPDATE chat_skills SET remaining_turns = ? WHERE chat_id = ?').run(newTurns, chatId);
+
+  return newTurns <= 0;
 }
 
 // ── Skill Lock/Unlock + Revisions ───────────────────────────

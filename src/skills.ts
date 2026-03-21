@@ -3,7 +3,12 @@ import {
   getActiveSkill,
   getSkillByName,
   setActiveSkill,
+  setActiveSkillAutoTriggered,
+  isSkillAutoTriggered,
+  decrementSkillTurns,
+  clearActiveSkill,
   listSkills,
+  getDatabase,
   type Skill,
 } from './db.js';
 import { logger } from './logger.js';
@@ -59,12 +64,12 @@ export const SKILL_TRIGGERS: SkillTrigger[] = [
     skillName: 'careful',
     mode: 'auto',
     patterns: [
-      // Destructive operations
-      /\b(delete|remove|drop|wipe|erase|purge|destroy|reset)\s+(all|every|the\s+entire|my|the)\b/i,
+      // Destructive operations (handles verb forms: delete/deleting, drop/dropping, etc.)
+      /\b(delet|remov|dropp?|wip|eras|purg|destroy|reset)(e|ed|ing|s)?\s+(all|every|the\s+entire|my|the)\b/i,
       // System-level danger
-      /\b(format|reformat)\s+(disk|drive|partition|volume)\b/i,
+      /\b(format|reformat)(ting|s)?\s+(disk|drive|partition|volume)\b/i,
       /\brm\s+-rf\b/i,
-      /\bdrop\s+(table|database|collection)\b/i,
+      /\bdropp?(ing)?\s+(table|database|collection|index)\b/i,
     ],
   },
   {
@@ -296,12 +301,19 @@ export interface TriggerResult {
   matchedPattern: string;
 }
 
+/** Number of messages an auto-triggered skill stays active before auto-deactivating */
+const AUTO_TRIGGER_TTL_TURNS = 3;
+
 /**
  * Detect if a message should auto-trigger a skill.
- * Only triggers when no skill is manually active for the chat.
  *
- * Returns null if no trigger matches, or a TriggerResult with the
- * matched skill and whether to auto-activate or suggest.
+ * Triggering rules:
+ * - If no skill is active → check all triggers
+ * - If a skill was AUTO-triggered → allow re-triggering with a different skill
+ *   (topic changed) or refresh the turn count if same skill matches again
+ * - If a skill was MANUALLY activated → never auto-trigger (user chose it)
+ *
+ * Returns null if no trigger matches.
  *
  * Exported for testing.
  */
@@ -309,21 +321,32 @@ export function detectSkillTrigger(
   message: string,
   chatId: string,
 ): TriggerResult | null {
-  // Don't auto-trigger if a skill is already manually active
-  const currentSkill = resolveSkill(chatId);
-  if (currentSkill) return null;
-
   // Don't trigger on very short messages (greetings, etc.)
   if (message.length < 15) return null;
 
   // Don't trigger on commands
   if (message.startsWith('/') || message.startsWith('!')) return null;
 
+  const currentSkill = resolveSkill(chatId);
+
+  // If a skill is manually active, never auto-trigger
+  if (currentSkill && !isSkillAutoTriggered(chatId)) return null;
+
   for (const trigger of SKILL_TRIGGERS) {
     for (const pattern of trigger.patterns) {
       if (pattern.test(message)) {
         const skill = getSkillByName(trigger.skillName);
         if (!skill) continue;
+
+        // If the same skill is already active via auto-trigger, just refresh turns
+        if (currentSkill?.name === trigger.skillName) {
+          refreshAutoTriggerTurns(chatId);
+          logger.debug(
+            { chatId, skill: trigger.skillName },
+            'Refreshed auto-trigger turns (same skill re-matched)',
+          );
+          return null; // No new notification needed
+        }
 
         logger.debug(
           { chatId, skill: trigger.skillName, mode: trigger.mode, pattern: pattern.source },
@@ -339,18 +362,44 @@ export function detectSkillTrigger(
     }
   }
 
+  // No trigger matched — if current skill was auto-triggered, decrement turns
+  if (currentSkill && isSkillAutoTriggered(chatId)) {
+    const shouldDeactivate = decrementSkillTurns(chatId);
+    if (shouldDeactivate) {
+      clearActiveSkill(chatId);
+      logger.info(
+        { chatId, skill: currentSkill.name },
+        'Auto-triggered skill deactivated (turns exhausted)',
+      );
+    }
+  }
+
   return null;
 }
 
 /**
- * Apply an auto-trigger: activate the skill for the chat.
+ * Refresh the remaining turns for an auto-triggered skill.
+ * Called when the same trigger pattern matches again (user continues same topic).
+ */
+function refreshAutoTriggerTurns(chatId: string): void {
+  const db = getDatabase();
+  db.prepare(
+    'UPDATE chat_skills SET remaining_turns = ? WHERE chat_id = ? AND auto_triggered = 1',
+  ).run(AUTO_TRIGGER_TTL_TURNS, chatId);
+}
+
+/**
+ * Apply an auto-trigger: activate the skill for the chat with a turn limit.
+ * Auto-triggered skills deactivate after AUTO_TRIGGER_TTL_TURNS messages
+ * without a re-trigger match.
+ *
  * Returns a notification message to send to the user.
  */
 export function applyAutoTrigger(
   chatId: string,
   trigger: TriggerResult,
 ): string {
-  setActiveSkill(chatId, trigger.skill.id);
+  setActiveSkillAutoTriggered(chatId, trigger.skill.id, AUTO_TRIGGER_TTL_TURNS);
 
   if (trigger.mode === 'auto') {
     return `🔄 Auto-activated **${trigger.skill.name}** mode. Use /skill off to deactivate.`;

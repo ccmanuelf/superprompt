@@ -49,6 +49,8 @@ function initTestDb(): void {
       chat_id TEXT PRIMARY KEY,
       skill_id TEXT NOT NULL,
       activated_at INTEGER NOT NULL,
+      auto_triggered INTEGER NOT NULL DEFAULT 0,
+      remaining_turns INTEGER NOT NULL DEFAULT -1,
       FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
     );
   `);
@@ -178,6 +180,12 @@ describe('careful trigger patterns', () => {
   it('matches dangerous system commands', () => {
     expect(matchesTrigger(trigger, 'Run rm -rf on the directory')).toBe(true);
     expect(matchesTrigger(trigger, 'I need to drop table users')).toBe(true);
+  });
+
+  it('matches verb forms (dropping, deleting, etc.)', () => {
+    expect(matchesTrigger(trigger, 'Help me by dropping the old database tables')).toBe(true);
+    expect(matchesTrigger(trigger, 'I am deleting all the temp files')).toBe(true);
+    expect(matchesTrigger(trigger, 'We need to be removing the entire cache')).toBe(true);
   });
 
   it('does NOT match non-destructive operations', () => {
@@ -375,5 +383,124 @@ describe('end-to-end trigger flow (real DB)', () => {
       t.patterns.some((p) => p.test(message)),
     );
     expect(triggered).toBe(false);
+  });
+});
+
+// ── Auto-deactivation lifecycle (real DB) ──────────────────
+
+describe('auto-trigger lifecycle (real DB)', () => {
+  it('auto-triggered skill has metadata in DB', () => {
+    db.prepare(
+      `INSERT INTO chat_skills (chat_id, skill_id, activated_at, auto_triggered, remaining_turns)
+       VALUES (?, ?, ?, 1, 3)`,
+    ).run('chat1', 'builtin-debugger', Date.now());
+
+    const row = db.prepare('SELECT * FROM chat_skills WHERE chat_id = ?').get('chat1') as any;
+    expect(row.auto_triggered).toBe(1);
+    expect(row.remaining_turns).toBe(3);
+  });
+
+  it('manually activated skill has auto_triggered=0', () => {
+    db.prepare(
+      `INSERT INTO chat_skills (chat_id, skill_id, activated_at, auto_triggered, remaining_turns)
+       VALUES (?, ?, ?, 0, -1)`,
+    ).run('chat1', 'builtin-debugger', Date.now());
+
+    const row = db.prepare('SELECT * FROM chat_skills WHERE chat_id = ?').get('chat1') as any;
+    expect(row.auto_triggered).toBe(0);
+    expect(row.remaining_turns).toBe(-1); // -1 = never auto-deactivates
+  });
+
+  it('decrementing turns reaches zero and signals deactivation', () => {
+    db.prepare(
+      `INSERT INTO chat_skills (chat_id, skill_id, activated_at, auto_triggered, remaining_turns)
+       VALUES (?, ?, ?, 1, 2)`,
+    ).run('chat1', 'builtin-debugger', Date.now());
+
+    // Turn 1: decrement to 1
+    db.prepare('UPDATE chat_skills SET remaining_turns = remaining_turns - 1 WHERE chat_id = ?').run('chat1');
+    let row = db.prepare('SELECT remaining_turns FROM chat_skills WHERE chat_id = ?').get('chat1') as any;
+    expect(row.remaining_turns).toBe(1);
+
+    // Turn 2: decrement to 0
+    db.prepare('UPDATE chat_skills SET remaining_turns = remaining_turns - 1 WHERE chat_id = ?').run('chat1');
+    row = db.prepare('SELECT remaining_turns FROM chat_skills WHERE chat_id = ?').get('chat1') as any;
+    expect(row.remaining_turns).toBe(0);
+
+    // At 0 → should deactivate
+    expect(row.remaining_turns <= 0).toBe(true);
+  });
+
+  it('re-triggering refreshes the turn count', () => {
+    db.prepare(
+      `INSERT INTO chat_skills (chat_id, skill_id, activated_at, auto_triggered, remaining_turns)
+       VALUES (?, ?, ?, 1, 1)`,
+    ).run('chat1', 'builtin-debugger', Date.now());
+
+    // User sends another debugging message → refresh turns to 3
+    db.prepare(
+      'UPDATE chat_skills SET remaining_turns = 3 WHERE chat_id = ? AND auto_triggered = 1',
+    ).run('chat1');
+
+    const row = db.prepare('SELECT remaining_turns FROM chat_skills WHERE chat_id = ?').get('chat1') as any;
+    expect(row.remaining_turns).toBe(3);
+  });
+
+  it('different trigger replaces auto-triggered skill', () => {
+    // Debugger auto-triggered
+    db.prepare(
+      `INSERT INTO chat_skills (chat_id, skill_id, activated_at, auto_triggered, remaining_turns)
+       VALUES (?, ?, ?, 1, 3)`,
+    ).run('chat1', 'builtin-debugger', Date.now());
+
+    // User switches topic to destructive operation → careful should replace
+    db.prepare(
+      `INSERT INTO chat_skills (chat_id, skill_id, activated_at, auto_triggered, remaining_turns)
+       VALUES (?, ?, ?, 1, 3)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         skill_id = excluded.skill_id,
+         activated_at = excluded.activated_at,
+         auto_triggered = 1,
+         remaining_turns = excluded.remaining_turns`,
+    ).run('chat1', 'builtin-careful', Date.now());
+
+    const row = db.prepare(
+      'SELECT s.name FROM skills s JOIN chat_skills cs ON cs.skill_id = s.id WHERE cs.chat_id = ?',
+    ).get('chat1') as any;
+    expect(row.name).toBe('careful');
+  });
+
+  it('manual activation is NOT replaced by auto-trigger', () => {
+    // User manually activates translator
+    db.prepare(
+      `INSERT INTO chat_skills (chat_id, skill_id, activated_at, auto_triggered, remaining_turns)
+       VALUES (?, ?, ?, 0, -1)`,
+    ).run('chat1', 'builtin-general', Date.now());
+
+    const row = db.prepare('SELECT auto_triggered FROM chat_skills WHERE chat_id = ?').get('chat1') as any;
+    expect(row.auto_triggered).toBe(0);
+    // detectSkillTrigger would return null because auto_triggered is 0 (manual)
+  });
+
+  it('full lifecycle: trigger → use 3 turns → auto-deactivate', () => {
+    // 1. Auto-trigger debugger
+    db.prepare(
+      `INSERT INTO chat_skills (chat_id, skill_id, activated_at, auto_triggered, remaining_turns)
+       VALUES (?, ?, ?, 1, 3)`,
+    ).run('chat1', 'builtin-debugger', Date.now());
+
+    // 2. Three non-matching messages decrement turns
+    for (let i = 0; i < 3; i++) {
+      db.prepare('UPDATE chat_skills SET remaining_turns = remaining_turns - 1 WHERE chat_id = ? AND auto_triggered = 1').run('chat1');
+    }
+
+    const row = db.prepare('SELECT remaining_turns FROM chat_skills WHERE chat_id = ?').get('chat1') as any;
+    expect(row.remaining_turns).toBe(0);
+
+    // 3. Deactivate
+    db.prepare('DELETE FROM chat_skills WHERE chat_id = ? AND remaining_turns <= 0 AND auto_triggered = 1').run('chat1');
+
+    const active = db.prepare('SELECT * FROM chat_skills WHERE chat_id = ?').get('chat1');
+    expect(active).toBeUndefined();
   });
 });
