@@ -22,6 +22,7 @@ import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.j
 import { listRegisteredTools, loadUserTools } from '../forge/tool-registry.js';
 import { buildDigest, getDigestPreference, setDigestPreference, type DigestFrequency } from '../proactive.js';
 import { shouldOrchestrate, orchestrateTask } from '../orchestrator.js';
+import { checkResponseQuality, logQualityCheck } from '../self-monitor.js';
 
 // Per-room voice mode toggle
 const voiceModeRooms = new Set<string>();
@@ -172,6 +173,12 @@ async function handleMessage(
     if (!response.text) {
       await sendNotice(client, roomId, '(No response from AI provider)');
       return;
+    }
+
+    // 2c. Quality check (non-blocking)
+    const quality = checkResponseQuality(response, body);
+    if (!quality.passed) {
+      logQualityCheck(roomId, response.provider, quality.score, quality.issues);
     }
 
     // 3. Save conversation memory (with embedding, fire-and-forget)

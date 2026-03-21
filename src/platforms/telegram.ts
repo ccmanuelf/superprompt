@@ -21,6 +21,7 @@ import { fixTool } from '../forge/tool-fixer.js';
 import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.js';
 import { buildDigest, getDigestPreference, setDigestPreference, type DigestFrequency } from '../proactive.js';
 import { shouldOrchestrate, orchestrateTask } from '../orchestrator.js';
+import { checkResponseQuality, logQualityCheck } from '../self-monitor.js';
 
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -232,6 +233,12 @@ async function handleMessage(
     if (!response.text) {
       await ctx.reply('(No response from AI provider)');
       return;
+    }
+
+    // 4c. Quality check (non-blocking — log issues for analysis)
+    const quality = checkResponseQuality(response, rawText);
+    if (!quality.passed) {
+      logQualityCheck(chatId, response.provider, quality.score, quality.issues);
     }
 
     // 5. Save conversation memory (with embedding, fire-and-forget)

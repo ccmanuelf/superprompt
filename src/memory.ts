@@ -14,6 +14,7 @@ import {
   getDatabase,
 } from './db.js';
 import { generateEmbedding } from './embeddings.js';
+import { estimateTokens } from './context-budget.js';
 import { logger } from './logger.js';
 
 const SEMANTIC_SIGNAL =
@@ -55,6 +56,7 @@ const COMPRESSION_SALIENCE_THRESHOLD = 0.7;
 export async function buildMemoryContext(
   chatId: string,
   userMessage: string,
+  maxTokens: number = 1500,
 ): Promise<string> {
   // Sanitize query for FTS5: strip non-alphanumeric, add prefix matching
   const sanitized = userMessage
@@ -135,17 +137,35 @@ export async function buildMemoryContext(
   }
 
   // Format context — episodes first (they're higher-level summaries)
+  // Apply budget: keep adding items until we approach maxTokens
   const lines: string[] = [];
+  let tokenCount = estimateTokens('[Memory context]\n');
 
-  if (topEpisodes.length > 0) {
-    for (const ep of topEpisodes) {
-      lines.push(`- [Past conversation] ${ep.summary}`);
-    }
+  // Episodes first (higher-level, more value per token)
+  for (const ep of topEpisodes) {
+    const line = `- [Past conversation] ${ep.summary}`;
+    const lineTokens = estimateTokens(line);
+    if (tokenCount + lineTokens > maxTokens) break;
+    lines.push(line);
+    tokenCount += lineTokens;
   }
 
-  for (const m of topMemories) {
-    lines.push(`- ${m.content} (${m.sector})`);
+  // Then individual memories (semantic first, then episodic)
+  const sortedMemories = [...topMemories].sort((a, b) => {
+    if (a.sector === 'semantic' && b.sector !== 'semantic') return -1;
+    if (a.sector !== 'semantic' && b.sector === 'semantic') return 1;
+    return 0;
+  });
+
+  for (const m of sortedMemories) {
+    const line = `- ${m.content} (${m.sector})`;
+    const lineTokens = estimateTokens(line);
+    if (tokenCount + lineTokens > maxTokens) break;
+    lines.push(line);
+    tokenCount += lineTokens;
   }
+
+  if (lines.length === 0) return '';
 
   return `[Memory context]\n${lines.join('\n')}`;
 }

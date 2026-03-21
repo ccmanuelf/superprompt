@@ -7,7 +7,7 @@
 
 After evaluating 7 external sources against clauded's existing architecture, the roadmap was expanded to **6 development sprints + 1 E2E validation sweep + 1 cloud deploy**. Sprints S1-S2 complete.
 
-**Execution order: S1 ✅ → S2 ✅ → S5 ✅ → S6 → S7 → S8 → S9 (Docs) → S4 (E2E) → S3 (Cloud Deploy)**
+**Execution order: S1 ✅ → S2 ✅ → S5 ✅ → S6 ✅ → S7 ✅ → S8 ✅ → S9 (Docs) → S4 (E2E) → S3 (Cloud Deploy)**
 
 ---
 
@@ -265,7 +265,7 @@ The bot should reach out to the user, not just respond. This is the single bigge
 
 ---
 
-## Sprint S8: Context Budgeting + Self-Monitoring — NOT STARTED
+## Sprint S8: Context Budgeting + Self-Monitoring — COMPLETED (2026-03-21)
 
 **Goal:** Intelligently manage context window usage and detect/correct AI failures.
 
