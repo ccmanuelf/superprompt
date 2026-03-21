@@ -462,11 +462,14 @@ export function createTelegramBot(router: ProviderRouter): Bot {
         '/voice — Toggle voice replies\n' +
         '/claude — Switch to Claude\n' +
         '/ollama — Switch to Ollama\n' +
+        '/auto — Toggle automatic provider routing\n' +
+        '/provider — Show current provider &amp; routing mode\n' +
         '/models — List available Ollama models\n' +
         '/model &lt;name&gt; — Switch Ollama model\n' +
         '/schedule — Manage scheduled tasks\n' +
         '/skill — Manage AI skills\n' +
         '/tool — Manage tools (list, upload, fix)\n' +
+        '/careful — Toggle safety guardrails mode\n' +
         '/reload — Reload user tools from DB',
       { parse_mode: 'HTML' },
     );
@@ -538,6 +541,53 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     await ctx.reply(`Switched to <b>${result}</b> provider.\nModel: <code>${escapeHtml(model)}</code>`, {
       parse_mode: 'HTML',
     });
+  });
+
+  bot.command('auto', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const enabled = router.toggleAutoRoute(String(ctx.chat.id));
+    const emoji = enabled ? '🟢' : '🔴';
+    await ctx.reply(
+      `${emoji} Auto-routing <b>${enabled ? 'enabled' : 'disabled'}</b>.\n` +
+        (enabled
+          ? 'Provider will be selected automatically per message.\nUse /claude or /ollama to switch back to manual.'
+          : 'Use /claude or /ollama to set provider manually.'),
+      { parse_mode: 'HTML' },
+    );
+  });
+
+  bot.command('provider', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const status = router.getProviderStatus(String(ctx.chat.id));
+    const modeLabel = status.mode === 'auto' ? '🟢 auto' : '🔵 manual';
+    let msg = `Provider: <b>${status.provider}</b>\nRouting: ${modeLabel}`;
+    if (status.model) {
+      msg += `\nModel: <code>${escapeHtml(status.model)}</code>`;
+    }
+    await ctx.reply(msg, { parse_mode: 'HTML' });
+  });
+
+  bot.command(['careful', 'safe'], async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const skill = getSkillByName('careful');
+    if (!skill) {
+      await ctx.reply('Safety skill not found. Run /reload to refresh skills.');
+      return;
+    }
+    const currentSkill = getActiveSkill(chatId);
+    if (currentSkill?.name === 'careful') {
+      clearActiveSkill(chatId);
+      await ctx.reply('Safety mode <b>disabled</b>.', { parse_mode: 'HTML' });
+    } else {
+      setActiveSkill(chatId, skill.id);
+      await ctx.reply(
+        '🛡️ Safety mode <b>enabled</b>.\n' +
+          'I will warn before destructive actions, verify results, and ask for confirmation.\n' +
+          'Use /careful again to disable, or /newchat to reset.',
+        { parse_mode: 'HTML' },
+      );
+    }
   });
 
   bot.command('models', async (ctx) => {

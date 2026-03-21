@@ -248,9 +248,12 @@ async function handleCommand(
           '!voice — Toggle voice replies\n' +
           '!claude — Switch to Claude\n' +
           '!ollama — Switch to Ollama\n' +
+          '!auto — Toggle automatic provider routing\n' +
+          '!provider — Show current provider & routing mode\n' +
           '!schedule — Manage scheduled tasks\n' +
           '!skill — Manage AI skills\n' +
           '!tool — Manage tools (list, fix, etc.)\n' +
+          '!careful — Toggle safety guardrails mode\n' +
           '!reload — Reload user tools from DB',
       );
       return true;
@@ -308,6 +311,48 @@ async function handleCommand(
     case '!ollama': {
       const result = router.switchProvider(roomId, 'ollama');
       await sendNotice(client, roomId, `Switched to ${result} provider.`);
+      return true;
+    }
+
+    case '!auto': {
+      const enabled = router.toggleAutoRoute(roomId);
+      await sendNotice(
+        client,
+        roomId,
+        `Auto-routing ${enabled ? 'enabled' : 'disabled'}.` +
+          (enabled
+            ? ' Provider will be selected automatically per message. Use !claude or !ollama to switch back to manual.'
+            : ' Use !claude or !ollama to set provider manually.'),
+      );
+      return true;
+    }
+
+    case '!provider': {
+      const status = router.getProviderStatus(roomId);
+      const modeLabel = status.mode === 'auto' ? 'auto' : 'manual';
+      let msg = `Provider: ${status.provider}\nRouting: ${modeLabel}`;
+      if (status.model) {
+        msg += `\nModel: ${status.model}`;
+      }
+      await sendNotice(client, roomId, msg);
+      return true;
+    }
+
+    case '!careful':
+    case '!safe': {
+      const skill = getSkillByName('careful');
+      if (!skill) {
+        await sendNotice(client, roomId, 'Safety skill not found.');
+        return true;
+      }
+      const currentSkill = getActiveSkill(roomId);
+      if (currentSkill?.name === 'careful') {
+        clearActiveSkill(roomId);
+        await sendNotice(client, roomId, 'Safety mode disabled.');
+      } else {
+        setActiveSkill(roomId, skill.id);
+        await sendNotice(client, roomId, 'Safety mode enabled. I will warn before destructive actions and verify results.');
+      }
       return true;
     }
 

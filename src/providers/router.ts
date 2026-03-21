@@ -9,10 +9,46 @@ import {
   updateSessionProvider,
   updateSessionOllamaModel,
   clearSession,
+  setAutoRoute,
+  isAutoRouteEnabled,
 } from '../db.js';
 import { getSkillSystemPrompt, getSkillAllowedTools } from '../skills.js';
 
 const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
+
+/**
+ * Anti-rationalization rules applied to ALL responses (both providers).
+ * Inspired by Superpowers verification-before-completion patterns.
+ */
+export const QUALITY_RULES = `## Response Quality Rules
+- Never say "should work" or "probably" — verify or state uncertainty explicitly.
+- Never skip steps in multi-step tasks — complete each step before proceeding.
+- If you've attempted 3+ approaches without success, stop and re-analyze the problem.
+- Before claiming completion, show evidence (output, result, confirmation).
+- When you don't know something, say so — don't fabricate information.`;
+
+/**
+ * Command list injected into system prompts so the AI knows what commands exist
+ * and can suggest them to users when relevant.
+ */
+export const COMMAND_LIST = `## Available User Commands
+The user can type these commands in the chat:
+- /newchat — Start a fresh session (clears history)
+- /memory — Show stored memories about the user
+- /voice — Toggle voice replies on text messages
+- /claude — Switch to Claude provider
+- /ollama — Switch to Ollama provider
+- /auto — Toggle automatic provider routing
+- /provider — Show current provider and routing mode
+- /models — List available Ollama models
+- /model <name> — Switch Ollama model
+- /schedule — Manage scheduled tasks (add, list, pause, resume, delete)
+- /skill — Manage AI skills (list, use, create, fix, lock, export, upload, delete)
+- /tool — Manage tools (list, show, upload, generate, fix, enable, disable, delete)
+- /careful — Enable safety guardrails mode
+- /reload — Reload user tools from database
+
+When relevant, you can mention these commands to help the user. For example, if the user asks "can you remember this?", you might mention /memory. If they seem to want a different AI behavior, mention /skill.`;
 
 const VOICE_RESPONSE_HINT = `The user sent a voice message. Respond as if in a verbal conversation:
 - Keep responses to 1-3 sentences. Be concise.
@@ -109,9 +145,55 @@ Sections can include a "chart" field to render a visual chart. Supported types: 
 
 Supported formats: \`xlsx\`, \`docx\`, \`pdf\`, \`csv\`. Use \`csv\` format with spreadsheet content type for simple tabular data. Include any explanatory text outside the JSON code block — it will be sent alongside the file.`;
 
+/**
+ * Heuristic patterns that suggest Claude is the better provider.
+ * These indicate complex analysis, creative writing, or document generation.
+ * Exported for testing.
+ */
+export const CLAUDE_PATTERNS = [
+  /\b(analy[sz]e|analyze|review|evaluate|compare|assess|critique|explain in detail)\b/i,
+  /\b(write|draft|compose|create|generate)\s+(a|an|the|my)?\s*(report|essay|article|document|email|letter|proposal|story|plan)\b/i,
+  /\b(refactor|debug|code review|architecture|design pattern)\b/i,
+  /\b(format.*?(xlsx|docx|pdf|csv)|(xlsx|docx|pdf|csv)\s+format)\b/i,
+  /```[\s\S]{100,}/,  // Long code blocks in the message suggest complex context
+];
+
+/** Messages shorter than this are routed to Ollama in auto mode */
+export const SHORT_MESSAGE_THRESHOLD = 100;
+
+/** Messages longer than this are routed to Claude in auto mode */
+export const LONG_MESSAGE_THRESHOLD = 500;
+
+/**
+ * Classify a message to determine the best provider.
+ * Heuristic-based — no AI call needed.
+ *
+ * Route to Claude: long messages, complex analysis, document generation, code review.
+ * Route to Ollama: short messages, simple questions, tool-dependent tasks.
+ *
+ * Exported for testing.
+ */
+export function classifyMessage(message: string): 'claude' | 'ollama' {
+  // Long messages → Claude (more capable at complex reasoning)
+  if (message.length > LONG_MESSAGE_THRESHOLD) return 'claude';
+
+  // Check for Claude-preferred patterns
+  for (const pattern of CLAUDE_PATTERNS) {
+    if (pattern.test(message)) return 'claude';
+  }
+
+  // Short, simple messages → Ollama (faster, local)
+  if (message.length < SHORT_MESSAGE_THRESHOLD) return 'ollama';
+
+  // Default: Ollama for everything else (local, no API cost)
+  return 'ollama';
+}
+
 export class ProviderRouter {
   private claude: ClaudeProvider;
   private ollama: OllamaProvider;
+  /** Tracks the last provider actually used per chat (for /provider status in auto mode) */
+  private lastUsedProvider = new Map<string, 'claude' | 'ollama'>();
 
   constructor() {
     this.claude = new ClaudeProvider();
@@ -120,10 +202,35 @@ export class ProviderRouter {
 
   /**
    * Get the active provider for a chat.
-   * Priority: per-chat override (from DB) > default from config.
+   * Priority: auto-routing (if enabled) > per-chat override (from DB) > default from config.
+   *
+   * Auto-routing has stickiness: if the last message used a provider, prefer it
+   * unless the classifier strongly disagrees (prevents mid-conversation switching).
    */
-  private getProviderForChat(chatId: string): AIProvider {
+  private getProviderForChat(chatId: string, message?: string): AIProvider {
     const session = getSession(chatId);
+
+    // Auto-routing: classify message and pick provider
+    if (session?.auto_route && message) {
+      const autoChoice = classifyMessage(message);
+      const lastUsed = this.lastUsedProvider.get(chatId);
+
+      // Stickiness: if we recently used a provider, stay with it UNLESS
+      // the classifier specifically wants Claude (upgrade path).
+      // This prevents ping-ponging mid-conversation.
+      // Ollama → Claude upgrade: allowed (user needs more capable model)
+      // Claude → Ollama downgrade: blocked (preserve conversation context)
+      let finalChoice = autoChoice;
+      if (lastUsed && lastUsed === 'claude' && autoChoice === 'ollama') {
+        // Don't downgrade from Claude mid-conversation
+        finalChoice = 'claude';
+      }
+
+      const provider = finalChoice === 'ollama' ? this.ollama : this.claude;
+      this.lastUsedProvider.set(chatId, provider.name);
+      return provider;
+    }
+
     const providerName = session?.provider || config.AI_PROVIDER;
 
     if (providerName === 'ollama') {
@@ -138,7 +245,7 @@ export class ProviderRouter {
    */
   async sendMessage(params: SendMessageParams): Promise<AIResponse> {
     const { chatId } = params;
-    const provider = this.getProviderForChat(chatId);
+    const provider = this.getProviderForChat(chatId, params.message);
 
     // Load existing session ID for Claude
     const session = getSession(chatId);
@@ -157,10 +264,11 @@ export class ProviderRouter {
     // Inject voice hint when the message is from a voice note
     const voiceHint = params.isVoice ? VOICE_RESPONSE_HINT : '';
 
-    // Inject document capabilities for both providers; language hint for Claude only (Ollama has its own)
+    // Inject document capabilities, quality rules, and command list for both providers
+    // Language hint is Claude-only (Ollama has its own in the model system prompt)
     const systemPrompt = provider.name === 'claude'
-      ? [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT].filter(Boolean).join('\n\n') || undefined;
+      ? [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
+      : [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)
@@ -225,8 +333,50 @@ export class ProviderRouter {
       setSession(chatId, '', normalized);
     }
 
-    logger.info({ chatId, provider: normalized }, 'Switched provider');
+    // Explicit provider switch disables auto-routing
+    setAutoRoute(chatId, false);
+
+    logger.info({ chatId, provider: normalized }, 'Switched provider (auto-route OFF)');
     return normalized;
+  }
+
+  /**
+   * Toggle auto-routing for a chat.
+   * Returns true if auto-routing is now enabled.
+   */
+  toggleAutoRoute(chatId: string): boolean {
+    const current = isAutoRouteEnabled(chatId);
+    const newState = !current;
+    setAutoRoute(chatId, newState);
+    this.lastUsedProvider.delete(chatId); // Reset stickiness on toggle
+    logger.info({ chatId, autoRoute: newState }, 'Toggled auto-routing');
+    return newState;
+  }
+
+  /**
+   * Get the current provider status for a chat.
+   * Returns provider name and routing mode.
+   * In auto mode, shows the last provider actually used (not the fallback).
+   */
+  getProviderStatus(chatId: string): { provider: string; mode: 'manual' | 'auto'; model?: string } {
+    const session = getSession(chatId);
+    const autoRoute = session?.auto_route === 1;
+
+    // In auto mode, show the last-used provider (what actually ran)
+    const providerName = autoRoute
+      ? (this.lastUsedProvider.get(chatId) || session?.provider || config.AI_PROVIDER)
+      : (session?.provider || config.AI_PROVIDER);
+
+    const status: { provider: string; mode: 'manual' | 'auto'; model?: string } = {
+      provider: providerName,
+      mode: autoRoute ? 'auto' : 'manual',
+    };
+
+    if (providerName === 'ollama') {
+      status.model = session?.ollama_model || config.OLLAMA_CHAT_MODEL;
+    }
+
+    return status;
   }
 
   /**
@@ -236,6 +386,7 @@ export class ProviderRouter {
   newChat(chatId: string): void {
     clearSession(chatId);
     clearOllamaHistory(chatId);
+    this.lastUsedProvider.delete(chatId); // Reset auto-routing stickiness
     logger.info({ chatId }, 'New chat started');
   }
 
