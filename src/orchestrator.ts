@@ -29,13 +29,19 @@ export interface TaskStep {
   dependsOnPrevious: boolean;
 }
 
-/** Result of running a single step */
-interface StepResult {
+/** Result of running a single step. Exported for testing. */
+export interface StepResult {
   step: number;
   instruction: string;
   output: string;
   success: boolean;
 }
+
+/** Max characters from a previous step's output to pass as context */
+const MAX_STEP_CONTEXT_CHARS = 3000;
+
+/** Maximum number of steps allowed (even if AI returns more) */
+const MAX_STEPS = 5;
 
 /**
  * Patterns that indicate a multi-step request.
@@ -74,8 +80,108 @@ export function shouldOrchestrate(message: string): boolean {
 }
 
 /**
+ * Build the step message with context from the previous step.
+ * Truncates previous output to MAX_STEP_CONTEXT_CHARS to prevent context overflow.
+ *
+ * Exported for testing.
+ */
+export function buildStepMessage(
+  step: TaskStep,
+  previousOutput: string,
+): string {
+  if (!step.dependsOnPrevious || !previousOutput) {
+    return step.instruction;
+  }
+
+  // Truncate previous output to prevent context window overflow
+  const truncated = previousOutput.length > MAX_STEP_CONTEXT_CHARS
+    ? previousOutput.slice(0, MAX_STEP_CONTEXT_CHARS) + '\n...(truncated)'
+    : previousOutput;
+
+  return `Context from previous step:\n${truncated}\n\nNow: ${step.instruction}`;
+}
+
+/**
+ * Validate and cap step count from AI decomposition.
+ * Ensures 1-MAX_STEPS steps, renumbers if needed.
+ *
+ * Exported for testing.
+ */
+export function validateSteps(steps: unknown): TaskStep[] {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    throw new Error('Decomposition returned empty or invalid steps');
+  }
+
+  // Cap at MAX_STEPS
+  const capped = steps.slice(0, MAX_STEPS);
+
+  // Validate and renumber
+  return capped.map((s, i) => ({
+    step: i + 1,
+    instruction: typeof s.instruction === 'string' ? s.instruction : String(s.instruction || `Step ${i + 1}`),
+    dependsOnPrevious: i > 0 && Boolean(s.dependsOnPrevious),
+  }));
+}
+
+/**
+ * Build the final response from step results.
+ * Shows the last successful step's output as the main response,
+ * with failure notes if any steps failed.
+ *
+ * Exported for testing.
+ */
+export function buildFinalResponse(results: StepResult[]): string {
+  const successful = results.filter((r) => r.success);
+  const failed = results.filter((r) => !r.success);
+
+  if (successful.length === 0) {
+    return 'All steps failed. Please try breaking down your request or rephrase it.';
+  }
+
+  // Use the last successful step's output as the main response
+  const lastResult = successful[successful.length - 1];
+  let response = lastResult.output;
+
+  // If there were failures, note them
+  if (failed.length > 0) {
+    const failNotes = failed
+      .map((f) => `• Step ${f.step} (${f.instruction}): ${f.output}`)
+      .join('\n');
+    response += `\n\n⚠️ **Some steps had issues:**\n${failNotes}`;
+  }
+
+  return response;
+}
+
+/**
+ * Build the episode summary from orchestration results.
+ *
+ * Exported for testing.
+ */
+export function buildEpisodeSummary(
+  originalRequest: string,
+  results: StepResult[],
+): { summary: string; keyFacts: string[]; openThreads: string[] } {
+  const successful = results.filter((r) => r.success);
+  const summary = `Multi-step task: "${originalRequest.slice(0, 100)}${originalRequest.length > 100 ? '...' : ''}". ` +
+    `Completed ${successful.length}/${results.length} steps. ` +
+    `Steps: ${results.map((r) => `${r.step}. ${r.instruction.slice(0, 50)}`).join('; ')}`;
+
+  const keyFacts = successful.map((r) => `Step ${r.step} completed: ${r.instruction.slice(0, 80)}`);
+  const openThreads = results
+    .filter((r) => !r.success)
+    .map((r) => `Step ${r.step} failed: ${r.instruction.slice(0, 80)} — needs retry`);
+
+  return { summary, keyFacts, openThreads };
+}
+
+/**
  * Decompose a complex request into sequential steps using AI.
  * Uses the AI provider to analyze the request and break it into discrete steps.
+ *
+ * The decomposition call uses skipTools AND a special flag to bypass
+ * auto-triggering (we don't want the decomposition prompt itself to
+ * trigger debugger/careful skills).
  */
 async function decomposeTask(
   router: ProviderRouter,
@@ -99,7 +205,9 @@ Rules:
   const response = await router.sendMessage({
     chatId,
     message: decompositionPrompt,
-    skipTools: true, // Don't use tools for decomposition
+    skipTools: true,
+    // System prompt override to prevent skill auto-triggering on the decomposition prompt
+    systemPrompt: 'You are a task decomposition system. Return ONLY valid JSON.',
   });
 
   if (!response.text) {
@@ -113,11 +221,8 @@ Rules:
     .trim();
 
   try {
-    const steps = JSON.parse(jsonStr) as TaskStep[];
-    if (!Array.isArray(steps) || steps.length === 0) {
-      throw new Error('Decomposition returned empty or invalid steps');
-    }
-    return steps;
+    const rawSteps = JSON.parse(jsonStr);
+    return validateSteps(rawSteps);
   } catch {
     logger.warn({ response: response.text }, 'Task decomposition returned invalid JSON');
     // Fallback: treat the whole request as a single step
@@ -132,7 +237,7 @@ Rules:
  * 1. Decompose request into steps (via AI)
  * 2. Notify user of the plan
  * 3. Execute each step sequentially
- * 4. Pass previous step results as context to dependent steps
+ * 4. Pass previous step results as context to dependent steps (truncated)
  * 5. Notify user after each step completes
  * 6. Store the combined result as an episode
  * 7. Return the final combined response
@@ -174,11 +279,7 @@ export async function orchestrateTask(
   let lastStepOutput = '';
 
   for (const step of steps) {
-    // Build step context with previous results
-    let stepMessage = step.instruction;
-    if (step.dependsOnPrevious && lastStepOutput) {
-      stepMessage = `Context from previous step:\n${lastStepOutput}\n\nNow: ${step.instruction}`;
-    }
+    const stepMessage = buildStepMessage(step, lastStepOutput);
 
     // Notify progress
     if (progressFn) {
@@ -259,36 +360,8 @@ export async function orchestrateTask(
 
   return {
     text: finalOutput,
-    provider: 'ollama', // Orchestration uses whatever the router selects
+    provider: 'ollama',
   };
-}
-
-/**
- * Build the final response from step results.
- * Shows only the last successful step's output (the final result),
- * with a brief summary of what was done.
- */
-function buildFinalResponse(results: StepResult[]): string {
-  const successful = results.filter((r) => r.success);
-  const failed = results.filter((r) => !r.success);
-
-  if (successful.length === 0) {
-    return 'All steps failed. Please try breaking down your request or rephrase it.';
-  }
-
-  // Use the last successful step's output as the main response
-  const lastResult = successful[successful.length - 1];
-  let response = lastResult.output;
-
-  // If there were failures, note them
-  if (failed.length > 0) {
-    const failNotes = failed
-      .map((f) => `• Step ${f.step} (${f.instruction}): ${f.output}`)
-      .join('\n');
-    response += `\n\n⚠️ **Some steps had issues:**\n${failNotes}`;
-  }
-
-  return response;
 }
 
 /**
@@ -299,15 +372,7 @@ async function storeOrchestrationEpisode(
   originalRequest: string,
   results: StepResult[],
 ): Promise<void> {
-  const successful = results.filter((r) => r.success);
-  const summary = `Multi-step task: "${originalRequest.slice(0, 100)}${originalRequest.length > 100 ? '...' : ''}". ` +
-    `Completed ${successful.length}/${results.length} steps. ` +
-    `Steps: ${results.map((r) => `${r.step}. ${r.instruction.slice(0, 50)}`).join('; ')}`;
-
-  const keyFacts = successful.map((r) => `Step ${r.step} completed: ${r.instruction.slice(0, 80)}`);
-  const openThreads = results
-    .filter((r) => !r.success)
-    .map((r) => `Step ${r.step} failed: ${r.instruction.slice(0, 80)} — needs retry`);
+  const { summary, keyFacts, openThreads } = buildEpisodeSummary(originalRequest, results);
 
   let embedding: number[] | undefined;
   try {
