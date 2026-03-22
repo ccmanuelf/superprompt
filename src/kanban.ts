@@ -141,7 +141,7 @@ export function initKanbanTable(): void {
       title TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'backlog' CHECK(status IN ('backlog', 'in_progress', 'review', 'done', 'deferred', 'cancelled')),
-      assignee TEXT NOT NULL DEFAULT 'me' CHECK(assignee IN ('me', 'bot', 'collaborative', 'noted')),
+      assignee TEXT NOT NULL DEFAULT 'noted' CHECK(assignee IN ('me', 'bot', 'collaborative', 'noted')),
       priority INTEGER NOT NULL DEFAULT 3,
       labels TEXT,
       due_date INTEGER,

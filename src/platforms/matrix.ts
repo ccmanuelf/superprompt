@@ -187,9 +187,11 @@ async function handleMessage(
       logger.warn({ err }, 'Failed to save conversation memory');
     });
 
-    // 3b. Check for document generation request in response
-    if (isDocGenResponse(response.text)) {
-      const docReq = parseDocGenResponse(response.text);
+    // 3b. Process structured actions in response (docgen, kanban)
+    let responseText = response.text;
+
+    if (isDocGenResponse(responseText)) {
+      const docReq = parseDocGenResponse(responseText);
       if (docReq) {
         try {
           const result = await generateDocument(docReq);
@@ -200,28 +202,24 @@ async function handleMessage(
             url: mxcUrl,
             info: { mimetype: result.mimeType, size: result.buffer.length },
           });
-          // Send any remaining text
-          const remainingText = stripDocGenBlock(response.text);
-          if (remainingText) {
-            await sendNotice(client, roomId, remainingText);
-          }
-          return;
+          responseText = stripDocGenBlock(responseText);
         } catch (err) {
           logger.warn({ err }, 'Matrix document generation failed, sending raw response');
         }
       }
     }
 
-    // 3b2. Check for kanban action in response (works for BOTH Claude and Ollama)
-    if (isKanbanAction(response.text)) {
-      const kanbanReq = parseKanbanAction(response.text);
+    if (responseText && isKanbanAction(responseText)) {
+      const kanbanReq = parseKanbanAction(responseText);
       if (kanbanReq) {
         const kanbanResult = executeKanbanAction(roomId, kanbanReq);
         await sendNotice(client, roomId, kanbanResult);
-        response.text = stripKanbanBlock(response.text);
-        if (!response.text) return;
+        responseText = stripKanbanBlock(responseText);
       }
     }
+
+    response.text = responseText;
+    if (!response.text) return;
 
     // 4. Voice reply if enabled (force when message was voice)
     const shouldVoice = isVoice || voiceModeRooms.has(roomId);

@@ -112,6 +112,8 @@ describe('command list (real export)', () => {
       '/skill',
       '/tool',
       '/careful',
+      '/digest',
+      '/board',
       '/reload',
     ];
 

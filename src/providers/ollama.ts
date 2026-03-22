@@ -250,6 +250,7 @@ export class OllamaProvider implements AIProvider {
     let iterations = 0;
     let thinkingContent: string | undefined;
     const generatedFiles: { path: string; filename: string; mimeType: string }[] = [];
+    let kanbanToolCalled = false;
 
     while (iterations < MAX_ITERATIONS) {
       iterations++;
@@ -285,14 +286,22 @@ export class OllamaProvider implements AIProvider {
 
       // If no tool calls, we're done
       if (!msg.tool_calls?.length) {
+        let finalText = msg.content || null;
+
+        // If kanban_manage tool was called during this loop, strip any kanban
+        // JSON blocks from the response text to prevent double card creation
+        if (kanbanToolCalled && finalText) {
+          finalText = finalText.replace(/```(?:json)?\s*\n?\s*\{[\s\S]*?"kanban_action"\s*:[\s\S]*?\}\s*\n?\s*```/g, '').trim() || finalText;
+        }
+
         // Also add to persistent history
         history.push({
           role: 'assistant',
-          content: msg.content,
+          content: finalText || '',
         });
 
         return {
-          text: msg.content || null,
+          text: finalText,
           provider: 'ollama',
           model,
           thinkingContent,
@@ -310,6 +319,7 @@ export class OllamaProvider implements AIProvider {
           'Executing tool call',
         );
 
+        if (toolName === 'kanban_manage') kanbanToolCalled = true;
         const result = await executeTool(toolName, toolArgs, chatId);
 
         // Capture generated files for the platform layer to send
