@@ -13,7 +13,7 @@ import { logger } from './logger.js';
 const KANBAN_ACTION_REGEX = /```(?:json)?\s*\n?\s*(\{[\s\S]*?"kanban_action"\s*:[\s\S]*?\})\s*\n?\s*```/;
 
 export interface KanbanActionRequest {
-  kanban_action: 'create' | 'move' | 'assign';
+  kanban_action: 'create' | 'move' | 'assign' | 'update';
   title?: string;
   description?: string;
   assignee?: CardAssignee;
@@ -78,7 +78,7 @@ export function parseKanbanAction(text: string): KanbanActionRequest | null {
   try {
     const parsed = JSON.parse(match[1]);
     if (!parsed.kanban_action) return null;
-    if (!['create', 'move', 'assign'].includes(parsed.kanban_action)) return null;
+    if (!['create', 'move', 'assign', 'update'].includes(parsed.kanban_action)) return null;
     return parsed as KanbanActionRequest;
   } catch {
     return null;
@@ -124,6 +124,27 @@ export function executeKanbanAction(chatId: string, action: KanbanActionRequest)
       const assigned = assignCard(card.id, action.assignee, chatId);
       if (!assigned) return `Invalid assignee: ${action.assignee}`;
       return `Assigned **${assigned.title}** → ${assigned.assignee}`;
+    }
+    case 'update': {
+      if (!action.card_id) return 'Kanban action error: card_id required for update.';
+      const card = getCardByPrefix(chatId, action.card_id);
+      if (!card) return `Card "${action.card_id}" not found.`;
+
+      const updates: Record<string, unknown> = {};
+      if (action.priority !== undefined) updates.priority = action.priority;
+      if (action.due_date) updates.due_date = parseDateHint(action.due_date);
+      if (action.scheduled_for) updates.scheduled_for = parseDateHint(action.scheduled_for);
+
+      if (Object.keys(updates).length === 0) return 'Nothing to update.';
+
+      const updated = updateCard(card.id, updates);
+      if (!updated) return 'Update failed.';
+
+      const changes: string[] = [];
+      if (action.priority !== undefined) changes.push(`priority → ${action.priority}`);
+      if (action.due_date) changes.push(`due → ${new Date(updated.due_date!).toLocaleDateString()}`);
+      if (action.scheduled_for) changes.push(`scheduled → ${new Date(updated.scheduled_for!).toLocaleString()}`);
+      return `Updated **${updated.title}**: ${changes.join(', ')}`;
     }
     default:
       return `Unknown kanban action: ${action.kanban_action}`;

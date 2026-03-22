@@ -3,6 +3,7 @@ import {
   createCard,
   moveCard,
   assignCard,
+  updateCard,
   listCards,
   getCardByPrefix,
   getBoardSummary,
@@ -29,6 +30,7 @@ export const kanbanManageDefinition: Tool = {
 - LIST cards to show the user what's on the board
 - MOVE a card to a different status (backlog, in_progress, review, done, deferred, cancelled)
 - ASSIGN a card to change ownership
+- UPDATE a card's priority, due_date, or scheduled_for
 - SUMMARY to show board overview
 
 ASSIGNMENT RULES (follow strictly):
@@ -45,8 +47,8 @@ Be PROACTIVE about capturing items. Be CONSERVATIVE about assigning them.`,
       properties: {
         action: {
           type: 'string',
-          description: 'Action to perform: create, list, move, assign, summary',
-          enum: ['create', 'list', 'move', 'assign', 'summary'],
+          description: 'Action to perform: create, list, move, assign, update, summary',
+          enum: ['create', 'list', 'move', 'assign', 'update', 'summary'],
         },
         title: {
           type: 'string',
@@ -181,12 +183,41 @@ export function kanbanManage(
       };
     }
 
+    case 'update': {
+      if (!args.cardId) return { error: 'cardId is required for update action.' };
+
+      const card = getCardByPrefix(chatId, args.cardId);
+      if (!card) return { error: `Card "${args.cardId}" not found.` };
+
+      const updates: Record<string, unknown> = {};
+      if (args.priority !== undefined) updates.priority = args.priority;
+      if (args.due_date) updates.due_date = parseDateHint(args.due_date);
+      if (args.scheduled_for) updates.scheduled_for = parseDateHint(args.scheduled_for);
+
+      if (Object.keys(updates).length === 0) {
+        return { error: 'Nothing to update. Provide priority, due_date, or scheduled_for.' };
+      }
+
+      const updated = updateCard(card.id, updates);
+      if (!updated) return { error: 'Update failed.' };
+
+      const changes: string[] = [];
+      if (args.priority !== undefined) changes.push(`priority → ${args.priority}`);
+      if (args.due_date) changes.push(`due → ${new Date(updated.due_date!).toLocaleDateString()}`);
+      if (args.scheduled_for) changes.push(`scheduled → ${new Date(updated.scheduled_for!).toLocaleString()}`);
+
+      return {
+        success: true,
+        message: `Updated "${updated.title}": ${changes.join(', ')}`,
+      };
+    }
+
     case 'summary': {
       const summary = getBoardSummary(chatId);
       return { summary };
     }
 
     default:
-      return { error: `Unknown action: ${args.action}. Use create, list, move, assign, or summary.` };
+      return { error: `Unknown action: ${args.action}. Use create, list, move, assign, update, or summary.` };
   }
 }

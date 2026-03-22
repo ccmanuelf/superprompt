@@ -1181,6 +1181,64 @@ export function createTelegramBot(router: ProviderRouter): Bot {
         return;
       }
 
+      case 'priority': {
+        const cardId = parts[1];
+        const newPriority = parseInt(parts[2]);
+        if (!cardId || isNaN(newPriority) || newPriority < 1 || newPriority > 5) {
+          await ctx.reply('Usage: /board priority &lt;id&gt; &lt;1-5&gt;\n1=critical, 2=high, 3=medium, 4=low, 5=minimal', { parse_mode: 'HTML' });
+          return;
+        }
+        const card = getCardByPrefix(chatId, cardId);
+        if (!card) { await ctx.reply('Card not found.'); return; }
+        const { updateCard: update } = await import('../kanban.js');
+        const updated = update(card.id, { priority: newPriority });
+        if (!updated) { await ctx.reply('Update failed.'); return; }
+        const labels = ['', '🔴 Critical', '🟠 High', '🟡 Medium', '🔵 Low', '⚪ Minimal'];
+        await ctx.reply(formatForTelegram(`Updated **${updated.title}** → ${labels[newPriority]}`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'cancel': {
+        const cardId = parts[1];
+        if (!cardId) { await ctx.reply('Usage: /board cancel &lt;id&gt;', { parse_mode: 'HTML' }); return; }
+        const card = getCardByPrefix(chatId, cardId);
+        if (!card) { await ctx.reply('Card not found.'); return; }
+        const cancelled = moveCard(card.id, 'cancelled');
+        if (!cancelled) { await ctx.reply('Failed to cancel.'); return; }
+        await ctx.reply(formatForTelegram(`🚫 Cancelled: **${cancelled.title}**`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'due': {
+        const cardId = parts[1];
+        const dateStr = parts.slice(2).join(' ');
+        if (!cardId || !dateStr) { await ctx.reply('Usage: /board due &lt;id&gt; &lt;date&gt;\nExamples: tomorrow, 2026-03-25, next Friday', { parse_mode: 'HTML' }); return; }
+        const card = getCardByPrefix(chatId, cardId);
+        if (!card) { await ctx.reply('Card not found.'); return; }
+        const { parseDateHint, updateCard: update } = await import('../kanban.js');
+        const dueMs = parseDateHint(dateStr);
+        if (!dueMs) { await ctx.reply(`Could not parse date: "${dateStr}"`); return; }
+        const updated = update(card.id, { due_date: dueMs });
+        if (!updated) { await ctx.reply('Update failed.'); return; }
+        await ctx.reply(formatForTelegram(`Updated **${updated.title}** — Due: ${new Date(dueMs).toLocaleDateString()}`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'schedule': {
+        const cardId = parts[1];
+        const timeStr = parts.slice(2).join(' ');
+        if (!cardId || !timeStr) { await ctx.reply('Usage: /board schedule &lt;id&gt; &lt;time&gt;\nExamples: tonight, tomorrow morning, now, 2026-03-25T14:00', { parse_mode: 'HTML' }); return; }
+        const card = getCardByPrefix(chatId, cardId);
+        if (!card) { await ctx.reply('Card not found.'); return; }
+        const { parseDateHint, updateCard: update } = await import('../kanban.js');
+        const schedMs = parseDateHint(timeStr);
+        if (!schedMs) { await ctx.reply(`Could not parse time: "${timeStr}"`); return; }
+        const updated = update(card.id, { scheduled_for: schedMs });
+        if (!updated) { await ctx.reply('Update failed.'); return; }
+        await ctx.reply(formatForTelegram(`Updated **${updated.title}** — Scheduled: ${new Date(schedMs).toLocaleString()}`), { parse_mode: 'HTML' });
+        return;
+      }
+
       case 'delete':
       case 'remove': {
         const cardId = parts[1];
@@ -1208,6 +1266,10 @@ export function createTelegramBot(router: ProviderRouter): Bot {
             '/board add &lt;title&gt; — Create a card\n' +
             '/board move &lt;id&gt; &lt;status&gt; — Move card\n' +
             '/board assign &lt;id&gt; &lt;assignee&gt; — Assign card\n' +
+            '/board priority &lt;id&gt; &lt;1-5&gt; — Change priority\n' +
+            '/board due &lt;id&gt; &lt;date&gt; — Set deadline\n' +
+            '/board schedule &lt;id&gt; &lt;time&gt; — Set start time\n' +
+            '/board cancel &lt;id&gt; — Cancel a card\n' +
             '/board view &lt;id&gt; — View card details\n' +
             '/board delete &lt;id&gt; — Delete card',
           { parse_mode: 'HTML' },
