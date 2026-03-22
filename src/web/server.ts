@@ -9,7 +9,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { VoiceSession } from './voice-session.js';
-import { listAllCards, createCard, moveCard, assignCard, deleteCard, type CardStatus, type CardAssignee } from '../kanban.js';
+import { listAllCards, createCard, moveCard, assignCard, updateCard, deleteCard, parseDateHint, type CardStatus, type CardAssignee } from '../kanban.js';
 import type { ProviderRouter } from '../providers/router.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -145,6 +145,17 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
             case 'board_assign': {
               const assigned = assignCard(msg.cardId, msg.assignee as CardAssignee, boardChatId);
               if (!assigned) { ws.send(JSON.stringify({ type: 'error', message: 'Card not found or invalid assignee' })); break; }
+              ws.send(JSON.stringify({ type: 'card_updated' }));
+              ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
+              break;
+            }
+            case 'board_update': {
+              const updates: Record<string, unknown> = {};
+              if (msg.priority !== undefined) updates.priority = msg.priority;
+              if (msg.due_date) updates.due_date = parseDateHint(msg.due_date);
+              if (msg.scheduled_for) updates.scheduled_for = parseDateHint(msg.scheduled_for);
+              const updatedCard = updateCard(msg.cardId, updates);
+              if (!updatedCard) { ws.send(JSON.stringify({ type: 'error', message: 'Update failed' })); break; }
               ws.send(JSON.stringify({ type: 'card_updated' }));
               ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
               break;

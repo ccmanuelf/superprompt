@@ -10,22 +10,24 @@
     .header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; background: #161b22; border-bottom: 1px solid #30363d; }
     .header h1 { font-size: 20px; font-weight: 600; }
     .header .actions { display: flex; gap: 8px; }
-    .btn { padding: 6px 14px; border-radius: 6px; border: 1px solid #30363d; background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 13px; }
+    .btn { padding: 6px 14px; border-radius: 6px; border: 1px solid #30363d; background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 13px; transition: background 0.15s; }
     .btn:hover { background: #30363d; }
     .btn-primary { background: #238636; border-color: #238636; color: #fff; }
     .btn-primary:hover { background: #2ea043; }
+    .btn-danger { background: #da3633; border-color: #da3633; color: #fff; }
+    .btn-danger:hover { background: #f85149; }
     .auth { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 16px; }
     .auth input { padding: 10px 16px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #e1e4e8; width: 280px; font-size: 14px; }
-    .board { display: flex; gap: 16px; padding: 20px 24px; overflow-x: auto; min-height: calc(100vh - 60px); }
-    .column { min-width: 280px; max-width: 320px; flex-shrink: 0; background: #161b22; border-radius: 8px; border: 1px solid #30363d; display: flex; flex-direction: column; max-height: calc(100vh - 100px); }
-    .column-header { padding: 12px 16px; font-weight: 600; font-size: 14px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
-    .column-header .count { background: #30363d; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
-    .column-body { padding: 8px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; }
-    .card { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 12px; cursor: pointer; transition: border-color 0.15s; }
+    .board { display: flex; gap: 12px; padding: 16px 20px; overflow-x: auto; min-height: calc(100vh - 60px); }
+    .column { min-width: 250px; max-width: 300px; flex-shrink: 0; background: #161b22; border-radius: 8px; border: 1px solid #30363d; display: flex; flex-direction: column; max-height: calc(100vh - 100px); }
+    .column-header { padding: 10px 14px; font-weight: 600; font-size: 13px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+    .column-header .count { background: #30363d; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+    .column-body { padding: 6px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+    .card { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 10px; cursor: pointer; transition: border-color 0.15s; }
     .card:hover { border-color: #58a6ff; }
-    .card-title { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
-    .card-meta { font-size: 11px; color: #8b949e; display: flex; gap: 8px; flex-wrap: wrap; }
-    .card-meta .tag { background: #30363d; padding: 1px 6px; border-radius: 3px; }
+    .card-title { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+    .card-meta { font-size: 10px; color: #8b949e; display: flex; gap: 6px; flex-wrap: wrap; }
+    .card-meta .tag { background: #30363d; padding: 1px 5px; border-radius: 3px; }
     .priority-1 { border-left: 3px solid #f85149; }
     .priority-2 { border-left: 3px solid #d29922; }
     .priority-3 { border-left: 3px solid #58a6ff; }
@@ -33,17 +35,17 @@
     .priority-5 { border-left: 3px solid #484f58; }
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
     .modal-overlay.active { display: flex; }
-    .modal { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 24px; width: 400px; max-width: 90vw; }
+    .modal { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 24px; width: 440px; max-width: 90vw; }
     .modal h2 { font-size: 16px; margin-bottom: 16px; }
-    .modal label { display: block; font-size: 13px; color: #8b949e; margin: 8px 0 4px; }
-    .modal input, .modal select, .modal textarea { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #e1e4e8; font-size: 14px; font-family: inherit; }
+    .modal label { display: block; font-size: 12px; color: #8b949e; margin: 8px 0 4px; }
+    .modal input, .modal select, .modal textarea { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #e1e4e8; font-size: 13px; font-family: inherit; }
     .modal textarea { resize: vertical; min-height: 60px; }
-    .modal .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-    .empty { text-align: center; color: #484f58; padding: 20px; font-size: 13px; }
+    .modal .btn-row { display: flex; gap: 8px; justify-content: space-between; margin-top: 16px; }
+    .modal .btn-row .right { display: flex; gap: 8px; }
+    .empty { text-align: center; color: #484f58; padding: 16px; font-size: 12px; }
   </style>
 </head>
 <body>
-  <!-- Auth screen -->
   <div id="auth" class="auth">
     <h2>clauded Board</h2>
     <input type="password" id="token-input" placeholder="Enter token" autofocus>
@@ -51,162 +53,208 @@
     <div id="auth-error" style="color: #f85149; font-size: 13px;"></div>
   </div>
 
-  <!-- Board -->
   <div id="app" style="display:none;">
     <div class="header">
       <h1>📊 clauded Board</h1>
       <div class="actions">
-        <button class="btn" onclick="refresh()">Refresh</button>
-        <button class="btn btn-primary" onclick="showAddModal()">+ New Card</button>
+        <button class="btn" onclick="refresh()">↻ Refresh</button>
+        <button class="btn btn-primary" onclick="showModal('add')">+ New Card</button>
       </div>
     </div>
     <div class="board" id="board"></div>
   </div>
 
-  <!-- Add Card Modal -->
-  <div class="modal-overlay" id="add-modal">
+  <!-- Unified Card Modal (Add / Edit) -->
+  <div class="modal-overlay" id="card-modal">
     <div class="modal">
-      <h2>New Card</h2>
+      <h2 id="modal-title">New Card</h2>
+      <input type="hidden" id="card-id">
       <label>Title</label>
-      <input type="text" id="new-title" placeholder="Card title" autofocus>
+      <input type="text" id="card-title-input" placeholder="Card title">
       <label>Description</label>
-      <textarea id="new-desc" placeholder="Optional description"></textarea>
-      <label>Assignee</label>
-      <select id="new-assignee">
-        <option value="me">👤 Me</option>
-        <option value="bot">🤖 Bot</option>
-        <option value="collaborative">🤝 Collaborative</option>
-        <option value="noted">📝 Noted</option>
-      </select>
-      <label>Priority</label>
-      <select id="new-priority">
-        <option value="1">🔴 Critical</option>
-        <option value="2">🟠 High</option>
-        <option value="3" selected>🟡 Medium</option>
-        <option value="4">🔵 Low</option>
-        <option value="5">⚪ Minimal</option>
-      </select>
+      <textarea id="card-desc" placeholder="Optional details"></textarea>
+      <div style="display:flex; gap:12px;">
+        <div style="flex:1"><label>Assignee</label>
+          <select id="card-assignee">
+            <option value="noted">📝 Noted</option>
+            <option value="me">👤 Me</option>
+            <option value="bot">🤖 Bot</option>
+            <option value="collaborative">🤝 Collaborative</option>
+          </select>
+        </div>
+        <div style="flex:1"><label>Priority</label>
+          <select id="card-priority">
+            <option value="1">🔴 Critical</option>
+            <option value="2">🟠 High</option>
+            <option value="3" selected>🟡 Medium</option>
+            <option value="4">🔵 Low</option>
+            <option value="5">⚪ Minimal</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex; gap:12px;">
+        <div style="flex:1"><label>Due Date</label>
+          <input type="date" id="card-due"></div>
+        <div style="flex:1"><label>Scheduled Start</label>
+          <input type="datetime-local" id="card-scheduled"></div>
+      </div>
+      <div style="display:flex; gap:12px;">
+        <div style="flex:1"><label>Status</label>
+          <select id="card-status">
+            <option value="backlog">📋 Backlog</option>
+            <option value="in_progress">🔄 In Progress</option>
+            <option value="review">👀 Review</option>
+            <option value="done">✅ Done</option>
+            <option value="deferred">⏸️ Deferred</option>
+            <option value="cancelled">🚫 Cancelled</option>
+          </select>
+        </div>
+      </div>
       <div class="btn-row">
-        <button class="btn" onclick="hideAddModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="addCard()">Create</button>
+        <div><button class="btn btn-danger" id="btn-delete" style="display:none" onclick="deleteCurrentCard()">Delete</button></div>
+        <div class="right">
+          <button class="btn" onclick="hideModal()">Cancel</button>
+          <button class="btn btn-primary" id="btn-save" onclick="saveCard()">Create</button>
+        </div>
       </div>
     </div>
   </div>
 
 <script>
 const COLUMNS = [
-  { id: 'backlog', label: '📋 Backlog', color: '#8b949e' },
-  { id: 'in_progress', label: '🔄 In Progress', color: '#58a6ff' },
-  { id: 'review', label: '👀 Review', color: '#d29922' },
-  { id: 'done', label: '✅ Done', color: '#3fb950' },
-  { id: 'deferred', label: '⏸️ Deferred', color: '#484f58' },
+  { id: 'backlog', label: '📋 Backlog' },
+  { id: 'in_progress', label: '🔄 In Progress' },
+  { id: 'review', label: '👀 Review' },
+  { id: 'done', label: '✅ Done' },
+  { id: 'deferred', label: '⏸️ Deferred' },
+  { id: 'cancelled', label: '🚫 Cancelled' },
 ];
 const ASSIGNEE = { me: '👤', bot: '🤖', collaborative: '🤝', noted: '📝' };
+const PRIORITY_LABEL = { 1: '🔴', 2: '🟠', 3: '🟡', 4: '🔵', 5: '⚪' };
 
-let token = '';
-let ws = null;
+let token = '', ws = null, allCards = [];
 
 function authenticate() {
   token = document.getElementById('token-input').value;
   if (!token) return;
-  connectWS();
-}
-
-function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}?token=${encodeURIComponent(token)}&mode=board`);
-
   ws.onopen = () => {
     document.getElementById('auth').style.display = 'none';
     document.getElementById('app').style.display = 'block';
-    ws.send(JSON.stringify({ type: 'board_list' }));
+    refresh();
   };
-
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if (msg.type === 'board_data') renderBoard(msg.cards);
+    if (msg.type === 'board_data') { allCards = msg.cards; renderBoard(); }
     if (msg.type === 'card_created' || msg.type === 'card_updated' || msg.type === 'card_deleted') refresh();
-    if (msg.type === 'error') document.getElementById('auth-error').textContent = msg.message;
+    if (msg.type === 'error') alert(msg.message);
   };
-
   ws.onerror = () => { document.getElementById('auth-error').textContent = 'Connection failed'; };
   ws.onclose = (e) => { if (e.code === 4001) { document.getElementById('auth-error').textContent = 'Invalid token'; document.getElementById('auth').style.display = 'flex'; document.getElementById('app').style.display = 'none'; } };
 }
 
 function refresh() { if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'board_list' })); }
 
-function renderBoard(cards) {
+function renderBoard() {
   const board = document.getElementById('board');
   board.innerHTML = '';
-
   for (const col of COLUMNS) {
-    const colCards = cards.filter(c => c.status === col.id);
+    const colCards = allCards.filter(c => c.status === col.id);
     const colEl = document.createElement('div');
     colEl.className = 'column';
     colEl.innerHTML = `<div class="column-header">${col.label} <span class="count">${colCards.length}</span></div>`;
-
     const body = document.createElement('div');
     body.className = 'column-body';
-
-    if (colCards.length === 0) {
-      body.innerHTML = '<div class="empty">No cards</div>';
-    } else {
+    if (colCards.length === 0) { body.innerHTML = '<div class="empty">No cards</div>'; }
+    else {
       for (const card of colCards) {
         const el = document.createElement('div');
         el.className = `card priority-${card.priority}`;
+        const dueStr = card.due_date ? `<span class="tag">📅 ${new Date(card.due_date).toLocaleDateString()}</span>` : '';
         el.innerHTML = `
           <div class="card-title">${esc(card.title)}</div>
           <div class="card-meta">
             <span class="tag">${ASSIGNEE[card.assignee] || '?'} ${card.assignee}</span>
-            <span class="tag">${card.id.slice(0,8)}</span>
-            ${card.source === 'bot' ? '<span class="tag">🤖 auto</span>' : ''}
+            <span class="tag">${PRIORITY_LABEL[card.priority] || '?'}</span>
+            ${dueStr}
+            ${card.source === 'bot' ? '<span class="tag">🤖</span>' : ''}
           </div>`;
-        // Drag support
         el.draggable = true;
         el.dataset.id = card.id;
         el.ondragstart = (e) => e.dataTransfer.setData('text/plain', card.id);
+        el.onclick = () => showModal('edit', card);
         body.appendChild(el);
       }
     }
-
-    // Drop target
     body.ondragover = (e) => { e.preventDefault(); body.style.background = '#1c2128'; };
     body.ondragleave = () => { body.style.background = ''; };
     body.ondrop = (e) => {
       e.preventDefault(); body.style.background = '';
       const cardId = e.dataTransfer.getData('text/plain');
-      if (cardId) moveCard(cardId, col.id);
+      if (cardId) send({ type: 'board_move', cardId, status: col.id });
     };
-
     colEl.appendChild(body);
     board.appendChild(colEl);
   }
 }
 
-function moveCard(id, status) {
-  if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'board_move', cardId: id, status }));
+function showModal(mode, card) {
+  const isEdit = mode === 'edit' && card;
+  document.getElementById('modal-title').textContent = isEdit ? 'Edit Card' : 'New Card';
+  document.getElementById('card-id').value = isEdit ? card.id : '';
+  document.getElementById('card-title-input').value = isEdit ? card.title : '';
+  document.getElementById('card-desc').value = isEdit ? (card.description || '') : '';
+  document.getElementById('card-assignee').value = isEdit ? card.assignee : 'noted';
+  document.getElementById('card-priority').value = isEdit ? card.priority : 3;
+  document.getElementById('card-status').value = isEdit ? card.status : 'backlog';
+  document.getElementById('card-due').value = isEdit && card.due_date ? new Date(card.due_date).toISOString().split('T')[0] : '';
+  document.getElementById('card-scheduled').value = isEdit && card.scheduled_for ? new Date(card.scheduled_for).toISOString().slice(0,16) : '';
+  document.getElementById('btn-delete').style.display = isEdit ? 'block' : 'none';
+  document.getElementById('btn-save').textContent = isEdit ? 'Save' : 'Create';
+  document.getElementById('card-status').parentElement.style.display = isEdit ? '' : 'none';
+  document.getElementById('card-modal').classList.add('active');
+  document.getElementById('card-title-input').focus();
 }
 
-function showAddModal() { document.getElementById('add-modal').classList.add('active'); document.getElementById('new-title').focus(); }
-function hideAddModal() { document.getElementById('add-modal').classList.remove('active'); }
+function hideModal() { document.getElementById('card-modal').classList.remove('active'); }
 
-function addCard() {
-  const title = document.getElementById('new-title').value.trim();
+function saveCard() {
+  const id = document.getElementById('card-id').value;
+  const title = document.getElementById('card-title-input').value.trim();
   if (!title) return;
-  const desc = document.getElementById('new-desc').value.trim();
-  const assignee = document.getElementById('new-assignee').value;
-  const priority = parseInt(document.getElementById('new-priority').value);
-  if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'board_create', title, description: desc, assignee, priority }));
-  document.getElementById('new-title').value = '';
-  document.getElementById('new-desc').value = '';
-  hideAddModal();
+  const assignee = document.getElementById('card-assignee').value;
+  const priority = parseInt(document.getElementById('card-priority').value);
+  const dueVal = document.getElementById('card-due').value;
+  const schedVal = document.getElementById('card-scheduled').value;
+
+  if (id) {
+    // Edit existing
+    const status = document.getElementById('card-status').value;
+    send({ type: 'board_move', cardId: id, status });
+    send({ type: 'board_assign', cardId: id, assignee });
+    send({ type: 'board_update', cardId: id, priority, due_date: dueVal || null, scheduled_for: schedVal || null });
+  } else {
+    // Create new
+    const desc = document.getElementById('card-desc').value.trim();
+    send({ type: 'board_create', title, description: desc, assignee, priority });
+  }
+  hideModal();
 }
 
+function deleteCurrentCard() {
+  const id = document.getElementById('card-id').value;
+  if (id && confirm('Delete this card?')) {
+    send({ type: 'board_delete', cardId: id });
+    hideModal();
+  }
+}
+
+function send(msg) { if (ws?.readyState === 1) ws.send(JSON.stringify(msg)); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-// Enter key submits
 document.getElementById('token-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') authenticate(); });
-document.getElementById('new-title').addEventListener('keydown', (e) => { if (e.key === 'Enter') addCard(); });
+document.getElementById('card-title-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveCard(); });
 </script>
 </body>
 </html>
