@@ -56,6 +56,23 @@ You also have access to GitHub tools (github_list_repos, github_read_file, githu
 
 IMPORTANT — Kanban Board: When you identify tasks, ideas, issues, or follow-ups during conversation, suggest adding them to the board. If you have the kanban_manage tool (Ollama), call it directly. If not (Claude), tell the user: "This sounds like something to track. Want me to add it to the board? You can use: /board add <title>".`;
 
+/**
+ * Kanban board action format — teaches BOTH providers how to create/manage cards.
+ * Uses the same JSON-in-response pattern as document generation.
+ * The platform handler detects and executes these automatically.
+ */
+const KANBAN_PROMPT = `## Kanban Board Actions
+When you identify a task, idea, issue, or opportunity during conversation, you can add it to the shared board by including a JSON block in your response:
+
+\`\`\`json
+{"kanban_action": "create", "title": "Task title", "description": "Optional details", "assignee": "me", "priority": 3}
+\`\`\`
+
+Assignee options: "me" (user does it), "bot" (you work on it autonomously), "collaborative" (both), "noted" (reference only).
+Priority: 1=critical, 2=high, 3=medium, 4=low, 5=minimal.
+
+Be PROACTIVE: when the user mentions something actionable ("I need to fix X", "we should look into Y", "don't forget to Z"), create a card without being asked. Include the JSON block alongside your normal response text.`;
+
 const VOICE_RESPONSE_HINT = `The user sent a voice message. Respond as if in a verbal conversation:
 - Keep responses to 1-3 sentences. Be concise.
 - No markdown formatting (no bullet points, headers, code blocks, bold, italics).
@@ -281,11 +298,11 @@ export class ProviderRouter {
     // Inject voice hint when the message is from a voice note
     const voiceHint = params.isVoice ? VOICE_RESPONSE_HINT : '';
 
-    // Inject document capabilities, quality rules, and command list for both providers
+    // Inject document capabilities, quality rules, command list, and kanban prompt for both providers
     // Language hint is Claude-only (Ollama has its own in the model system prompt)
     const systemPrompt = provider.name === 'claude'
-      ? [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
+      ? [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
+      : [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)

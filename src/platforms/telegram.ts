@@ -19,9 +19,9 @@ import { registerTool, loadUserTools, listRegisteredTools } from '../forge/tool-
 import { generateToolCode } from '../forge/tool-generator.js';
 import { fixTool } from '../forge/tool-fixer.js';
 import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.js';
-import { buildDigest, getDigestPreference, setDigestPreference, type DigestFrequency } from '../proactive.js';
+import { buildDigest, getDigestPreference, setDigestPreference, triggerBotTasksNow, type DigestFrequency } from '../proactive.js';
 import { shouldOrchestrate, orchestrateTask } from '../orchestrator.js';
-import { createCard, moveCard, assignCard, listCards, getCardByPrefix, deleteCard, formatBoard, formatCard, type CardStatus, type CardAssignee } from '../kanban.js';
+import { createCard, moveCard, assignCard, listCards, getCardByPrefix, deleteCard, formatBoard, formatCard, isKanbanAction, parseKanbanAction, executeKanbanAction, stripKanbanBlock, type CardStatus, type CardAssignee } from '../kanban.js';
 import { checkResponseQuality, logQualityCheck } from '../self-monitor.js';
 
 const TYPING_REFRESH_MS = 4000;
@@ -267,6 +267,18 @@ async function handleMessage(
         } catch (err) {
           logger.warn({ err }, 'Document generation failed, sending raw response');
         }
+      }
+    }
+
+    // 5b2. Check for kanban action in response (works for BOTH Claude and Ollama)
+    if (isKanbanAction(response.text)) {
+      const kanbanReq = parseKanbanAction(response.text);
+      if (kanbanReq) {
+        const kanbanResult = executeKanbanAction(chatId, kanbanReq);
+        await ctx.reply(formatForTelegram(kanbanResult), { parse_mode: 'HTML' });
+        // Strip the JSON block from the displayed response
+        response.text = stripKanbanBlock(response.text);
+        if (!response.text) return; // Nothing left to show
       }
     }
 
@@ -1163,6 +1175,10 @@ export function createTelegramBot(router: ProviderRouter): Bot {
         const updated = assignCard(card.id, newAssignee);
         if (!updated) { await ctx.reply('Invalid assignee.'); return; }
         await ctx.reply(formatForTelegram(`Assigned **${updated.title}** → ${newAssignee}`), { parse_mode: 'HTML' });
+        // If assigned to bot, trigger immediate execution (don't wait for hourly loop)
+        if (newAssignee === 'bot') {
+          triggerBotTasksNow();
+        }
         return;
       }
 

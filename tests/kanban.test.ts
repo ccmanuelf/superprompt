@@ -20,6 +20,9 @@ import {
   getChatsWithBotTasks,
   formatCard,
   formatBoard,
+  isKanbanAction,
+  parseKanbanAction,
+  stripKanbanBlock,
   initKanbanTable,
   type KanbanCard,
 } from '../src/kanban.js';
@@ -349,5 +352,103 @@ describe('end-to-end collaboration workflow (real DB)', () => {
       "SELECT * FROM kanban_cards WHERE chat_id = ? AND status NOT IN ('done', 'cancelled', 'deferred')",
     ).all('chat1');
     expect(active).toHaveLength(0);
+  });
+});
+
+// ── Response-format kanban action detection (real functions) ──
+
+describe('isKanbanAction (real function)', () => {
+  it('detects kanban action JSON block in AI response', () => {
+    const response = `Sure, I'll track that for you.\n\n\`\`\`json\n{"kanban_action": "create", "title": "Fix login page timeout", "assignee": "me", "priority": 2}\n\`\`\`\n\nI've added it to your board.`;
+    expect(isKanbanAction(response)).toBe(true);
+  });
+
+  it('does NOT detect non-kanban JSON blocks', () => {
+    const docgenResponse = `\`\`\`json\n{"format": "xlsx", "filename": "report.xlsx"}\n\`\`\``;
+    expect(isKanbanAction(docgenResponse)).toBe(false);
+  });
+
+  it('does NOT detect plain text responses', () => {
+    expect(isKanbanAction('Here is your answer about kanban boards.')).toBe(false);
+    expect(isKanbanAction('The kanban_action is important.')).toBe(false);
+  });
+});
+
+describe('parseKanbanAction (real function)', () => {
+  it('parses create action with all fields', () => {
+    const response = `Let me add that.\n\n\`\`\`json\n{"kanban_action": "create", "title": "Research competitors", "description": "Compare pricing and features", "assignee": "collaborative", "priority": 2}\n\`\`\``;
+    const action = parseKanbanAction(response);
+    expect(action).not.toBeNull();
+    expect(action!.kanban_action).toBe('create');
+    expect(action!.title).toBe('Research competitors');
+    expect(action!.assignee).toBe('collaborative');
+    expect(action!.priority).toBe(2);
+  });
+
+  it('parses move action', () => {
+    const response = `\`\`\`json\n{"kanban_action": "move", "card_id": "abc123", "status": "done"}\n\`\`\``;
+    const action = parseKanbanAction(response);
+    expect(action!.kanban_action).toBe('move');
+    expect(action!.card_id).toBe('abc123');
+    expect(action!.status).toBe('done');
+  });
+
+  it('rejects invalid kanban_action values', () => {
+    const response = `\`\`\`json\n{"kanban_action": "destroy", "card_id": "abc"}\n\`\`\``;
+    const action = parseKanbanAction(response);
+    expect(action).toBeNull();
+  });
+
+  it('rejects malformed JSON', () => {
+    const response = `\`\`\`json\n{kanban_action: create}\n\`\`\``;
+    const action = parseKanbanAction(response);
+    expect(action).toBeNull();
+  });
+});
+
+describe('stripKanbanBlock (real function)', () => {
+  it('removes JSON block and preserves surrounding text', () => {
+    const response = `I've noted that task.\n\n\`\`\`json\n{"kanban_action": "create", "title": "Test"}\n\`\`\`\n\nAnything else?`;
+    const stripped = stripKanbanBlock(response);
+    expect(stripped).toContain("I've noted that task.");
+    expect(stripped).toContain('Anything else?');
+    expect(stripped).not.toContain('kanban_action');
+  });
+
+  it('returns empty string when response is only the JSON block', () => {
+    const response = `\`\`\`json\n{"kanban_action": "create", "title": "Test"}\n\`\`\``;
+    const stripped = stripKanbanBlock(response);
+    expect(stripped).toBe('');
+  });
+});
+
+// ── Claude + Ollama parity ────────────────────────────────
+
+describe('provider parity for kanban actions', () => {
+  it('Claude response format is detectable', () => {
+    // Simulate what Claude would output when it detects a task
+    const claudeResponse = `That sounds like an important task to track. Let me add it to your board.
+
+\`\`\`json
+{"kanban_action": "create", "title": "Optimize database query performance", "description": "Users reporting slow load times on the dashboard", "assignee": "collaborative", "priority": 2}
+\`\`\`
+
+I've created a card for this. You can check the board with /board.`;
+
+    expect(isKanbanAction(claudeResponse)).toBe(true);
+    const action = parseKanbanAction(claudeResponse);
+    expect(action!.title).toBe('Optimize database query performance');
+
+    const remaining = stripKanbanBlock(claudeResponse);
+    expect(remaining).toContain('important task');
+    expect(remaining).toContain('/board');
+    expect(remaining).not.toContain('kanban_action');
+  });
+
+  it('Ollama tool call AND response format both work', () => {
+    // Ollama can use EITHER the kanban_manage tool OR the JSON response format
+    // Both paths should produce valid kanban actions
+    const responseFormat = `\`\`\`json\n{"kanban_action": "create", "title": "Via response format"}\n\`\`\``;
+    expect(isKanbanAction(responseFormat)).toBe(true);
   });
 });

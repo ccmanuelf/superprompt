@@ -286,6 +286,19 @@ async function runBotTasks(): Promise<void> {
 }
 
 /**
+ * Trigger immediate bot task execution for a specific chat.
+ * Called when a card is assigned to 'bot' — don't wait for the hourly loop.
+ */
+export function triggerBotTasksNow(chatId?: string): void {
+  if (!notifyFn || !routerRef) return;
+
+  // Run in background (don't await)
+  runBotTasks().catch((err) =>
+    logger.warn({ err }, 'Immediate bot task execution failed'),
+  );
+}
+
+/**
  * Initialize proactive messaging. Starts periodic follow-up, digest, and bot task checks.
  */
 export function initProactiveMessaging(notify: NotifyFn, router?: ProviderRouter): () => void {

@@ -2,6 +2,99 @@ import { randomBytes } from 'node:crypto';
 import { getDatabase } from './db.js';
 import { logger } from './logger.js';
 
+// ── Response-Format Kanban Action Detection ─────────────────
+// Same pattern as docgen: AI outputs a JSON block, platform handler detects and executes it.
+// This allows BOTH providers (Claude and Ollama) to manage the board.
+
+/**
+ * Regex to detect kanban action JSON blocks in AI responses.
+ * Matches: ```json\n{"kanban_action": "create", ...}\n```
+ */
+const KANBAN_ACTION_REGEX = /```(?:json)?\s*\n?\s*(\{[\s\S]*?"kanban_action"\s*:[\s\S]*?\})\s*\n?\s*```/;
+
+export interface KanbanActionRequest {
+  kanban_action: 'create' | 'move' | 'assign';
+  title?: string;
+  description?: string;
+  assignee?: CardAssignee;
+  priority?: number;
+  labels?: string[];
+  card_id?: string;
+  status?: CardStatus;
+}
+
+/**
+ * Detect if an AI response contains a kanban action JSON block.
+ * Works for BOTH Claude and Ollama responses.
+ * Exported for testing.
+ */
+export function isKanbanAction(text: string): boolean {
+  return KANBAN_ACTION_REGEX.test(text);
+}
+
+/**
+ * Parse a kanban action from AI response text.
+ * Exported for testing.
+ */
+export function parseKanbanAction(text: string): KanbanActionRequest | null {
+  const match = text.match(KANBAN_ACTION_REGEX);
+  if (!match) return null;
+
+  try {
+    const parsed = JSON.parse(match[1]);
+    if (!parsed.kanban_action) return null;
+    if (!['create', 'move', 'assign'].includes(parsed.kanban_action)) return null;
+    return parsed as KanbanActionRequest;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Execute a kanban action from an AI response and return a user-facing message.
+ * Exported for testing.
+ */
+export function executeKanbanAction(chatId: string, action: KanbanActionRequest): string {
+  switch (action.kanban_action) {
+    case 'create': {
+      if (!action.title) return 'Kanban action error: title required for create.';
+      const card = createCard(chatId, action.title, {
+        description: action.description,
+        assignee: action.assignee || 'me',
+        priority: action.priority || 3,
+        labels: action.labels,
+        source: 'bot',
+      });
+      return `📋 Added to board: **${card.title}** [${card.assignee}] — ID: \`${card.id.slice(0, 8)}\``;
+    }
+    case 'move': {
+      if (!action.card_id || !action.status) return 'Kanban action error: card_id and status required.';
+      const card = getCardByPrefix(chatId, action.card_id);
+      if (!card) return `Card "${action.card_id}" not found.`;
+      const moved = moveCard(card.id, action.status, chatId);
+      if (!moved) return `Invalid status: ${action.status}`;
+      return `Moved **${moved.title}** → ${moved.status}`;
+    }
+    case 'assign': {
+      if (!action.card_id || !action.assignee) return 'Kanban action error: card_id and assignee required.';
+      const card = getCardByPrefix(chatId, action.card_id);
+      if (!card) return `Card "${action.card_id}" not found.`;
+      const assigned = assignCard(card.id, action.assignee, chatId);
+      if (!assigned) return `Invalid assignee: ${action.assignee}`;
+      return `Assigned **${assigned.title}** → ${assigned.assignee}`;
+    }
+    default:
+      return `Unknown kanban action: ${action.kanban_action}`;
+  }
+}
+
+/**
+ * Strip the kanban action JSON block from the response text.
+ */
+export function stripKanbanBlock(text: string): string {
+  return text.replace(KANBAN_ACTION_REGEX, '').trim();
+}
+
 /**
  * Kanban board — shared task tracking between user and bot.
  *

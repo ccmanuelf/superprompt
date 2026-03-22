@@ -22,7 +22,7 @@ import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.j
 import { listRegisteredTools, loadUserTools } from '../forge/tool-registry.js';
 import { buildDigest, getDigestPreference, setDigestPreference, type DigestFrequency } from '../proactive.js';
 import { shouldOrchestrate, orchestrateTask } from '../orchestrator.js';
-import { createCard, moveCard, assignCard, getCardByPrefix, deleteCard, formatBoard, type CardStatus, type CardAssignee } from '../kanban.js';
+import { createCard, moveCard, assignCard, getCardByPrefix, deleteCard, formatBoard, isKanbanAction, parseKanbanAction, executeKanbanAction, stripKanbanBlock, type CardStatus, type CardAssignee } from '../kanban.js';
 import { checkResponseQuality, logQualityCheck } from '../self-monitor.js';
 
 // Per-room voice mode toggle
@@ -209,6 +209,17 @@ async function handleMessage(
         } catch (err) {
           logger.warn({ err }, 'Matrix document generation failed, sending raw response');
         }
+      }
+    }
+
+    // 3b2. Check for kanban action in response (works for BOTH Claude and Ollama)
+    if (isKanbanAction(response.text)) {
+      const kanbanReq = parseKanbanAction(response.text);
+      if (kanbanReq) {
+        const kanbanResult = executeKanbanAction(roomId, kanbanReq);
+        await sendNotice(client, roomId, kanbanResult);
+        response.text = stripKanbanBlock(response.text);
+        if (!response.text) return;
       }
     }
 
