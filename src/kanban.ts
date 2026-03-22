@@ -135,10 +135,16 @@ export function listAllCards(chatId: string): KanbanCard[] {
   ).all(chatId) as KanbanCard[];
 }
 
-export function moveCard(id: string, newStatus: CardStatus): KanbanCard | null {
+export function moveCard(id: string, newStatus: CardStatus, chatId?: string): KanbanCard | null {
   if (!VALID_STATUSES.includes(newStatus)) return null;
 
   const db = getDatabase();
+  // If chatId provided, enforce ownership
+  if (chatId) {
+    const card = getCard(id);
+    if (!card || card.chat_id !== chatId) return null;
+  }
+
   db.prepare(
     'UPDATE kanban_cards SET status = ?, updated_at = ? WHERE id = ?',
   ).run(newStatus, Date.now(), id);
@@ -146,10 +152,15 @@ export function moveCard(id: string, newStatus: CardStatus): KanbanCard | null {
   return getCard(id) || null;
 }
 
-export function assignCard(id: string, assignee: CardAssignee): KanbanCard | null {
+export function assignCard(id: string, assignee: CardAssignee, chatId?: string): KanbanCard | null {
   if (!VALID_ASSIGNEES.includes(assignee)) return null;
 
   const db = getDatabase();
+  if (chatId) {
+    const card = getCard(id);
+    if (!card || card.chat_id !== chatId) return null;
+  }
+
   db.prepare(
     'UPDATE kanban_cards SET assignee = ?, updated_at = ? WHERE id = ?',
   ).run(assignee, Date.now(), id);
@@ -185,10 +196,42 @@ export function updateCard(
   return getCard(id) || null;
 }
 
-export function deleteCard(id: string): boolean {
+export function deleteCard(id: string, chatId?: string): boolean {
   const db = getDatabase();
+  if (chatId) {
+    const card = getCard(id);
+    if (!card || card.chat_id !== chatId) return false;
+  }
   const result = db.prepare('DELETE FROM kanban_cards WHERE id = ?').run(id);
   return result.changes > 0;
+}
+
+// ── Bot-Assigned Task Execution ─────────────────────────────
+
+/**
+ * Get cards assigned to the bot that are in backlog (ready to work on).
+ * The scheduler uses this to pick up bot-assigned tasks.
+ */
+export function getBotAssignedCards(chatId: string): KanbanCard[] {
+  const db = getDatabase();
+  return db.prepare(
+    `SELECT * FROM kanban_cards
+     WHERE chat_id = ? AND assignee = 'bot' AND status = 'backlog'
+     ORDER BY priority ASC, created_at ASC
+     LIMIT 3`,
+  ).all(chatId) as KanbanCard[];
+}
+
+/**
+ * Get all distinct chat IDs that have bot-assigned backlog cards.
+ */
+export function getChatsWithBotTasks(): string[] {
+  const db = getDatabase();
+  const rows = db.prepare(
+    `SELECT DISTINCT chat_id FROM kanban_cards
+     WHERE assignee = 'bot' AND status = 'backlog'`,
+  ).all() as Array<{ chat_id: string }>;
+  return rows.map((r) => r.chat_id);
 }
 
 // ── Board Summary ───────────────────────────────────────────

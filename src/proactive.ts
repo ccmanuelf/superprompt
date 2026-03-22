@@ -1,12 +1,15 @@
 import { getDatabase, type Episode } from './db.js';
+import { getChatsWithBotTasks, getBotAssignedCards, moveCard } from './kanban.js';
 import { logger } from './logger.js';
 import type { NotifyFn } from './scheduler.js';
+import type { ProviderRouter } from './providers/router.js';
 
 const FOLLOW_UP_DELAY_MS = 24 * 60 * 60 * 1000; // 24 hours after episode creation
 const FOLLOW_UP_CHECK_INTERVAL_MS = 60 * 60 * 1000; // Check every hour
 
 let followUpTimer: ReturnType<typeof setInterval> | undefined;
 let notifyFn: NotifyFn | undefined;
+let routerRef: ProviderRouter | undefined;
 
 /**
  * Get episodes with open threads that haven't been followed up on yet.
@@ -213,20 +216,94 @@ async function runDigestDelivery(): Promise<void> {
 }
 
 /**
- * Initialize proactive messaging. Starts periodic follow-up and digest checks.
+ * Execute bot-assigned kanban cards.
+ *
+ * Picks up cards with assignee='bot' and status='backlog', sends the card title
+ * as a prompt to the AI, stores the result, moves card to 'review', and notifies the user.
+ *
+ * This is the core "autonomous partner" feature: the bot works on tasks
+ * assigned to it without being asked.
  */
-export function initProactiveMessaging(notify: NotifyFn): () => void {
+async function runBotTasks(): Promise<void> {
+  if (!notifyFn || !routerRef) return;
+
+  const chatIds = getChatsWithBotTasks();
+  if (chatIds.length === 0) return;
+
+  for (const chatId of chatIds) {
+    const cards = getBotAssignedCards(chatId);
+
+    for (const card of cards) {
+      try {
+        // Move to in_progress
+        moveCard(card.id, 'in_progress');
+
+        logger.info(
+          { cardId: card.id, chatId, title: card.title },
+          'Bot working on assigned card',
+        );
+
+        // Send the card as a task to the AI
+        const prompt = card.description
+          ? `Task: ${card.title}\n\nDetails: ${card.description}\n\nPlease complete this task and provide the result.`
+          : `Task: ${card.title}\n\nPlease complete this task and provide the result.`;
+
+        const response = await routerRef.sendMessage({
+          chatId,
+          message: prompt,
+          skipAutoTrigger: true,
+        });
+
+        const result = response.text || '(no output)';
+
+        // Move to review
+        moveCard(card.id, 'review');
+
+        // Notify the user
+        await notifyFn(
+          chatId,
+          `🤖 **Bot completed a task — ready for review:**\n\n` +
+            `**${card.title}**\n\n` +
+            `${result.slice(0, 1500)}${result.length > 1500 ? '\n...(truncated)' : ''}\n\n` +
+            `Card moved to Review. Use \`/board move ${card.id.slice(0, 8)} done\` to approve or \`/board move ${card.id.slice(0, 8)} backlog\` to send back.`,
+        );
+
+        logger.info(
+          { cardId: card.id, chatId, title: card.title },
+          'Bot completed assigned card — moved to review',
+        );
+      } catch (err) {
+        logger.warn(
+          { err, cardId: card.id, chatId },
+          'Bot failed to complete assigned card',
+        );
+
+        // Move back to backlog so it can be retried
+        moveCard(card.id, 'backlog');
+      }
+    }
+  }
+}
+
+/**
+ * Initialize proactive messaging. Starts periodic follow-up, digest, and bot task checks.
+ */
+export function initProactiveMessaging(notify: NotifyFn, router?: ProviderRouter): () => void {
   notifyFn = notify;
+  routerRef = router;
 
   logger.info('Proactive messaging initialized');
 
-  // Run follow-up check every hour
+  // Run follow-up, digest, and bot task checks every hour
   followUpTimer = setInterval(() => {
     runFollowUpCheck().catch((err) =>
       logger.warn({ err }, 'Proactive follow-up check failed'),
     );
     runDigestDelivery().catch((err) =>
       logger.warn({ err }, 'Digest delivery failed'),
+    );
+    runBotTasks().catch((err) =>
+      logger.warn({ err }, 'Bot task execution failed'),
     );
   }, FOLLOW_UP_CHECK_INTERVAL_MS);
 

@@ -190,8 +190,8 @@ async function main(): Promise<void> {
   const stopScheduler = initScheduler(router, notifyFn);
   cleanups.push(stopScheduler);
 
-  // 10b. Initialize proactive messaging (follow-ups, digests)
-  const stopProactive = initProactiveMessaging(notifyFn);
+  // 10b. Initialize proactive messaging (follow-ups, digests, bot tasks)
+  const stopProactive = initProactiveMessaging(notifyFn, router);
   cleanups.push(stopProactive);
 
   // 11. Register signal handlers for graceful shutdown

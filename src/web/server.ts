@@ -136,19 +136,22 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
               break;
             }
             case 'board_move': {
-              moveCard(msg.cardId, msg.status as CardStatus);
+              const moved = moveCard(msg.cardId, msg.status as CardStatus, boardChatId);
+              if (!moved) { ws.send(JSON.stringify({ type: 'error', message: 'Card not found or invalid status' })); break; }
               ws.send(JSON.stringify({ type: 'card_updated' }));
               ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
               break;
             }
             case 'board_assign': {
-              assignCard(msg.cardId, msg.assignee as CardAssignee);
+              const assigned = assignCard(msg.cardId, msg.assignee as CardAssignee, boardChatId);
+              if (!assigned) { ws.send(JSON.stringify({ type: 'error', message: 'Card not found or invalid assignee' })); break; }
               ws.send(JSON.stringify({ type: 'card_updated' }));
               ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
               break;
             }
             case 'board_delete': {
-              deleteCard(msg.cardId);
+              const deleted = deleteCard(msg.cardId, boardChatId);
+              if (!deleted) { ws.send(JSON.stringify({ type: 'error', message: 'Card not found' })); break; }
               ws.send(JSON.stringify({ type: 'card_deleted' }));
               ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
               break;
