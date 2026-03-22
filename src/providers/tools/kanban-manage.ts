@@ -27,10 +27,18 @@ export const kanbanManageDefinition: Tool = {
 - CREATE a card when you identify a task, idea, issue, or opportunity in conversation
 - LIST cards to show the user what's on the board
 - MOVE a card to a different status (backlog, in_progress, review, done, deferred, cancelled)
-- ASSIGN a card to 'me' (user), 'bot' (you work on it), 'collaborative', or 'noted' (reference only)
+- ASSIGN a card to change ownership
 - SUMMARY to show board overview
 
-Be proactive: if the user mentions something that sounds like a task or follow-up, create a card automatically.`,
+ASSIGNMENT RULES (follow strictly):
+- DEFAULT assignee is always "me" (user) — never self-assign to "bot" unless the user explicitly asks
+- Use "bot" ONLY when user says: "please take care of X", "can you handle X", "you do this"
+- Use "me" when user says: "I will do X", "I'll handle this"
+- Use "collaborative" when user says: "let's work on this together"
+- Use "noted" for reference-only items: "just note this", "FYI"
+- When in doubt, use "me"
+
+Be PROACTIVE about creating cards. Be CONSERVATIVE about assignment.`,
     parameters: {
       type: 'object',
       properties: {

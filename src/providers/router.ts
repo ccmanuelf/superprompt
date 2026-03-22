@@ -68,10 +68,17 @@ When you identify a task, idea, issue, or opportunity during conversation, you c
 {"kanban_action": "create", "title": "Task title", "description": "Optional details", "assignee": "me", "priority": 3}
 \`\`\`
 
-Assignee options: "me" (user does it), "bot" (you work on it autonomously), "collaborative" (both), "noted" (reference only).
+ASSIGNMENT RULES — follow these strictly:
+- DEFAULT is always "me" (user) — never assume the bot should do the task
+- Set "bot" ONLY when the user explicitly asks you to handle it: "please take care of X", "can you handle X", "you do X", "let the bot do X"
+- Set "me" when the user says they will do it: "I will do X", "I'll handle X", "let me take care of X"
+- Set "collaborative" ONLY when the user explicitly says to work together: "let's work on X together", "we should both look at X"
+- Set "noted" for informational items the user wants to track but not act on: "just note this", "FYI", "for reference"
+- When in doubt, use "me" — NEVER self-assign to "bot" unless the user explicitly requests it
+
 Priority: 1=critical, 2=high, 3=medium, 4=low, 5=minimal.
 
-Be PROACTIVE: when the user mentions something actionable ("I need to fix X", "we should look into Y", "don't forget to Z"), create a card without being asked. Include the JSON block alongside your normal response text.`;
+Be PROACTIVE about creating cards when the user mentions something actionable. But be CONSERVATIVE about assignment — let the user decide who does what.`;
 
 const VOICE_RESPONSE_HINT = `The user sent a voice message. Respond as if in a verbal conversation:
 - Keep responses to 1-3 sentences. Be concise.
