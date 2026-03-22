@@ -138,17 +138,22 @@ function authenticate() {
   token = document.getElementById('token-input').value;
   if (!token) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}?token=${encodeURIComponent(token)}&mode=board`);
+  ws = new WebSocket(`${proto}://${location.host}`);
   ws.onopen = () => {
-    document.getElementById('auth').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    refresh();
+    // First-message auth: send token + mode (never in URL)
+    ws.send(JSON.stringify({ type: 'auth', token, mode: 'board' }));
   };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
+    if (msg.type === 'ready') {
+      document.getElementById('auth').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      refresh();
+      return;
+    }
     if (msg.type === 'board_data') { allCards = msg.cards; renderBoard(); }
     if (msg.type === 'card_created' || msg.type === 'card_updated' || msg.type === 'card_deleted') refresh();
-    if (msg.type === 'error') alert(msg.message);
+    if (msg.type === 'error') { if (document.getElementById('app').style.display === 'none') { document.getElementById('auth-error').textContent = msg.message; } else { alert(msg.message); } }
   };
   ws.onerror = () => { document.getElementById('auth-error').textContent = 'Connection failed'; };
   ws.onclose = (e) => { if (e.code === 4001) { document.getElementById('auth-error').textContent = 'Invalid token'; document.getElementById('auth').style.display = 'flex'; document.getElementById('app').style.display = 'none'; } };
@@ -175,7 +180,7 @@ function renderBoard() {
         el.innerHTML = `
           <div class="card-title">${esc(card.title)}</div>
           <div class="card-meta">
-            <span class="tag">${ASSIGNEE[card.assignee] || '?'} ${card.assignee}</span>
+            <span class="tag">${ASSIGNEE[card.assignee] || '?'} ${esc(card.assignee)}</span>
             <span class="tag">${PRIORITY_LABEL[card.priority] || '?'}</span>
             ${dueStr}
             ${card.source === 'bot' ? '<span class="tag">🤖</span>' : ''}

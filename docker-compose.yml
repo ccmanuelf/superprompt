@@ -24,9 +24,9 @@ services:
       - ./store:/app/store
       # Temp media uploads
       - ./workspace:/app/workspace
-    # Uncomment to expose the voice web chat interface:
-    # ports:
-    #   - "127.0.0.1:3030:3030"
+    # Web UI: Voice Chat, Board, Learning Coach
+    ports:
+      - "127.0.0.1:3030:3030"
     # Uncomment to mount TLS certs for voice web HTTPS:
     #   - ./certs:/app/certs:ro
     depends_on:

@@ -113,8 +113,8 @@
       margin-bottom: 1rem;
     }
 
-    /* ── Push to Talk Button ─────────────────── */
-    #ptt-btn {
+    /* ── Main Action Button ──────────────────── */
+    #action-btn {
       width: 140px;
       height: 140px;
       border-radius: 50%;
@@ -131,22 +131,26 @@
       -webkit-user-select: none;
       touch-action: none;
     }
-    #ptt-btn:hover { border-color: var(--accent); }
-    #ptt-btn.recording {
+    #action-btn:hover { border-color: var(--accent); }
+    #action-btn.listening {
+      border-color: var(--success);
+      box-shadow: 0 0 20px rgba(77, 255, 143, 0.15);
+    }
+    #action-btn.recording {
       border-color: var(--danger);
       box-shadow: 0 0 30px rgba(255, 77, 106, 0.3);
       background: rgba(255, 77, 106, 0.1);
     }
-    #ptt-btn.processing {
+    #action-btn.processing {
       border-color: var(--accent);
       box-shadow: 0 0 30px var(--accent-glow);
       animation: pulse 1.5s ease-in-out infinite;
     }
-    #ptt-btn.playing {
+    #action-btn.playing {
       border-color: var(--success);
       box-shadow: 0 0 30px rgba(77, 255, 143, 0.2);
     }
-    #ptt-btn:disabled {
+    #action-btn:disabled {
       opacity: 0.4;
       cursor: not-allowed;
     }
@@ -235,7 +239,7 @@
 
     /* ── Mobile ──────────────────────────────── */
     @media (max-width: 480px) {
-      #ptt-btn { width: 120px; height: 120px; }
+      #action-btn { width: 120px; height: 120px; }
       #main-screen { padding: 1rem; }
     }
   </style>
@@ -262,12 +266,12 @@
 
   <div id="state-indicator">Ready</div>
 
-  <button id="ptt-btn" disabled>Hold to Talk</button>
+  <button id="action-btn" disabled>Start Conversation</button>
 
   <div class="controls">
     <div class="mode-toggle">
-      <button class="active" id="ptt-mode-btn" onclick="setMode('ptt')">Push to Talk</button>
-      <button id="vad-mode-btn" onclick="setMode('vad')">Continuous</button>
+      <button id="conv-mode-btn" class="active" onclick="setMode('vad')">Conversation</button>
+      <button id="ptt-mode-btn" onclick="setMode('ptt')">Push to Talk</button>
     </div>
   </div>
 
@@ -288,7 +292,8 @@ let audioContext = null;
 let analyser = null;
 let sourceNode = null;
 let mediaStream = null;
-let mode = 'ptt'; // 'ptt' or 'vad'
+let mode = 'vad'; // default: conversation (VAD) mode
+let conversationActive = false; // is the conversation loop running?
 let isRecording = false;
 let isProcessing = false;
 let isPlaying = false;
@@ -308,9 +313,9 @@ const tokenInput = document.getElementById('token-input');
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const stateIndicator = document.getElementById('state-indicator');
-const pttBtn = document.getElementById('ptt-btn');
+const actionBtn = document.getElementById('action-btn');
+const convModeBtn = document.getElementById('conv-mode-btn');
 const pttModeBtn = document.getElementById('ptt-mode-btn');
-const vadModeBtn = document.getElementById('vad-mode-btn');
 const vadControls = document.getElementById('vad-controls');
 const vadSlider = document.getElementById('vad-threshold');
 const vadValue = document.getElementById('vad-value');
@@ -333,7 +338,7 @@ function connect() {
   if (!token) return;
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${protocol}//${location.host}?token=${encodeURIComponent(token)}`;
+  const url = `${protocol}//${location.host}`;
 
   if (ws) ws.close();
 
@@ -343,6 +348,8 @@ function connect() {
   ws.onopen = () => {
     reconnectDelay = 1000;
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    // First-message auth: send token + mode (never in URL)
+    ws.send(JSON.stringify({ type: 'auth', token, mode: 'voice' }));
   };
 
   ws.onmessage = async (event) => {
@@ -360,6 +367,10 @@ function connect() {
         mainScreen.style.display = 'flex';
         setConnected(true);
         await initAudio();
+        // Auto-start conversation mode
+        if (mode === 'vad') {
+          startConversation();
+        }
         break;
 
       case 'response':
@@ -375,7 +386,11 @@ function connect() {
         } else if (msg.status === 'idle') {
           isProcessing = false;
           updateButton();
-          stateIndicator.textContent = 'Ready';
+          if (conversationActive && !isPlaying) {
+            stateIndicator.textContent = 'Listening...';
+          } else if (!isPlaying) {
+            stateIndicator.textContent = 'Ready';
+          }
         }
         break;
 
@@ -392,6 +407,7 @@ function connect() {
 
   ws.onclose = (event) => {
     setConnected(false);
+    conversationActive = false;
     if (event.code !== 4001) {
       // Auto-reconnect with exponential backoff
       reconnectTimer = setTimeout(() => {
@@ -415,8 +431,12 @@ function connect() {
 function setConnected(connected) {
   statusDot.classList.toggle('connected', connected);
   statusText.textContent = connected ? 'Connected' : 'Disconnected';
-  pttBtn.disabled = !connected;
-  if (!connected) cleanupAudio();
+  actionBtn.disabled = !connected;
+  if (!connected) {
+    cleanupAudio();
+    conversationActive = false;
+    updateButton();
+  }
 }
 
 function cleanupAudio() {
@@ -486,36 +506,62 @@ function stopRecording() {
   stateIndicator.textContent = 'Processing...';
 }
 
-// ── Push to Talk ──────────────────────────────────
-pttBtn.addEventListener('pointerdown', (e) => {
-  if (mode !== 'ptt') return;
-  e.preventDefault();
-  startRecording();
+// ── Conversation Mode (VAD-based free-flow) ───────
+function startConversation() {
+  conversationActive = true;
+  startVAD();
+  updateButton();
+  stateIndicator.textContent = 'Listening...';
+}
+
+function endConversation() {
+  conversationActive = false;
+  stopVAD();
+  if (isRecording) stopRecording();
+  updateButton();
+  stateIndicator.textContent = 'Ready';
+}
+
+// ── Action Button (tap to start/end conversation, or PTT) ──
+actionBtn.addEventListener('pointerdown', (e) => {
+  if (mode === 'ptt') {
+    e.preventDefault();
+    startRecording();
+  }
 });
-pttBtn.addEventListener('pointerup', () => {
-  if (mode !== 'ptt') return;
-  stopRecording();
+actionBtn.addEventListener('pointerup', () => {
+  if (mode === 'ptt') {
+    stopRecording();
+  }
 });
-pttBtn.addEventListener('pointerleave', () => {
-  if (mode !== 'ptt') return;
-  stopRecording();
+actionBtn.addEventListener('pointerleave', () => {
+  if (mode === 'ptt') {
+    stopRecording();
+  }
+});
+actionBtn.addEventListener('click', () => {
+  if (mode !== 'vad') return;
+  if (conversationActive) {
+    endConversation();
+  } else {
+    startConversation();
+  }
 });
 // Prevent context menu on long press (mobile)
-pttBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+actionBtn.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ── Mode Toggle ───────────────────────────────────
 function setMode(newMode) {
   mode = newMode;
+  convModeBtn.classList.toggle('active', mode === 'vad');
   pttModeBtn.classList.toggle('active', mode === 'ptt');
-  vadModeBtn.classList.toggle('active', mode === 'vad');
   vadControls.classList.toggle('visible', mode === 'vad');
 
   if (mode === 'ptt') {
-    pttBtn.textContent = 'Hold to Talk';
-    stopVAD();
+    endConversation();
   } else {
-    pttBtn.textContent = 'Listening...';
-    startVAD();
+    // Switching to conversation mode — auto-start
+    startConversation();
   }
 }
 
@@ -529,7 +575,6 @@ function startVAD() {
 function stopVAD() {
   vadActive = false;
   if (vadSilenceTimeout) { clearTimeout(vadSilenceTimeout); vadSilenceTimeout = null; }
-  if (isRecording) stopRecording();
 }
 
 function monitorVAD() {
@@ -590,11 +635,13 @@ async function playAudio(arrayBuffer) {
 
   isPlaying = false;
   updateButton();
-  stateIndicator.textContent = 'Ready';
 
-  // Re-enable VAD monitoring after playback
-  if (mode === 'vad' && vadActive) {
+  // After bot finishes speaking, resume listening automatically
+  if (conversationActive && vadActive) {
+    stateIndicator.textContent = 'Listening...';
     monitorVAD();
+  } else {
+    stateIndicator.textContent = 'Ready';
   }
 }
 
@@ -628,6 +675,7 @@ function drawWaveform() {
     if (isRecording) color = '#ff4d6a';
     else if (isProcessing) color = '#6c63ff';
     else if (isPlaying) color = '#4dff8f';
+    else if (conversationActive) color = '#3a5a3a'; // subtle green when listening idle
 
     waveformCtx.fillStyle = color;
 
@@ -650,17 +698,20 @@ window.addEventListener('resize', () => {
 // ── UI Helpers ────────────────────────────────────
 function updateButton() {
   if (isRecording) {
-    pttBtn.className = 'recording';
-    if (mode === 'ptt') pttBtn.textContent = 'Release to Send';
+    actionBtn.className = 'recording';
+    actionBtn.textContent = mode === 'ptt' ? 'Release to Send' : 'Listening...';
   } else if (isProcessing) {
-    pttBtn.className = 'processing';
-    pttBtn.textContent = 'Thinking...';
+    actionBtn.className = 'processing';
+    actionBtn.textContent = 'Thinking...';
   } else if (isPlaying) {
-    pttBtn.className = 'playing';
-    pttBtn.textContent = 'Speaking...';
+    actionBtn.className = 'playing';
+    actionBtn.textContent = 'Speaking...';
+  } else if (conversationActive) {
+    actionBtn.className = 'listening';
+    actionBtn.textContent = 'End Chat';
   } else {
-    pttBtn.className = '';
-    pttBtn.textContent = mode === 'ptt' ? 'Hold to Talk' : 'Listening...';
+    actionBtn.className = '';
+    actionBtn.textContent = mode === 'ptt' ? 'Hold to Talk' : 'Start Chat';
   }
 }
 
@@ -682,10 +733,10 @@ function addMessage(text, role, provider) {
 // ── Tab Visibility — pause VAD when hidden ────────
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    if (mode === 'vad' && vadActive) stopVAD();
+    if (vadActive) stopVAD();
     if (isRecording) stopRecording();
   } else {
-    if (mode === 'vad' && ws && ws.readyState === WebSocket.OPEN) startVAD();
+    if (conversationActive && ws && ws.readyState === WebSocket.OPEN) startVAD();
   }
 });
 

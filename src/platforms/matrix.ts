@@ -981,8 +981,8 @@ async function handleVoiceMessage(
     const localPath = resolve(UPLOADS_DIR, `${Date.now()}_voice.ogg`);
     writeFileSync(localPath, buffer);
 
-    // Transcribe
-    const transcript = await transcribeAudio(localPath);
+    // Transcribe (returns text + detected language)
+    const { text: transcript } = await transcribeAudio(localPath);
     logger.info({ roomId, transcript }, 'Matrix voice transcribed');
 
     // Process as text with voice prompt tuning

@@ -7,7 +7,7 @@
 
 clauded is evolving from personal AI assistant into a **full AI partner platform ("Jarvis")**. Core autonomy sprints S1-S8 complete. Platform expansion sprints S10-S13 planned.
 
-**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 (Learning Coach) → S13 (Manufacturing/Research) → S9 (Docs) → S4 (E2E) → S3 (Cloud Deploy)**
+**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 ✅ → S13 (Manufacturing/Research) → S9 (Docs) → S4 (E2E) → S3 (Cloud Deploy)**
 
 ---
 
@@ -437,23 +437,49 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Sprint S12: Learning Coach — NOT STARTED
+## Sprint S12: Learning Coach — COMPLETED (2026-03-22)
 
-**Goal:** Structured micro-learning sessions for languages, topics, professional growth.
+**Goal:** Structured micro-learning sessions with AI-driven curriculum, spaced repetition, and 5 teaching personas.
 
-### Features
-- **Learning profile**: User expresses interest → bot saves goal, schedules sessions
-- **Micro-sessions** (5-10 min): Proactive messages at user-preferred time
-- **Methods**: Socratic, syntax drill, conversational practice, vocabulary building
-- **Progress tracking**: DB table for topics, sessions completed, performance, weak areas
-- **Spaced repetition**: Review schedule based on retention (Leitner system)
-- **Multi-topic**: Language (Chinese, Portuguese), Crypto, Politics, Fitness, etc.
-- **Skill**: `learning-coach` built-in skill with structured session templates
+### Implemented
+- **`src/learning/`** directory: db.ts, spaced-repetition.ts, personas.ts, plan.ts, session.ts, index.ts
+- **Plan generation**: AI creates 8-15 topic curriculum from user goal, rolling horizon expands when ≤2 pending
+- **5 teaching personas**: Guiding Challenger, Encouraging Coach, Friendly Conversationalist, Expert Scholar, Creative Mentor (from ai-language-tutor-app/personas/)
+- **Spaced repetition**: Forgetting curve (`mastery * (1-0.15)^days`), review intervals (1/2/3/7 days), mastery delta (+0.05/-0.03)
+- **Session engine**: In-memory state machine, assessment markers ([CORRECT]/[INCORRECT]/[TOPIC_COMPLETE]), timeout cleanup (15 min)
+- **Plan negotiation**: Add/move/remove topics. Removal requires assessment quiz (80%+ to pass). Coach has final curriculum authority
+- **Max 5 concurrent plans**: Completion encouragement, anti-boredom nudges for stale plans (7+ days), session rotation
+- **Daily time tracking**: 10 min/day goal, weekly breakdown
+- **`/learn` command**: 16 subcommands (start, plan, plans, session, review, move, add, remove, persona, time, set-time, complete, pause, resume, done, delete)
+- **`learning-coach` builtin skill**: Auto-suggest trigger for "quiz me", "teach me", "learn about"
+- **Session gate in handleMessage**: Active sessions route through learning handler before orchestration
+- **Assessment-gated removal**: Coach runs 5-question quiz to verify competence before deferring a topic
+- **Rolling horizon**: Auto-generates next 3-5 topics when ≤2 pending remain
+- **Graduation**: `/learn complete` with coach challenge if weak areas remain
 
-### Resources to evaluate (user-provided)
-- https://github.com/edwinjojie/ai-study-coach
-- https://github.com/ShubhamMahajan880/studyAlpha-Ai-Agent
-- https://github.com/Harshal-Bsys27/ai-study-planner
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/learning/db.ts` | 4 tables, CRUD, smart queries (least-recent, most-overdue, stale plans) |
+| `src/learning/spaced-repetition.ts` | Pure functions: decay, delta, intervals, topic selection |
+| `src/learning/personas.ts` | 5 personas + global guidelines, subject heuristic |
+| `src/learning/plan.ts` | AI plan generation, parsing, expansion, negotiation, assessment |
+| `src/learning/session.ts` | State machine, markers, system prompts, timeout cleanup |
+| `src/learning/index.ts` | Barrel export |
+| `src/skills.ts` | Added `builtin-learning-coach` + suggest trigger |
+| `src/platforms/telegram.ts` | `/learn` command (16 subcommands) + session gate in handleMessage |
+| `src/providers/router.ts` | Added `/learn` to COMMAND_LIST |
+| `src/db.ts` | Wire `initLearningTables()` |
+| `src/index.ts` | Wire `initSessionCleanup()` |
+| `tests/learning.test.ts` | 60 tests (spaced repetition, personas, plan parsing, DB CRUD, integration) |
+
+### Test Results
+- 39 test files, 666 tests, all passing (60 new)
+
+### Resources evaluated
+- edwinjojie/ai-study-coach: Adopted forgetting curve algorithm, mastery tracking
+- ShubhamMahajan880/studyAlpha-Ai-Agent: Adopted weakness prediction concept
+- Harshal-Bsys27/ai-study-planner: Adopted DB schema pattern
 
 ---
 

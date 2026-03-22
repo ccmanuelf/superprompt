@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { STORE_DIR } from './config.js';
 import { logger } from './logger.js';
+import { initLearningTables } from './learning/db.js';
 
 let db: Database.Database;
 
@@ -20,6 +21,7 @@ export function initDatabase(): Database.Database {
   sqliteVec.load(db);
 
   createTables();
+  initLearningTables();
   return db;
 }
 

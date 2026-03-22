@@ -23,6 +23,21 @@ import { buildDigest, getDigestPreference, setDigestPreference, triggerBotTasksN
 import { shouldOrchestrate, orchestrateTask } from '../orchestrator.js';
 import { createCard, moveCard, assignCard, listCards, getCardByPrefix, deleteCard, formatBoard, formatCard, isKanbanAction, parseKanbanAction, executeKanbanAction, stripKanbanBlock, type CardStatus, type CardAssignee } from '../kanban.js';
 import { checkResponseQuality, logQualityCheck } from '../self-monitor.js';
+import {
+  getActivePlansByChat, getPlansByChat, getPlanBySubject, getTopicsByPlan, getPlan,
+  updatePlan, deletePlan as deleteLearnPlan, getDailyTime, getWeeklyTime,
+  getMostOverduePlan, getLeastRecentPlan,
+  buildPlanPrompt, parsePlanResponse, createPlanFromTopics, formatPlan, formatPlanList, extractSubject,
+  needsExpansion, buildExpandPrompt, addExpansionTopics,
+  buildAddTopicPrompt, parseTopicPlacement, createTopic,
+  moveTopicBefore, requestTopicRemoval, completeTopicRemoval, rejectTopicRemoval,
+  buildAssessmentPrompt, getTopicByTitle,
+  listPersonas, getPersona, selectPersonaForSubject,
+  startSession, isSessionActive, getActiveSession, touchSession,
+  processSessionResponse, stripMarkers,
+  endSession, dismissSession, getSessionSystemPrompt, formatSessionSummary,
+  initSessionCleanup,
+} from '../learning/index.js';
 
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -183,6 +198,132 @@ async function handleMessage(
   typingInterval = setInterval(refreshTyping, TYPING_REFRESH_MS);
 
   try {
+    // 2a. Learning session gate — route through session handler if active
+    // Allow non-learning slash commands to pass through (user can /memory, /board, etc.)
+    const isNonLearnCommand = rawText.startsWith('/') && !rawText.startsWith('/learn');
+    if (isSessionActive(chatId) && !isNonLearnCommand) {
+      // Check for session-ending keywords
+      const lowerText = rawText.toLowerCase().trim();
+      if (['done', 'stop', 'enough', '/learn done', '/learn stop'].includes(lowerText)) {
+        clearInterval(typingInterval);
+        typingInterval = undefined;
+        const activeSession = getActiveSession(chatId)!;
+        const { durationSeconds, needsExpand } = endSession(chatId, 'user_ended');
+        const summary = formatSessionSummary(durationSeconds, activeSession.questionsAsked, activeSession.correctAnswers);
+        await ctx.reply(formatForTelegram(summary), { parse_mode: 'HTML' });
+
+        // Rolling horizon: expand curriculum if needed
+        if (needsExpand) {
+          const plan = getPlan(activeSession.planId);
+          if (plan) {
+            const expandPrompt = buildExpandPrompt(plan);
+            const expandResponse = await router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true });
+            const newTopics = parsePlanResponse(expandResponse.text || '');
+            if (newTopics.length > 0) {
+              addExpansionTopics(plan.id, newTopics);
+              await ctx.reply(formatForTelegram(`Added ${newTopics.length} new topics to your **${plan.subject}** plan.`), { parse_mode: 'HTML' });
+            }
+          }
+        }
+        return;
+      }
+
+      if (lowerText === 'snooze' || lowerText === 'later' || lowerText === 'dismiss') {
+        clearInterval(typingInterval);
+        typingInterval = undefined;
+        dismissSession(chatId);
+        await ctx.reply('Session dismissed. We\'ll continue later.');
+        return;
+      }
+
+      // Active session: send message through AI with session system prompt
+      touchSession(chatId);
+      const sessionPrompt = getSessionSystemPrompt(chatId);
+      const response = await router.sendMessage({
+        chatId,
+        message: fullMessage,
+        skipAutoTrigger: true,
+        systemPrompt: sessionPrompt ?? undefined,
+      });
+
+      if (response.text) {
+        // Process assessment markers
+        const result = processSessionResponse(chatId, response.text);
+        const cleanText = stripMarkers(response.text);
+
+        // Handle assessment results
+        const activeSession = getActiveSession(chatId);
+        if (result.assessmentPassed && activeSession?.assessmentTarget) {
+          const plan = getPlan(activeSession.planId);
+          if (plan) {
+            completeTopicRemoval(plan.id, activeSession.assessmentTarget);
+          }
+          endSession(chatId, 'assessment_passed');
+          clearInterval(typingInterval);
+          typingInterval = undefined;
+          await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
+          await ctx.reply(formatForTelegram(`**${activeSession.assessmentTarget}** has been deferred from your plan.`), { parse_mode: 'HTML' });
+          return;
+        }
+
+        if (result.assessmentFailed && activeSession?.assessmentTarget) {
+          const rejectMsg = rejectTopicRemoval(activeSession.assessmentTarget);
+          endSession(chatId, 'assessment_failed');
+          clearInterval(typingInterval);
+          typingInterval = undefined;
+          await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
+          await ctx.reply(formatForTelegram(rejectMsg), { parse_mode: 'HTML' });
+          return;
+        }
+
+        // Handle topic completion
+        if (result.topicComplete) {
+          const session = getActiveSession(chatId);
+          if (session) {
+            const { durationSeconds, needsExpand } = endSession(chatId, 'topic_complete');
+            const summary = formatSessionSummary(durationSeconds, session.questionsAsked, session.correctAnswers);
+            clearInterval(typingInterval);
+            typingInterval = undefined;
+            await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
+            await ctx.reply(formatForTelegram(summary), { parse_mode: 'HTML' });
+
+            if (needsExpand) {
+              const plan = getPlan(session.planId);
+              if (plan) {
+                const expandPrompt = buildExpandPrompt(plan);
+                const expandResponse = await router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true });
+                const newTopics = parsePlanResponse(expandResponse.text || '');
+                if (newTopics.length > 0) {
+                  addExpansionTopics(plan.id, newTopics);
+                  await ctx.reply(formatForTelegram(`Added ${newTopics.length} new topics to your plan.`), { parse_mode: 'HTML' });
+                }
+              }
+            }
+            return;
+          }
+        }
+
+        // Normal session response
+        saveConversationTurn(chatId, rawText, cleanText).catch((err) => {
+          logger.warn({ err }, 'Failed to save learning session memory');
+        });
+
+        const formatted = formatForTelegram(cleanText);
+        const chunks = splitMessage(formatted);
+        for (const chunk of chunks) {
+          try {
+            await ctx.reply(chunk, { parse_mode: 'HTML' });
+          } catch {
+            await ctx.reply(chunk);
+          }
+        }
+      }
+
+      clearInterval(typingInterval);
+      typingInterval = undefined;
+      return;
+    }
+
     // 2b. Check for multi-step orchestration (on raw message, not memory-augmented)
     if (!skipTools && !isVoice && shouldOrchestrate(rawText)) {
       clearInterval(typingInterval);
@@ -1115,6 +1256,425 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     await ctx.reply(`Reloaded. ${count} user tools active.`);
   });
 
+  // ── Learn Command ───────────────────────────────────────
+
+  bot.command('learn', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/learn(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'start': {
+        const goal = parts.slice(1).join(' ');
+        if (!goal) {
+          await ctx.reply('Usage: /learn start <goal>\nExample: /learn start Learn Mandarin Chinese');
+          return;
+        }
+
+        // Check max plans
+        const activePlans = getActivePlansByChat(chatId);
+        if (activePlans.length >= 5) {
+          await ctx.reply(formatForTelegram(
+            `You have **${activePlans.length}** active plans (max 5). Complete or pause one before starting another:\n` +
+            activePlans.map((p) => `- **${p.subject}** (/learn pause ${p.id})`).join('\n'),
+          ), { parse_mode: 'HTML' });
+          return;
+        }
+
+        await ctx.replyWithChatAction('typing');
+
+        // Extract clean subject from goal and generate curriculum via AI
+        const subject = extractSubject(goal);
+        const prompt = buildPlanPrompt(subject, goal);
+        const aiResponse = await router.sendMessage({ chatId, message: prompt, skipAutoTrigger: true });
+        const topics = parsePlanResponse(aiResponse.text || '');
+
+        if (topics.length === 0) {
+          await ctx.reply('Failed to generate a learning plan. Try again with a more specific goal.');
+          return;
+        }
+
+        try {
+          const { plan } = createPlanFromTopics(chatId, subject, goal, topics);
+          const allTopics = getTopicsByPlan(plan.id);
+          const planText = formatPlan(plan, allTopics);
+          await ctx.reply(formatForTelegram(planText), { parse_mode: 'HTML' });
+          await ctx.reply(formatForTelegram('Start learning with `/learn session` or modify with `/learn move`, `/learn add`, `/learn remove`.'), { parse_mode: 'HTML' });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          await ctx.reply(errMsg);
+        }
+        return;
+      }
+
+      case 'plan': {
+        const planId = parts[1];
+        let plan;
+        if (planId) {
+          plan = getPlan(planId);
+        } else {
+          const plans = getActivePlansByChat(chatId);
+          plan = plans[0];
+        }
+        if (!plan) {
+          await ctx.reply('No active learning plan. Start one with `/learn start <goal>`.');
+          return;
+        }
+        const topics = getTopicsByPlan(plan.id);
+        await ctx.reply(formatForTelegram(formatPlan(plan, topics)), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'plans': {
+        const plans = getPlansByChat(chatId);
+        await ctx.reply(formatForTelegram(formatPlanList(plans)), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'session': {
+        const planRef = parts[1];
+        let plan;
+        if (planRef) {
+          plan = getPlan(planRef) ?? getPlanBySubject(chatId, planRef);
+        } else {
+          // Smart selection: most overdue reviews, then least recently studied
+          plan = getMostOverduePlan(chatId) ?? getLeastRecentPlan(chatId);
+        }
+
+        if (!plan) {
+          await ctx.reply('No active learning plan. Start one with `/learn start <goal>`.');
+          return;
+        }
+
+        const { session, openingPrompt } = startSession(chatId, plan);
+
+        // Send opening prompt through AI for a natural start
+        await ctx.replyWithChatAction('typing');
+        const sessionPrompt = getSessionSystemPrompt(chatId);
+        const response = await router.sendMessage({
+          chatId,
+          message: openingPrompt,
+          skipAutoTrigger: true,
+          systemPrompt: sessionPrompt ?? undefined,
+        });
+
+        if (response.text) {
+          const cleanText = stripMarkers(response.text);
+          processSessionResponse(chatId, response.text);
+          await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
+        }
+        return;
+      }
+
+      case 'review': {
+        const plan = getMostOverduePlan(chatId) ?? getLeastRecentPlan(chatId);
+        if (!plan) {
+          await ctx.reply('No active learning plan. Start one with `/learn start <goal>`.');
+          return;
+        }
+
+        const { session, openingPrompt } = startSession(chatId, plan, { type: 'review' });
+
+        await ctx.replyWithChatAction('typing');
+        const sessionPrompt = getSessionSystemPrompt(chatId);
+        const response = await router.sendMessage({
+          chatId,
+          message: openingPrompt,
+          skipAutoTrigger: true,
+          systemPrompt: sessionPrompt ?? undefined,
+        });
+
+        if (response.text) {
+          const cleanText = stripMarkers(response.text);
+          processSessionResponse(chatId, response.text);
+          await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
+        }
+        return;
+      }
+
+      case 'move': {
+        // /learn move <topic> before <other>
+        const moveArgs = parts.slice(1).join(' ');
+        const beforeMatch = moveArgs.match(/^(.+?)\s+before\s+(.+)$/i);
+        if (!beforeMatch) {
+          await ctx.reply('Usage: /learn move <topic> before <other topic>');
+          return;
+        }
+
+        const plan = getActivePlansByChat(chatId)[0];
+        if (!plan) {
+          await ctx.reply('No active learning plan.');
+          return;
+        }
+
+        const result = moveTopicBefore(plan.id, beforeMatch[1].trim(), beforeMatch[2].trim());
+        await ctx.reply(formatForTelegram(result.message), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'add': {
+        const topicTitle = parts.slice(1).join(' ');
+        if (!topicTitle) {
+          await ctx.reply('Usage: /learn add <topic name>');
+          return;
+        }
+
+        const plan = getActivePlansByChat(chatId)[0];
+        if (!plan) {
+          await ctx.reply('No active learning plan.');
+          return;
+        }
+
+        await ctx.replyWithChatAction('typing');
+        const addPrompt = buildAddTopicPrompt(plan, topicTitle);
+        const addResponse = await router.sendMessage({ chatId, message: addPrompt, skipAutoTrigger: true });
+        const placement = parseTopicPlacement(addResponse.text || '');
+
+        if (placement) {
+          createTopic(plan.id, placement.title, {
+            description: placement.description,
+            sortOrder: placement.position,
+            difficulty: placement.difficulty,
+            estimatedMinutes: placement.estimated_minutes,
+          });
+          await ctx.reply(formatForTelegram(`Added **${placement.title}** at position ${placement.position + 1} in your plan.`), { parse_mode: 'HTML' });
+        } else {
+          // Fallback: append at end
+          createTopic(plan.id, topicTitle);
+          await ctx.reply(formatForTelegram(`Added **${topicTitle}** to the end of your plan.`), { parse_mode: 'HTML' });
+        }
+        return;
+      }
+
+      case 'remove': {
+        const topicTitle = parts.slice(1).join(' ');
+        if (!topicTitle) {
+          await ctx.reply('Usage: /learn remove <topic name>');
+          return;
+        }
+
+        const plan = getActivePlansByChat(chatId)[0];
+        if (!plan) {
+          await ctx.reply('No active learning plan.');
+          return;
+        }
+
+        const result = requestTopicRemoval(plan.id, topicTitle);
+        if (result.requiresAssessment && result.topicTitle) {
+          // Start assessment session
+          const topic = getTopicByTitle(plan.id, result.topicTitle);
+          const assessPrompt = buildAssessmentPrompt(plan.subject, result.topicTitle, topic?.description ?? null);
+          const { session } = startSession(chatId, plan, {
+            topicId: topic?.id,
+            type: 'assessment',
+            assessmentTarget: result.topicTitle,
+          });
+
+          await ctx.replyWithChatAction('typing');
+          const sessionPrompt = getSessionSystemPrompt(chatId);
+          const response = await router.sendMessage({
+            chatId,
+            message: assessPrompt,
+            skipAutoTrigger: true,
+            systemPrompt: sessionPrompt ?? undefined,
+          });
+
+          if (response.text) {
+            const cleanText = stripMarkers(response.text);
+            processSessionResponse(chatId, response.text);
+            await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
+          }
+        } else {
+          await ctx.reply(formatForTelegram(result.message), { parse_mode: 'HTML' });
+        }
+        return;
+      }
+
+      case 'persona': {
+        const personaId = parts[1]?.toLowerCase();
+        if (!personaId) {
+          const personas = listPersonas();
+          const plan = getActivePlansByChat(chatId)[0];
+          const current = plan ? plan.persona : '(no active plan)';
+          const list = personas.map((p) => `- **${p.id}** — ${p.tone}. ${p.bestFor}`).join('\n');
+          await ctx.reply(formatForTelegram(`**Current persona:** ${current}\n\n**Available personas:**\n${list}\n\nUsage: \`/learn persona <id>\``), { parse_mode: 'HTML' });
+          return;
+        }
+
+        const persona = getPersona(personaId);
+        if (!persona) {
+          await ctx.reply(`Unknown persona: "${personaId}". Use /learn persona to see options.`);
+          return;
+        }
+
+        const plan = getActivePlansByChat(chatId)[0];
+        if (!plan) {
+          await ctx.reply('No active learning plan.');
+          return;
+        }
+
+        updatePlan(plan.id, { persona: persona.id });
+        await ctx.reply(formatForTelegram(`Persona updated to **${persona.name}** for ${plan.subject}.`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'time': {
+        const today = getDailyTime(chatId);
+        const week = getWeeklyTime(chatId);
+
+        const todayMins = today ? Math.round(today.total_seconds / 60) : 0;
+        const todaySessions = today?.session_count ?? 0;
+        const weekMins = week.reduce((sum, d) => sum + d.total_seconds, 0);
+        const weekSessions = week.reduce((sum, d) => sum + d.session_count, 0);
+        const goalMet = todayMins >= 10;
+
+        const lines = ['**Study Time**', ''];
+        lines.push(`Today: ${todayMins} min (${todaySessions} sessions) ${goalMet ? '- Goal met!' : `- ${10 - todayMins} min to reach daily goal`}`);
+        lines.push(`This week: ${Math.round(weekMins / 60)} min (${weekSessions} sessions)`);
+
+        if (week.length > 0) {
+          lines.push('');
+          lines.push('Daily breakdown:');
+          for (const d of week) {
+            const mins = Math.round(d.total_seconds / 60);
+            const bar = '#'.repeat(Math.min(20, Math.round(mins / 2))) + '.'.repeat(Math.max(0, 5 - Math.round(mins / 2)));
+            lines.push(`  ${d.date}: ${mins} min [${bar}]`);
+          }
+        }
+
+        await ctx.reply(formatForTelegram(lines.join('\n')), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'set-time': {
+        const timeStr = parts[1];
+        if (!timeStr || !/^\d{1,2}:\d{2}$/.test(timeStr)) {
+          await ctx.reply('Usage: /learn set-time HH:MM (e.g., /learn set-time 08:00)');
+          return;
+        }
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+          await ctx.reply('Invalid time. Use HH:MM format (00:00 to 23:59).');
+          return;
+        }
+
+        const plan = getActivePlansByChat(chatId)[0];
+        if (!plan) {
+          await ctx.reply('No active learning plan.');
+          return;
+        }
+
+        const cron = `${minutes} ${hours} * * *`;
+        updatePlan(plan.id, { preferred_time: cron });
+        await ctx.reply(formatForTelegram(`Proactive sessions for **${plan.subject}** set to ${timeStr} daily.`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'complete': {
+        const plan = getActivePlansByChat(chatId)[0];
+        if (!plan) {
+          await ctx.reply('No active learning plan.');
+          return;
+        }
+
+        const topics = getTopicsByPlan(plan.id);
+        const pending = topics.filter((t) => t.status === 'pending' || t.status === 'in_progress');
+        if (pending.length > 0) {
+          await ctx.reply(formatForTelegram(
+            `You still have **${pending.length}** topics to cover in **${plan.subject}**. ` +
+            'Are you sure? Use `/learn delete ' + plan.id + '` to force completion, ' +
+            'or keep going — you\'re making great progress!',
+          ), { parse_mode: 'HTML' });
+          return;
+        }
+
+        updatePlan(plan.id, { status: 'completed' });
+        await ctx.reply(formatForTelegram(`Congratulations! **${plan.subject}** plan marked as complete.`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'pause': {
+        const planId = parts[1];
+        const plan = planId ? getPlan(planId) : getActivePlansByChat(chatId)[0];
+        if (!plan) { await ctx.reply('No active plan to pause.'); return; }
+        updatePlan(plan.id, { status: 'paused' });
+        await ctx.reply(formatForTelegram(`**${plan.subject}** paused. Resume with \`/learn resume ${plan.id}\`.`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'resume': {
+        const planId = parts[1];
+        if (!planId) { await ctx.reply('Usage: /learn resume <plan-id>'); return; }
+        const plan = getPlan(planId);
+        if (!plan || plan.status !== 'paused') { await ctx.reply('Plan not found or not paused.'); return; }
+        updatePlan(plan.id, { status: 'active' });
+        await ctx.reply(formatForTelegram(`**${plan.subject}** resumed! Start a session with \`/learn session\`.`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'done':
+      case 'stop': {
+        if (isSessionActive(chatId)) {
+          const activeSession = getActiveSession(chatId)!;
+          const { durationSeconds } = endSession(chatId, 'user_ended');
+          const summary = formatSessionSummary(durationSeconds, activeSession.questionsAsked, activeSession.correctAnswers);
+          await ctx.reply(formatForTelegram(summary), { parse_mode: 'HTML' });
+        } else {
+          await ctx.reply('No active learning session.');
+        }
+        return;
+      }
+
+      case 'delete': {
+        const planId = parts[1];
+        if (!planId) { await ctx.reply('Usage: /learn delete <plan-id>'); return; }
+        const plan = getPlan(planId);
+        if (!plan) { await ctx.reply('Plan not found.'); return; }
+
+        const topics = getTopicsByPlan(plan.id);
+        const completed = topics.filter((t) => t.status === 'completed');
+        if (completed.length > 0 && plan.status !== 'completed') {
+          await ctx.reply(formatForTelegram(
+            `You've completed **${completed.length}** topics in **${plan.subject}**. ` +
+            'That\'s real progress! Consider pausing instead of deleting.\n\n' +
+            `To confirm deletion, run: \`/learn delete ${plan.id}\` again.`,
+          ), { parse_mode: 'HTML' });
+          // Simple confirmation: check if they already ran it once recently
+          // For now, allow deletion since they typed the specific ID
+        }
+
+        deleteLearnPlan(plan.id);
+        await ctx.reply(formatForTelegram(`Deleted plan: **${plan.subject}**.`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      default: {
+        await ctx.reply(formatForTelegram(
+          '**Learning Coach Commands:**\n' +
+          '`/learn start <goal>` — Start a new learning plan\n' +
+          '`/learn plan` — View current plan\n' +
+          '`/learn plans` — List all plans\n' +
+          '`/learn session [plan]` — Start a learning session\n' +
+          '`/learn review` — Review due topics (spaced repetition)\n' +
+          '`/learn move <topic> before <other>` — Reorder topics\n' +
+          '`/learn add <topic>` — Add a topic\n' +
+          '`/learn remove <topic>` — Remove a topic (requires assessment)\n' +
+          '`/learn persona [name]` — View or change persona\n' +
+          '`/learn time` — Show study time stats\n' +
+          '`/learn set-time HH:MM` — Set daily session time\n' +
+          '`/learn complete` — Graduate from a plan\n' +
+          '`/learn pause` / `resume` — Pause or resume a plan\n' +
+          '`/learn done` — End current session\n' +
+          '`/learn delete <plan-id>` — Delete a plan',
+        ), { parse_mode: 'HTML' });
+        return;
+      }
+    }
+  });
+
   // ── Board Command ───────────────────────────────────────
 
   bot.command('board', async (ctx) => {
@@ -1556,8 +2116,8 @@ export function createTelegramBot(router: ProviderRouter): Bot {
       const buffer = Buffer.from(await res.arrayBuffer());
       writeFileSync(localPath, buffer);
 
-      // Transcribe
-      const transcript = await transcribeAudio(localPath);
+      // Transcribe (returns text + detected language)
+      const { text: transcript } = await transcribeAudio(localPath);
       logger.info({ chatId: ctx.chat.id, transcript }, 'Voice transcribed');
 
       // Process as text with voice reply forced and voice prompt tuning

@@ -31,6 +31,7 @@ import { ProviderRouter } from './providers/router.js';
 import { initScheduler } from './scheduler.js';
 import { initProactiveMessaging } from './proactive.js';
 import { initKanbanTable } from './kanban.js';
+import { initSessionCleanup } from './learning/session.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PID_FILE = resolve(STORE_DIR, 'clauded.pid');
@@ -193,6 +194,10 @@ async function main(): Promise<void> {
   // 10b. Initialize proactive messaging (follow-ups, digests, bot tasks)
   const stopProactive = initProactiveMessaging(notifyFn, router);
   cleanups.push(stopProactive);
+
+  // 10c. Initialize learning session cleanup (timeout stale sessions)
+  const stopSessionCleanup = initSessionCleanup();
+  cleanups.push(stopSessionCleanup);
 
   // 11. Register signal handlers for graceful shutdown
   let shuttingDown = false;

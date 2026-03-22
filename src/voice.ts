@@ -16,13 +16,19 @@ const speachesClient = new OpenAI({
   apiKey: 'not-needed', // Speaches doesn't require auth
 });
 
+export interface TranscriptionResult {
+  text: string;
+  detectedLanguage: string | null; // ISO 639-1 (e.g., 'en', 'es')
+}
+
 /**
  * Transcribe an audio file to text via Speaches (Faster-whisper).
+ * Returns both the text and the detected language for TTS voice selection.
  *
  * Handles the .oga → .ogg rename gotcha (Telegram voice notes use .oga,
  * Faster-whisper expects .ogg — same Opus codec, different extension).
  */
-export async function transcribeAudio(audioPath: string): Promise<string> {
+export async function transcribeAudio(audioPath: string): Promise<TranscriptionResult> {
   let finalPath = audioPath;
 
   // GOTCHA: Telegram sends .oga, whisper needs .ogg
@@ -34,31 +40,55 @@ export async function transcribeAudio(audioPath: string): Promise<string> {
   logger.debug({ path: finalPath }, 'Transcribing audio');
 
   // Omit language param — Faster-whisper auto-detects (supports 99 languages)
+  // Use verbose_json to get the detected language
   const transcription = await speachesClient.audio.transcriptions.create({
     file: createReadStream(finalPath),
     model: 'Systran/faster-whisper-small',
+    response_format: 'verbose_json',
   });
 
+  // verbose_json includes a 'language' field with the detected language
+  const detected = (transcription as unknown as { language?: string }).language ?? null;
+
   logger.debug(
-    { textLength: transcription.text.length },
+    { textLength: transcription.text.length, detectedLanguage: detected },
     'Transcription complete',
   );
 
-  return transcription.text;
+  return { text: transcription.text, detectedLanguage: detected };
 }
+
+/** Map ISO 639-1 codes (from Whisper) to Kokoro voice config */
+const VOICE_MAP_ISO1: Record<string, { voice: string; lang: string }> = {
+  es: { voice: 'ef_dora', lang: 'es' },
+  en: { voice: 'af_heart', lang: 'en' },
+};
 
 /**
  * Synthesize text to speech via Speaches (Kokoro TTS).
  * Returns an MP3 audio buffer ready to send as a voice message.
  *
- * Automatically detects language (English/Spanish) and selects
- * the matching Kokoro voice.
+ * Uses languageHint (from STT) when available for reliable voice selection.
+ * Falls back to franc text detection for responses without STT context (e.g., Telegram).
  */
-export async function synthesizeSpeech(text: string): Promise<Buffer> {
-  const detected = franc(text);
-  const { voice, lang } = VOICE_MAP[detected] ?? DEFAULT_VOICE;
+export async function synthesizeSpeech(text: string, languageHint?: string | null): Promise<Buffer> {
+  // Priority: STT language hint > franc text detection > default English
+  let voiceConfig = DEFAULT_VOICE;
+  let detectionSource = 'default';
 
-  logger.debug({ textLength: text.length, detected, voice, lang }, 'Synthesizing speech');
+  if (languageHint && VOICE_MAP_ISO1[languageHint]) {
+    voiceConfig = VOICE_MAP_ISO1[languageHint];
+    detectionSource = 'stt-hint';
+  } else {
+    const detected = franc(text);
+    if (VOICE_MAP[detected]) {
+      voiceConfig = VOICE_MAP[detected];
+      detectionSource = 'franc';
+    }
+  }
+
+  const { voice, lang } = voiceConfig;
+  logger.debug({ textLength: text.length, voice, lang, detectionSource }, 'Synthesizing speech');
 
   const response = await speachesClient.audio.speech.create({
     model: 'speaches-ai/Kokoro-82M-v1.0-ONNX',

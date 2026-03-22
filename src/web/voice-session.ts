@@ -59,9 +59,9 @@ export class VoiceSession {
     writeFileSync(tempPath, audioBuffer);
 
     try {
-      // 2. Transcribe
-      const transcript = await transcribeAudio(tempPath);
-      logger.info({ chatId: this.chatId, transcript }, 'Voice web: transcribed');
+      // 2. Transcribe (returns text + detected language)
+      const { text: transcript, detectedLanguage } = await transcribeAudio(tempPath);
+      logger.info({ chatId: this.chatId, transcript, detectedLanguage }, 'Voice web: transcribed');
 
       if (!transcript.trim()) {
         return { transcript: '', text: '(No speech detected)', audio: null, provider: '' };
@@ -87,10 +87,10 @@ export class VoiceSession {
         logger.warn({ err }, 'Voice web: failed to save conversation memory');
       });
 
-      // 6. Synthesize speech
+      // 6. Synthesize speech (pass STT language for reliable voice selection)
       let audio: Buffer | null = null;
       try {
-        audio = await synthesizeSpeech(responseText);
+        audio = await synthesizeSpeech(responseText, detectedLanguage);
       } catch (err) {
         logger.warn({ err }, 'Voice web: TTS failed');
       }

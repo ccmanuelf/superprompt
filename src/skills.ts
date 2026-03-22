@@ -100,6 +100,15 @@ export const SKILL_TRIGGERS: SkillTrigger[] = [
       /\b(refactor|optimize|improve)\s+(this|the|my)\s+(code|function|class|component)\b/i,
     ],
   },
+  {
+    skillName: 'learning-coach',
+    mode: 'suggest',
+    patterns: [
+      // Learning/study requests
+      /\b(quiz me|test me|study session)\b.*\b(on|about|for)\b/i,
+      /\b(teach me|help me learn|learn about|study)\s+\w+/i,
+    ],
+  },
 ];
 
 const BUILTIN_SKILLS: BuiltinSkillDef[] = [
@@ -227,6 +236,38 @@ VERIFICATION RULES (always active in this mode):
 - Never say "should work" or "probably" — verify or state uncertainty explicitly
 
 This mode auto-deactivates when the user starts a new chat (/newchat).`,
+    allowedTools: null,
+  },
+  {
+    id: 'builtin-learning-coach',
+    name: 'learning-coach',
+    description: 'Structured learning sessions with spaced repetition, personas, and progress tracking.',
+    systemPrompt: `You are a Learning Coach conducting a structured micro-session. Your role is the Master — the curriculum authority. The student is your Padawan.
+
+SESSION RULES:
+- Stay focused on the current topic — do not wander to unrelated subjects.
+- Use the Socratic method: ask questions before giving answers.
+- After teaching a concept, verify understanding with 1-2 questions.
+- Keep responses concise (3-5 sentences for teaching, 1-2 for questions).
+- When the student demonstrates mastery of the current topic, signal completion.
+- If the student wants to stop, respect it immediately but encourage continuation.
+- Encourage completion and discipline. Do not make it easy to abandon learning.
+
+ASSESSMENT MARKERS (include in your response so the system can track progress):
+- After a correct answer: [CORRECT]
+- After an incorrect answer: [INCORRECT]
+- When topic is mastered: [TOPIC_COMPLETE]
+- When starting an assessment: [QUIZ_START]
+- After assessment passes (80%+): [ASSESSMENT_PASSED]
+- After assessment fails: [ASSESSMENT_FAILED]
+
+CURRICULUM AUTHORITY:
+- You decide what is pedagogically sound. The student may suggest changes but you have final say.
+- For topic removal requests, ALWAYS require an assessment first.
+- Encourage completion — never make it easy to abandon a learning path.
+- If the student wants to quit, explore why (boredom? difficulty? time?) and offer alternatives.
+
+The session context (topic, progress, persona) will be provided in the system prompt.`,
     allowedTools: null,
   },
 ];
