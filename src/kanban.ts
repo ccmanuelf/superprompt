@@ -21,6 +21,41 @@ export interface KanbanActionRequest {
   labels?: string[];
   card_id?: string;
   status?: CardStatus;
+  due_date?: string; // ISO date or natural language
+  scheduled_for?: string; // ISO datetime or "tonight", "tomorrow morning"
+}
+
+/**
+ * Parse a natural language or ISO date string to epoch ms.
+ * Handles: "tonight", "tomorrow", "tomorrow morning", ISO dates.
+ * Exported for testing.
+ */
+export function parseDateHint(hint: string): number | null {
+  if (!hint) return null;
+  const lower = hint.toLowerCase().trim();
+  const now = new Date();
+
+  if (lower === 'tonight') {
+    const d = new Date(now); d.setHours(22, 0, 0, 0);
+    if (d.getTime() < now.getTime()) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  if (lower === 'tomorrow' || lower === 'tomorrow morning') {
+    const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0);
+    return d.getTime();
+  }
+  if (lower === 'tomorrow evening' || lower === 'tomorrow night') {
+    const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(22, 0, 0, 0);
+    return d.getTime();
+  }
+  if (lower === 'now' || lower === 'immediately') {
+    return now.getTime();
+  }
+  // Try ISO date parsing
+  const parsed = new Date(hint);
+  if (!isNaN(parsed.getTime())) return parsed.getTime();
+
+  return null;
 }
 
 /**
@@ -58,14 +93,21 @@ export function executeKanbanAction(chatId: string, action: KanbanActionRequest)
   switch (action.kanban_action) {
     case 'create': {
       if (!action.title) return 'Kanban action error: title required for create.';
+      const dueDate = action.due_date ? parseDateHint(action.due_date) : undefined;
+      const scheduledFor = action.scheduled_for ? parseDateHint(action.scheduled_for) : undefined;
       const card = createCard(chatId, action.title, {
         description: action.description,
-        assignee: action.assignee || 'me',
+        assignee: action.assignee || 'noted',
         priority: action.priority || 3,
         labels: action.labels,
+        dueDate: dueDate ?? undefined,
+        scheduledFor: scheduledFor ?? undefined,
         source: 'bot',
       });
-      return `📋 Added to board: **${card.title}** [${card.assignee}] — ID: \`${card.id.slice(0, 8)}\``;
+      let msg = `📋 Added to board: **${card.title}** [${card.assignee}] — ID: \`${card.id.slice(0, 8)}\``;
+      if (card.due_date) msg += `\nDue: ${new Date(card.due_date).toLocaleDateString()}`;
+      if (card.scheduled_for) msg += `\nScheduled: ${new Date(card.scheduled_for).toLocaleString()}`;
+      return msg;
     }
     case 'move': {
       if (!action.card_id || !action.status) return 'Kanban action error: card_id and status required.';
@@ -120,7 +162,8 @@ export interface KanbanCard {
   assignee: CardAssignee;
   priority: number; // 1 = highest, 5 = lowest
   labels: string | null; // JSON array
-  due_date: number | null; // epoch ms
+  due_date: number | null; // epoch ms — deadline (when it should be DONE)
+  scheduled_for: number | null; // epoch ms — when to START (bot tasks)
   source: 'user' | 'bot'; // who created it
   created_at: number;
   updated_at: number;
@@ -145,6 +188,7 @@ export function initKanbanTable(): void {
       priority INTEGER NOT NULL DEFAULT 3,
       labels TEXT,
       due_date INTEGER,
+      scheduled_for INTEGER,
       source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user', 'bot')),
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -153,6 +197,12 @@ export function initKanbanTable(): void {
     CREATE INDEX IF NOT EXISTS idx_kanban_chat_status
       ON kanban_cards(chat_id, status);
   `);
+
+  // Migration: add scheduled_for column if not exists
+  const cols = db.prepare('PRAGMA table_info(kanban_cards)').all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'scheduled_for')) {
+    db.exec('ALTER TABLE kanban_cards ADD COLUMN scheduled_for INTEGER');
+  }
 }
 
 // ── CRUD Operations ─────────────────────────────────────────
@@ -166,6 +216,7 @@ export function createCard(
     priority?: number;
     labels?: string[];
     dueDate?: number;
+    scheduledFor?: number;
     source?: 'user' | 'bot';
   },
 ): KanbanCard {
@@ -183,15 +234,16 @@ export function createCard(
     priority: options?.priority || 3,
     labels: options?.labels ? JSON.stringify(options.labels) : null,
     due_date: options?.dueDate || null,
+    scheduled_for: options?.scheduledFor || null,
     source: options?.source || 'user',
     created_at: now,
     updated_at: now,
   };
 
   db.prepare(
-    `INSERT INTO kanban_cards (id, chat_id, title, description, status, assignee, priority, labels, due_date, source, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(card.id, card.chat_id, card.title, card.description, card.status, card.assignee, card.priority, card.labels, card.due_date, card.source, card.created_at, card.updated_at);
+    `INSERT INTO kanban_cards (id, chat_id, title, description, status, assignee, priority, labels, due_date, scheduled_for, source, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(card.id, card.chat_id, card.title, card.description, card.status, card.assignee, card.priority, card.labels, card.due_date, card.scheduled_for, card.source, card.created_at, card.updated_at);
 
   logger.debug({ cardId: id, chatId, title }, 'Kanban card created');
   return card;
@@ -263,7 +315,7 @@ export function assignCard(id: string, assignee: CardAssignee, chatId?: string):
 
 export function updateCard(
   id: string,
-  updates: Partial<Pick<KanbanCard, 'title' | 'description' | 'priority' | 'due_date'>>,
+  updates: Partial<Pick<KanbanCard, 'title' | 'description' | 'priority' | 'due_date' | 'scheduled_for'>>,
 ): KanbanCard | null {
   const db = getDatabase();
   const card = getCard(id);
@@ -275,6 +327,7 @@ export function updateCard(
        description = COALESCE(?, description),
        priority = COALESCE(?, priority),
        due_date = COALESCE(?, due_date),
+       scheduled_for = COALESCE(?, scheduled_for),
        updated_at = ?
      WHERE id = ?`,
   ).run(
@@ -282,6 +335,7 @@ export function updateCard(
     updates.description ?? null,
     updates.priority ?? null,
     updates.due_date ?? null,
+    updates.scheduled_for ?? null,
     Date.now(),
     id,
   );
@@ -302,17 +356,44 @@ export function deleteCard(id: string, chatId?: string): boolean {
 // ── Bot-Assigned Task Execution ─────────────────────────────
 
 /**
- * Get cards assigned to the bot that are in backlog (ready to work on).
- * The scheduler uses this to pick up bot-assigned tasks.
+ * Get cards assigned to the bot that are ready to execute.
+ *
+ * Priority-based scheduling:
+ * - Priority 1-2 (critical/high): execute immediately (no schedule check)
+ * - Priority 3-5 (medium/low/minimal): only execute during scheduled window
+ *   or if scheduled_for <= now
+ *
+ * Default scheduled window: 22:00-06:00 local time (nightly).
+ * Cards with explicit scheduled_for override the window.
  */
 export function getBotAssignedCards(chatId: string): KanbanCard[] {
   const db = getDatabase();
-  return db.prepare(
+  const now = Date.now();
+
+  // Priority 1-2: always ready (immediate execution)
+  const urgent = db.prepare(
     `SELECT * FROM kanban_cards
      WHERE chat_id = ? AND assignee = 'bot' AND status = 'backlog'
+       AND priority <= 2
      ORDER BY priority ASC, created_at ASC
      LIMIT 3`,
   ).all(chatId) as KanbanCard[];
+
+  // Priority 3-5: only during nightly window OR if scheduled_for has passed
+  const hour = new Date().getHours();
+  const isNightWindow = hour >= 22 || hour < 6;
+
+  const scheduled = db.prepare(
+    `SELECT * FROM kanban_cards
+     WHERE chat_id = ? AND assignee = 'bot' AND status = 'backlog'
+       AND priority > 2
+       AND (scheduled_for IS NOT NULL AND scheduled_for <= ?
+            OR scheduled_for IS NULL AND ?)
+     ORDER BY priority ASC, created_at ASC
+     LIMIT 3`,
+  ).all(chatId, now, isNightWindow ? 1 : 0) as KanbanCard[];
+
+  return [...urgent, ...scheduled].slice(0, 5);
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   listCards,
   getCardByPrefix,
   getBoardSummary,
+  parseDateHint,
   type CardStatus,
   type CardAssignee,
 } from '../../kanban.js';
@@ -75,6 +76,14 @@ Be PROACTIVE about capturing items. Be CONSERVATIVE about assigning them.`,
           type: 'string',
           description: 'Comma-separated labels (for create action)',
         },
+        due_date: {
+          type: 'string',
+          description: 'Deadline: ISO date (2026-03-25) or natural language. Set from conversation: "by Friday", "due next week".',
+        },
+        scheduled_for: {
+          type: 'string',
+          description: 'When bot should START: "tonight", "tomorrow morning", "now", or ISO datetime. Priority 1-2 always immediate; 3-5 default to nightly window.',
+        },
       },
       required: ['action'],
     },
@@ -91,6 +100,8 @@ export function kanbanManage(
     assignee?: string;
     priority?: number;
     labels?: string;
+    due_date?: string;
+    scheduled_for?: string;
   },
   chatId: string,
 ): Record<string, unknown> {
@@ -99,20 +110,24 @@ export function kanbanManage(
       if (!args.title) return { error: 'Title is required for create action.' };
 
       const labels = args.labels?.split(',').map((l) => l.trim()).filter(Boolean);
+      const dueDate = args.due_date ? parseDateHint(args.due_date) : undefined;
+      const scheduledFor = args.scheduled_for ? parseDateHint(args.scheduled_for) : undefined;
+
       const card = createCard(chatId, args.title, {
         description: args.description,
         assignee: (args.assignee as CardAssignee) || 'noted',
         priority: args.priority || 3,
         labels,
+        dueDate: dueDate ?? undefined,
+        scheduledFor: scheduledFor ?? undefined,
         source: 'bot',
       });
 
       logger.info({ cardId: card.id, chatId, title: card.title }, 'AI created kanban card');
-      return {
-        success: true,
-        cardId: card.id,
-        message: `📋 Card created: "${card.title}" [${card.assignee}] — ID: ${card.id.slice(0, 8)}`,
-      };
+      let msg = `📋 Card created: "${card.title}" [${card.assignee}] — ID: ${card.id.slice(0, 8)}`;
+      if (card.due_date) msg += ` | Due: ${new Date(card.due_date).toLocaleDateString()}`;
+      if (card.scheduled_for) msg += ` | Start: ${new Date(card.scheduled_for).toLocaleString()}`;
+      return { success: true, cardId: card.id, message: msg };
     }
 
     case 'list': {

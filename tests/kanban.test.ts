@@ -23,6 +23,7 @@ import {
   isKanbanAction,
   parseKanbanAction,
   stripKanbanBlock,
+  parseDateHint,
   initKanbanTable,
   type KanbanCard,
 } from '../src/kanban.js';
@@ -53,6 +54,7 @@ function initTestDb(): void {
       priority INTEGER NOT NULL DEFAULT 3,
       labels TEXT,
       due_date INTEGER,
+      scheduled_for INTEGER,
       source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user', 'bot')),
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -446,9 +448,81 @@ I've created a card for this. You can check the board with /board.`;
   });
 
   it('Ollama tool call AND response format both work', () => {
-    // Ollama can use EITHER the kanban_manage tool OR the JSON response format
-    // Both paths should produce valid kanban actions
     const responseFormat = `\`\`\`json\n{"kanban_action": "create", "title": "Via response format"}\n\`\`\``;
     expect(isKanbanAction(responseFormat)).toBe(true);
+  });
+});
+
+// ── parseDateHint (real function) ──────────────────────────
+
+describe('parseDateHint (real function)', () => {
+  it('parses "tonight" to 22:00 today or tomorrow', () => {
+    const result = parseDateHint('tonight');
+    expect(result).not.toBeNull();
+    const d = new Date(result!);
+    expect(d.getHours()).toBe(22);
+  });
+
+  it('parses "tomorrow morning" to 09:00 tomorrow', () => {
+    const result = parseDateHint('tomorrow morning');
+    expect(result).not.toBeNull();
+    const d = new Date(result!);
+    expect(d.getHours()).toBe(9);
+    expect(d.getDate()).toBe(new Date().getDate() + 1);
+  });
+
+  it('parses "now" to current time', () => {
+    const before = Date.now();
+    const result = parseDateHint('now');
+    expect(result).not.toBeNull();
+    expect(result!).toBeGreaterThanOrEqual(before);
+    expect(result!).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('parses ISO date strings', () => {
+    const result = parseDateHint('2026-12-25T12:00:00');
+    expect(result).not.toBeNull();
+    const d = new Date(result!);
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(11); // December = 11
+    expect(d.getDate()).toBe(25);
+  });
+
+  it('returns null for empty or unparseable input', () => {
+    expect(parseDateHint('')).toBeNull();
+    expect(parseDateHint('not a date')).toBeNull();
+  });
+});
+
+// ── Priority-based scheduling (real DB) ────────────────────
+
+describe('priority-based bot scheduling (real DB)', () => {
+  it('priority 1-2 cards are always ready for execution', () => {
+    insertCard('chat1', 'Critical fix', 'backlog', 'bot', 1);
+    insertCard('chat1', 'High priority', 'backlog', 'bot', 2);
+
+    const urgent = db.prepare(
+      "SELECT * FROM kanban_cards WHERE chat_id = ? AND assignee = 'bot' AND status = 'backlog' AND priority <= 2",
+    ).all('chat1');
+    expect(urgent).toHaveLength(2);
+  });
+
+  it('priority 3-5 cards with explicit scheduled_for are ready when time passes', () => {
+    const pastTime = Date.now() - 60000; // 1 minute ago
+    const futureTime = Date.now() + 3600000; // 1 hour from now
+    const now = Date.now();
+
+    const id1 = insertCard('chat1', 'Ready task', 'backlog', 'bot', 3);
+    db.prepare('UPDATE kanban_cards SET scheduled_for = ? WHERE id = ?').run(pastTime, id1);
+
+    const id2 = insertCard('chat1', 'Not ready yet', 'backlog', 'bot', 3);
+    db.prepare('UPDATE kanban_cards SET scheduled_for = ? WHERE id = ?').run(futureTime, id2);
+
+    const ready = db.prepare(
+      "SELECT * FROM kanban_cards WHERE chat_id = ? AND assignee = 'bot' AND status = 'backlog' AND priority > 2 AND scheduled_for IS NOT NULL AND scheduled_for <= ?",
+    ).all('chat1', now);
+
+    expect(ready).toHaveLength(1);
+    expect((ready[0] as any).title).toBe('Ready task');
   });
 });

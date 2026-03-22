@@ -65,7 +65,7 @@ const KANBAN_PROMPT = `## Kanban Board Actions
 When you identify a task, idea, issue, or opportunity during conversation, you can add it to the shared board by including a JSON block in your response:
 
 \`\`\`json
-{"kanban_action": "create", "title": "Task title", "description": "Optional details", "assignee": "noted", "priority": 3}
+{"kanban_action": "create", "title": "Task title", "description": "Optional details", "assignee": "noted", "priority": 3, "due_date": "2026-03-25", "scheduled_for": "tonight"}
 \`\`\`
 
 ASSIGNMENT RULES — follow these strictly:
@@ -78,6 +78,10 @@ ASSIGNMENT RULES — follow these strictly:
 - The user will review and reassign cards from the board when ready
 
 Priority: 1=critical, 2=high, 3=medium, 4=low, 5=minimal.
+due_date: optional deadline in ISO format (YYYY-MM-DD) — when the task should be DONE.
+scheduled_for: optional start time — "tonight", "tomorrow morning", or ISO datetime. Bot tasks with priority 1-2 execute immediately; priority 3-5 execute during nightly window (22:00-06:00) or at scheduled_for time.
+
+Set priority and dates conversationally: "this is urgent" → priority 1. "by Friday" → due_date. "run it tonight" → scheduled_for.
 
 Be PROACTIVE about creating cards when the user mentions something actionable. But be CONSERVATIVE about assignment — let the user decide who does what.`;
 
