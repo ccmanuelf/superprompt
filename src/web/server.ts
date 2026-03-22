@@ -124,14 +124,17 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
               break;
             }
             case 'board_create': {
+              const dueDate = msg.due_date ? parseDateHint(msg.due_date) : undefined;
+              const scheduledFor = msg.scheduled_for ? parseDateHint(msg.scheduled_for) : undefined;
               const card = createCard(boardChatId, msg.title, {
                 description: msg.description,
                 assignee: msg.assignee as CardAssignee,
                 priority: msg.priority,
+                dueDate: dueDate ?? undefined,
+                scheduledFor: scheduledFor ?? undefined,
                 source: 'user',
               });
               ws.send(JSON.stringify({ type: 'card_created', card }));
-              // Send updated board
               ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
               break;
             }
@@ -152,9 +155,10 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
             case 'board_update': {
               const updates: Record<string, unknown> = {};
               if (msg.priority !== undefined) updates.priority = msg.priority;
-              if (msg.due_date) updates.due_date = parseDateHint(msg.due_date);
-              if (msg.scheduled_for) updates.scheduled_for = parseDateHint(msg.scheduled_for);
-              const updatedCard = updateCard(msg.cardId, updates);
+              // Support both setting AND clearing dates (null = clear)
+              if ('due_date' in msg) updates.due_date = msg.due_date ? parseDateHint(msg.due_date) : null;
+              if ('scheduled_for' in msg) updates.scheduled_for = msg.scheduled_for ? parseDateHint(msg.scheduled_for) : null;
+              const updatedCard = updateCard(msg.cardId, updates, boardChatId);
               if (!updatedCard) { ws.send(JSON.stringify({ type: 'error', message: 'Update failed' })); break; }
               ws.send(JSON.stringify({ type: 'card_updated' }));
               ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));

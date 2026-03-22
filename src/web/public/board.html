@@ -229,15 +229,17 @@ function saveCard() {
   const schedVal = document.getElementById('card-scheduled').value;
 
   if (id) {
-    // Edit existing
+    // Edit existing — find original card to detect what changed
+    const orig = allCards.find(c => c.id === id);
     const status = document.getElementById('card-status').value;
-    send({ type: 'board_move', cardId: id, status });
-    send({ type: 'board_assign', cardId: id, assignee });
+    if (!orig || orig.status !== status) send({ type: 'board_move', cardId: id, status });
+    if (!orig || orig.assignee !== assignee) send({ type: 'board_assign', cardId: id, assignee });
+    // Always send update for priority/dates (server handles no-op gracefully)
     send({ type: 'board_update', cardId: id, priority, due_date: dueVal || null, scheduled_for: schedVal || null });
   } else {
-    // Create new
+    // Create new — include dates
     const desc = document.getElementById('card-desc').value.trim();
-    send({ type: 'board_create', title, description: desc, assignee, priority });
+    send({ type: 'board_create', title, description: desc, assignee, priority, due_date: dueVal || null, scheduled_for: schedVal || null });
   }
   hideModal();
 }

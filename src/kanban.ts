@@ -337,29 +337,26 @@ export function assignCard(id: string, assignee: CardAssignee, chatId?: string):
 export function updateCard(
   id: string,
   updates: Partial<Pick<KanbanCard, 'title' | 'description' | 'priority' | 'due_date' | 'scheduled_for'>>,
+  chatId?: string,
 ): KanbanCard | null {
   const db = getDatabase();
   const card = getCard(id);
   if (!card) return null;
+  if (chatId && card.chat_id !== chatId) return null;
 
-  db.prepare(
-    `UPDATE kanban_cards SET
-       title = COALESCE(?, title),
-       description = COALESCE(?, description),
-       priority = COALESCE(?, priority),
-       due_date = COALESCE(?, due_date),
-       scheduled_for = COALESCE(?, scheduled_for),
-       updated_at = ?
-     WHERE id = ?`,
-  ).run(
-    updates.title ?? null,
-    updates.description ?? null,
-    updates.priority ?? null,
-    updates.due_date ?? null,
-    updates.scheduled_for ?? null,
-    Date.now(),
-    id,
-  );
+  // Build dynamic UPDATE — use explicit null to CLEAR fields (not COALESCE which preserves old values)
+  const sets: string[] = ['updated_at = ?'];
+  const vals: unknown[] = [Date.now()];
+
+  if ('title' in updates && updates.title !== undefined) { sets.push('title = ?'); vals.push(updates.title); }
+  if ('description' in updates && updates.description !== undefined) { sets.push('description = ?'); vals.push(updates.description); }
+  if ('priority' in updates && updates.priority !== undefined) { sets.push('priority = ?'); vals.push(updates.priority); }
+  // For dates: allow explicit null to CLEAR the field
+  if ('due_date' in updates) { sets.push('due_date = ?'); vals.push(updates.due_date ?? null); }
+  if ('scheduled_for' in updates) { sets.push('scheduled_for = ?'); vals.push(updates.scheduled_for ?? null); }
+
+  vals.push(id);
+  db.prepare(`UPDATE kanban_cards SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
 
   return getCard(id) || null;
 }
