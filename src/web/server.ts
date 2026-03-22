@@ -9,6 +9,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { VoiceSession } from './voice-session.js';
+import { listAllCards, createCard, moveCard, assignCard, deleteCard, type CardStatus, type CardAssignee } from '../kanban.js';
 import type { ProviderRouter } from '../providers/router.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -104,6 +105,70 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       return;
     }
 
+    // Check connection mode: voice (default) or board
+    const mode = url.searchParams.get('mode');
+
+    if (mode === 'board') {
+      // ── Board WebSocket Handler ──
+      const boardChatId = config.ALLOWED_CHAT_ID?.split(',')[0]?.trim() || 'web-board';
+      logger.info('Board web: client connected');
+
+      ws.on('message', (data: Buffer | string) => {
+        if (typeof data !== 'string') return;
+        try {
+          const msg = JSON.parse(data);
+          switch (msg.type) {
+            case 'board_list': {
+              const cards = listAllCards(boardChatId);
+              ws.send(JSON.stringify({ type: 'board_data', cards }));
+              break;
+            }
+            case 'board_create': {
+              const card = createCard(boardChatId, msg.title, {
+                description: msg.description,
+                assignee: msg.assignee as CardAssignee,
+                priority: msg.priority,
+                source: 'user',
+              });
+              ws.send(JSON.stringify({ type: 'card_created', card }));
+              // Send updated board
+              ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
+              break;
+            }
+            case 'board_move': {
+              moveCard(msg.cardId, msg.status as CardStatus);
+              ws.send(JSON.stringify({ type: 'card_updated' }));
+              ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
+              break;
+            }
+            case 'board_assign': {
+              assignCard(msg.cardId, msg.assignee as CardAssignee);
+              ws.send(JSON.stringify({ type: 'card_updated' }));
+              ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
+              break;
+            }
+            case 'board_delete': {
+              deleteCard(msg.cardId);
+              ws.send(JSON.stringify({ type: 'card_deleted' }));
+              ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
+              break;
+            }
+            case 'ping': {
+              ws.send(JSON.stringify({ type: 'pong' }));
+              break;
+            }
+          }
+        } catch (err) {
+          logger.warn({ err }, 'Board web: message error');
+          ws.send(JSON.stringify({ type: 'error', message: 'Invalid message' }));
+        }
+      });
+
+      ws.on('close', () => { logger.info('Board web: client disconnected'); });
+      return; // Don't fall through to voice handler
+    }
+
+    // ── Voice WebSocket Handler (default) ──
     const sessionChatId = `voice-web-${randomUUID()}`;
     logger.info({ chatId: sessionChatId }, 'Voice web: client connected');
 

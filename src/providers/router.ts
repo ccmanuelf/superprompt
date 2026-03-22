@@ -52,7 +52,9 @@ The user can type these commands in the chat:
 
 When relevant, you can mention these commands to help the user. For example, if the user asks "can you remember this?", you might mention /memory. If they seem to want a different AI behavior, mention /skill. If they say "remind me about X", use the create_reminder tool instead of suggesting /schedule.
 
-You also have access to GitHub tools (github_list_repos, github_read_file, github_list_issues, github_clone_repo, github_diff, github_commit_push, github_create_pr), Render deploy tools (render_list_services, render_deploy_status, render_get_logs), and a take_screenshot tool for capturing web pages visually.`;
+You also have access to GitHub tools (github_list_repos, github_read_file, github_list_issues, github_clone_repo, github_diff, github_commit_push, github_create_pr), Render deploy tools (render_list_services, render_deploy_status, render_get_logs), a take_screenshot tool for capturing web pages visually, and kanban_manage for task tracking.
+
+IMPORTANT — Kanban Board: When you identify tasks, ideas, issues, or follow-ups during conversation, suggest adding them to the board. If you have the kanban_manage tool (Ollama), call it directly. If not (Claude), tell the user: "This sounds like something to track. Want me to add it to the board? You can use: /board add <title>".`;
 
 const VOICE_RESPONSE_HINT = `The user sent a voice message. Respond as if in a verbal conversation:
 - Keep responses to 1-3 sentences. Be concise.
