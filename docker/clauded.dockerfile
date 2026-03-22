@@ -28,7 +28,7 @@ WORKDIR /app
 # NOTE: Pin to @latest and bust cache with date to keep in sync with host
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    curl git libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+    curl git ca-certificates libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
     libjpeg62-turbo libgif7 librsvg2-2 \
     chromium libatk-bridge2.0-0 libdrm2 libxcomposite1 \
     libxdamage1 libxrandr2 libgbm1 libasound2 libxshmfence1 \
