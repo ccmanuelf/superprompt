@@ -40,22 +40,22 @@ export async function transcribeAudio(audioPath: string): Promise<TranscriptionR
   logger.debug({ path: finalPath }, 'Transcribing audio');
 
   // Omit language param — Faster-whisper auto-detects (supports 99 languages)
-  // Use verbose_json to get the detected language
   const transcription = await speachesClient.audio.transcriptions.create({
     file: createReadStream(finalPath),
     model: 'Systran/faster-whisper-small',
-    response_format: 'verbose_json',
   });
 
-  // verbose_json includes a 'language' field with the detected language
-  const detected = (transcription as unknown as { language?: string }).language ?? null;
+  // Detect language from the transcribed text (franc on the user's full utterance
+  // is more reliable than on the short AI response)
+  const detected = franc(transcription.text);
+  const detectedLanguage = detected === 'spa' ? 'es' : detected === 'eng' ? 'en' : null;
 
   logger.debug(
-    { textLength: transcription.text.length, detectedLanguage: detected },
+    { textLength: transcription.text.length, detectedLanguage },
     'Transcription complete',
   );
 
-  return { text: transcription.text, detectedLanguage: detected };
+  return { text: transcription.text, detectedLanguage };
 }
 
 /** Map ISO 639-1 codes (from Whisper) to Kokoro voice config */
