@@ -21,6 +21,7 @@ import { fixTool } from '../forge/tool-fixer.js';
 import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.js';
 import { buildDigest, getDigestPreference, setDigestPreference, type DigestFrequency } from '../proactive.js';
 import { shouldOrchestrate, orchestrateTask } from '../orchestrator.js';
+import { createCard, moveCard, assignCard, listCards, getCardByPrefix, deleteCard, formatBoard, formatCard, type CardStatus, type CardAssignee } from '../kanban.js';
 import { checkResponseQuality, logQualityCheck } from '../self-monitor.js';
 
 const TYPING_REFRESH_MS = 4000;
@@ -515,6 +516,7 @@ export function createTelegramBot(router: ProviderRouter): Bot {
         '/tool — Manage tools (list, upload, fix)\n' +
         '/careful — Toggle safety guardrails mode\n' +
         '/digest — Activity digests (daily/weekly/now)\n' +
+        '/board — Kanban board (list, add, move, assign)\n' +
         '/reload — Reload user tools from DB',
       { parse_mode: 'HTML' },
     );
@@ -1100,6 +1102,102 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     if (!isAuthorised(ctx.chat.id)) return;
     const count = loadUserTools();
     await ctx.reply(`Reloaded. ${count} user tools active.`);
+  });
+
+  // ── Board Command ───────────────────────────────────────
+
+  bot.command('board', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/board(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'list';
+
+    switch (subcommand) {
+      case 'list':
+      case 'show': {
+        const board = formatBoard(chatId);
+        await ctx.reply(formatForTelegram(board), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'add': {
+        const title = parts.slice(1).join(' ');
+        if (!title) {
+          await ctx.reply('Usage: /board add &lt;title&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const card = createCard(chatId, title, { source: 'user' });
+        await ctx.reply(
+          formatForTelegram(`✅ Card created: **${card.title}**\nID: \`${card.id.slice(0, 8)}\` | Status: backlog | Assignee: me`),
+          { parse_mode: 'HTML' },
+        );
+        return;
+      }
+
+      case 'move': {
+        const cardId = parts[1];
+        const newStatus = parts[2]?.toLowerCase() as CardStatus;
+        if (!cardId || !newStatus) {
+          await ctx.reply('Usage: /board move &lt;id&gt; &lt;status&gt;\nStatuses: backlog, in_progress, review, done, deferred, cancelled', { parse_mode: 'HTML' });
+          return;
+        }
+        const card = getCardByPrefix(chatId, cardId);
+        if (!card) { await ctx.reply('Card not found.'); return; }
+        const updated = moveCard(card.id, newStatus);
+        if (!updated) { await ctx.reply('Invalid status.'); return; }
+        await ctx.reply(formatForTelegram(`Moved **${updated.title}** → ${newStatus}`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'assign': {
+        const cardId = parts[1];
+        const newAssignee = parts[2]?.toLowerCase() as CardAssignee;
+        if (!cardId || !newAssignee) {
+          await ctx.reply('Usage: /board assign &lt;id&gt; &lt;assignee&gt;\nAssignees: me, bot, collaborative, noted', { parse_mode: 'HTML' });
+          return;
+        }
+        const card = getCardByPrefix(chatId, cardId);
+        if (!card) { await ctx.reply('Card not found.'); return; }
+        const updated = assignCard(card.id, newAssignee);
+        if (!updated) { await ctx.reply('Invalid assignee.'); return; }
+        await ctx.reply(formatForTelegram(`Assigned **${updated.title}** → ${newAssignee}`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete':
+      case 'remove': {
+        const cardId = parts[1];
+        if (!cardId) { await ctx.reply('Usage: /board delete &lt;id&gt;', { parse_mode: 'HTML' }); return; }
+        const card = getCardByPrefix(chatId, cardId);
+        if (!card) { await ctx.reply('Card not found.'); return; }
+        deleteCard(card.id);
+        await ctx.reply(formatForTelegram(`Deleted: **${card.title}**`), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'view': {
+        const cardId = parts[1];
+        if (!cardId) { await ctx.reply('Usage: /board view &lt;id&gt;', { parse_mode: 'HTML' }); return; }
+        const card = getCardByPrefix(chatId, cardId);
+        if (!card) { await ctx.reply('Card not found.'); return; }
+        await ctx.reply(formatForTelegram(formatCard(card)), { parse_mode: 'HTML' });
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          'Board commands:\n' +
+            '/board — Show active cards\n' +
+            '/board add &lt;title&gt; — Create a card\n' +
+            '/board move &lt;id&gt; &lt;status&gt; — Move card\n' +
+            '/board assign &lt;id&gt; &lt;assignee&gt; — Assign card\n' +
+            '/board view &lt;id&gt; — View card details\n' +
+            '/board delete &lt;id&gt; — Delete card',
+          { parse_mode: 'HTML' },
+        );
+    }
   });
 
   // ── Digest Command ──────────────────────────────────────

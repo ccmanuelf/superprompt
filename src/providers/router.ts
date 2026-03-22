@@ -47,6 +47,7 @@ The user can type these commands in the chat:
 - /tool — Manage tools (list, show, upload, generate, fix, enable, disable, delete)
 - /careful — Enable safety guardrails mode
 - /digest — Activity digests (daily/weekly/now/off)
+- /board — Kanban board (list, add, move, assign, view, delete)
 - /reload — Reload user tools from database
 
 When relevant, you can mention these commands to help the user. For example, if the user asks "can you remember this?", you might mention /memory. If they seem to want a different AI behavior, mention /skill. If they say "remind me about X", use the create_reminder tool instead of suggesting /schedule.

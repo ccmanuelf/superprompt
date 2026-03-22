@@ -22,6 +22,7 @@ import { exportSkillToMarkdown, exportToolToMarkdown } from '../forge/exporter.j
 import { listRegisteredTools, loadUserTools } from '../forge/tool-registry.js';
 import { buildDigest, getDigestPreference, setDigestPreference, type DigestFrequency } from '../proactive.js';
 import { shouldOrchestrate, orchestrateTask } from '../orchestrator.js';
+import { createCard, moveCard, assignCard, getCardByPrefix, deleteCard, formatBoard, type CardStatus, type CardAssignee } from '../kanban.js';
 import { checkResponseQuality, logQualityCheck } from '../self-monitor.js';
 
 // Per-room voice mode toggle
@@ -294,6 +295,7 @@ async function handleCommand(
           '!tool — Manage tools (list, fix, etc.)\n' +
           '!careful — Toggle safety guardrails mode\n' +
           '!digest — Activity digests (daily/weekly/now)\n' +
+          '!board — Kanban board (list, add, move, assign)\n' +
           '!reload — Reload user tools from DB',
       );
       return true;
@@ -392,6 +394,41 @@ async function handleCommand(
       } else {
         setActiveSkill(roomId, skill.id);
         await sendNotice(client, roomId, 'Safety mode enabled. I will warn before destructive actions and verify results.');
+      }
+      return true;
+    }
+
+    case '!board': {
+      const boardArgs = command.replace(/^!board\s*/, '').trim();
+      const boardParts = boardArgs.split(/\s+/);
+      const boardSub = boardParts[0]?.toLowerCase() || 'list';
+
+      if (boardSub === 'list' || boardSub === 'show') {
+        await sendNotice(client, roomId, formatBoard(roomId));
+      } else if (boardSub === 'add') {
+        const title = boardParts.slice(1).join(' ');
+        if (!title) { await sendNotice(client, roomId, 'Usage: !board add <title>'); return true; }
+        const card = createCard(roomId, title, { source: 'user' });
+        await sendNotice(client, roomId, `Card created: "${card.title}" — ID: ${card.id.slice(0, 8)}`);
+      } else if (boardSub === 'move') {
+        const card = getCardByPrefix(roomId, boardParts[1] || '');
+        if (!card) { await sendNotice(client, roomId, 'Card not found.'); return true; }
+        const updated = moveCard(card.id, (boardParts[2] || '') as CardStatus);
+        if (!updated) { await sendNotice(client, roomId, 'Invalid status.'); return true; }
+        await sendNotice(client, roomId, `Moved "${updated.title}" → ${updated.status}`);
+      } else if (boardSub === 'assign') {
+        const card = getCardByPrefix(roomId, boardParts[1] || '');
+        if (!card) { await sendNotice(client, roomId, 'Card not found.'); return true; }
+        const updated = assignCard(card.id, (boardParts[2] || '') as CardAssignee);
+        if (!updated) { await sendNotice(client, roomId, 'Invalid assignee.'); return true; }
+        await sendNotice(client, roomId, `Assigned "${updated.title}" → ${updated.assignee}`);
+      } else if (boardSub === 'delete') {
+        const card = getCardByPrefix(roomId, boardParts[1] || '');
+        if (!card) { await sendNotice(client, roomId, 'Card not found.'); return true; }
+        deleteCard(card.id);
+        await sendNotice(client, roomId, `Deleted: "${card.title}"`);
+      } else {
+        await sendNotice(client, roomId, 'Usage: !board [list|add|move|assign|delete]');
       }
       return true;
     }

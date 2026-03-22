@@ -35,6 +35,7 @@ import {
   renderGetLogsDefinition, renderGetLogs,
 } from './render-status.js';
 import { takeScreenshotDefinition, takeScreenshot } from './screenshot.js';
+import { kanbanManageDefinition, kanbanManage } from './kanban-manage.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -166,6 +167,13 @@ export function registerBuiltinTools(): void {
     {
       definition: takeScreenshotDefinition,
       execute: async (args) => takeScreenshot(args as { url: string; selector?: string; fullPage?: boolean }),
+      source: 'builtin',
+    },
+    // ── Kanban board ──
+    {
+      definition: kanbanManageDefinition,
+      execute: async (args, chatId) =>
+        kanbanManage(args as Parameters<typeof kanbanManage>[0], chatId),
       source: 'builtin',
     },
   ];

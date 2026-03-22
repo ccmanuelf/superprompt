@@ -30,6 +30,7 @@ import { cleanupOldUploads } from './media.js';
 import { ProviderRouter } from './providers/router.js';
 import { initScheduler } from './scheduler.js';
 import { initProactiveMessaging } from './proactive.js';
+import { initKanbanTable } from './kanban.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PID_FILE = resolve(STORE_DIR, 'clauded.pid');
@@ -97,8 +98,9 @@ async function main(): Promise<void> {
   initDatabase();
   logger.info('Database initialized');
 
-  // 4b. Initialize skills
+  // 4b. Initialize skills + kanban
   initBuiltinSkills();
+  initKanbanTable();
 
   // 4d. Register builtin tools and load user tools
   const { registerBuiltinTools } = await import('./providers/tools/index.js');

@@ -7,7 +7,7 @@
 
 clauded is evolving from personal AI assistant into a **full AI partner platform ("Jarvis")**. Core autonomy sprints S1-S8 complete. Platform expansion sprints S10-S13 planned.
 
-**Execution order: S1-S8 ✅ → S10 ✅ → S11 (Kanban) → S12 (Learning Coach) → S13 (Manufacturing/Research) → S9 (Docs) → S4 (E2E) → S3 (Cloud Deploy)**
+**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 (Learning Coach) → S13 (Manufacturing/Research) → S9 (Docs) → S4 (E2E) → S3 (Cloud Deploy)**
 
 ---
 
@@ -419,7 +419,7 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Sprint S11: Kanban Collaboration Layer — NOT STARTED
+## Sprint S11: Kanban Collaboration Layer — COMPLETED (2026-03-21)
 
 **Goal:** Shared project board where both human and bot track, assign, and manage work.
 
