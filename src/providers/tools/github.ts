@@ -17,6 +17,26 @@ import { logger } from '../../logger.js';
 const GH_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT = 8_000;
 
+/**
+ * Sanitize a string for safe use in shell commands.
+ * Wraps in single quotes with proper escaping (the only safe shell quoting method).
+ */
+function shellEscape(str: string): string {
+  // Replace single quotes with '\'' (end quote, escaped quote, start quote)
+  return `'${str.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * Sanitize repo name to prevent path traversal.
+ * Only allows alphanumeric, hyphens, underscores, and dots.
+ */
+function sanitizeRepoName(name: string): string {
+  // Extract just the repo name (last segment of owner/repo)
+  const repoName = name.split('/').pop() || name;
+  // Strip anything that's not safe for a directory name
+  return repoName.replace(/[^a-zA-Z0-9._-]/g, '');
+}
+
 function runGh(args: string): string {
   try {
     const output = execSync(`gh ${args}`, {
@@ -264,23 +284,15 @@ export function githubReadFile(args: { repo: string; path: string; ref?: string 
   if (!isGhAvailable()) return { error: 'gh CLI is not installed.' };
 
   try {
-    const refFlag = args.ref ? `--ref ${args.ref}` : '';
-    const output = runGh(`api repos/${args.repo}/contents/${args.path} ${refFlag} --jq '.content' | base64 -d 2>/dev/null || gh api repos/${args.repo}/contents/${args.path} ${refFlag} --jq '.content'`);
-    // gh api returns base64 content, try to decode
-    try {
-      const decoded = Buffer.from(output.trim(), 'base64').toString('utf-8');
-      if (decoded && !decoded.includes('\ufffd')) return { content: decoded, path: args.path };
-    } catch { /* not base64, return raw */ }
+    // Use raw content Accept header — returns file content directly without base64 encoding
+    const refQuery = args.ref ? `?ref=${encodeURIComponent(args.ref)}` : '';
+    const safePath = args.path.replace(/[^a-zA-Z0-9._\/-]/g, '');
+    const output = runGh(
+      `api repos/${args.repo}/contents/${safePath}${refQuery} -H "Accept: application/vnd.github.raw+json"`,
+    );
     return { content: output, path: args.path };
   } catch (err) {
-    // Fallback: use raw content endpoint
-    try {
-      const refFlag = args.ref ? `?ref=${args.ref}` : '';
-      const output = runGh(`api repos/${args.repo}/contents/${args.path}${refFlag} -H "Accept: application/vnd.github.raw+json"`);
-      return { content: output, path: args.path };
-    } catch (err2) {
-      return { error: `Failed to read file: ${err2 instanceof Error ? err2.message : String(err2)}` };
-    }
+    return { error: `Failed to read file: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
 
@@ -315,17 +327,23 @@ export function githubCloneRepo(args: { repo: string; branch?: string }): Record
 
   try {
     // Ensure workspace dir exists
-    execSync(`mkdir -p ${REPOS_DIR}`, { encoding: 'utf-8' });
+    execSync(`mkdir -p ${shellEscape(REPOS_DIR)}`, { encoding: 'utf-8' });
 
-    const repoName = args.repo.split('/').pop() || args.repo;
-    const repoPath = `${REPOS_DIR}/${repoName}`;
+    const repoName = sanitizeRepoName(args.repo);
+    const repoPath = resolve(REPOS_DIR, repoName);
 
     // Check if already cloned
     try {
-      execSync(`test -d ${repoPath}/.git`, { encoding: 'utf-8' });
+      execSync(`test -d ${shellEscape(repoPath)}/.git`, { encoding: 'utf-8' });
       // Already exists — pull latest
-      const branchFlag = args.branch ? `&& git checkout ${args.branch}` : '';
-      execSync(`cd ${repoPath} && git pull ${branchFlag}`, {
+      if (args.branch) {
+        const safeBranch = args.branch.replace(/[^a-zA-Z0-9._\/-]/g, '');
+        execSync(`cd ${shellEscape(repoPath)} && git checkout ${shellEscape(safeBranch)}`, {
+          timeout: GH_TIMEOUT_MS,
+          encoding: 'utf-8',
+        });
+      }
+      execSync(`cd ${shellEscape(repoPath)} && git pull`, {
         timeout: GH_TIMEOUT_MS,
         encoding: 'utf-8',
       });
@@ -334,8 +352,8 @@ export function githubCloneRepo(args: { repo: string; branch?: string }): Record
       // Not cloned yet
     }
 
-    const branchFlag = args.branch ? `--branch ${args.branch}` : '';
-    runGh(`repo clone ${args.repo} ${repoPath} -- ${branchFlag}`);
+    const branchFlag = args.branch ? `--branch ${args.branch.replace(/[^a-zA-Z0-9._\/-]/g, '')}` : '';
+    runGh(`repo clone ${args.repo} ${shellEscape(repoPath)} -- ${branchFlag}`);
 
     logger.info({ repo: args.repo, path: repoPath }, 'Repository cloned');
     return { path: repoPath, message: `Cloned ${args.repo} to ${repoPath}` };
@@ -345,24 +363,24 @@ export function githubCloneRepo(args: { repo: string; branch?: string }): Record
 }
 
 export function githubDiff(args: { repo: string }): Record<string, unknown> {
-  const repoPath = `${REPOS_DIR}/${args.repo}`;
+  const safeRepo = sanitizeRepoName(args.repo);
+  const repoPath = resolve(REPOS_DIR, safeRepo);
 
   try {
-    execSync(`test -d ${repoPath}/.git`, { encoding: 'utf-8' });
+    execSync(`test -d ${shellEscape(repoPath)}/.git`, { encoding: 'utf-8' });
   } catch {
-    return { error: `Repository "${args.repo}" not found in workspace. Clone it first with github_clone_repo.` };
+    return { error: `Repository "${safeRepo}" not found in workspace. Clone it first with github_clone_repo.` };
   }
 
   try {
-    const diff = execSync(`cd ${repoPath} && git diff`, {
+    const diff = execSync(`cd ${shellEscape(repoPath)} && git diff`, {
       timeout: GH_TIMEOUT_MS,
       encoding: 'utf-8',
       maxBuffer: 2 * 1024 * 1024,
     }).trim();
 
     if (!diff) {
-      // Check for staged changes
-      const staged = execSync(`cd ${repoPath} && git diff --cached`, {
+      const staged = execSync(`cd ${shellEscape(repoPath)} && git diff --cached`, {
         timeout: GH_TIMEOUT_MS,
         encoding: 'utf-8',
       }).trim();
@@ -378,40 +396,62 @@ export function githubDiff(args: { repo: string }): Record<string, unknown> {
 }
 
 export function githubCommitPush(args: { repo: string; message: string; branch?: string }): Record<string, unknown> {
-  const repoPath = `${REPOS_DIR}/${args.repo}`;
+  const safeRepo = sanitizeRepoName(args.repo);
+  const repoPath = resolve(REPOS_DIR, safeRepo);
 
   try {
-    execSync(`test -d ${repoPath}/.git`, { encoding: 'utf-8' });
+    execSync(`test -d ${shellEscape(repoPath)}/.git`, { encoding: 'utf-8' });
   } catch {
-    return { error: `Repository "${args.repo}" not found in workspace.` };
+    return { error: `Repository "${safeRepo}" not found in workspace.` };
   }
 
   try {
+    // Configure git user if not set (required for commits inside container)
+    try {
+      execSync(`cd ${shellEscape(repoPath)} && git config user.name`, { encoding: 'utf-8' });
+    } catch {
+      execSync(`cd ${shellEscape(repoPath)} && git config user.name 'clauded' && git config user.email 'clauded@bot.local'`, { encoding: 'utf-8' });
+    }
+
     // Check for changes first
-    const status = execSync(`cd ${repoPath} && git status --porcelain`, {
+    const status = execSync(`cd ${shellEscape(repoPath)} && git status --porcelain`, {
       encoding: 'utf-8',
     }).trim();
 
     if (!status) return { message: 'No changes to commit.' };
 
-    // Stage, commit, push
-    const branchCmd = args.branch ? `git checkout -B ${args.branch} && ` : '';
-    execSync(
-      `cd ${repoPath} && ${branchCmd}git add -A && git commit -m "${args.message.replace(/"/g, '\\"')}"`,
-      { timeout: GH_TIMEOUT_MS, encoding: 'utf-8' },
-    );
-
-    const pushBranch = args.branch || 'HEAD';
-    execSync(`cd ${repoPath} && git push origin ${pushBranch}`, {
+    // Stage changes
+    execSync(`cd ${shellEscape(repoPath)} && git add -A`, {
       timeout: GH_TIMEOUT_MS,
       encoding: 'utf-8',
     });
 
-    const hash = execSync(`cd ${repoPath} && git rev-parse --short HEAD`, {
+    // Checkout branch if specified
+    if (args.branch) {
+      const safeBranch = args.branch.replace(/[^a-zA-Z0-9._\/-]/g, '');
+      execSync(`cd ${shellEscape(repoPath)} && git checkout -B ${shellEscape(safeBranch)}`, {
+        timeout: GH_TIMEOUT_MS,
+        encoding: 'utf-8',
+      });
+    }
+
+    // Commit with safe quoting (prevents command injection via message)
+    execSync(`cd ${shellEscape(repoPath)} && git commit -m ${shellEscape(args.message)}`, {
+      timeout: GH_TIMEOUT_MS,
+      encoding: 'utf-8',
+    });
+
+    const pushBranch = args.branch ? args.branch.replace(/[^a-zA-Z0-9._\/-]/g, '') : 'HEAD';
+    execSync(`cd ${shellEscape(repoPath)} && git push origin ${shellEscape(pushBranch)}`, {
+      timeout: GH_TIMEOUT_MS,
+      encoding: 'utf-8',
+    });
+
+    const hash = execSync(`cd ${shellEscape(repoPath)} && git rev-parse --short HEAD`, {
       encoding: 'utf-8',
     }).trim();
 
-    logger.info({ repo: args.repo, hash, message: args.message }, 'Committed and pushed');
+    logger.info({ repo: safeRepo, hash, message: args.message }, 'Committed and pushed');
     return { success: true, hash, message: `Committed and pushed: ${hash} — ${args.message}` };
   } catch (err) {
     return { error: `Failed to commit/push: ${err instanceof Error ? err.message : String(err)}` };
@@ -426,8 +466,11 @@ export function githubCreatePr(args: {
   try {
     const base = args.base || 'main';
     const body = args.body || '';
+    const safeHead = args.head.replace(/[^a-zA-Z0-9._\/-]/g, '');
+    const safeBase = base.replace(/[^a-zA-Z0-9._\/-]/g, '');
+    // Use shellEscape for user-provided text to prevent injection
     const output = runGh(
-      `pr create -R ${args.repo} --title "${args.title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}" --head ${args.head} --base ${base}`,
+      `pr create -R ${args.repo} --title ${shellEscape(args.title)} --body ${shellEscape(body)} --head ${shellEscape(safeHead)} --base ${shellEscape(safeBase)}`,
     );
     return { url: output.trim(), message: `PR created: ${output.trim()}` };
   } catch (err) {

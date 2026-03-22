@@ -1,4 +1,5 @@
 import type { Tool } from 'ollama';
+import { readEnvFile } from '../../env.js';
 import { logger } from '../../logger.js';
 
 /**
@@ -15,7 +16,8 @@ const RENDER_API = 'https://api.render.com/v1';
 const TIMEOUT_MS = 15_000;
 
 function getRenderKey(): string | null {
-  return process.env.RENDER_API_KEY || null;
+  // Check process.env first (set by Docker), then readEnvFile (local dev)
+  return process.env.RENDER_API_KEY || readEnvFile().RENDER_API_KEY || null;
 }
 
 async function renderFetch(path: string): Promise<unknown> {
