@@ -179,7 +179,7 @@ export function createCard(
     title,
     description: options?.description || '',
     status: 'backlog',
-    assignee: options?.assignee || 'me',
+    assignee: options?.assignee || 'noted',
     priority: options?.priority || 3,
     labels: options?.labels ? JSON.stringify(options.labels) : null,
     due_date: options?.dueDate || null,

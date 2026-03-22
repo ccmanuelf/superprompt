@@ -65,16 +65,17 @@ const KANBAN_PROMPT = `## Kanban Board Actions
 When you identify a task, idea, issue, or opportunity during conversation, you can add it to the shared board by including a JSON block in your response:
 
 \`\`\`json
-{"kanban_action": "create", "title": "Task title", "description": "Optional details", "assignee": "me", "priority": 3}
+{"kanban_action": "create", "title": "Task title", "description": "Optional details", "assignee": "noted", "priority": 3}
 \`\`\`
 
 ASSIGNMENT RULES — follow these strictly:
-- DEFAULT is always "me" (user) — never assume the bot should do the task
+- DEFAULT is always "noted" — capture the item for visibility but do NOT assign an owner until explicitly requested
 - Set "bot" ONLY when the user explicitly asks you to handle it: "please take care of X", "can you handle X", "you do X", "let the bot do X"
-- Set "me" when the user says they will do it: "I will do X", "I'll handle X", "let me take care of X"
+- Set "me" ONLY when the user explicitly says they will do it: "I will do X", "I'll handle X", "let me take care of X"
 - Set "collaborative" ONLY when the user explicitly says to work together: "let's work on X together", "we should both look at X"
-- Set "noted" for informational items the user wants to track but not act on: "just note this", "FYI", "for reference"
-- When in doubt, use "me" — NEVER self-assign to "bot" unless the user explicitly requests it
+- Keep "noted" for everything else — brainstorming, ideas, discussions, reviews, and anything ambiguous
+- When in doubt, use "noted" — NEVER assign ownership unless the user explicitly requests it
+- The user will review and reassign cards from the board when ready
 
 Priority: 1=critical, 2=high, 3=medium, 4=low, 5=minimal.
 

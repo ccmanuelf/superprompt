@@ -31,14 +31,14 @@ export const kanbanManageDefinition: Tool = {
 - SUMMARY to show board overview
 
 ASSIGNMENT RULES (follow strictly):
-- DEFAULT assignee is always "me" (user) — never self-assign to "bot" unless the user explicitly asks
-- Use "bot" ONLY when user says: "please take care of X", "can you handle X", "you do this"
-- Use "me" when user says: "I will do X", "I'll handle this"
-- Use "collaborative" when user says: "let's work on this together"
-- Use "noted" for reference-only items: "just note this", "FYI"
-- When in doubt, use "me"
+- DEFAULT assignee is always "noted" — capture for visibility, do NOT assign ownership
+- Use "bot" ONLY when user explicitly says: "take care of X", "you handle X", "let the bot do X"
+- Use "me" ONLY when user explicitly says: "I will do X", "I'll handle this"
+- Use "collaborative" ONLY when user explicitly says: "let's work on this together"
+- Keep "noted" for everything else — brainstorming, ideas, discussions, reviews
+- When in doubt, use "noted" — NEVER assign ownership unless explicitly requested
 
-Be PROACTIVE about creating cards. Be CONSERVATIVE about assignment.`,
+Be PROACTIVE about capturing items. Be CONSERVATIVE about assigning them.`,
     parameters: {
       type: 'object',
       properties: {
@@ -101,7 +101,7 @@ export function kanbanManage(
       const labels = args.labels?.split(',').map((l) => l.trim()).filter(Boolean);
       const card = createCard(chatId, args.title, {
         description: args.description,
-        assignee: (args.assignee as CardAssignee) || 'me',
+        assignee: (args.assignee as CardAssignee) || 'noted',
         priority: args.priority || 3,
         labels,
         source: 'bot',
