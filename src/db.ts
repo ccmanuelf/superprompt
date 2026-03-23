@@ -10,6 +10,7 @@ import { initBalanceTables } from './balance.js';
 import { initSigmaTables } from './sigma.js';
 import { initInventoryTables } from './inventory.js';
 import { initControlPlanTables } from './control-plan.js';
+import { initFmeaTables } from './fmea.js';
 
 let db: Database.Database;
 
@@ -32,6 +33,7 @@ export function initDatabase(): Database.Database {
   initSigmaTables();
   initInventoryTables();
   initControlPlanTables();
+  initFmeaTables();
   return db;
 }
 

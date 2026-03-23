@@ -472,6 +472,53 @@ async function handleMessage(
   }
 }
 
+// ── FMEA CSV Upload Helper ───────────────────────────────
+
+async function handleFmeaCsv(ctx: Context, caption: string): Promise<void> {
+  const doc = ctx.message?.document;
+  if (!doc) { await ctx.reply('Please attach a CSV file.'); return; }
+
+  const docName = caption.replace(/^\/fmea(@\w+)?/, '').trim();
+  if (!docName) {
+    await ctx.reply('Usage: attach CSV with caption:\n<code>/fmea &lt;document_name&gt;</code>', { parse_mode: 'HTML' });
+    return;
+  }
+
+  try {
+    const file = await ctx.getFile();
+    if (!file.file_path) { await ctx.reply('Could not download file.'); return; }
+
+    const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+    const res = await fetch(url);
+    if (!res.ok) { await ctx.reply('Failed to download file.'); return; }
+
+    const csvContent = await res.text();
+    await ctx.reply(`Running FMEA analysis for "${docName}"...`);
+
+    const { executeFmeaFromCsv, formatFmeaWorksheet, generateRiskHeatmap, generateRpnPareto } = await import('../fmea.js');
+    const { doc: fmeaDoc, failureModes, actions } = executeFmeaFromCsv(csvContent, docName);
+
+    // Send formatted worksheet
+    const formatted = formatFmeaWorksheet(fmeaDoc, failureModes, actions, true);
+    await ctx.reply(formatted, { parse_mode: 'HTML' });
+
+    // Send risk heatmap
+    try {
+      const heatmapPath = await generateRiskHeatmap(failureModes, docName);
+      await ctx.replyWithPhoto(new InputFile(heatmapPath), { caption: `Risk Matrix — ${docName}` });
+    } catch (err) { logger.warn({ err }, 'Failed to generate risk heatmap'); }
+
+    // Send RPN Pareto
+    try {
+      const paretoPath = await generateRpnPareto(failureModes, docName);
+      await ctx.replyWithPhoto(new InputFile(paretoPath), { caption: `RPN Pareto — ${docName}` });
+    } catch (err) { logger.warn({ err }, 'Failed to generate RPN Pareto'); }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await ctx.reply(`FMEA error: ${escapeHtml(message)}`, { parse_mode: 'HTML' });
+  }
+}
+
 // ── Inventory CSV Upload Helper ──────────────────────────
 
 async function handleInventoryCsv(ctx: Context, caption: string): Promise<void> {
@@ -2178,6 +2225,63 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     }
   });
 
+  // ── FMEA Command ───────────────────────────────────────
+
+  bot.command('fmea', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/fmea(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listFmeaDocs } = await import('../fmea.js');
+        const docs = listFmeaDocs();
+        if (docs.length === 0) { await ctx.reply('No FMEA documents. Send a CSV with /fmea to start, or ask the AI to create one.'); return; }
+        const lines = docs.map((d) =>
+          `<b>${escapeHtml(d.name)}</b> — ${d.fmea_type.toUpperCase()} — ${d.product || 'no product'} — ${new Date(d.updated_at).toLocaleDateString()}`
+        );
+        await ctx.reply(`<b>FMEA Documents (${docs.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'report': {
+        const docName = parts.slice(1).join(' ');
+        if (!docName) { await ctx.reply('Usage: /fmea report &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getFmeaDocByName, getFailureModes, getActions, formatFmeaWorksheet } = await import('../fmea.js');
+        const doc = getFmeaDocByName(docName);
+        if (!doc) { await ctx.reply(`FMEA "${docName}" not found.`); return; }
+        const fms = getFailureModes(doc.id);
+        const acts = getActions(doc.id);
+        await ctx.reply(formatFmeaWorksheet(doc, fms, acts, true), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete': {
+        const docName = parts.slice(1).join(' ');
+        if (!docName) { await ctx.reply('Usage: /fmea delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getFmeaDocByName, deleteFmeaDoc } = await import('../fmea.js');
+        const doc = getFmeaDocByName(docName);
+        if (!doc) { await ctx.reply(`FMEA "${docName}" not found.`); return; }
+        deleteFmeaDoc(doc.id);
+        await ctx.reply(`Deleted FMEA "${docName}".`);
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>FMEA Commands:</b>\n\n' +
+            'Send CSV with caption <code>/fmea &lt;doc_name&gt;</code> to import\n\n' +
+            '/fmea list — List FMEA documents\n' +
+            '/fmea report &lt;name&gt; — View full worksheet\n' +
+            '/fmea delete &lt;name&gt; — Delete document\n\n' +
+            'Or ask the AI: "Create a PFMEA for our solder process"',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
   // ── SPC Setup Command ──────────────────────────────────
 
   bot.command('spc', async (ctx) => {
@@ -2895,6 +2999,12 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     // Intercept /inventory CSV uploads
     if (caption.startsWith('/inventory')) {
       await handleInventoryCsv(ctx, caption);
+      return;
+    }
+
+    // Intercept /fmea CSV uploads
+    if (caption.startsWith('/fmea')) {
+      await handleFmeaCsv(ctx, caption);
       return;
     }
 

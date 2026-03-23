@@ -45,6 +45,7 @@ import { lineBalanceDefinition, lineBalance } from './balance.js';
 import { sigmaAnalysisDefinition, sigmaAnalysis } from './sigma.js';
 import { inventoryPlanDefinition, inventoryPlan } from './inventory.js';
 import { spcSetupDefinition, spcSetup } from './spc-setup.js';
+import { fmeaManageDefinition, fmeaManage } from './fmea.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -227,6 +228,12 @@ export function registerBuiltinTools(): void {
       definition: spcSetupDefinition,
       execute: async (args, chatId) =>
         spcSetup(args as Record<string, unknown>, chatId),
+      source: 'builtin',
+    },
+    {
+      definition: fmeaManageDefinition,
+      execute: async (args, chatId) =>
+        fmeaManage(args as Record<string, unknown>, chatId),
       source: 'builtin',
     },
   ];
