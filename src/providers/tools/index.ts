@@ -42,6 +42,7 @@ import {
   reviewReportDefinition, reviewReport,
 } from './research.js';
 import { lineBalanceDefinition, lineBalance } from './balance.js';
+import { sigmaAnalysisDefinition, sigmaAnalysis } from './sigma.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -206,6 +207,12 @@ export function registerBuiltinTools(): void {
       definition: lineBalanceDefinition,
       execute: async (args, chatId) =>
         lineBalance(args as Parameters<typeof lineBalance>[0], chatId),
+      source: 'builtin',
+    },
+    {
+      definition: sigmaAnalysisDefinition,
+      execute: async (args, chatId) =>
+        sigmaAnalysis(args as Parameters<typeof sigmaAnalysis>[0], chatId),
       source: 'builtin',
     },
   ];

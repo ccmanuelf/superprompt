@@ -472,6 +472,95 @@ async function handleMessage(
   }
 }
 
+// ── Sigma CSV Upload Helper ─────────────────────────────
+
+async function handleSigmaCsv(ctx: Context, caption: string): Promise<void> {
+  const doc = ctx.message?.document;
+  if (!doc) {
+    await ctx.reply('Please attach a CSV file with the /sigma command.');
+    return;
+  }
+
+  // Parse caption: /sigma <usl> <lsl> <project_name> [target=<value>]
+  const sigmaArgs = caption.replace(/^\/sigma(@\w+)?/, '').trim();
+  const targetMatch = sigmaArgs.match(/\btarget=(\d+(?:\.\d+)?)\b/i);
+  const target = targetMatch ? parseFloat(targetMatch[1]) : undefined;
+  const cleanArgs = sigmaArgs.replace(/\btarget=\d+(?:\.\d+)?\b/i, '').trim();
+
+  const match = cleanArgs.match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(.+)$/);
+  if (!match) {
+    await ctx.reply(
+      'Usage: attach CSV with caption:\n<code>/sigma &lt;USL&gt; &lt;LSL&gt; &lt;project_name&gt; [target=value]</code>\n\n' +
+        'Example: <code>/sigma 10.5 9.5 Widget Diameter target=10.0</code>',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  const usl = parseFloat(match[1]);
+  const lsl = parseFloat(match[2]);
+  const projectName = match[3].trim();
+
+  if (usl <= lsl) {
+    await ctx.reply('USL must be greater than LSL.');
+    return;
+  }
+
+  try {
+    const file = await ctx.getFile();
+    if (!file.file_path) { await ctx.reply('Could not download file.'); return; }
+
+    const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+    const res = await fetch(url);
+    if (!res.ok) { await ctx.reply('Failed to download file.'); return; }
+
+    const csvContent = await res.text();
+    await ctx.reply(`Running Six Sigma analysis for "${projectName}" (USL=${usl}, LSL=${lsl})...`);
+
+    const {
+      executeCapabilityAnalysis, formatCapabilityResult,
+      generateControlChart, generateCapabilityChart, generateParetoChart,
+      paretoAnalysis, getMeasurements,
+    } = await import('../sigma.js');
+
+    const { project, capability, controlChart } = executeCapabilityAnalysis(csvContent, usl, lsl, projectName, target);
+
+    // Send text result
+    const formatted = formatCapabilityResult(capability, controlChart, projectName, true);
+    await ctx.reply(formatted, { parse_mode: 'HTML' });
+
+    // Send capability histogram
+    try {
+      const measurements = getMeasurements(project.id);
+      const values = measurements.map((m) => m.value);
+      const capChartPath = await generateCapabilityChart(values, { usl, lsl, target }, capability, projectName);
+      await ctx.replyWithPhoto(new InputFile(capChartPath), { caption: `Capability Histogram — ${projectName}` });
+    } catch (err) { logger.warn({ err }, 'Failed to generate capability chart'); }
+
+    // Send control chart
+    try {
+      const chartPath = await generateControlChart(controlChart, projectName);
+      await ctx.replyWithPhoto(new InputFile(chartPath), {
+        caption: `${controlChart.chart_type === 'i_mr' ? 'I-MR' : 'X-bar/R'} Control Chart — ${projectName}`,
+      });
+    } catch (err) { logger.warn({ err }, 'Failed to generate control chart'); }
+
+    // Send Pareto if defect types exist
+    try {
+      const measurements = getMeasurements(project.id);
+      if (measurements.some((m) => m.defect_type)) {
+        const pareto = paretoAnalysis(measurements);
+        const paretoPath = await generateParetoChart(pareto, projectName);
+        await ctx.replyWithPhoto(new InputFile(paretoPath), { caption: `Pareto Analysis — ${projectName}` });
+      }
+    } catch (err) { logger.warn({ err }, 'Failed to generate Pareto chart'); }
+
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await ctx.reply(`Sigma analysis error: ${escapeHtml(message)}`, { parse_mode: 'HTML' });
+  }
+}
+
 // ── Balance CSV Upload Helper ────────────────────────────
 
 async function handleBalanceCsv(ctx: Context, caption: string): Promise<void> {
@@ -2034,6 +2123,69 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     }
   });
 
+  // ── Sigma Command ──────────────────────────────────────
+
+  bot.command('sigma', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/sigma(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listSigmaProjects } = await import('../sigma.js');
+        const projects = listSigmaProjects();
+        if (projects.length === 0) {
+          await ctx.reply('No sigma projects. Send a CSV with /sigma to start.');
+          return;
+        }
+        const lines = projects.map((p) =>
+          `<b>${escapeHtml(p.name)}</b> — USL: ${p.usl} LSL: ${p.lsl} — ${new Date(p.updated_at).toLocaleDateString()}`
+        );
+        await ctx.reply(`<b>Sigma Projects (${projects.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'status': {
+        const projectName = parts.slice(1).join(' ');
+        if (!projectName) { await ctx.reply('Usage: /sigma status &lt;project name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getSigmaProjectByName, getMeasurements, getSigmaResults, formatCapabilityResult } = await import('../sigma.js');
+        const project = getSigmaProjectByName(projectName);
+        if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
+        const results = getSigmaResults(project.id);
+        const capResult = results.find((r) => r.result_type === 'capability');
+        const chartResult = results.find((r) => r.result_type === 'control_chart');
+        if (!capResult || !chartResult) { await ctx.reply('No analysis results yet. Upload a CSV first.'); return; }
+        const cap = JSON.parse(capResult.result_json);
+        const chart = JSON.parse(chartResult.result_json);
+        await ctx.reply(formatCapabilityResult(cap, chart, projectName, true), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete': {
+        const projectName = parts.slice(1).join(' ');
+        if (!projectName) { await ctx.reply('Usage: /sigma delete &lt;project name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getSigmaProjectByName, deleteSigmaProject } = await import('../sigma.js');
+        const project = getSigmaProjectByName(projectName);
+        if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
+        deleteSigmaProject(project.id);
+        await ctx.reply(`Deleted sigma project "${projectName}".`);
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>Six Sigma Commands:</b>\n\n' +
+            'Send CSV with caption <code>/sigma &lt;USL&gt; &lt;LSL&gt; &lt;project_name&gt; [target=value]</code>\n\n' +
+            '/sigma list — List projects\n' +
+            '/sigma status &lt;name&gt; — Show latest results\n' +
+            '/sigma delete &lt;name&gt; — Delete project',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
   // ── Balance Command ─────────────────────────────────────
 
   bot.command('balance', async (ctx) => {
@@ -2557,6 +2709,12 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     // Intercept /balance CSV uploads
     if (caption.startsWith('/balance')) {
       await handleBalanceCsv(ctx, caption);
+      return;
+    }
+
+    // Intercept /sigma CSV uploads
+    if (caption.startsWith('/sigma')) {
+      await handleSigmaCsv(ctx, caption);
       return;
     }
 

@@ -7,6 +7,7 @@ import { logger } from './logger.js';
 import { initLearningTables } from './learning/db.js';
 import { initCitationTable } from './citations.js';
 import { initBalanceTables } from './balance.js';
+import { initSigmaTables } from './sigma.js';
 
 let db: Database.Database;
 
@@ -26,6 +27,7 @@ export function initDatabase(): Database.Database {
   initLearningTables();
   initCitationTable();
   initBalanceTables();
+  initSigmaTables();
   return db;
 }
 
