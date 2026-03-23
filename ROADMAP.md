@@ -7,7 +7,7 @@
 
 clauded is evolving from personal AI assistant into a **full AI partner platform ("Jarvis")**. Core autonomy sprints S1-S8 complete. Platform expansion sprints S10-S13 planned.
 
-**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 ✅ → S13 (Manufacturing/Research) → S9 (Docs) → S4 (E2E) → S3 (Cloud Deploy)**
+**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 ✅ → S13 (Research) → S14 (ClawMFG Chat ×6) → S15 (ClawMFG Web ×7) → S16 (Simulations) → S9 (Docs) → S4 (E2E) → S3 (Cloud)**
 
 ---
 
@@ -483,17 +483,260 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Sprint S13: Manufacturing & Research Tools — NOT STARTED
+## Sprint S13: Research & Reporting Tools — NOT STARTED
 
-**Goal:** Domain-specific professional tools for manufacturing engineering and research.
+**Goal:** Professional research and reporting tools for academic work, presentations, and document generation.
 
 ### Features
-- **Citation tracking**: Summaries include source URLs/titles in structured format
-- **PPTX generation**: Slide deck creation via `pptxgenjs` library
-- **Paper gathering**: Search academic sources, compile reference lists
-- **Process simulation**: SimPy-based production line modeling via Python scripts
-- **Domain skills**: `manufacturing-expert`, `researcher` built-in skills
-- **Report enhancement**: Fill templates, review uploaded reports, create readout decks
+- **PPTX generation**: Slide deck creation via `pptxgenjs` library. Input: structured JSON or conversational description. Output: downloadable .pptx file. Support for title slides, bullet slides, image slides, chart slides, speaker notes.
+- **Citation tracking**: AI responses include structured source references (URL, title, author, date). Citations stored in DB per conversation. Export as BibTeX, APA, or Chicago format. `/cite list` and `/cite export` commands.
+- **Paper gathering**: Search academic sources (Semantic Scholar API, arXiv API). Compile reference lists with abstracts. Filter by year, relevance, citation count. `/research <topic>` command returns structured results.
+- **Domain skills**: `researcher` built-in skill (academic rigor, citation discipline, hypothesis framing). `manufacturing-expert` built-in skill (Lean/Six Sigma vocabulary, IE frameworks, process thinking).
+- **Report enhancement**: Upload existing report (DOCX/PDF) → AI reviews for gaps, clarity, data quality. Fill templates with data from conversation context. Create readout decks from reports.
+
+### What S13 Does NOT Include
+- SimPy/MiniZinc simulations (moved to S16)
+- ClawMFG manufacturing tools (S14-S15)
+
+---
+
+## Sprint S14: ClawMFG Chat-Native Tools — NOT STARTED
+
+**Goal:** 6 manufacturing optimization tools implemented as clauded Ollama tools + skills. Each tool accepts CSV/JSON input via Telegram, executes core algorithms locally, and returns results + visualizations.
+
+**Source specs:** Google Drive `ClawMFG_Suite_Implementation_Plan` (18 documents, evaluated 2026-03-22). Evaluation: `memory/project_clawmfg_evaluation.md`.
+
+**Design principle:** FULL FUNCTIONALITY, not simplified versions. These must produce results a manufacturing engineer would trust for production decisions. No toy implementations.
+
+### S14.1: Assembly Line Balance Tool
+**Algorithm:** Ranked Positional Weight (RPW) heuristic with precedence constraint handling.
+**Input:** CSV with columns: task_id, task_name, time_seconds, predecessors (comma-separated), station_requirement (optional). Plus takt_time parameter.
+**Processing:**
+- Calculate positional weights: PW(i) = task_time(i) + sum(all successor weights)
+- Topological sort respecting precedence
+- Greedy station assignment: assign highest-weight unassigned task that fits remaining station time
+- Handle constraints: zone restrictions, operator skill requirements, equipment dependencies
+**Output:**
+- Station assignments with load percentages
+- Balance efficiency: `(sum of task times) / (num_stations × cycle_time) × 100`
+- Smoothness index: `sqrt(sum((max_station_time - station_time_i)²) / num_stations)`
+- Idle time per station
+- Gantt chart (PNG via chart library)
+- CSV export of assignments
+**Commands:** `/balance <attach CSV>`, `/balance-compare`, `/balance-status`
+**DB tables:** `balance_projects`, `balance_tasks`, `balance_results`, `station_assignments`
+
+### S14.2: Six Sigma KPI Tracking
+**Algorithms:** Process capability (Cp, Cpk, Pp, Ppk), DPMO, sigma level, rolled throughput yield.
+**Input:** CSV with measurement data + spec limits (USL, LSL, target).
+**Processing:**
+- Capability indices: `Cp = (USL - LSL) / 6σ`, `Cpk = min((USL - μ) / 3σ, (μ - LSL) / 3σ)`
+- DPMO: `(defects / (units × opportunities)) × 1,000,000`
+- Sigma level from DPMO lookup table
+- Control chart generation: X-bar, R, p, c, u charts
+- Western Electric rules (all 8) for out-of-control detection
+- Pareto analysis of defect types
+**Output:**
+- Capability report with indices and interpretation
+- Control charts (PNG)
+- Violation alerts with rule identification
+- DMAIC project tracking status
+**Commands:** `/sigma-capability <attach CSV>`, `/sigma-chart`, `/sigma-pareto`
+**DB tables:** `sigma_projects`, `measurements`, `control_limits`, `violations`, `improvement_projects`
+
+### S14.3: Inventory Planning & Replenishment
+**Algorithms:** EOQ, reorder point, safety stock, ABC classification, exponential smoothing.
+**Input:** CSV with item data: item_id, description, annual_demand, unit_cost, order_cost, holding_cost_pct, lead_time_days, service_level.
+**Processing:**
+- EOQ: `Q* = sqrt(2DS/H)` where D=annual demand, S=order cost, H=holding cost per unit
+- Reorder point: `ROP = (daily_demand × lead_time) + safety_stock`
+- Safety stock: `SS = Z × σ_demand × sqrt(lead_time)` (Z from service level)
+- ABC classification: sort by annual dollar volume, classify top 80% as A, next 15% as B, rest as C
+- Demand forecast: single/double/triple exponential smoothing with auto-selected alpha
+**Output:**
+- Replenishment plan per item (order quantity, reorder point, safety stock)
+- ABC classification matrix
+- Total inventory investment and carrying cost
+- Forecast vs actual chart (PNG)
+- Stockout risk alerts
+**Commands:** `/inventory-plan <attach CSV>`, `/inventory-abc`, `/inventory-forecast`
+**DB tables:** `inventory_items`, `demand_history`, `replenishment_orders`, `abc_classification`
+
+### S14.4: SPC & Trend Detection
+**Algorithms:** CUSUM, EWMA, Nelson rules, Western Electric rules, trend regression.
+**Input:** CSV with time-series measurements: timestamp, value, (optional: subgroup_id, spec_limits).
+**Processing:**
+- Control limits: `UCL/LCL = μ ± 3σ` (calculated from baseline period)
+- CUSUM: `C⁺ᵢ = max(0, Cᵢ₋₁ + xᵢ - μ₀ - k)`, `C⁻ᵢ = max(0, Cᵢ₋₁ - xᵢ + μ₀ - k)` with decision interval h
+- EWMA: `Zᵢ = λxᵢ + (1-λ)Zᵢ₋₁` with control limits `μ₀ ± L × σ × sqrt(λ/(2-λ) × (1-(1-λ)²ⁱ))`
+- All 8 Nelson rules checked per data point
+- Trend detection via linear regression on sliding window
+- Capability study: Cp, Cpk with confidence intervals
+**Output:**
+- Control chart with violations highlighted (PNG)
+- CUSUM/EWMA charts (PNG)
+- Rule violation report with timestamps and rule IDs
+- Trend alerts with slope, R², predicted out-of-spec date
+- Capability summary
+**Commands:** `/spc-chart <attach CSV>`, `/spc-cusum`, `/spc-ewma`, `/spc-capability`
+**DB tables:** `spc_projects`, `measurements`, `control_limits`, `rule_violations`, `capability_studies`
+
+### S14.5: FMEA (PFMEA & DFMEA)
+**Algorithm:** Risk Priority Number with structured failure mode cataloging.
+**Input:** Conversational or CSV: process_step, failure_mode, effect, severity(1-10), cause, occurrence(1-10), detection_method, detection(1-10).
+**Processing:**
+- RPN = Severity × Occurrence × Detection
+- Risk threshold: RPN > 100 → action required
+- Alternative priority: Action Priority (AP) per AIAG-VDA FMEA (severity-first)
+- Pareto of failure modes by RPN
+- Action tracking with RPN before/after comparison
+**Output:**
+- FMEA worksheet (formatted table)
+- Risk matrix heatmap (severity × occurrence)
+- Top-10 risks by RPN
+- Action plan with owners and deadlines
+- RPN reduction trend chart
+- Export as CSV or PDF
+**Commands:** `/fmea-create`, `/fmea-add <step> <failure> <effect>`, `/fmea-risk`, `/fmea-actions`, `/fmea-report`
+**DB tables:** `fmea_documents`, `failure_modes`, `effects`, `causes`, `controls`, `action_items`, `rpn_history`
+
+### S14.6: Root Cause Analysis
+**Algorithms:** 5 Whys (iterative questioning), Ishikawa/Fishbone (6M categorization), Pareto analysis.
+**Input:** Problem statement (conversational). Supporting data optional (CSV with defect counts, timestamps).
+**Processing:**
+- 5 Whys: AI-guided iterative questioning (up to 5 levels deep). Each "why" validated for logical causality. Branching when multiple causes exist.
+- Fishbone: Categorize causes into 6M (Man, Machine, Method, Material, Measurement, Mother Nature/Environment). AI assists with brainstorming causes per category.
+- Pareto: Sort contributing factors by frequency/impact. Identify vital few (80/20).
+- Correlation: If data provided, calculate correlation between suspected causes and defect occurrence.
+**Output:**
+- 5 Whys tree (text + Mermaid diagram)
+- Fishbone diagram (Mermaid)
+- Pareto chart (PNG)
+- Root cause summary with confidence level
+- Corrective action plan with verification criteria
+- Export as PDF report
+**Commands:** `/rca-start <problem>`, `/rca-why <answer>`, `/rca-fishbone`, `/rca-pareto <attach CSV>`, `/rca-actions`
+**DB tables:** `rca_investigations`, `problems`, `causes`, `fishbone_branches`, `corrective_actions`, `verification_data`
+
+---
+
+## Sprint S15: ClawMFG Web Apps — NOT STARTED
+
+**Goal:** 7 manufacturing tools requiring interactive web UIs, implemented as dedicated dashboards served from clauded's web server (same pattern as board.html, learn.html). Each tool gets its own HTML page with WebSocket data flow.
+
+**Design principle:** These are REAL engineering tools, not demos. Interactive visualizations, real-time updates, drag-and-drop where appropriate. A plant manager or IE should be able to use these for daily decisions.
+
+**Architecture:** Each tool = `src/web/public/mfg-<name>.html` + WebSocket handlers in `src/web/server.ts` + algorithm module in `src/mfg/<name>/`. Same auth, same dark theme, same security headers.
+
+### S15.1: Capacity Planning & Simulation
+- Monte Carlo engine (1000+ iterations) with configurable distributions (normal, Poisson, triangular)
+- Interactive resource utilization heatmaps (machines × time periods)
+- Scenario builder: current state vs proposed changes (add shift, add machine, change mix)
+- Bottleneck identification with constraint ranking
+- Investment ROI calculator: "If we add machine X, throughput increases Y%, payback in Z months"
+- Confidence interval reporting (90%, 95%, 99%)
+- Drag timeline to adjust planning horizon
+
+### S15.2: Sequence Simulator
+- Genetic algorithm for job sequencing with configurable objectives (minimize makespan, minimize lateness, minimize setup time)
+- Dispatching rule comparison: SPT, EDD, CR, FIFO side-by-side
+- Interactive Gantt chart: drag jobs to reassign, click to see details
+- Setup time matrix visualization
+- Real-time progress tracking (mark jobs as started/completed)
+- Due date adherence dashboard
+- Export schedule as CSV/PDF
+
+### S15.3: Value Stream Mapping
+- Visual process flow editor (drag-and-drop process steps, inventory triangles, information flows)
+- Automatic TIMWOODS waste classification
+- Lead time waterfall chart (VA vs NVA time breakdown)
+- Process Cycle Efficiency calculation: `PCE = VA time / total lead time`
+- Current state → Future state side-by-side comparison
+- Kaizen burst annotations
+- Export as SVG/PNG/PDF
+
+### S15.4: TOC & WIP Tracking
+- Constraint identification dashboard (CCR highlighted)
+- Drum-Buffer-Rope visualization
+- Buffer management: red/yellow/green status bars for time buffers, capacity buffers, stock buffers
+- Throughput accounting: Revenue - TVC = Throughput, ROI = (T - OE) / I
+- Real-time WIP level gauges per work center
+- Historical throughput trend charts
+- Rope release schedule
+
+### S15.5: CONWIP & Heijunka Production Leveling
+- CONWIP token board: visual cards circulating through production stages
+- Heijunka box: grid of product types × time slots, drag to level
+- Pitch calculation: takt time × pack-out quantity
+- Leveling score visualization: deviation from ideal mix
+- WIP limit enforcement with alerts
+- Changeover time optimization suggestions
+- Shift-by-shift production plan export
+
+### S15.6: Design of Experiments
+- Design wizard: select factors, levels, response variables → auto-generate experiment matrix
+- Support for 2^k full factorial, 2^(k-p) fractional, Taguchi L-arrays, Box-Behnken, Central Composite
+- ANOVA table with F-test, p-values, contribution percentages
+- Main effects plots and interaction plots (interactive)
+- Response surface contour plots (3D rotatable)
+- Desirability function for multi-response optimization
+- Confirmation run tracker
+- Randomization and blocking support
+
+### S15.7: State Machine Visual Simulators
+- Interactive canvas with drag-and-drop state nodes and transition arrows
+- Property editors for states (entry/exit actions, color coding) and transitions (events, guards, actions, timing)
+- Simulation modes: automatic, manual (click events), step-through, breakpoint, fast-forward
+- Visual feedback: current state highlighted, active transition animated, event queue displayed
+- Validation engine: reachability analysis, deadlock detection, completeness check, guard contradiction detection
+- Code generation: export as PLC Structured Text, Python, JavaScript
+- Templates: CNC Machine, Conveyor System, AGV Navigation, Order Processing
+- Version comparison (diff two machine versions)
+- Auto-generate test cases from state machine structure
+
+---
+
+## Sprint S16: Manufacturing Simulations — NOT STARTED
+
+**Goal:** Discrete-event simulation (SimPy) and constraint optimization (MiniZinc) engines integrated into clauded for production modeling and optimal scheduling.
+
+### SimPy Integration
+- Python-based discrete-event simulation via subprocess execution in Docker
+- Pre-built simulation templates: single-server queue, multi-server queue, production line with buffers, job shop with breakdowns
+- Input: process parameters (cycle times, MTBF, MTTR, batch sizes, shift patterns) via CSV or conversation
+- Output: utilization statistics, queue lengths, throughput, WIP over time, bottleneck identification
+- Visualization: time-series charts of simulation results (PNG export)
+- Monte Carlo wrapper: run N simulations with parameter distributions, report confidence intervals
+- Integration with S14/S15: feed simulation results into capacity planning (S15.1) or compare with SPC data (S14.4)
+
+### MiniZinc Integration
+- Constraint satisfaction and optimization via MiniZinc solver (installed in Docker)
+- Pre-built models: job scheduling (minimize makespan), resource allocation (maximize utilization), production planning (minimize cost), facility layout (minimize material flow)
+- Input: decision variables, constraints, objective function — defined conversationally or via structured JSON
+- Output: optimal solution with variable assignments, objective value, solve time
+- Sensitivity analysis: how does the optimum change as constraints relax?
+- Integration with S14: feed optimal schedules into sequence simulator (S14/S15.2)
+
+### Skill
+- `simulation-expert` built-in skill: helps user formulate problems, select appropriate simulation/optimization approach, interpret results
+
+---
+
+## Sprint S9: User Documentation — NOT STARTED (after S16)
+
+**Goal:** Comprehensive user documentation for all clauded features.
+
+---
+
+## Sprint S4: Full E2E Validation — NOT STARTED (after S9)
+
+**Goal:** End-to-end testing of all features across all sprints in production environment.
+
+---
+
+## Sprint S3: Cloud Deployment — NOT STARTED (after S4)
+
+**Goal:** Deploy clauded to cloud infrastructure (Render or Oracle Cloud).
 
 ---
 
@@ -570,7 +813,7 @@ Comprehensive evaluation of 7 external sources against clauded's architecture:
 
 ---
 
-## Key Design Decisions (2026-03-18)
+## Key Design Decisions (2026-03-18, updated 2026-03-22)
 
 1. **Episode compression uses AI summarization** — not just truncation. Ollama preferred, Claude fallback.
 2. **Auto-routing is heuristic-based** — no AI call for routing decisions. Fast, predictable.
@@ -579,6 +822,9 @@ Comprehensive evaluation of 7 external sources against clauded's architecture:
 5. **Anti-rationalization rules applied globally** — not a switchable skill, always in system prompt.
 6. **Full E2E validation batched at end (S4)** — after all development sprints complete. Quick smoke tests after each sprint.
 7. **Sprint order prioritizes autonomy impact** — proactive messaging → skill auto-triggering → orchestration → optimization → E2E → deploy.
+8. **Implementation quality standard (2026-03-22)** — Goal is FULL FUNCTIONALITY, not "good enough" or simplified versions. Manufacturing tools must produce results an IE would trust for production decisions. No toy implementations. No complexity-driven scope reductions. If the algorithm requires Monte Carlo with 1000 iterations, run 1000 iterations. If ANOVA needs proper F-test with p-values, compute them correctly. The user's bar is a real engineering partner, not a demo.
+9. **ClawMFG split: chat vs web (2026-03-22)** — 6 tools are chat-native (CSV→algorithm→results, S14). 7 tools need interactive web UIs (S15). This is a scope decision, not a quality compromise. Both tiers get full implementations.
+10. **Security is cloud-ready from day one (2026-03-22)** — First-message WebSocket auth (no tokens in URLs), Origin validation, CSP headers, rate limiting. Every web UI built for eventual cloud deployment, not just localhost.
 
 ## Testing Policy (enforced from S1 onward)
 
