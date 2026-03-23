@@ -33,6 +33,7 @@
     "pdfkit": "^0.17.2",
     "pino": "^10.3.0",
     "pino-pretty": "^13.0.0",
+    "pptxgenjs": "^4.0.1",
     "puppeteer-core": "^24.40.0",
     "sqlite-vec": "^0.1.7-alpha.2",
     "undici": "^7.22.0",

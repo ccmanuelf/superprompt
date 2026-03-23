@@ -7,7 +7,7 @@
 
 clauded is evolving from personal AI assistant into a **full AI partner platform ("Jarvis")**. Core autonomy sprints S1-S8 complete. Platform expansion sprints S10-S13 planned.
 
-**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 ✅ → S13 (Research) → S14 (ClawMFG Chat ×6) → S15 (ClawMFG Web ×7) → S16 (Simulations) → S9 (Docs) → S4 (E2E) → S3 (Cloud)**
+**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 ✅ → S13 ✅ → S14 (ClawMFG Chat ×6) → S15 (ClawMFG Web ×7) → S16 (Simulations) → S9 (Docs) → S4 (E2E) → S3 (Cloud)**
 
 ---
 
@@ -483,16 +483,35 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Sprint S13: Research & Reporting Tools — NOT STARTED
+## Sprint S13: Research & Reporting Tools — COMPLETED (2026-03-22)
 
 **Goal:** Professional research and reporting tools for academic work, presentations, and document generation.
 
-### Features
-- **PPTX generation**: Slide deck creation via `pptxgenjs` library. Input: structured JSON or conversational description. Output: downloadable .pptx file. Support for title slides, bullet slides, image slides, chart slides, speaker notes.
-- **Citation tracking**: AI responses include structured source references (URL, title, author, date). Citations stored in DB per conversation. Export as BibTeX, APA, or Chicago format. `/cite list` and `/cite export` commands.
-- **Paper gathering**: Search academic sources (Semantic Scholar API, arXiv API). Compile reference lists with abstracts. Filter by year, relevance, citation count. `/research <topic>` command returns structured results.
-- **Domain skills**: `researcher` built-in skill (academic rigor, citation discipline, hypothesis framing). `manufacturing-expert` built-in skill (Lean/Six Sigma vocabulary, IE frameworks, process thinking).
-- **Report enhancement**: Upload existing report (DOCX/PDF) → AI reviews for gaps, clarity, data quality. Fill templates with data from conversation context. Create readout decks from reports.
+### Implemented
+- **PPTX generation**: `pptxgenjs` via `generatePptx()` in `src/docgen.ts`. 6 slide layouts: title, bullets, two-column, chart, image, blank. Dark professional theme, speaker notes, chart integration.
+- **Citation tracking**: `src/citations.ts` — DB table, CRUD, deduplication, export as BibTeX/APA/Chicago. `/cite list`, `/cite export`, `/cite clear` commands.
+- **Paper search**: `src/providers/tools/research.ts` — Semantic Scholar API + arXiv API. `search_papers` tool with year filtering, source selection, auto-save as citations. `/research <query>` Telegram command with `--arxiv`, `--scholar`, `--year` flags.
+- **Report review**: `review_report` tool — parses uploaded docs, generates structured review prompts (gaps, clarity, data_quality, full).
+- **Citation management**: `manage_citations` tool — list, export, clear via AI tool calls.
+- **Domain skills**: `researcher` (academic rigor, citation discipline, hypothesis framing) + `manufacturing-expert` (Lean/Six Sigma, DMAIC, TIMWOODS, process thinking).
+- **AI prompt updates**: PPTX format added to CLAUDE_DOCUMENT_PROMPT. Citation awareness added. Tool list updated in Ollama system prompt.
+
+### Files
+| File | Change |
+|------|--------|
+| `src/docgen.ts` | PPTX format + `generatePptx()` + type guards for content discrimination |
+| `src/citations.ts` | **NEW** — citation DB, CRUD, BibTeX/APA/Chicago export |
+| `src/providers/tools/research.ts` | **NEW** — search_papers, manage_citations, review_report |
+| `src/providers/tools/index.ts` | Registered 3 new tools (26 total) |
+| `src/skills.ts` | Added `researcher` + `manufacturing-expert` skills (11 builtin) |
+| `src/platforms/telegram.ts` | `/cite` + `/research` commands |
+| `src/providers/router.ts` | PPTX in CLAUDE_DOCUMENT_PROMPT, COMMAND_LIST updated |
+| `src/providers/ollama.ts` | Tool list updated in system prompt |
+| `src/db.ts` | Wire `initCitationTable()` |
+| `tests/research.test.ts` | **NEW** — 24 tests (citations, exports, arXiv parsing, PPTX generation) |
+
+### Test Results
+- 40 test files, 706 tests, all passing (24 new)
 
 ### What S13 Does NOT Include
 - SimPy/MiniZinc simulations (moved to S16)

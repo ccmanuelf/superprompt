@@ -36,6 +36,11 @@ import {
 } from './render-status.js';
 import { takeScreenshotDefinition, takeScreenshot } from './screenshot.js';
 import { kanbanManageDefinition, kanbanManage } from './kanban-manage.js';
+import {
+  searchPapersDefinition, searchPapers,
+  manageCitationsDefinition, manageCitations,
+  reviewReportDefinition, reviewReport,
+} from './research.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -174,6 +179,25 @@ export function registerBuiltinTools(): void {
       definition: kanbanManageDefinition,
       execute: async (args, chatId) =>
         kanbanManage(args as Parameters<typeof kanbanManage>[0], chatId),
+      source: 'builtin',
+    },
+    // ── Research tools ──
+    {
+      definition: searchPapersDefinition,
+      execute: async (args, chatId) =>
+        searchPapers(args as Parameters<typeof searchPapers>[0], chatId),
+      source: 'builtin',
+    },
+    {
+      definition: manageCitationsDefinition,
+      execute: async (args, chatId) =>
+        manageCitations(args as Parameters<typeof manageCitations>[0], chatId),
+      source: 'builtin',
+    },
+    {
+      definition: reviewReportDefinition,
+      execute: async (args) =>
+        reviewReport(args as Parameters<typeof reviewReport>[0]),
       source: 'builtin',
     },
   ];

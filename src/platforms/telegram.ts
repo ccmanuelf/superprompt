@@ -23,6 +23,8 @@ import { buildDigest, getDigestPreference, setDigestPreference, triggerBotTasksN
 import { shouldOrchestrate, orchestrateTask } from '../orchestrator.js';
 import { createCard, moveCard, assignCard, listCards, getCardByPrefix, deleteCard, formatBoard, formatCard, isKanbanAction, parseKanbanAction, executeKanbanAction, stripKanbanBlock, type CardStatus, type CardAssignee } from '../kanban.js';
 import { checkResponseQuality, logQualityCheck } from '../self-monitor.js';
+import { getCitations, exportCitations, clearCitations, formatCitationList, addCitation, type CitationFormat } from '../citations.js';
+import { searchPapers } from '../providers/tools/research.js';
 import {
   getActivePlansByChat, getPlansByChat, getPlanBySubject, getTopicsByPlan, getPlan,
   updatePlan, deletePlan as deleteLearnPlan, getDailyTime, getWeeklyTime,
@@ -1254,6 +1256,117 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     if (!isAuthorised(ctx.chat.id)) return;
     const count = loadUserTools();
     await ctx.reply(`Reloaded. ${count} user tools active.`);
+  });
+
+  // ── Citation Command ──────────────────────────────────
+
+  bot.command('cite', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/cite(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'list';
+
+    switch (subcommand) {
+      case 'list': {
+        const citations = getCitations(chatId);
+        await ctx.reply(formatForTelegram(formatCitationList(citations)), { parse_mode: 'HTML' });
+        return;
+      }
+      case 'export': {
+        const format = (parts[1]?.toLowerCase() || 'apa') as CitationFormat;
+        if (!['bibtex', 'apa', 'chicago'].includes(format)) {
+          await ctx.reply('Usage: /cite export <bibtex|apa|chicago>');
+          return;
+        }
+        const exported = exportCitations(chatId, format);
+        if (exported === 'No citations to export.') {
+          await ctx.reply(exported);
+          return;
+        }
+        const ext = format === 'bibtex' ? 'bib' : 'txt';
+        const buf = Buffer.from(exported, 'utf-8');
+        await ctx.replyWithDocument(new InputFile(buf, `citations.${ext}`));
+        return;
+      }
+      case 'clear': {
+        const count = clearCitations(chatId);
+        await ctx.reply(`Cleared ${count} citation(s).`);
+        return;
+      }
+      default: {
+        await ctx.reply(formatForTelegram(
+          '**Citation Commands:**\n' +
+          '`/cite list` — Show saved citations\n' +
+          '`/cite export <bibtex|apa|chicago>` — Export citations as file\n' +
+          '`/cite clear` — Clear all citations',
+        ), { parse_mode: 'HTML' });
+        return;
+      }
+    }
+  });
+
+  // ── Research Command ──────────────────────────────────
+
+  bot.command('research', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/research(@\w+)?/, '').trim();
+
+    if (!args) {
+      await ctx.reply('Usage: /research <query>\nExample: /research lean manufacturing optimization\n\nOptions: --arxiv, --scholar, --year 2024');
+      return;
+    }
+
+    // Parse flags
+    let source: 'both' | 'arxiv' | 'semantic_scholar' = 'both';
+    let yearFrom: number | undefined;
+    let query = args;
+
+    if (query.includes('--arxiv')) { source = 'arxiv'; query = query.replace('--arxiv', '').trim(); }
+    if (query.includes('--scholar')) { source = 'semantic_scholar'; query = query.replace('--scholar', '').trim(); }
+    const yearMatch = query.match(/--year\s+(\d{4})/);
+    if (yearMatch) { yearFrom = parseInt(yearMatch[1]); query = query.replace(/--year\s+\d{4}/, '').trim(); }
+
+    await ctx.replyWithChatAction('typing');
+
+    const result = await searchPapers({ query, source, limit: 5, year_from: yearFrom }, chatId);
+
+    if (result.error) {
+      await ctx.reply(String(result.error));
+      return;
+    }
+
+    const papers = result.papers as Array<{ title: string; authors: string; year: number | null; abstract: string; citations: number | null; url: string; source: string }>;
+
+    if (!papers || papers.length === 0) {
+      await ctx.reply('No papers found. Try different keywords.');
+      return;
+    }
+
+    const lines = [`**Research Results** (${papers.length} papers, ${result.saved_as_citations} saved as citations)`, ''];
+    for (let i = 0; i < papers.length; i++) {
+      const p = papers[i];
+      const citations = p.citations !== null ? ` (${p.citations} citations)` : '';
+      const year = p.year ? ` (${p.year})` : '';
+      lines.push(`**${i + 1}. ${p.title}**${year}${citations}`);
+      if (p.authors) lines.push(`   ${p.authors}`);
+      if (p.abstract) lines.push(`   ${p.abstract.slice(0, 200)}${p.abstract.length > 200 ? '...' : ''}`);
+      lines.push(`   [${p.source}] ${p.url}`);
+      lines.push('');
+    }
+
+    const formatted = formatForTelegram(lines.join('\n'));
+    const chunks = splitMessage(formatted);
+    for (const chunk of chunks) {
+      try {
+        await ctx.reply(chunk, { parse_mode: 'HTML' });
+      } catch {
+        await ctx.reply(chunk);
+      }
+    }
   });
 
   // ── Learn Command ───────────────────────────────────────

@@ -49,6 +49,8 @@ The user can type these commands in the chat:
 - /digest — Activity digests (daily/weekly/now/off)
 - /board — Kanban board (list, add, move, assign, view, delete)
 - /learn — Learning coach (start, plan, session, review, time, persona, move, add, remove, pause, resume, done)
+- /research <query> — Search academic papers (Semantic Scholar + arXiv)
+- /cite — Manage citations (list, export bibtex/apa/chicago, clear)
 - /reload — Reload user tools from database
 
 When relevant, you can mention these commands to help the user. For example, if the user asks "can you remember this?", you might mention /memory. If they seem to want a different AI behavior, mention /skill. If they say "remind me about X", use the create_reminder tool instead of suggesting /schedule.
@@ -179,7 +181,29 @@ Sections can include a "chart" field to render a visual chart. Supported types: 
 }
 \`\`\`
 
-Supported formats: \`xlsx\`, \`docx\`, \`pdf\`, \`csv\`. Use \`csv\` format with spreadsheet content type for simple tabular data. Include any explanatory text outside the JSON code block — it will be sent alongside the file.`;
+**For presentations (PPTX):**
+\`\`\`json
+{
+  "format": "pptx",
+  "filename": "presentation.pptx",
+  "title": "Presentation Title",
+  "content": {
+    "type": "presentation",
+    "slides": [
+      {"layout": "title", "title": "Main Title", "subtitle": "Subtitle text"},
+      {"layout": "bullets", "title": "Key Points", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes here"},
+      {"layout": "two-column", "title": "Comparison", "leftColumn": ["Left item 1", "Left item 2"], "rightColumn": ["Right item 1", "Right item 2"]},
+      {"layout": "chart", "title": "Data", "chart": {"type": "bar", "data": {"labels": ["A", "B"], "datasets": [{"label": "Values", "data": [10, 20]}]}}}
+    ]
+  }
+}
+\`\`\`
+
+Slide layouts: title, bullets, two-column, chart, image, blank. Each slide can have speaker notes.
+
+Supported formats: \`xlsx\`, \`docx\`, \`pdf\`, \`csv\`, \`pptx\`. Use \`csv\` format with spreadsheet content type for simple tabular data. Include any explanatory text outside the JSON code block — it will be sent alongside the file.
+
+When you cite a source in your response, use the search_papers tool to find supporting evidence and the manage_citations tool to save references for the user.`;
 
 /**
  * Heuristic patterns that suggest Claude is the better provider.

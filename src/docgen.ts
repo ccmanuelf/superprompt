@@ -46,11 +46,40 @@ export interface DocumentContent {
   sections: DocumentSection[];
 }
 
+export interface SlideSpec {
+  layout: 'title' | 'bullets' | 'two-column' | 'image' | 'chart' | 'blank';
+  title?: string;
+  subtitle?: string;
+  bullets?: string[];
+  body?: string;
+  leftColumn?: string[];
+  rightColumn?: string[];
+  imageUrl?: string;
+  chart?: ChartSpec;
+  notes?: string;
+}
+
+export interface PresentationContent {
+  type: 'presentation';
+  slides: SlideSpec[];
+}
+
 export interface DocGenRequest {
-  format: 'xlsx' | 'docx' | 'pdf' | 'csv';
+  format: 'xlsx' | 'docx' | 'pdf' | 'csv' | 'pptx';
   filename: string;
   title?: string;
-  content: SpreadsheetContent | DocumentContent;
+  content: SpreadsheetContent | DocumentContent | PresentationContent;
+}
+
+/** Type guard helpers for content discrimination. */
+function isSpreadsheet(c: DocGenRequest['content']): c is SpreadsheetContent {
+  return c.type === 'spreadsheet';
+}
+function isDocument(c: DocGenRequest['content']): c is DocumentContent {
+  return c.type === 'document';
+}
+function isPresentation(c: DocGenRequest['content']): c is PresentationContent {
+  return c.type === 'presentation';
 }
 
 export interface DocGenResult {
@@ -61,7 +90,7 @@ export interface DocGenResult {
 
 // ── Detection ────────────────────────────────────────────────
 
-const DOCGEN_JSON_REGEX = /```(?:json)?\s*(\{[\s\S]*?"format"\s*:\s*"(?:xlsx|docx|pdf|csv)"[\s\S]*?\})\s*```/;
+const DOCGEN_JSON_REGEX = /```(?:json)?\s*(\{[\s\S]*?"format"\s*:\s*"(?:xlsx|docx|pdf|csv|pptx)"[\s\S]*?\})\s*```/;
 
 /**
  * Quick check if AI response contains a document generation request.
@@ -80,7 +109,7 @@ export function parseDocGenResponse(text: string): DocGenRequest | null {
   try {
     const parsed = JSON.parse(match[1]);
     if (!parsed.format || !parsed.content || !parsed.filename) return null;
-    if (!['xlsx', 'docx', 'pdf', 'csv'].includes(parsed.format)) return null;
+    if (!['xlsx', 'docx', 'pdf', 'csv', 'pptx'].includes(parsed.format)) return null;
     return parsed as DocGenRequest;
   } catch {
     return null;
@@ -179,6 +208,8 @@ export async function generateDocument(req: DocGenRequest): Promise<DocGenResult
       return { buffer: await generatePdf(req), filename: req.filename, mimeType: 'application/pdf' };
     case 'csv':
       return { buffer: Buffer.from(generateCsvString(req), 'utf-8'), filename: req.filename, mimeType: 'text/csv' };
+    case 'pptx':
+      return { buffer: await generatePptx(req), filename: req.filename, mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
     default:
       throw new Error(`Unsupported format: ${req.format}`);
   }
@@ -188,7 +219,7 @@ async function generateXlsx(req: DocGenRequest): Promise<Buffer> {
   const ExcelJS = await import('exceljs');
   const workbook = new ExcelJS.default.Workbook();
 
-  if (req.content.type === 'spreadsheet') {
+  if (isSpreadsheet(req.content)) {
     for (const sheet of req.content.sheets) {
       const ws = workbook.addWorksheet(sheet.name);
 
@@ -212,7 +243,7 @@ async function generateXlsx(req: DocGenRequest): Promise<Buffer> {
         col.width = Math.min(maxLen + 2, 50);
       });
     }
-  } else {
+  } else if (isDocument(req.content)) {
     // Document content → single sheet with sections
     const ws = workbook.addWorksheet(req.title || 'Document');
     for (const section of req.content.sections) {
@@ -294,7 +325,7 @@ async function generateDocx(req: DocGenRequest): Promise<Buffer> {
     return result;
   }
 
-  if (req.content.type === 'document') {
+  if (isDocument(req.content)) {
     for (const section of req.content.sections) {
       if (section.heading) {
         children.push(
@@ -354,7 +385,7 @@ async function generateDocx(req: DocGenRequest): Promise<Buffer> {
         }
       }
     }
-  } else {
+  } else if (isSpreadsheet(req.content)) {
     for (const sheet of req.content.sheets) {
       children.push(
         new Paragraph({
@@ -385,7 +416,7 @@ async function generatePdf(req: DocGenRequest): Promise<Buffer> {
 
   // Pre-render all charts before entering the synchronous PDF stream
   const chartBuffers = new Map<number, Buffer>();
-  if (req.content.type === 'document') {
+  if (isDocument(req.content)) {
     for (let i = 0; i < req.content.sections.length; i++) {
       const section = req.content.sections[i];
       if (section.chart) {
@@ -412,7 +443,7 @@ async function generatePdf(req: DocGenRequest): Promise<Buffer> {
       doc.moveDown();
     }
 
-    if (req.content.type === 'document') {
+    if (isDocument(req.content)) {
       for (let i = 0; i < req.content.sections.length; i++) {
         const section = req.content.sections[i];
         if (section.heading) {
@@ -456,7 +487,7 @@ async function generatePdf(req: DocGenRequest): Promise<Buffer> {
           doc.moveDown();
         }
       }
-    } else {
+    } else if (isSpreadsheet(req.content)) {
       for (const sheet of req.content.sheets) {
         doc.fontSize(14).font('Helvetica-Bold').text(sanitizePdfText(sheet.name));
         doc.moveDown(0.5);
@@ -533,6 +564,223 @@ function drawPdfTable(
   doc.x = startX;
 }
 
+async function generatePptx(req: DocGenRequest): Promise<Buffer> {
+  const pptxModule = await import('pptxgenjs');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const PptxGenJS = (pptxModule.default ?? pptxModule) as any;
+  const pptx = new PptxGenJS();
+
+  // Dark professional theme
+  const BG_COLOR = '1a1a2e';
+  const TEXT_COLOR = 'e0e0e8';
+  const ACCENT_COLOR = '58a6ff';
+  const DIM_COLOR = '8b949e';
+
+  pptx.layout = 'LAYOUT_WIDE'; // 13.33" x 7.5"
+  pptx.author = 'clauded';
+  if (req.title) pptx.title = req.title;
+
+  // Determine slides from content
+  let slides: SlideSpec[] = [];
+
+  if (req.content.type === 'presentation') {
+    slides = req.content.slides;
+  } else if (req.content.type === 'document') {
+    // Convert document sections to slides
+    if (req.title) {
+      slides.push({ layout: 'title', title: req.title });
+    }
+    for (const section of req.content.sections) {
+      const slide: SlideSpec = { layout: 'bullets' };
+      if (section.heading) slide.title = section.heading;
+      if (section.bulletPoints) slide.bullets = section.bulletPoints;
+      else if (section.paragraphs) slide.bullets = section.paragraphs;
+      if (section.chart) { slide.layout = 'chart'; slide.chart = section.chart; }
+      slides.push(slide);
+    }
+  }
+
+  for (const spec of slides) {
+    const slide = pptx.addSlide();
+    slide.background = { color: BG_COLOR };
+
+    if (spec.notes) {
+      slide.addNotes(spec.notes);
+    }
+
+    switch (spec.layout) {
+      case 'title': {
+        slide.addText(spec.title || '', {
+          x: 0.5, y: 2.0, w: 12.3, h: 1.5,
+          fontSize: 36, fontFace: 'Helvetica',
+          color: TEXT_COLOR, bold: true, align: 'center',
+        });
+        if (spec.subtitle) {
+          slide.addText(spec.subtitle, {
+            x: 0.5, y: 3.8, w: 12.3, h: 1.0,
+            fontSize: 18, fontFace: 'Helvetica',
+            color: DIM_COLOR, align: 'center',
+          });
+        }
+        // Accent line
+        slide.addShape('rect' as unknown as Parameters<typeof slide.addShape>[0], {
+          x: 4.0, y: 3.5, w: 5.3, h: 0.04,
+          fill: { color: ACCENT_COLOR },
+        });
+        break;
+      }
+
+      case 'bullets': {
+        if (spec.title) {
+          slide.addText(spec.title, {
+            x: 0.5, y: 0.3, w: 12.3, h: 0.8,
+            fontSize: 24, fontFace: 'Helvetica',
+            color: TEXT_COLOR, bold: true,
+          });
+          // Accent underline
+          slide.addShape('rect' as unknown as Parameters<typeof slide.addShape>[0], {
+            x: 0.5, y: 1.05, w: 3.0, h: 0.03,
+            fill: { color: ACCENT_COLOR },
+          });
+        }
+        if (spec.bullets && spec.bullets.length > 0) {
+          const bulletText = spec.bullets.map((b) => ({
+            text: b,
+            options: { fontSize: 16, color: TEXT_COLOR, bullet: { code: '2022' }, breakType: 'none' as const },
+          }));
+          slide.addText(bulletText as Parameters<typeof slide.addText>[0], {
+            x: 0.8, y: 1.4, w: 11.5, h: 5.5,
+            fontFace: 'Helvetica', paraSpaceAfter: 8,
+            valign: 'top',
+          });
+        }
+        if (spec.body) {
+          slide.addText(spec.body, {
+            x: 0.8, y: 1.4, w: 11.5, h: 5.5,
+            fontSize: 16, fontFace: 'Helvetica',
+            color: TEXT_COLOR, valign: 'top',
+          });
+        }
+        break;
+      }
+
+      case 'two-column': {
+        if (spec.title) {
+          slide.addText(spec.title, {
+            x: 0.5, y: 0.3, w: 12.3, h: 0.8,
+            fontSize: 24, fontFace: 'Helvetica',
+            color: TEXT_COLOR, bold: true,
+          });
+        }
+        if (spec.leftColumn) {
+          const leftText = spec.leftColumn.map((b) => ({
+            text: b,
+            options: { fontSize: 14, color: TEXT_COLOR, bullet: { code: '2022' }, breakType: 'none' as const },
+          }));
+          slide.addText(leftText as Parameters<typeof slide.addText>[0], {
+            x: 0.5, y: 1.4, w: 5.8, h: 5.5,
+            fontFace: 'Helvetica', paraSpaceAfter: 6, valign: 'top',
+          });
+        }
+        if (spec.rightColumn) {
+          const rightText = spec.rightColumn.map((b) => ({
+            text: b,
+            options: { fontSize: 14, color: TEXT_COLOR, bullet: { code: '2022' }, breakType: 'none' as const },
+          }));
+          slide.addText(rightText as Parameters<typeof slide.addText>[0], {
+            x: 7.0, y: 1.4, w: 5.8, h: 5.5,
+            fontFace: 'Helvetica', paraSpaceAfter: 6, valign: 'top',
+          });
+        }
+        // Divider line
+        slide.addShape('rect' as unknown as Parameters<typeof slide.addShape>[0], {
+          x: 6.5, y: 1.4, w: 0.02, h: 5.5,
+          fill: { color: '30363d' },
+        });
+        break;
+      }
+
+      case 'chart': {
+        if (spec.title) {
+          slide.addText(spec.title, {
+            x: 0.5, y: 0.3, w: 12.3, h: 0.8,
+            fontSize: 24, fontFace: 'Helvetica',
+            color: TEXT_COLOR, bold: true,
+          });
+        }
+        if (spec.chart) {
+          // Map ChartSpec to pptxgenjs chart
+          const chartTypeMap: Record<string, string> = {
+            bar: 'bar', line: 'line', pie: 'pie', doughnut: 'doughnut',
+            scatter: 'scatter', radar: 'radar', bubble: 'bubble',
+          };
+          const pptxType = chartTypeMap[spec.chart.type] || 'bar';
+          const chartData = spec.chart.data.datasets.map((ds) => ({
+            name: ds.label || 'Series',
+            labels: spec.chart!.data.labels || [],
+            values: ds.data.map((d) => typeof d === 'number' ? d : 0),
+          }));
+
+          try {
+            slide.addChart(pptxType as Parameters<typeof slide.addChart>[0], chartData as Parameters<typeof slide.addChart>[1], {
+              x: 0.5, y: 1.4, w: 12.3, h: 5.5,
+              showTitle: !!spec.chart.title,
+              title: spec.chart.title || '',
+              titleColor: TEXT_COLOR,
+              catAxisLabelColor: DIM_COLOR,
+              valAxisLabelColor: DIM_COLOR,
+              legendColor: TEXT_COLOR,
+              chartColors: ['58a6ff', '3fb950', 'd29922', 'f85149', '8b5cf6', 'ec4899'],
+            } as Parameters<typeof slide.addChart>[2]);
+          } catch (err) {
+            logger.warn({ err }, 'PPTX chart failed, adding placeholder');
+            slide.addText('[Chart could not be rendered]', {
+              x: 0.5, y: 3.0, w: 12.3, h: 1.0,
+              fontSize: 16, color: DIM_COLOR, align: 'center',
+            });
+          }
+        }
+        break;
+      }
+
+      case 'image': {
+        if (spec.title) {
+          slide.addText(spec.title, {
+            x: 0.5, y: 0.3, w: 12.3, h: 0.8,
+            fontSize: 24, fontFace: 'Helvetica',
+            color: TEXT_COLOR, bold: true,
+          });
+        }
+        if (spec.imageUrl) {
+          try {
+            if (spec.imageUrl.startsWith('data:')) {
+              slide.addImage({ data: spec.imageUrl, x: 1.5, y: 1.4, w: 10.3, h: 5.5 });
+            } else {
+              slide.addImage({ path: spec.imageUrl, x: 1.5, y: 1.4, w: 10.3, h: 5.5 });
+            }
+          } catch (err) {
+            logger.warn({ err }, 'PPTX image failed');
+            slide.addText('[Image could not be loaded]', {
+              x: 0.5, y: 3.0, w: 12.3, h: 1.0,
+              fontSize: 16, color: DIM_COLOR, align: 'center',
+            });
+          }
+        }
+        break;
+      }
+
+      case 'blank':
+      default:
+        // Empty slide — user can add content manually
+        break;
+    }
+  }
+
+  // Write to buffer
+  const data = await pptx.write({ outputType: 'nodebuffer' });
+  return Buffer.from(data as ArrayBuffer);
+}
+
 function generateCsvString(req: DocGenRequest): string {
   const escape = (val: unknown): string => {
     const s = String(val ?? '');
@@ -544,7 +792,7 @@ function generateCsvString(req: DocGenRequest): string {
 
   const lines: string[] = [];
 
-  if (req.content.type === 'spreadsheet') {
+  if (isSpreadsheet(req.content)) {
     // Use first sheet only for CSV
     const sheet = req.content.sheets[0];
     if (sheet) {
@@ -553,7 +801,7 @@ function generateCsvString(req: DocGenRequest): string {
         lines.push(row.map(escape).join(','));
       }
     }
-  } else {
+  } else if (isDocument(req.content)) {
     // For document content, look for tables
     for (const section of req.content.sections) {
       if (section.table) {
