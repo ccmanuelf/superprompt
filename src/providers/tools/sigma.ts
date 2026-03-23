@@ -26,6 +26,7 @@ import {
   trendRegression,
   pChart,
   cChart,
+  xbarS,
   type CapabilityResult,
   type ControlChartData,
   type SpecLimits,

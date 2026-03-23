@@ -21,6 +21,7 @@ vi.mock('../src/config.js', () => ({
 
 import {
   pChart, npChart, cChart, uChart,
+  xbarS, xbarR, generateControlChart,
   cusumChart, ewmaChart, trendRegression,
   generateCusumChart, generateEwmaChart, generateAttributeChart,
   initSigmaTables,
@@ -136,6 +137,102 @@ describe('u-chart', () => {
     expect(result.chart_type).toBe('u');
     expect(result.center_line).toBe(0.2); // 54/270
     expect(result.ucl[0]).not.toBe(result.ucl[1]); // variable limits
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// X-bar/S CHART
+// ══════════════════════════════════════════════════════════════
+
+describe('X-bar/S Chart', () => {
+  it('produces xbar_s chart type', () => {
+    const values: number[] = [];
+    const subs: string[] = [];
+    for (let g = 0; g < 5; g++) {
+      for (let i = 0; i < 12; i++) {
+        values.push(10 + Math.sin(g + i * 0.3) * 0.5);
+        subs.push('G' + g);
+      }
+    }
+    const chart = xbarS(values, subs);
+    expect(chart.chart_type).toBe('xbar_s');
+    expect(chart.values).toHaveLength(5); // 5 subgroup means
+    expect(chart.range_values).toHaveLength(5); // 5 subgroup stddevs
+  });
+
+  it('has same center line as X-bar/R for same data', () => {
+    const values = [10, 10.1, 10.2, 9.8, 9.9, 10.0, 10.3, 9.7, 10.0];
+    const subs = ['A', 'A', 'A', 'B', 'B', 'B', 'C', 'C', 'C'];
+    const xsResult = xbarS(values, subs);
+    const xrResult = xbarR(values, subs);
+    expect(xsResult.center_line).toBe(xrResult.center_line);
+  });
+
+  it('S chart limits use B3/B4 constants', () => {
+    const values: number[] = [];
+    const subs: string[] = [];
+    for (let g = 0; g < 5; g++) {
+      for (let i = 0; i < 10; i++) {
+        values.push(25 + (Math.random() - 0.5) * 0.1);
+        subs.push('H' + g);
+      }
+    }
+    const chart = xbarS(values, subs);
+    // S limits should be positive and UCL > LCL
+    expect(chart.range_ucl).toBeGreaterThan(chart.range_cl!);
+    expect(chart.range_lcl).toBeGreaterThanOrEqual(0);
+  });
+
+  it('detects out-of-control subgroup mean', () => {
+    const values: number[] = [];
+    const subs: string[] = [];
+    // 4 normal subgroups + 1 shifted
+    for (let g = 0; g < 4; g++) {
+      for (let i = 0; i < 10; i++) {
+        values.push(25.00 + (i % 2 === 0 ? 0.01 : -0.01));
+        subs.push('H' + g);
+      }
+    }
+    // Shifted subgroup
+    for (let i = 0; i < 10; i++) {
+      values.push(25.10 + (i % 2 === 0 ? 0.01 : -0.01));
+      subs.push('H4');
+    }
+    const chart = xbarS(values, subs);
+    expect(chart.violations.length).toBeGreaterThan(0);
+  });
+
+  it('injection molding scenario: n=10 per hour', () => {
+    // 8 hourly subgroups measuring yoke dimension (mm)
+    const values: number[] = [];
+    const subs: string[] = [];
+    const hourMeans = [25.00, 25.01, 25.02, 25.03, 24.95, 25.00, 25.01, 25.00];
+    for (let h = 0; h < hourMeans.length; h++) {
+      for (let i = 0; i < 10; i++) {
+        values.push(hourMeans[h] + (i * 0.002 - 0.01));
+        subs.push('H' + (h + 1));
+      }
+    }
+    const chart = xbarS(values, subs);
+    expect(chart.chart_type).toBe('xbar_s');
+    expect(chart.values).toHaveLength(8);
+    // Hour 5 (24.95) should likely trigger given tight process
+  });
+
+  it('generates X-bar/S chart PNG', async () => {
+    const values: number[] = [];
+    const subs: string[] = [];
+    for (let g = 0; g < 5; g++) {
+      for (let i = 0; i < 10; i++) {
+        values.push(10 + Math.sin(g * 0.5 + i * 0.3) * 0.2);
+        subs.push('G' + g);
+      }
+    }
+    const chart = xbarS(values, subs);
+    const filePath = await generateControlChart(chart, 'X-bar/S Test');
+    expect(existsSync(filePath)).toBe(true);
+    expect(readFileSync(filePath)[0]).toBe(0x89);
+    rmSync(filePath);
   });
 });
 

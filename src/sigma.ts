@@ -638,6 +638,89 @@ export function xbarR(values: number[], subgroups: string[]): ControlChartData {
   };
 }
 
+/**
+ * Generate X-bar/S control chart data.
+ * Preferred over X-bar/R for subgroup sizes > 10 (more efficient estimator).
+ * Uses c4, B3, B4 constants for unbiased estimation.
+ * Exported for testing.
+ */
+export function xbarS(values: number[], subgroups: string[]): ControlChartData {
+  const groups = new Map<string, number[]>();
+  const groupOrder: string[] = [];
+  for (let i = 0; i < values.length; i++) {
+    const sg = subgroups[i] || `sg${i}`;
+    if (!groups.has(sg)) {
+      groups.set(sg, []);
+      groupOrder.push(sg);
+    }
+    groups.get(sg)!.push(values[i]);
+  }
+
+  if (groupOrder.length < 2) throw new Error('Need at least 2 subgroups for X-bar/S chart.');
+
+  const subgroupMeans: number[] = [];
+  const subgroupStddevs: number[] = [];
+
+  for (const sg of groupOrder) {
+    const vals = groups.get(sg)!;
+    subgroupMeans.push(mean(vals));
+    subgroupStddevs.push(stddev(vals));
+  }
+
+  const xBarBar = mean(subgroupMeans);
+  const sBar = mean(subgroupStddevs);
+
+  const n = Math.round(mean([...groups.values()].map((g) => g.length)));
+
+  // c4, B3, B4 constants for subgroup sizes 2-25
+  const c4Table: Record<number, number> = {
+    2: 0.7979, 3: 0.8862, 4: 0.9213, 5: 0.9400,
+    6: 0.9515, 7: 0.9594, 8: 0.9650, 9: 0.9693, 10: 0.9727,
+    11: 0.9754, 12: 0.9776, 13: 0.9794, 14: 0.9810, 15: 0.9823,
+    16: 0.9835, 17: 0.9845, 18: 0.9854, 19: 0.9862, 20: 0.9869,
+    21: 0.9876, 22: 0.9882, 23: 0.9887, 24: 0.9892, 25: 0.9896,
+  };
+  const B3Table: Record<number, number> = {
+    2: 0, 3: 0, 4: 0, 5: 0, 6: 0.030, 7: 0.118, 8: 0.185, 9: 0.239, 10: 0.284,
+    11: 0.321, 12: 0.354, 13: 0.382, 14: 0.406, 15: 0.428,
+    16: 0.448, 17: 0.466, 18: 0.482, 19: 0.497, 20: 0.510,
+    21: 0.523, 22: 0.534, 23: 0.545, 24: 0.555, 25: 0.565,
+  };
+  const B4Table: Record<number, number> = {
+    2: 3.267, 3: 2.568, 4: 2.266, 5: 2.089, 6: 1.970, 7: 1.882, 8: 1.815, 9: 1.761, 10: 1.716,
+    11: 1.679, 12: 1.646, 13: 1.618, 14: 1.594, 15: 1.572,
+    16: 1.552, 17: 1.534, 18: 1.518, 19: 1.503, 20: 1.490,
+    21: 1.477, 22: 1.466, 23: 1.455, 24: 1.445, 25: 1.435,
+  };
+
+  const nClamped = Math.min(Math.max(n, 2), 25);
+  const c4 = c4Table[nClamped] || 0.9896;
+  const B3 = B3Table[nClamped] || 0.565;
+  const B4 = B4Table[nClamped] || 1.435;
+
+  // A3 = 3 / (c4 × √n)
+  const A3 = 3 / (c4 * Math.sqrt(n));
+
+  const xBarUcl = xBarBar + A3 * sBar;
+  const xBarLcl = xBarBar - A3 * sBar;
+
+  const sigmaEst = sBar / c4;
+  const violations = detectWesternElectricRules(subgroupMeans, xBarBar, sigmaEst);
+
+  return {
+    chart_type: 'xbar_s',
+    values: subgroupMeans.map(round4),
+    center_line: round4(xBarBar),
+    ucl: round4(xBarUcl),
+    lcl: round4(xBarLcl),
+    range_values: subgroupStddevs.map(round4), // "range" slot holds S values
+    range_cl: round4(sBar),
+    range_ucl: round4(B4 * sBar),
+    range_lcl: round4(B3 * sBar),
+    violations,
+  };
+}
+
 // ── Western Electric Rules ───────────────────────────────────
 
 /**
@@ -1459,7 +1542,8 @@ export async function generateControlChart(chartData: ControlChartData, projectN
     },
   ];
 
-  const typeLabel = chartData.chart_type === 'i_mr' ? 'I-MR' : 'X-bar/R';
+  const typeLabels: Record<string, string> = { 'i_mr': 'I-MR', 'xbar_r': 'X-bar/R', 'xbar_s': 'X-bar/S' };
+  const typeLabel = typeLabels[chartData.chart_type] || chartData.chart_type;
   const violationCount = chartData.violations.length;
 
   const config = {
@@ -1703,11 +1787,18 @@ export function executeCapabilityAnalysis(
 
   const capability = calculateCapability(values, spec, subgroups.length > 0 ? subgroups : undefined);
 
-  // Control chart: use X-bar/R if subgroups exist, otherwise I-MR
+  // Control chart: auto-select based on subgroup structure
+  // No subgroups → I-MR, avg size ≤ 10 → X-bar/R, avg size > 10 → X-bar/S
   const hasSubgroups = subgroups.length > 0 && new Set(subgroups).size >= 2;
-  const controlChart = hasSubgroups
-    ? xbarR(values, subgroups)
-    : individualMR(values);
+  let controlChart: ControlChartData;
+  if (!hasSubgroups) {
+    controlChart = individualMR(values);
+  } else {
+    const sgGroups = new Map<string, number>();
+    for (const sg of subgroups) sgGroups.set(sg, (sgGroups.get(sg) || 0) + 1);
+    const avgGroupSize = values.length / sgGroups.size;
+    controlChart = avgGroupSize > 10 ? xbarS(values, subgroups) : xbarR(values, subgroups);
+  }
 
   // DB: reuse or create project
   let project = getSigmaProjectByName(projectName);
