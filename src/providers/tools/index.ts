@@ -44,6 +44,7 @@ import {
 import { lineBalanceDefinition, lineBalance } from './balance.js';
 import { sigmaAnalysisDefinition, sigmaAnalysis } from './sigma.js';
 import { inventoryPlanDefinition, inventoryPlan } from './inventory.js';
+import { spcSetupDefinition, spcSetup } from './spc-setup.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -220,6 +221,12 @@ export function registerBuiltinTools(): void {
       definition: inventoryPlanDefinition,
       execute: async (args, chatId) =>
         inventoryPlan(args as Parameters<typeof inventoryPlan>[0], chatId),
+      source: 'builtin',
+    },
+    {
+      definition: spcSetupDefinition,
+      execute: async (args, chatId) =>
+        spcSetup(args as Record<string, unknown>, chatId),
       source: 'builtin',
     },
   ];

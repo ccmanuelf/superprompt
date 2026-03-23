@@ -775,6 +775,599 @@ export function detectWesternElectricRules(
   return violations;
 }
 
+// ── Attribute Charts ─────────────────────────────────────────
+
+export interface AttributeChartData {
+  chart_type: 'p' | 'np' | 'c' | 'u';
+  values: number[];
+  sample_sizes: number[];
+  center_line: number;
+  ucl: number[];
+  lcl: number[];
+  violations: ControlViolation[];
+}
+
+/**
+ * p-chart: proportion defective per subgroup.
+ * Input: defectives per subgroup, sample size per subgroup.
+ * Exported for testing.
+ */
+export function pChart(defectives: number[], sampleSizes: number[]): AttributeChartData {
+  if (defectives.length < 2) throw new Error('Need at least 2 subgroups for p-chart.');
+  if (defectives.length !== sampleSizes.length) throw new Error('defectives and sampleSizes must have equal length.');
+
+  const proportions = defectives.map((d, i) => sampleSizes[i] > 0 ? d / sampleSizes[i] : 0);
+  const totalDefectives = defectives.reduce((s, d) => s + d, 0);
+  const totalSamples = sampleSizes.reduce((s, n) => s + n, 0);
+  const pBar = totalSamples > 0 ? totalDefectives / totalSamples : 0;
+
+  // Variable control limits (depend on sample size)
+  const ucl = sampleSizes.map((n) => {
+    const limit = pBar + 3 * Math.sqrt(pBar * (1 - pBar) / n);
+    return Math.min(round4(limit), 1);
+  });
+  const lcl = sampleSizes.map((n) => {
+    const limit = pBar - 3 * Math.sqrt(pBar * (1 - pBar) / n);
+    return Math.max(round4(limit), 0);
+  });
+
+  const violations: ControlViolation[] = [];
+  for (let i = 0; i < proportions.length; i++) {
+    if (proportions[i] > ucl[i] || proportions[i] < lcl[i]) {
+      violations.push({
+        index: i, value: round4(proportions[i]),
+        rule: 'Rule 1', description: 'Proportion beyond control limits',
+      });
+    }
+  }
+
+  return {
+    chart_type: 'p',
+    values: proportions.map(round4),
+    sample_sizes: sampleSizes,
+    center_line: round4(pBar),
+    ucl, lcl, violations,
+  };
+}
+
+/**
+ * np-chart: count of defectives per subgroup (constant sample size).
+ * Exported for testing.
+ */
+export function npChart(defectives: number[], sampleSize: number): AttributeChartData {
+  if (defectives.length < 2) throw new Error('Need at least 2 subgroups for np-chart.');
+  if (sampleSize <= 0) throw new Error('Sample size must be positive.');
+
+  const pBar = defectives.reduce((s, d) => s + d, 0) / (defectives.length * sampleSize);
+  const npBar = pBar * sampleSize;
+  const sigma = Math.sqrt(npBar * (1 - pBar));
+
+  const uclVal = round4(Math.min(npBar + 3 * sigma, sampleSize));
+  const lclVal = round4(Math.max(npBar - 3 * sigma, 0));
+
+  const violations: ControlViolation[] = [];
+  for (let i = 0; i < defectives.length; i++) {
+    if (defectives[i] > uclVal || defectives[i] < lclVal) {
+      violations.push({
+        index: i, value: defectives[i],
+        rule: 'Rule 1', description: 'Defective count beyond control limits',
+      });
+    }
+  }
+
+  return {
+    chart_type: 'np',
+    values: defectives,
+    sample_sizes: Array(defectives.length).fill(sampleSize),
+    center_line: round4(npBar),
+    ucl: Array(defectives.length).fill(uclVal),
+    lcl: Array(defectives.length).fill(lclVal),
+    violations,
+  };
+}
+
+/**
+ * c-chart: count of defects per unit (constant opportunity).
+ * Exported for testing.
+ */
+export function cChart(defects: number[]): AttributeChartData {
+  if (defects.length < 2) throw new Error('Need at least 2 observations for c-chart.');
+
+  const cBar = defects.reduce((s, d) => s + d, 0) / defects.length;
+  const sigma = Math.sqrt(cBar);
+
+  const uclVal = round4(cBar + 3 * sigma);
+  const lclVal = round4(Math.max(cBar - 3 * sigma, 0));
+
+  const violations: ControlViolation[] = [];
+  for (let i = 0; i < defects.length; i++) {
+    if (defects[i] > uclVal || defects[i] < lclVal) {
+      violations.push({
+        index: i, value: defects[i],
+        rule: 'Rule 1', description: 'Defect count beyond control limits',
+      });
+    }
+  }
+
+  return {
+    chart_type: 'c',
+    values: defects,
+    sample_sizes: Array(defects.length).fill(1),
+    center_line: round4(cBar),
+    ucl: Array(defects.length).fill(uclVal),
+    lcl: Array(defects.length).fill(lclVal),
+    violations,
+  };
+}
+
+/**
+ * u-chart: defects per unit with variable sample sizes.
+ * Exported for testing.
+ */
+export function uChart(defects: number[], sampleSizes: number[]): AttributeChartData {
+  if (defects.length < 2) throw new Error('Need at least 2 observations for u-chart.');
+  if (defects.length !== sampleSizes.length) throw new Error('defects and sampleSizes must have equal length.');
+
+  const totalDefects = defects.reduce((s, d) => s + d, 0);
+  const totalUnits = sampleSizes.reduce((s, n) => s + n, 0);
+  const uBar = totalUnits > 0 ? totalDefects / totalUnits : 0;
+
+  const rates = defects.map((d, i) => sampleSizes[i] > 0 ? d / sampleSizes[i] : 0);
+  const ucl = sampleSizes.map((n) => round4(uBar + 3 * Math.sqrt(uBar / n)));
+  const lcl = sampleSizes.map((n) => round4(Math.max(uBar - 3 * Math.sqrt(uBar / n), 0)));
+
+  const violations: ControlViolation[] = [];
+  for (let i = 0; i < rates.length; i++) {
+    if (rates[i] > ucl[i] || rates[i] < lcl[i]) {
+      violations.push({
+        index: i, value: round4(rates[i]),
+        rule: 'Rule 1', description: 'Defect rate beyond control limits',
+      });
+    }
+  }
+
+  return {
+    chart_type: 'u',
+    values: rates.map(round4),
+    sample_sizes: sampleSizes,
+    center_line: round4(uBar),
+    ucl, lcl, violations,
+  };
+}
+
+// ── CUSUM Chart ──────────────────────────────────────────────
+
+export interface CusumChartData {
+  values: number[];
+  c_plus: number[];
+  c_minus: number[];
+  h: number;
+  k: number;
+  center: number;
+  violations: ControlViolation[];
+}
+
+/**
+ * CUSUM (Cumulative Sum) control chart.
+ * Detects small persistent shifts that Western Electric rules miss.
+ * C⁺ᵢ = max(0, Cᵢ₋₁ + xᵢ - μ₀ - k)
+ * C⁻ᵢ = max(0, Cᵢ₋₁ - xᵢ + μ₀ - k)
+ * Signal when C⁺ or C⁻ > h
+ * Default k = 0.5σ (allowance), h = 5σ (decision interval).
+ * Exported for testing.
+ */
+export function cusumChart(
+  values: number[],
+  target?: number,
+  sigma?: number,
+  k?: number,
+  h?: number,
+): CusumChartData {
+  if (values.length < 2) throw new Error('Need at least 2 measurements for CUSUM chart.');
+
+  const mu = target ?? mean(values);
+  const s = sigma ?? stddev(values);
+  const kVal = k ?? 0.5 * s; // allowance (slack)
+  const hVal = h ?? 5 * s;   // decision interval
+
+  const cPlus: number[] = [0];
+  const cMinus: number[] = [0];
+  const violations: ControlViolation[] = [];
+
+  for (let i = 0; i < values.length; i++) {
+    const prevPlus = i > 0 ? cPlus[i] : 0;
+    const prevMinus = i > 0 ? cMinus[i] : 0;
+
+    const newPlus = Math.max(0, prevPlus + values[i] - mu - kVal);
+    const newMinus = Math.max(0, prevMinus - values[i] + mu - kVal);
+
+    cPlus.push(round4(newPlus));
+    cMinus.push(round4(newMinus));
+
+    if (newPlus > hVal) {
+      violations.push({
+        index: i, value: round4(values[i]),
+        rule: 'CUSUM+', description: `Upward shift detected (C⁺=${newPlus.toFixed(2)} > h=${hVal.toFixed(2)})`,
+      });
+    }
+    if (newMinus > hVal) {
+      violations.push({
+        index: i, value: round4(values[i]),
+        rule: 'CUSUM-', description: `Downward shift detected (C⁻=${newMinus.toFixed(2)} > h=${hVal.toFixed(2)})`,
+      });
+    }
+  }
+
+  // Remove the leading zero (initialization)
+  cPlus.shift();
+  cMinus.shift();
+
+  return { values, c_plus: cPlus, c_minus: cMinus, h: round4(hVal), k: round4(kVal), center: round4(mu), violations };
+}
+
+// ── EWMA Chart ───────────────────────────────────────────────
+
+export interface EwmaChartData {
+  values: number[];
+  ewma: number[];
+  ucl: number[];
+  lcl: number[];
+  center: number;
+  lambda: number;
+  violations: ControlViolation[];
+}
+
+/**
+ * EWMA (Exponentially Weighted Moving Average) control chart.
+ * Detects gradual drift and small sustained shifts.
+ * Zᵢ = λxᵢ + (1-λ)Zᵢ₋₁
+ * UCL/LCL = μ₀ ± L × σ × sqrt(λ/(2-λ) × (1-(1-λ)²ⁱ))
+ * Default λ=0.2, L=3.
+ * Exported for testing.
+ */
+export function ewmaChart(
+  values: number[],
+  lambda: number = 0.2,
+  L: number = 3,
+  target?: number,
+  sigma?: number,
+): EwmaChartData {
+  if (values.length < 2) throw new Error('Need at least 2 measurements for EWMA chart.');
+  if (lambda <= 0 || lambda > 1) throw new Error('Lambda must be in (0, 1].');
+
+  const mu = target ?? mean(values);
+  const s = sigma ?? stddev(values);
+
+  const ewma: number[] = [mu]; // Z₀ = μ₀
+  const ucl: number[] = [];
+  const lcl: number[] = [];
+  const violations: ControlViolation[] = [];
+
+  for (let i = 0; i < values.length; i++) {
+    const z = lambda * values[i] + (1 - lambda) * ewma[i];
+    ewma.push(round4(z));
+
+    // Time-varying control limits
+    const factor = L * s * Math.sqrt((lambda / (2 - lambda)) * (1 - Math.pow(1 - lambda, 2 * (i + 1))));
+    ucl.push(round4(mu + factor));
+    lcl.push(round4(mu - factor));
+
+    if (z > mu + factor || z < mu - factor) {
+      violations.push({
+        index: i, value: round4(values[i]),
+        rule: 'EWMA', description: `EWMA value ${z.toFixed(3)} outside limits [${(mu - factor).toFixed(3)}, ${(mu + factor).toFixed(3)}]`,
+      });
+    }
+  }
+
+  // Remove the initial Z₀
+  ewma.shift();
+
+  return { values, ewma, ucl, lcl, center: round4(mu), lambda, violations };
+}
+
+// ── Trend Regression ─────────────────────────────────────────
+
+export interface TrendResult {
+  slope: number;
+  intercept: number;
+  r_squared: number;
+  predicted_oos_index: number | null; // index where trend crosses spec limit
+  predicted_oos_description: string;
+  trend_direction: 'increasing' | 'decreasing' | 'stable';
+}
+
+/**
+ * Linear trend regression on measurement data.
+ * Detects drift direction, rate, and predicts when process will go out of spec.
+ * Exported for testing.
+ */
+export function trendRegression(values: number[], spec?: SpecLimits): TrendResult {
+  if (values.length < 3) throw new Error('Need at least 3 data points for trend analysis.');
+
+  const n = values.length;
+  const xMean = (n - 1) / 2;
+  const yMean = mean(values);
+
+  let sumXY = 0;
+  let sumXX = 0;
+  let sumYY = 0;
+
+  for (let i = 0; i < n; i++) {
+    const dx = i - xMean;
+    const dy = values[i] - yMean;
+    sumXY += dx * dy;
+    sumXX += dx * dx;
+    sumYY += dy * dy;
+  }
+
+  const slope = sumXX > 0 ? sumXY / sumXX : 0;
+  const intercept = yMean - slope * xMean;
+  const rSquared = sumXX > 0 && sumYY > 0 ? (sumXY * sumXY) / (sumXX * sumYY) : 0;
+
+  // Trend direction (require R² > 0.3 to consider meaningful)
+  let trendDirection: 'increasing' | 'decreasing' | 'stable' = 'stable';
+  if (rSquared > 0.3) {
+    trendDirection = slope > 0 ? 'increasing' : 'decreasing';
+  }
+
+  // Predict when trend crosses spec limits
+  let predictedOosIndex: number | null = null;
+  let predictedOosDescription = 'No out-of-spec trend predicted.';
+
+  if (spec && trendDirection !== 'stable' && Math.abs(slope) > 1e-10) {
+    if (slope > 0 && spec.usl !== undefined) {
+      const crossIdx = (spec.usl - intercept) / slope;
+      if (crossIdx > n - 1) {
+        predictedOosIndex = Math.ceil(crossIdx);
+        const periodsAhead = predictedOosIndex - (n - 1);
+        predictedOosDescription = `Trend will reach USL (${spec.usl}) in ~${periodsAhead} observations (at observation #${predictedOosIndex + 1}).`;
+      }
+    }
+    if (slope < 0 && spec.lsl !== undefined) {
+      const crossIdx = (spec.lsl - intercept) / slope;
+      if (crossIdx > n - 1) {
+        predictedOosIndex = Math.ceil(crossIdx);
+        const periodsAhead = predictedOosIndex - (n - 1);
+        predictedOosDescription = `Trend will reach LSL (${spec.lsl}) in ~${periodsAhead} observations (at observation #${predictedOosIndex + 1}).`;
+      }
+    }
+  }
+
+  return {
+    slope: round4(slope),
+    intercept: round4(intercept),
+    r_squared: round4(rSquared),
+    predicted_oos_index: predictedOosIndex,
+    predicted_oos_description: predictedOosDescription,
+    trend_direction: trendDirection,
+  };
+}
+
+// ── CUSUM/EWMA/Attribute Chart Generation ────────────────────
+
+/**
+ * Generate a CUSUM chart PNG.
+ * Exported for testing.
+ */
+export async function generateCusumChart(data: CusumChartData, projectName: string): Promise<string> {
+  const { ChartJSNodeCanvas } = await import('chartjs-node-canvas');
+  const chartCanvas = new ChartJSNodeCanvas({ width: 900, height: 450, backgroundColour: 'white' });
+
+  const labels = data.values.map((_, i) => `${i + 1}`);
+  const violationCount = data.violations.length;
+
+  const config = {
+    type: 'line' as const,
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'C⁺ (upward)',
+          data: data.c_plus,
+          borderColor: '#e15759',
+          backgroundColor: 'transparent',
+          pointRadius: 2,
+          borderWidth: 2,
+        },
+        {
+          label: 'C⁻ (downward)',
+          data: data.c_minus,
+          borderColor: '#4e79a7',
+          backgroundColor: 'transparent',
+          pointRadius: 2,
+          borderWidth: 2,
+        },
+        {
+          label: `h = ${data.h.toFixed(2)}`,
+          data: Array(data.values.length).fill(data.h),
+          borderColor: '#999',
+          borderDash: [6, 3],
+          borderWidth: 1.5,
+          pointRadius: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: false,
+      plugins: {
+        title: {
+          display: true,
+          text: [`CUSUM Chart: ${projectName}`, violationCount > 0 ? `${violationCount} shift(s) detected` : 'No shifts detected'],
+          font: { size: 14 },
+          color: violationCount > 0 ? '#e15759' : '#333',
+        },
+        legend: { position: 'bottom' as const, labels: { font: { size: 10 } } },
+      },
+      scales: {
+        x: { title: { display: true, text: 'Observation' } },
+        y: { title: { display: true, text: 'Cumulative Sum' }, min: 0 },
+      },
+    },
+  };
+
+  const buffer = Buffer.from(await chartCanvas.renderToBuffer(config as unknown as import('chart.js').ChartConfiguration));
+  const filename = `sigma-cusum-${Date.now()}.png`;
+  const filePath = resolve(STORE_DIR, filename);
+  writeFileSync(filePath, buffer);
+  return filePath;
+}
+
+/**
+ * Generate an EWMA chart PNG.
+ * Exported for testing.
+ */
+export async function generateEwmaChart(data: EwmaChartData, projectName: string): Promise<string> {
+  const { ChartJSNodeCanvas } = await import('chartjs-node-canvas');
+  const chartCanvas = new ChartJSNodeCanvas({ width: 900, height: 450, backgroundColour: 'white' });
+
+  const labels = data.values.map((_, i) => `${i + 1}`);
+  const violationIndices = new Set(data.violations.map((v) => v.index));
+  const pointColors = data.ewma.map((_, i) => violationIndices.has(i) ? '#e15759' : '#4e79a7');
+
+  const config = {
+    type: 'line' as const,
+    data: {
+      labels,
+      datasets: [
+        {
+          label: `EWMA (λ=${data.lambda})`,
+          data: data.ewma,
+          borderColor: '#4e79a7',
+          backgroundColor: 'transparent',
+          pointBackgroundColor: pointColors,
+          pointRadius: data.ewma.map((_, i) => violationIndices.has(i) ? 5 : 2),
+          borderWidth: 2,
+        },
+        {
+          label: 'UCL',
+          data: data.ucl,
+          borderColor: '#e15759',
+          borderDash: [6, 3],
+          borderWidth: 1.5,
+          pointRadius: 0,
+        },
+        {
+          label: `CL (${data.center.toFixed(2)})`,
+          data: Array(data.values.length).fill(data.center),
+          borderColor: '#59a14f',
+          borderWidth: 1.5,
+          pointRadius: 0,
+        },
+        {
+          label: 'LCL',
+          data: data.lcl,
+          borderColor: '#e15759',
+          borderDash: [6, 3],
+          borderWidth: 1.5,
+          pointRadius: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: false,
+      plugins: {
+        title: {
+          display: true,
+          text: [`EWMA Chart: ${projectName}`, `${data.violations.length > 0 ? data.violations.length + ' violation(s)' : 'Process in control'}`],
+          font: { size: 14 },
+          color: data.violations.length > 0 ? '#e15759' : '#333',
+        },
+        legend: { position: 'bottom' as const, labels: { font: { size: 10 } } },
+      },
+      scales: {
+        x: { title: { display: true, text: 'Observation' } },
+        y: { title: { display: true, text: 'EWMA Value' } },
+      },
+    },
+  };
+
+  const buffer = Buffer.from(await chartCanvas.renderToBuffer(config as unknown as import('chart.js').ChartConfiguration));
+  const filename = `sigma-ewma-${Date.now()}.png`;
+  const filePath = resolve(STORE_DIR, filename);
+  writeFileSync(filePath, buffer);
+  return filePath;
+}
+
+/**
+ * Generate attribute chart (p, np, c, u) PNG.
+ * Exported for testing.
+ */
+export async function generateAttributeChart(data: AttributeChartData, projectName: string): Promise<string> {
+  const { ChartJSNodeCanvas } = await import('chartjs-node-canvas');
+  const chartCanvas = new ChartJSNodeCanvas({ width: 900, height: 450, backgroundColour: 'white' });
+
+  const labels = data.values.map((_, i) => `${i + 1}`);
+  const violationIndices = new Set(data.violations.map((v) => v.index));
+  const pointColors = data.values.map((_, i) => violationIndices.has(i) ? '#e15759' : '#4e79a7');
+
+  const typeLabels: Record<string, string> = { p: 'p-chart (Proportion)', np: 'np-chart (Count)', c: 'c-chart (Defects)', u: 'u-chart (Rate)' };
+  const yLabels: Record<string, string> = { p: 'Proportion Defective', np: 'Defective Count', c: 'Defect Count', u: 'Defects per Unit' };
+
+  const config = {
+    type: 'line' as const,
+    data: {
+      labels,
+      datasets: [
+        {
+          label: typeLabels[data.chart_type] || data.chart_type,
+          data: data.values,
+          borderColor: '#4e79a7',
+          backgroundColor: 'transparent',
+          pointBackgroundColor: pointColors,
+          pointRadius: data.values.map((_, i) => violationIndices.has(i) ? 5 : 3),
+          borderWidth: 1.5,
+        },
+        {
+          label: 'UCL',
+          data: data.ucl,
+          borderColor: '#e15759',
+          borderDash: [6, 3],
+          borderWidth: 1.5,
+          pointRadius: 0,
+        },
+        {
+          label: `CL (${data.center_line.toFixed(4)})`,
+          data: Array(data.values.length).fill(data.center_line),
+          borderColor: '#59a14f',
+          borderWidth: 1.5,
+          pointRadius: 0,
+        },
+        {
+          label: 'LCL',
+          data: data.lcl,
+          borderColor: '#e15759',
+          borderDash: [6, 3],
+          borderWidth: 1.5,
+          pointRadius: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: false,
+      plugins: {
+        title: {
+          display: true,
+          text: [`${typeLabels[data.chart_type]}: ${projectName}`, `${data.violations.length > 0 ? data.violations.length + ' violation(s)' : 'In control'}`],
+          font: { size: 14 },
+          color: data.violations.length > 0 ? '#e15759' : '#333',
+        },
+        legend: { position: 'bottom' as const, labels: { font: { size: 10 } } },
+      },
+      scales: {
+        x: { title: { display: true, text: 'Subgroup' } },
+        y: { title: { display: true, text: yLabels[data.chart_type] || 'Value' }, min: 0 },
+      },
+    },
+  };
+
+  const buffer = Buffer.from(await chartCanvas.renderToBuffer(config as unknown as import('chart.js').ChartConfiguration));
+  const filename = `sigma-${data.chart_type}-${Date.now()}.png`;
+  const filePath = resolve(STORE_DIR, filename);
+  writeFileSync(filePath, buffer);
+  return filePath;
+}
+
 // ── Pareto Analysis ──────────────────────────────────────────
 
 /**

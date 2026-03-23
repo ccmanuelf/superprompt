@@ -17,7 +17,15 @@ import {
   generateControlChart,
   generateParetoChart,
   generateCapabilityChart,
+  generateCusumChart,
+  generateEwmaChart,
+  generateAttributeChart,
   parseSigmaCsv,
+  cusumChart,
+  ewmaChart,
+  trendRegression,
+  pChart,
+  cChart,
   type CapabilityResult,
   type ControlChartData,
   type SpecLimits,
@@ -27,24 +35,29 @@ export const sigmaAnalysisDefinition: Tool = {
   type: 'function',
   function: {
     name: 'sigma_analysis',
-    description: `Six Sigma statistical process control and capability analysis tool.
+    description: `Six Sigma SPC platform — capability analysis, control charts, shift detection, trend analysis.
 Actions:
-- capability: Run capability analysis (Cp, Cpk, Pp, Ppk) on CSV measurement data. Requires csv_content, usl, lsl, project_name. Optional: target.
-- dpmo: Calculate DPMO and sigma level. Requires defects, units, opportunities.
-- rty: Calculate rolled throughput yield. Requires step_yields (comma-separated percentages).
-- chart: Generate control chart (I-MR or X-bar/R) for a project. Requires project_name.
-- pareto: Generate Pareto chart of defect types. Requires project_name.
-- status: Show project status and latest results. Requires project_name.
-- list: List all sigma projects.
+- capability: Capability analysis (Cp, Cpk, Pp, Ppk). Requires csv_content, usl, lsl, project_name.
+- dpmo: DPMO and sigma level. Requires defects, units, opportunities.
+- rty: Rolled throughput yield. Requires step_yields (comma-separated).
+- chart: Control chart (I-MR or X-bar/R). Requires project_name.
+- cusum: CUSUM chart for small shift detection. Requires csv_content, project_name. Optional: target.
+- ewma: EWMA chart for gradual drift. Requires csv_content, project_name. Optional: target, lambda.
+- trend: Trend regression with predicted OOS date. Requires csv_content, project_name. Optional: usl, lsl.
+- p_chart: p-chart (proportion defective). Requires csv_content (value=defectives, subgroup=sample_size), project_name.
+- c_chart: c-chart (defect count). Requires csv_content (value=defect_count), project_name.
+- pareto: Pareto chart of defect types. Requires project_name.
+- status: Project status. Requires project_name.
+- list: List projects.
 
-CSV format: value (required), subgroup (optional), timestamp (optional), defect_type (optional for Pareto).`,
+CSV: value (required), subgroup (optional), timestamp (optional), defect_type (optional).`,
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
           description: 'Action to perform',
-          enum: ['capability', 'dpmo', 'rty', 'chart', 'pareto', 'status', 'list'],
+          enum: ['capability', 'dpmo', 'rty', 'chart', 'cusum', 'ewma', 'trend', 'p_chart', 'c_chart', 'pareto', 'status', 'list'],
         },
         csv_content: { type: 'string', description: 'Raw CSV content (for capability action)' },
         usl: { type: 'number', description: 'Upper spec limit (for capability)' },
@@ -55,6 +68,7 @@ CSV format: value (required), subgroup (optional), timestamp (optional), defect_
         units: { type: 'number', description: 'Number of units inspected (for dpmo)' },
         opportunities: { type: 'number', description: 'Defect opportunities per unit (for dpmo)' },
         step_yields: { type: 'string', description: 'Comma-separated step yield percentages (for rty)' },
+        lambda: { type: 'number', description: 'EWMA smoothing factor (0-1, default 0.2)' },
       },
       required: ['action'],
     },
@@ -72,6 +86,7 @@ export async function sigmaAnalysis(
     defects?: number;
     units?: number;
     opportunities?: number;
+    lambda?: number;
     step_yields?: string;
   },
   chatId: string,
@@ -200,8 +215,87 @@ export async function sigmaAnalysis(
         };
       }
 
+      case 'cusum': {
+        if (!args.csv_content) return { error: 'csv_content is required.' };
+        if (!args.project_name) return { error: 'project_name is required.' };
+
+        const rows = parseSigmaCsv(args.csv_content);
+        const values = rows.map((r) => r.value);
+        const data = cusumChart(values, args.target);
+        const filePath = await generateCusumChart(data, args.project_name);
+
+        return {
+          success: true, file: filePath,
+          shifts: data.violations.length,
+          message: data.violations.length > 0
+            ? `CUSUM detected ${data.violations.length} shift(s) — process mean has changed.`
+            : 'No significant shifts detected.',
+        };
+      }
+
+      case 'ewma': {
+        if (!args.csv_content) return { error: 'csv_content is required.' };
+        if (!args.project_name) return { error: 'project_name is required.' };
+
+        const rows = parseSigmaCsv(args.csv_content);
+        const values = rows.map((r) => r.value);
+        const data = ewmaChart(values, args.lambda ?? 0.2, 3, args.target);
+        const filePath = await generateEwmaChart(data, args.project_name);
+
+        return {
+          success: true, file: filePath,
+          violations: data.violations.length,
+          lambda: data.lambda,
+          message: data.violations.length > 0
+            ? `EWMA detected ${data.violations.length} violation(s) — gradual drift detected.`
+            : 'Process stable — no drift detected.',
+        };
+      }
+
+      case 'trend': {
+        if (!args.csv_content) return { error: 'csv_content is required.' };
+        if (!args.project_name) return { error: 'project_name is required.' };
+
+        const rows = parseSigmaCsv(args.csv_content);
+        const values = rows.map((r) => r.value);
+        const spec = (args.usl !== undefined && args.lsl !== undefined)
+          ? { usl: args.usl, lsl: args.lsl } : undefined;
+        const result = trendRegression(values, spec);
+
+        return {
+          success: true,
+          ...result,
+          message: `Trend: ${result.trend_direction} (slope=${result.slope.toFixed(4)}, R²=${result.r_squared.toFixed(3)}). ${result.predicted_oos_description}`,
+        };
+      }
+
+      case 'p_chart': {
+        if (!args.csv_content) return { error: 'csv_content is required.' };
+        if (!args.project_name) return { error: 'project_name is required.' };
+
+        const rows = parseSigmaCsv(args.csv_content);
+        const defectives = rows.map((r) => r.value);
+        const sampleSizes = rows.map((r) => parseFloat(r.subgroup || '100'));
+        if (sampleSizes.some(isNaN)) return { error: 'subgroup column must contain sample sizes for p-chart.' };
+
+        const data = pChart(defectives, sampleSizes);
+        const filePath = await generateAttributeChart(data, args.project_name);
+        return { success: true, file: filePath, violations: data.violations.length, p_bar: data.center_line };
+      }
+
+      case 'c_chart': {
+        if (!args.csv_content) return { error: 'csv_content is required.' };
+        if (!args.project_name) return { error: 'project_name is required.' };
+
+        const rows = parseSigmaCsv(args.csv_content);
+        const defects = rows.map((r) => r.value);
+        const data = cChart(defects);
+        const filePath = await generateAttributeChart(data, args.project_name);
+        return { success: true, file: filePath, violations: data.violations.length, c_bar: data.center_line };
+      }
+
       default:
-        return { error: `Unknown action: ${args.action}. Use capability, dpmo, rty, chart, pareto, status, or list.` };
+        return { error: `Unknown action: ${args.action}. Use capability, dpmo, rty, chart, cusum, ewma, trend, p_chart, c_chart, pareto, status, or list.` };
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

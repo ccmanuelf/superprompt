@@ -2178,6 +2178,62 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     }
   });
 
+  // ── SPC Setup Command ──────────────────────────────────
+
+  bot.command('spc', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/spc(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listControlPlans } = await import('../control-plan.js');
+        const plans = listControlPlans();
+        if (plans.length === 0) { await ctx.reply('No control plans. Use /spc create to start.'); return; }
+        const lines = plans.map((p) =>
+          `<b>${escapeHtml(p.name)}</b> — ${p.process_type} — ${p.product || 'no product'} — ${new Date(p.updated_at).toLocaleDateString()}`
+        );
+        await ctx.reply(`<b>Control Plans (${plans.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'summary': {
+        const planName = parts.slice(1).join(' ');
+        if (!planName) { await ctx.reply('Usage: /spc summary &lt;plan name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getControlPlanByName, buildControlPlanSummary, formatControlPlan } = await import('../control-plan.js');
+        const plan = getControlPlanByName(planName);
+        if (!plan) { await ctx.reply(`Plan "${planName}" not found.`); return; }
+        const summary = buildControlPlanSummary(plan.id);
+        await ctx.reply(formatControlPlan(summary, true), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete': {
+        const planName = parts.slice(1).join(' ');
+        if (!planName) { await ctx.reply('Usage: /spc delete &lt;plan name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getControlPlanByName, deleteControlPlan } = await import('../control-plan.js');
+        const plan = getControlPlanByName(planName);
+        if (!plan) { await ctx.reply(`Plan "${planName}" not found.`); return; }
+        deleteControlPlan(plan.id);
+        await ctx.reply(`Deleted control plan "${planName}".`);
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>SPC Control Plan Commands:</b>\n\n' +
+            'Control plans are created via chat — tell the AI about your process and it will build the plan using the spc_setup tool.\n\n' +
+            '/spc list — List control plans\n' +
+            '/spc summary &lt;name&gt; — View control plan\n' +
+            '/spc delete &lt;name&gt; — Delete plan\n\n' +
+            'Example: "Set up SPC for our PCB assembly line. We make automotive control boards."',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
   // ── Inventory Command ──────────────────────────────────
 
   bot.command('inventory', async (ctx) => {
