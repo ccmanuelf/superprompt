@@ -267,6 +267,22 @@ describe('Capability Indices', () => {
   it('throws on less than 2 measurements', () => {
     expect(() => calculateCapability([10], { usl: 11, lsl: 9 })).toThrow('at least 2');
   });
+
+  it('throws when USL equals LSL', () => {
+    expect(() => calculateCapability([10, 10.1], { usl: 10, lsl: 10 })).toThrow('greater');
+  });
+
+  it('throws when USL less than LSL', () => {
+    expect(() => calculateCapability([10, 10.1], { usl: 9, lsl: 11 })).toThrow('greater');
+  });
+
+  it('handles zero variance with sensible output', () => {
+    const cap = calculateCapability([10, 10, 10, 10, 10], { usl: 11, lsl: 9 });
+    expect(cap.stddev).toBe(0);
+    expect(cap.cp).toBe(100); // capped, not billions
+    expect(cap.interpretation).toContain('Zero process variation');
+    expect(cap.within_spec_pct).toBe(100);
+  });
 });
 
 // ── DPMO & Sigma Level Tests ─────────────────────────────────
@@ -415,6 +431,15 @@ describe('Control Charts', () => {
 
   it('throws on fewer than 2 subgroups', () => {
     expect(() => xbarR([10, 10.1, 10.2], ['A', 'A', 'A'])).toThrow('at least 2 subgroups');
+  });
+
+  it('I-MR with zero variance produces warning, not violations', () => {
+    const chart = individualMR([10, 10, 10, 10, 10]);
+    expect(chart.violations).toHaveLength(1);
+    expect(chart.violations[0].rule).toBe('Warning');
+    expect(chart.violations[0].description).toContain('Zero process variation');
+    expect(chart.ucl).toBe(chart.center_line); // collapsed limits
+    expect(chart.lcl).toBe(chart.center_line);
   });
 });
 

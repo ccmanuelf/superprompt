@@ -326,14 +326,16 @@ export function calculateCapability(
   subgroups?: string[],
 ): CapabilityResult {
   if (values.length < 2) throw new Error('Need at least 2 measurements for capability analysis.');
+  if (spec.usl <= spec.lsl) throw new Error('USL must be greater than LSL.');
 
   const mu = mean(values);
   const sigmaWithin = withinStddev(values, subgroups);
   const sigmaOverall = stddev(values);
 
-  // Guard against zero variation
-  const sw = sigmaWithin > 0 ? sigmaWithin : 1e-10;
-  const so = sigmaOverall > 0 ? sigmaOverall : 1e-10;
+  // Guard against zero variation — cap indices rather than producing billions
+  const zeroVariation = sigmaWithin === 0 && sigmaOverall === 0;
+  const sw = sigmaWithin > 0 ? sigmaWithin : (spec.usl - spec.lsl) / 600; // fallback: assume 100 Cp
+  const so = sigmaOverall > 0 ? sigmaOverall : (spec.usl - spec.lsl) / 600;
 
   // Cp/Cpk — short-term (within-subgroup)
   const cp = (spec.usl - spec.lsl) / (6 * sw);
@@ -361,12 +363,16 @@ export function calculateCapability(
   const withinSpecPct = (withinSpec / values.length) * 100;
 
   // Interpretation
-  const interpretation = interpretCapability(cpk, ppk, withinSpecPct);
+  let interpretation = interpretCapability(cpk, ppk, withinSpecPct);
+  if (zeroVariation) {
+    interpretation = 'WARNING: Zero process variation detected — all measurements are identical. ' +
+      'Capability indices are not meaningful. Verify measurement system resolution. ' + interpretation;
+  }
 
   return {
     mean: round4(mu),
-    stddev: round4(sw),
-    stddev_overall: round4(so),
+    stddev: round4(zeroVariation ? 0 : sw),
+    stddev_overall: round4(zeroVariation ? 0 : so),
     cp: round4(cp),
     cpk: round4(cpk),
     pp: round4(pp),
@@ -526,8 +532,18 @@ export function individualMR(values: number[]): ControlChartData {
 
   const rangeUcl = D4 * mrBar;
 
-  // Detect violations
-  const violations = detectWesternElectricRules(values, mu, sigmaEst);
+  // Detect violations (skip if zero variation — rules are meaningless)
+  const violations: ControlViolation[] = [];
+  if (sigmaEst > 0) {
+    violations.push(...detectWesternElectricRules(values, mu, sigmaEst));
+  } else {
+    violations.push({
+      index: 0,
+      value: mu,
+      rule: 'Warning',
+      description: 'Zero process variation — all moving ranges are zero. Check measurement resolution.',
+    });
+  }
 
   return {
     chart_type: 'i_mr',
