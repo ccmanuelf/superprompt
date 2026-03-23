@@ -134,7 +134,7 @@ export function spcSetup(
         const rpn = Math.min(severity, 10) * Math.min(occurrence, 10) * Math.min(detection, 10);
 
         // Auto-generate recommendations
-        const sampling = recommendSampling(plan.process_type as ProcessType, rpn);
+        const sampling = recommendSampling(plan.process_type as ProcessType, rpn, severity, detection);
         const chartType = args.usl !== undefined && args.lsl !== undefined ? 'xbar_r' : 'p';
         const reaction = recommendReaction(severity, chartType as ChartRecommendation);
 

@@ -165,8 +165,12 @@ export function addCtqItem(planId: string, vocId: string, ctq: Partial<CtqItem>)
   const rpn = severity * occurrence * detection;
 
   const chartType = ctq.chart_type || recommendChartType(ctq.usl, ctq.lsl);
-  const sampling = ctq.sampling_strategy || '';
-  const reaction = ctq.reaction_plan || '';
+
+  // Auto-generate sampling and reaction from plan's process type if not provided
+  const plan = db.prepare('SELECT process_type FROM control_plans WHERE id = ?').get(planId) as { process_type: string } | undefined;
+  const processType = (plan?.process_type || 'semi_automated') as ProcessType;
+  const sampling = ctq.sampling_strategy || recommendSampling(processType, rpn, severity, detection);
+  const reaction = ctq.reaction_plan || recommendReaction(severity, chartType as ChartRecommendation);
 
   db.prepare(
     `INSERT INTO ctq_items (id, plan_id, voc_id, ctq_name, measurement_method, unit, usl, lsl, target, severity, occurrence, detection, rpn, chart_type, sampling_strategy, reaction_plan, created_at)
@@ -208,22 +212,32 @@ export function recommendChartType(usl?: number | null, lsl?: number | null): Ch
  * Recommend sampling strategy based on process type.
  * Exported for testing.
  */
-export function recommendSampling(processType: ProcessType, rpn: number): string {
+export function recommendSampling(processType: ProcessType, rpn: number, severity?: number, detection?: number): string {
+  // If detection is already near-perfect (automated 100%), don't recommend additional sampling
+  if (detection !== undefined && detection <= 1) {
+    return '100% inline — already monitored by automated inspection';
+  }
+
+  // Safety-critical characteristics (severity ≥ 8) need tighter controls regardless of RPN
+  const effectiveRpn = severity !== undefined && severity >= 8
+    ? Math.max(rpn, 200)
+    : rpn;
+
   if (processType === 'automated' || processType === 'continuous') {
-    if (rpn >= 200) return '100% inline inspection (SPI/AOI/automated gauge)';
-    if (rpn >= 100) return 'Continuous SPC with n=5 subgroups every 30 min';
+    if (effectiveRpn >= 200) return '100% inline inspection (SPI/AOI/automated gauge)';
+    if (effectiveRpn >= 100) return 'Continuous SPC with n=5 subgroups every 30 min';
     return 'SPC with n=5 subgroups every 2 hours';
   }
 
   if (processType === 'semi_automated') {
-    if (rpn >= 200) return 'First-piece + every 50 units (n=5 subgroup)';
-    if (rpn >= 100) return 'Every 100 units (n=5 subgroup) + shift start/end';
+    if (effectiveRpn >= 200) return 'First-piece + every 50 units (n=5 subgroup)';
+    if (effectiveRpn >= 100) return 'Every 100 units (n=5 subgroup) + shift start/end';
     return 'Every 200 units (n=3 subgroup) or hourly';
   }
 
   // Manual / labor-intensive
-  if (rpn >= 200) return 'Every unit inspected (100% inspection)';
-  if (rpn >= 100) return 'Every 25 units or per operator changeover (n=3)';
+  if (effectiveRpn >= 200) return 'Every unit inspected (100% inspection)';
+  if (effectiveRpn >= 100) return 'Every 25 units or per operator changeover (n=3)';
   return 'Random sampling per AQL plan (Level II, AQL=1.0)';
 }
 
@@ -294,7 +308,8 @@ export function buildControlPlanSummary(planId: string): ControlPlanSummary {
   // Risk summary
   let high = 0, medium = 0, low = 0;
   for (const ctq of ctqItems) {
-    if (ctq.rpn >= 200) high++;
+    // HIGH risk: RPN ≥ 200 OR severity ≥ 8 (safety/compliance critical)
+    if (ctq.rpn >= 200 || ctq.severity >= 8) high++;
     else if (ctq.rpn >= 80) medium++;
     else low++;
   }
@@ -344,7 +359,7 @@ export function formatControlPlan(summary: ControlPlanSummary, html: boolean = t
     lines.push('');
 
     for (const ctq of summary.ctq_items) {
-      const riskTag = ctq.rpn >= 200 ? 'HIGH' : ctq.rpn >= 80 ? 'MED' : 'LOW';
+      const riskTag = (ctq.rpn >= 200 || ctq.severity >= 8) ? 'HIGH' : ctq.rpn >= 80 ? 'MED' : 'LOW';
       lines.push(`${b}${ctq.ctq_name}${bEnd} [RPN=${ctq.rpn} ${riskTag}]`);
 
       const specParts: string[] = [];

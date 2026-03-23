@@ -505,6 +505,16 @@ describe('Recommendations Engine', () => {
     expect(lowRpn).toContain('200 units');
   });
 
+  it('recommends tighter sampling for safety-critical (sev>=8) regardless of RPN', () => {
+    const safetyCritical = recommendSampling('semi_automated', 30, 9); // low RPN but sev=9
+    expect(safetyCritical).toContain('50 units'); // treated as high risk
+  });
+
+  it('recommends 100% inline when detection=1 (automated)', () => {
+    const sampling = recommendSampling('semi_automated', 200, 10, 1);
+    expect(sampling).toContain('100% inline');
+  });
+
   it('recommends 100% inspection for high RPN manual process', () => {
     const sampling = recommendSampling('manual', 300);
     expect(sampling).toContain('100%');
@@ -566,9 +576,9 @@ describe('Control Plan Summary', () => {
 
     expect(summary.voc_items).toHaveLength(2);
     expect(summary.ctq_items).toHaveLength(2);
-    expect(summary.risk_summary.high).toBe(0); // 108 and 24, neither >= 200
-    expect(summary.risk_summary.medium).toBe(1); // 108 >= 80
-    expect(summary.risk_summary.low).toBe(1); // 24 < 80
+    expect(summary.risk_summary.high).toBe(1); // Pull force: sev=9 → HIGH regardless of RPN
+    expect(summary.risk_summary.medium).toBe(0);
+    expect(summary.risk_summary.low).toBe(1); // Insulation: sev=6, RPN=24 → LOW
   });
 
   it('formats control plan as HTML', () => {
