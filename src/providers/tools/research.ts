@@ -17,7 +17,7 @@ import { parseFile } from '../../files.js';
 // ── Constants ───────────────────────────────────────────────
 
 const SEMANTIC_SCHOLAR_BASE = 'https://api.semanticscholar.org/graph/v1';
-const ARXIV_BASE = 'http://export.arxiv.org/api';
+const ARXIV_BASE = 'https://export.arxiv.org/api';
 const FETCH_TIMEOUT = 15_000;
 
 // ── Tool Definitions ────────────────────────────────────────
