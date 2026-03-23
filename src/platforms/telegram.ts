@@ -2225,6 +2225,63 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     }
   });
 
+  // ── RCA Command ────────────────────────────────────────
+
+  bot.command('rca', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/rca(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listRcaDocs } = await import('../rca.js');
+        const docs = listRcaDocs();
+        if (docs.length === 0) { await ctx.reply('No RCA documents. Ask the AI to create one.'); return; }
+        const methodNames: Record<string, string> = { '5why': '5 Whys', fishbone: 'Fishbone', pdca: 'PDCA', fta: 'FTA', mindmap: 'Mind Map' };
+        const lines = docs.map((d) =>
+          `<b>${escapeHtml(d.name)}</b> — ${methodNames[d.method] || d.method} — ${new Date(d.updated_at).toLocaleDateString()}`
+        );
+        await ctx.reply(`<b>RCA Documents (${docs.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'view': {
+        const docName = parts.slice(1).join(' ');
+        if (!docName) { await ctx.reply('Usage: /rca view &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getRcaDocByName, getRcaNodes, formatRcaDocument } = await import('../rca.js');
+        const doc = getRcaDocByName(docName);
+        if (!doc) { await ctx.reply(`RCA "${docName}" not found.`); return; }
+        const nodes = getRcaNodes(doc.id);
+        await ctx.reply(formatRcaDocument(doc, nodes, true), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete': {
+        const docName = parts.slice(1).join(' ');
+        if (!docName) { await ctx.reply('Usage: /rca delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getRcaDocByName, deleteRcaDoc } = await import('../rca.js');
+        const doc = getRcaDocByName(docName);
+        if (!doc) { await ctx.reply(`RCA "${docName}" not found.`); return; }
+        deleteRcaDoc(doc.id);
+        await ctx.reply(`Deleted RCA "${docName}".`);
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>Root Cause Analysis Commands:</b>\n\n' +
+            '/rca list — List RCA documents\n' +
+            '/rca view &lt;name&gt; — View document\n' +
+            '/rca delete &lt;name&gt; — Delete document\n\n' +
+            'Methods: 5 Whys, Ishikawa/Fishbone, PDCA, Fault Tree, Mind Map, A3 Report\n' +
+            'Ask the AI: "Do a 5 Whys for our solder bridge defect"',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
   // ── FMEA Command ───────────────────────────────────────
 
   bot.command('fmea', async (ctx) => {

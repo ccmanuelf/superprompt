@@ -11,6 +11,7 @@ import { initSigmaTables } from './sigma.js';
 import { initInventoryTables } from './inventory.js';
 import { initControlPlanTables } from './control-plan.js';
 import { initFmeaTables } from './fmea.js';
+import { initRcaTables } from './rca.js';
 
 let db: Database.Database;
 
@@ -34,6 +35,7 @@ export function initDatabase(): Database.Database {
   initInventoryTables();
   initControlPlanTables();
   initFmeaTables();
+  initRcaTables();
   return db;
 }
 

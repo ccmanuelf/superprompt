@@ -46,6 +46,7 @@ import { sigmaAnalysisDefinition, sigmaAnalysis } from './sigma.js';
 import { inventoryPlanDefinition, inventoryPlan } from './inventory.js';
 import { spcSetupDefinition, spcSetup } from './spc-setup.js';
 import { fmeaManageDefinition, fmeaManage } from './fmea.js';
+import { rcaManageDefinition, rcaManage } from './rca.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -234,6 +235,12 @@ export function registerBuiltinTools(): void {
       definition: fmeaManageDefinition,
       execute: async (args, chatId) =>
         fmeaManage(args as Record<string, unknown>, chatId),
+      source: 'builtin',
+    },
+    {
+      definition: rcaManageDefinition,
+      execute: async (args, chatId) =>
+        rcaManage(args as Record<string, unknown>, chatId),
       source: 'builtin',
     },
   ];
