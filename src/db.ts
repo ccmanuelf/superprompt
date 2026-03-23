@@ -6,6 +6,7 @@ import { STORE_DIR } from './config.js';
 import { logger } from './logger.js';
 import { initLearningTables } from './learning/db.js';
 import { initCitationTable } from './citations.js';
+import { initBalanceTables } from './balance.js';
 
 let db: Database.Database;
 
@@ -24,6 +25,7 @@ export function initDatabase(): Database.Database {
   createTables();
   initLearningTables();
   initCitationTable();
+  initBalanceTables();
   return db;
 }
 

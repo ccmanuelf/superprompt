@@ -20,6 +20,7 @@
     "better-sqlite3": "^12.6.0",
     "chart.js": "^4.5.1",
     "chartjs-node-canvas": "^5.0.0",
+    "chartjs-plugin-datalabels": "^2.2.0",
     "cron-parser": "^5.5.0",
     "csv-parse": "^6.1.0",
     "docx": "^9.6.0",

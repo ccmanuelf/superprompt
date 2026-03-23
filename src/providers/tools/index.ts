@@ -41,6 +41,7 @@ import {
   manageCitationsDefinition, manageCitations,
   reviewReportDefinition, reviewReport,
 } from './research.js';
+import { lineBalanceDefinition, lineBalance } from './balance.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -198,6 +199,13 @@ export function registerBuiltinTools(): void {
       definition: reviewReportDefinition,
       execute: async (args) =>
         reviewReport(args as Parameters<typeof reviewReport>[0]),
+      source: 'builtin',
+    },
+    // ── Manufacturing tools ──
+    {
+      definition: lineBalanceDefinition,
+      execute: async (args, chatId) =>
+        lineBalance(args as Parameters<typeof lineBalance>[0], chatId),
       source: 'builtin',
     },
   ];

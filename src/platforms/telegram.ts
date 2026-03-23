@@ -472,6 +472,90 @@ async function handleMessage(
   }
 }
 
+// ── Balance CSV Upload Helper ────────────────────────────
+
+async function handleBalanceCsv(ctx: Context, caption: string): Promise<void> {
+  const doc = ctx.message?.document;
+  if (!doc) {
+    await ctx.reply('Please attach a CSV file with the /balance command.');
+    return;
+  }
+
+  // Parse caption: /balance <takt_time> <project_name>
+  const balanceArgs = caption.replace(/^\/balance(@\w+)?/, '').trim();
+  const match = balanceArgs.match(/^(\d+(?:\.\d+)?)\s+(.+)$/);
+  if (!match) {
+    await ctx.reply(
+      'Usage: attach a CSV with caption:\n<code>/balance &lt;takt_time_seconds&gt; &lt;project_name&gt;</code>\n\n' +
+        'Example: <code>/balance 120 Engine Assembly</code>',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  const taktTime = parseFloat(match[1]);
+  const projectName = match[2].trim();
+
+  try {
+    const file = await ctx.getFile();
+    if (!file.file_path) {
+      await ctx.reply('Could not download file.');
+      return;
+    }
+
+    const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      await ctx.reply('Failed to download file from Telegram.');
+      return;
+    }
+
+    const csvContent = await res.text();
+    await ctx.reply(`Running balance for "${projectName}" with takt time ${taktTime}s...`);
+
+    const { executeBalance, formatBalanceResult, generateYamazumiChart, generateGanttChart, exportAssignmentsCsv } = await import('../balance.js');
+    const result = executeBalance(csvContent, taktTime, projectName);
+
+    // Send text result
+    const formatted = formatBalanceResult(result, true);
+    await ctx.reply(formatted, { parse_mode: 'HTML' });
+
+    // Send yamazumi chart (primary visualization)
+    try {
+      const yamazumiPath = await generateYamazumiChart(result);
+      await ctx.replyWithPhoto(new InputFile(yamazumiPath), {
+        caption: `Yamazumi Chart — ${projectName} (Takt: ${taktTime}s)`,
+      });
+    } catch (err) {
+      logger.warn({ err }, 'Failed to generate yamazumi chart');
+    }
+
+    // Send Gantt chart (supplementary)
+    try {
+      const ganttPath = await generateGanttChart(result);
+      await ctx.replyWithPhoto(new InputFile(ganttPath), {
+        caption: `Gantt Chart — ${projectName}`,
+      });
+    } catch (err) {
+      logger.warn({ err }, 'Failed to generate Gantt chart');
+    }
+
+    // Send CSV export
+    try {
+      const csv = exportAssignmentsCsv(result);
+      const csvBuffer = Buffer.from(csv, 'utf-8');
+      await ctx.replyWithDocument(new InputFile(csvBuffer, `balance-${projectName.replace(/\s+/g, '-')}.csv`), {
+        caption: 'Assignment export',
+      });
+    } catch (err) {
+      logger.warn({ err }, 'Failed to export CSV');
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await ctx.reply(`Balance error: ${escapeHtml(message)}`, { parse_mode: 'HTML' });
+  }
+}
+
 // ── Skill Upload Helper ─────────────────────────────────
 
 async function handleSkillUpload(ctx: Context): Promise<void> {
@@ -1950,6 +2034,107 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     }
   });
 
+  // ── Balance Command ─────────────────────────────────────
+
+  bot.command('balance', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/balance(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listProjects } = await import('../balance.js');
+        const projects = listProjects();
+        if (projects.length === 0) {
+          await ctx.reply('No balance projects. Send a CSV file with /balance to start.');
+          return;
+        }
+        const lines = projects.map((p) =>
+          `<b>${escapeHtml(p.name)}</b> — takt: ${p.takt_time}s — ${new Date(p.updated_at).toLocaleDateString()}`
+        );
+        await ctx.reply(`<b>Balance Projects (${projects.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'status': {
+        const projectName = parts.slice(1).join(' ');
+        if (!projectName) {
+          await ctx.reply('Usage: /balance status &lt;project name&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const { getProjectByName, getProjectTasks, getResultsForProject, formatBalanceResult, runBalance } = await import('../balance.js');
+        const project = getProjectByName(projectName);
+        if (!project) {
+          await ctx.reply(`Project "${projectName}" not found.`);
+          return;
+        }
+        const results = getResultsForProject(project.id);
+        if (results.length === 0) {
+          await ctx.reply(`Project "${projectName}" has no balance runs yet.`);
+          return;
+        }
+        const latest = results[0];
+        const tasks = getProjectTasks(project.id);
+        const balanceResult = runBalance(tasks, latest.takt_time, project.name);
+        balanceResult.project_id = project.id;
+        await ctx.reply(formatBalanceResult(balanceResult, true), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'compare': {
+        const projectName = parts.slice(1).join(' ');
+        if (!projectName) {
+          await ctx.reply('Usage: /balance compare &lt;project name&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const { getProjectByName, getResultsForProject, formatBalanceComparison } = await import('../balance.js');
+        const project = getProjectByName(projectName);
+        if (!project) {
+          await ctx.reply(`Project "${projectName}" not found.`);
+          return;
+        }
+        const results = getResultsForProject(project.id);
+        if (results.length === 0) {
+          await ctx.reply('No balance runs found for this project.');
+          return;
+        }
+        await ctx.reply(formatBalanceComparison(results, true), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete': {
+        const projectName = parts.slice(1).join(' ');
+        if (!projectName) {
+          await ctx.reply('Usage: /balance delete &lt;project name&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const { getProjectByName, deleteProject } = await import('../balance.js');
+        const project = getProjectByName(projectName);
+        if (!project) {
+          await ctx.reply(`Project "${projectName}" not found.`);
+          return;
+        }
+        deleteProject(project.id);
+        await ctx.reply(`Deleted balance project "${projectName}".`);
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>Line Balance Commands:</b>\n\n' +
+            'Send a CSV file with caption <code>/balance &lt;takt_time&gt; &lt;project_name&gt;</code>\n\n' +
+            '/balance list — List projects\n' +
+            '/balance status &lt;name&gt; — Show latest result\n' +
+            '/balance compare &lt;name&gt; — Compare runs\n' +
+            '/balance delete &lt;name&gt; — Delete project',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
   // ── Digest Command ──────────────────────────────────────
 
   bot.command('digest', async (ctx) => {
@@ -2366,6 +2551,12 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     }
     if (caption.startsWith('/tool upload')) {
       await handleToolUpload(ctx, router);
+      return;
+    }
+
+    // Intercept /balance CSV uploads
+    if (caption.startsWith('/balance')) {
+      await handleBalanceCsv(ctx, caption);
       return;
     }
 
