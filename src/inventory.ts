@@ -314,7 +314,13 @@ export function generateReplenishmentPlan(items: InventoryItem[]): Replenishment
     const holdingCostPerUnit = item.unit_cost * (item.holding_cost_pct / 100);
     const dailyDemand = item.annual_demand / 365;
 
-    const eoq = calculateEOQ(item.annual_demand, item.order_cost, holdingCostPerUnit);
+    // When holding cost is zero, order the full annual demand at once (1 order/year)
+    // since there's no cost to holding inventory.
+    let eoq = calculateEOQ(item.annual_demand, item.order_cost, holdingCostPerUnit);
+    if (eoq === 0 && item.annual_demand > 0) {
+      eoq = item.annual_demand;
+    }
+
     const safetyStock = calculateSafetyStock(dailyDemand, item.lead_time_days, item.service_level, item.demand_stddev);
     const rop = calculateReorderPoint(dailyDemand, item.lead_time_days, safetyStock);
 

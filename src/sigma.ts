@@ -535,7 +535,8 @@ export function individualMR(values: number[]): ControlChartData {
   // Detect violations (skip if zero variation — rules are meaningless)
   const violations: ControlViolation[] = [];
   if (sigmaEst > 0) {
-    violations.push(...detectWesternElectricRules(values, mu, sigmaEst));
+    const detected = detectWesternElectricRules(values, mu, sigmaEst);
+    for (const v of detected) violations.push(v);
   } else {
     violations.push({
       index: 0,
