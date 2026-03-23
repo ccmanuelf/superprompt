@@ -43,6 +43,7 @@ import {
 } from './research.js';
 import { lineBalanceDefinition, lineBalance } from './balance.js';
 import { sigmaAnalysisDefinition, sigmaAnalysis } from './sigma.js';
+import { inventoryPlanDefinition, inventoryPlan } from './inventory.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -213,6 +214,12 @@ export function registerBuiltinTools(): void {
       definition: sigmaAnalysisDefinition,
       execute: async (args, chatId) =>
         sigmaAnalysis(args as Parameters<typeof sigmaAnalysis>[0], chatId),
+      source: 'builtin',
+    },
+    {
+      definition: inventoryPlanDefinition,
+      execute: async (args, chatId) =>
+        inventoryPlan(args as Parameters<typeof inventoryPlan>[0], chatId),
       source: 'builtin',
     },
   ];

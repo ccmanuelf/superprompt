@@ -472,6 +472,61 @@ async function handleMessage(
   }
 }
 
+// ── Inventory CSV Upload Helper ──────────────────────────
+
+async function handleInventoryCsv(ctx: Context, caption: string): Promise<void> {
+  const doc = ctx.message?.document;
+  if (!doc) {
+    await ctx.reply('Please attach a CSV file with the /inventory command.');
+    return;
+  }
+
+  const projectName = caption.replace(/^\/inventory(@\w+)?/, '').trim();
+  if (!projectName) {
+    await ctx.reply(
+      'Usage: attach CSV with caption:\n<code>/inventory &lt;project_name&gt;</code>\n\nExample: <code>/inventory Warehouse Q3</code>',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  try {
+    const file = await ctx.getFile();
+    if (!file.file_path) { await ctx.reply('Could not download file.'); return; }
+
+    const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+    const res = await fetch(url);
+    if (!res.ok) { await ctx.reply('Failed to download file.'); return; }
+
+    const csvContent = await res.text();
+    await ctx.reply(`Running inventory analysis for "${projectName}"...`);
+
+    const { executeInventoryAnalysis, formatReplenishmentPlan, generateAbcChart } = await import('../inventory.js');
+    const { plans, abc, stockoutRisks } = executeInventoryAnalysis(csvContent, projectName);
+
+    // Send text result
+    const formatted = formatReplenishmentPlan(plans, abc, true);
+    await ctx.reply(formatted, { parse_mode: 'HTML' });
+
+    // Send ABC chart
+    try {
+      const abcPath = await generateAbcChart(abc, projectName);
+      await ctx.replyWithPhoto(new InputFile(abcPath), { caption: `ABC Classification — ${projectName}` });
+    } catch (err) { logger.warn({ err }, 'Failed to generate ABC chart'); }
+
+    // Send stockout warnings
+    if (stockoutRisks.length > 0) {
+      await ctx.reply(
+        `<b>Stockout Risks:</b>\n${stockoutRisks.map((r) => `• ${escapeHtml(r)}`).join('\n')}`,
+        { parse_mode: 'HTML' },
+      );
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await ctx.reply(`Inventory error: ${escapeHtml(message)}`, { parse_mode: 'HTML' });
+  }
+}
+
 // ── Sigma CSV Upload Helper ─────────────────────────────
 
 async function handleSigmaCsv(ctx: Context, caption: string): Promise<void> {
@@ -2123,6 +2178,69 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     }
   });
 
+  // ── Inventory Command ──────────────────────────────────
+
+  bot.command('inventory', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/inventory(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listInventoryProjects } = await import('../inventory.js');
+        const projects = listInventoryProjects();
+        if (projects.length === 0) {
+          await ctx.reply('No inventory projects. Send a CSV with /inventory to start.');
+          return;
+        }
+        const lines = projects.map((p) =>
+          `<b>${escapeHtml(p.name)}</b> — ${new Date(p.updated_at).toLocaleDateString()}`
+        );
+        await ctx.reply(`<b>Inventory Projects (${projects.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'status': {
+        const projectName = parts.slice(1).join(' ');
+        if (!projectName) { await ctx.reply('Usage: /inventory status &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getInventoryProjectByName, getInventoryItems, getInventoryResults, formatReplenishmentPlan } = await import('../inventory.js');
+        const project = getInventoryProjectByName(projectName);
+        if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
+        const results = getInventoryResults(project.id);
+        const planResult = results.find((r) => r.result_type === 'replenishment');
+        const abcResult = results.find((r) => r.result_type === 'abc');
+        if (!planResult || !abcResult) { await ctx.reply('No analysis results. Upload a CSV first.'); return; }
+        const plans = JSON.parse(planResult.result_json);
+        const abc = JSON.parse(abcResult.result_json);
+        await ctx.reply(formatReplenishmentPlan(plans, abc, true), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete': {
+        const projectName = parts.slice(1).join(' ');
+        if (!projectName) { await ctx.reply('Usage: /inventory delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getInventoryProjectByName, deleteInventoryProject } = await import('../inventory.js');
+        const project = getInventoryProjectByName(projectName);
+        if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
+        deleteInventoryProject(project.id);
+        await ctx.reply(`Deleted inventory project "${projectName}".`);
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>Inventory Planning Commands:</b>\n\n' +
+            'Send CSV with caption <code>/inventory &lt;project_name&gt;</code>\n\n' +
+            '/inventory list — List projects\n' +
+            '/inventory status &lt;name&gt; — Show replenishment plan\n' +
+            '/inventory delete &lt;name&gt; — Delete project',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
   // ── Sigma Command ──────────────────────────────────────
 
   bot.command('sigma', async (ctx) => {
@@ -2715,6 +2833,12 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     // Intercept /sigma CSV uploads
     if (caption.startsWith('/sigma')) {
       await handleSigmaCsv(ctx, caption);
+      return;
+    }
+
+    // Intercept /inventory CSV uploads
+    if (caption.startsWith('/inventory')) {
+      await handleInventoryCsv(ctx, caption);
       return;
     }
 

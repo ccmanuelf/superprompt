@@ -8,6 +8,7 @@ import { initLearningTables } from './learning/db.js';
 import { initCitationTable } from './citations.js';
 import { initBalanceTables } from './balance.js';
 import { initSigmaTables } from './sigma.js';
+import { initInventoryTables } from './inventory.js';
 
 let db: Database.Database;
 
@@ -28,6 +29,7 @@ export function initDatabase(): Database.Database {
   initCitationTable();
   initBalanceTables();
   initSigmaTables();
+  initInventoryTables();
   return db;
 }
 
