@@ -201,13 +201,22 @@ export class ProductionLineSimulator {
   private horizonMinutes: number;
 
   // V3 enhancement state
-  private changeoverMatrix: Map<string, number>; // "fromProduct|toProduct" → minutes
+  private changeoverMatrix: Map<string, number>;
   private breakdownDistributions: Map<string, { mtbf: number; mttr: number }>;
-  private wipLimits: Map<string, number>; // machine_tool → max WIP
-  private currentWipByStation: Map<string, number>; // machine_tool → current queue size
-  private lastProductByTool: Map<string, string>; // last product processed per tool
+  private wipLimits: Map<string, number>;
+  private currentWipByStation: Map<string, number>;
+  private lastProductByTool: Map<string, string>;
   private breakSchedule: Array<{ afterMinutes: number; durationMinutes: number }>;
   private isOnBreak = false;
+  // Material supply
+  private materialStock: Map<string, number>;
+  private materialReplenishment: Map<string, { qty: number; interval: number }>;
+  private materialRequirements: Map<string, Array<{ material_id: string; qty_per_piece: number }>>;
+  // Learning curves
+  private learningCurves: Map<string, { grade_start: number; grade_final: number; rate: number }>;
+  // Warmup
+  private enableWarmup: boolean;
+  private warmupEndMinutes: number;
 
   constructor(
     private config: SimulationConfig,
@@ -242,6 +251,41 @@ export class ProductionLineSimulator {
     this.currentWipByStation = new Map();
     this.lastProductByTool = new Map();
     this.breakSchedule = config.enable_breaks ? DEFAULT_BREAK_PATTERN.breaks : [];
+
+    // Material supply
+    this.materialStock = new Map();
+    this.materialReplenishment = new Map();
+    for (const ms of config.materials ?? []) {
+      this.materialStock.set(ms.material_id, ms.initial_stock);
+      if (ms.replenishment_interval_minutes > 0) {
+        this.materialReplenishment.set(ms.material_id, { qty: ms.replenishment_qty, interval: ms.replenishment_interval_minutes });
+      }
+    }
+    this.materialRequirements = new Map();
+    for (const mr of config.material_requirements ?? []) {
+      const key = `${mr.product}|${mr.operation_step}`;
+      const reqs = this.materialRequirements.get(key) ?? [];
+      reqs.push({ material_id: mr.material_id, qty_per_piece: mr.qty_per_piece });
+      this.materialRequirements.set(key, reqs);
+    }
+
+    // Learning curves
+    this.learningCurves = new Map();
+    for (const lc of config.learning_curves ?? []) {
+      this.learningCurves.set(lc.machine_tool, { grade_start: lc.grade_start, grade_final: lc.grade_final, rate: lc.learning_rate });
+    }
+
+    // Warmup
+    this.enableWarmup = config.enable_warmup ?? false;
+    this.warmupEndMinutes = 30; // first 30 minutes of each shift
+
+    // Shared resource pools — override individual tool resources
+    for (const pool of config.shared_resource_pools ?? []) {
+      const sharedResource = new SimResource(pool.total_capacity);
+      for (const tool of pool.machine_tools) {
+        this.resources.set(tool, sharedResource);
+      }
+    }
   }
 
   /** Group operations by product, sorted by step. */
@@ -293,9 +337,29 @@ export class ProductionLineSimulator {
     }
 
     const fpdMultiplier = (op.fpd_pct ?? 15) / 100;
-    const gradeMultiplier = (100 - (op.grade_pct ?? 85)) / 100;
 
-    const actualTime = baseSam * (1 + variabilityFactor + fpdMultiplier + gradeMultiplier);
+    // V3: Learning curve — grade improves over time
+    let effectiveGrade = op.grade_pct ?? 85;
+    const lc = this.learningCurves.get(op.machine_tool);
+    if (lc) {
+      // grade(t) = grade_final - (grade_final - grade_start) × e^(-λt)
+      const t = this.env.now; // time in minutes since simulation start
+      effectiveGrade = lc.grade_final - (lc.grade_final - lc.grade_start) * Math.exp(-lc.rate * t);
+    }
+    const gradeMultiplier = (100 - effectiveGrade) / 100;
+
+    // V3: Warmup — first 30 minutes at 80% efficiency (20% penalty)
+    let warmupPenalty = 0;
+    if (this.enableWarmup) {
+      const dailyHours = getDailyPlannedHours(this.config.schedule);
+      const timeInShift = this.env.now % (dailyHours * 60);
+      if (timeInShift < this.warmupEndMinutes) {
+        warmupPenalty = 0.20; // 20% slower during warmup
+        this.metrics.warmup_time_lost += baseSam * 0.20;
+      }
+    }
+
+    const actualTime = baseSam * (1 + variabilityFactor + fpdMultiplier + gradeMultiplier + warmupPenalty);
     return Math.max(MIN_PROCESS_TIME_MINUTES, actualTime);
   }
 
@@ -439,6 +503,23 @@ export class ProductionLineSimulator {
         // V3: Wait if on break
         while (this.isOnBreak) {
           await this.env.timeout(1);
+        }
+
+        // V3: Check material availability
+        const matReqs = this.materialRequirements.get(`${product}|${op.step}`);
+        if (matReqs) {
+          for (const req of matReqs) {
+            while ((this.materialStock.get(req.material_id) ?? Infinity) < req.qty_per_piece) {
+              // Starvation — wait for replenishment
+              this.metrics.material_starvation_events++;
+              const starveStart = this.env.now;
+              await this.env.timeout(1); // check every minute
+              this.metrics.material_starvation_time += this.env.now - starveStart;
+            }
+            // Consume material
+            const currentStock = this.materialStock.get(req.material_id) ?? 0;
+            this.materialStock.set(req.material_id, currentStock - req.qty_per_piece);
+          }
         }
 
         const processTime = this.calculateProcessTime(op);
@@ -598,11 +679,31 @@ export class ProductionLineSimulator {
     }
   }
 
+  /**
+   * V3: Background process for material replenishment.
+   */
+  private async materialReplenisher(): Promise<void> {
+    for (const [materialId, config] of this.materialReplenishment) {
+      if (config.interval <= 0) continue;
+      // Start replenishment loop for each material
+      this.materialReplenishLoop(materialId, config.qty, config.interval);
+    }
+  }
+
+  private async materialReplenishLoop(materialId: string, qty: number, interval: number): Promise<void> {
+    while (this.env.now < this.horizonMinutes) {
+      await this.env.timeout(interval);
+      const current = this.materialStock.get(materialId) ?? 0;
+      this.materialStock.set(materialId, current + qty);
+    }
+  }
+
   /** Execute the simulation and return collected metrics. */
   async run(): Promise<SimulationMetrics> {
     // Start background processes
     this.wipSampler();
     this.shiftBreakScheduler();
+    this.materialReplenisher();
 
     // Generate all bundles
     this.generateBundles();

@@ -405,6 +405,53 @@ describe('Real-World Scenarios', () => {
     expect(totalEvents).toBeGreaterThan(0); // At least 1 breakdown across 20 runs
   });
 
+  it('V3: material starvation tracks wait time', async () => {
+    const config: SimulationConfig = {
+      ...TSHIRT_CONFIG,
+      materials: [{ material_id: 'fabric', initial_stock: 10, replenishment_qty: 10, replenishment_interval_minutes: 120 }],
+      material_requirements: [{ operation_step: 1, product: 'TSHIRT_A', material_id: 'fabric', qty_per_piece: 1 }],
+    };
+    const { metrics } = await runSimulation(config, 42);
+    expect(metrics.material_starvation_events).toBeGreaterThan(0);
+    expect(metrics.material_starvation_time).toBeGreaterThan(0);
+  });
+
+  it('V3: learning curve improves effective grade over time', async () => {
+    const config: SimulationConfig = {
+      operations: [{ product: 'X', step: 1, operation: 'Op', machine_tool: 'T1', sam_min: 2.0, operators: 10, variability: 'deterministic', grade_pct: 60, fpd_pct: 0 }],
+      schedule: { shifts_enabled: 1, shift1_hours: 8, work_days: 5 },
+      demands: [{ product: 'X', bundle_size: 1, daily_demand: 20 }],
+      mode: 'demand-driven',
+      horizon_days: 1,
+      learning_curves: [{ machine_tool: 'T1', grade_start: 60, grade_final: 95, learning_rate: 0.01 }],
+    };
+    const { metrics } = await runSimulation(config, 42);
+    expect(metrics.throughput_by_product.get('X')).toBeGreaterThan(0);
+  });
+
+  it('V3: warmup adds time penalty in first 30 minutes', async () => {
+    const { metrics: noWarmup } = await runSimulation(TSHIRT_CONFIG, 42);
+    const { metrics: withWarmup } = await runSimulation({ ...TSHIRT_CONFIG, enable_warmup: true }, 42);
+    expect(withWarmup.warmup_time_lost).toBeGreaterThan(0);
+  });
+
+  it('V3: shared resource pool limits cross-line capacity', async () => {
+    const config: SimulationConfig = {
+      operations: [
+        { product: 'L1', step: 1, operation: 'QC', machine_tool: 'QC_L1', sam_min: 1.0, operators: 3, variability: 'deterministic', grade_pct: 100, fpd_pct: 0 },
+        { product: 'L2', step: 1, operation: 'QC', machine_tool: 'QC_L2', sam_min: 1.0, operators: 3, variability: 'deterministic', grade_pct: 100, fpd_pct: 0 },
+      ],
+      schedule: { shifts_enabled: 1, shift1_hours: 8, work_days: 5 },
+      demands: [{ product: 'L1', bundle_size: 5, daily_demand: 30 }, { product: 'L2', bundle_size: 5, daily_demand: 30 }],
+      mode: 'demand-driven',
+      horizon_days: 1,
+      shared_resource_pools: [{ pool_name: 'Shared QC', machine_tools: ['QC_L1', 'QC_L2'], total_capacity: 3 }],
+    };
+    const { metrics } = await runSimulation(config, 42);
+    expect(metrics.throughput_by_product.get('L1')).toBeGreaterThan(0);
+    expect(metrics.throughput_by_product.get('L2')).toBeGreaterThan(0);
+  });
+
   it('2-shift scenario doubles capacity window', async () => {
     const config: SimulationConfig = {
       ...TSHIRT_CONFIG,

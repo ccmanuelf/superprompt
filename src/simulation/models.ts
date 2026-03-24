@@ -75,6 +75,37 @@ export interface WipLimit {
   max_wip: number;
 }
 
+/** V3 enhancement: material supply constraint */
+export interface MaterialSupply {
+  material_id: string;
+  initial_stock: number;
+  replenishment_qty: number;
+  replenishment_interval_minutes: number; // 0 = no replenishment
+}
+
+/** V3 enhancement: material requirement per operation */
+export interface MaterialRequirement {
+  operation_step: number;
+  product: string;
+  material_id: string;
+  qty_per_piece: number;
+}
+
+/** V3 enhancement: learning curve per operator/tool */
+export interface LearningCurveConfig {
+  machine_tool: string;
+  grade_start: number;      // initial skill % (e.g. 60)
+  grade_final: number;      // target skill % (e.g. 90)
+  learning_rate: number;    // λ (higher = faster learning), e.g. 0.01
+}
+
+/** V3 enhancement: multi-line shared resource */
+export interface SharedResourcePool {
+  pool_name: string;
+  machine_tools: string[];  // tools across lines sharing this pool
+  total_capacity: number;   // total operators in the shared pool
+}
+
 export interface SimulationConfig {
   operations: OperationInput[];
   schedule: ScheduleConfig;
@@ -89,6 +120,11 @@ export interface SimulationConfig {
   breakdown_distributions?: BreakdownDistribution[];
   wip_limits?: WipLimit[];
   enable_breaks?: boolean;
+  enable_warmup?: boolean;  // first 30 min at 80% efficiency
+  materials?: MaterialSupply[];
+  material_requirements?: MaterialRequirement[];
+  learning_curves?: LearningCurveConfig[];
+  shared_resource_pools?: SharedResourcePool[];
 }
 
 // ── Simulation Metrics (internal) ────────────────────────────
@@ -111,6 +147,10 @@ export interface SimulationMetrics {
   rework_by_station: Map<string, number>;
   breakdown_events: number;
   breakdown_time_lost: number;
+  // V3 enhancement metrics
+  material_starvation_events: number;
+  material_starvation_time: number;
+  warmup_time_lost: number;
 }
 
 // ── Validation Models ────────────────────────────────────────
@@ -365,5 +405,8 @@ export function createEmptyMetrics(): SimulationMetrics {
     rework_by_station: new Map(),
     breakdown_events: 0,
     breakdown_time_lost: 0,
+    material_starvation_events: 0,
+    material_starvation_time: 0,
+    warmup_time_lost: 0,
   };
 }
