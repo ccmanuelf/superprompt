@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Production Line Simulator — clauded</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    [v-cloak] { display: none; }
+    .mono { font-family: 'Roboto Mono', monospace; }
+    .ops-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .ops-table th, .ops-table td { border: 1px solid #e0e0e0; padding: 6px 8px; text-align: left; }
+    .ops-table th { background: #f5f5f5; font-weight: 500; position: sticky; top: 0; z-index: 1; }
+    .ops-table input, .ops-table select { width: 100%; border: none; background: transparent; font-size: 13px; padding: 2px; }
+    .ops-table input:focus, .ops-table select:focus { outline: 2px solid #1976d2; border-radius: 2px; }
+    .ops-table tr:hover { background: #f5f5f5; }
+    .util-bar { height: 20px; border-radius: 3px; min-width: 4px; }
+    .result-card { border-left: 4px solid #1976d2; }
+    .bottleneck-card { border-left-color: #e15759; }
+    .donor-card { border-left-color: #59a14f; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <v-app>
+      <v-app-bar color="primary" density="compact">
+        <v-app-bar-title>
+          <v-icon class="mr-2">mdi-factory</v-icon>
+          Production Line Simulator v3.0
+        </v-app-bar-title>
+        <v-spacer></v-spacer>
+        <v-chip class="mr-2" size="small" color="success" v-if="engineInfo">
+          Engine {{ engineInfo.engine_version }}
+        </v-chip>
+        <v-chip class="mr-2" size="small" :color="engineInfo?.minizinc_available ? 'success' : 'warning'">
+          MiniZinc {{ engineInfo?.minizinc_available ? 'OK' : 'N/A' }}
+        </v-chip>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid class="pa-4">
+          <!-- Summary Stats -->
+          <v-row dense class="mb-3">
+            <v-col cols="auto"><v-chip size="small" color="info">{{ products.length }} Products</v-chip></v-col>
+            <v-col cols="auto"><v-chip size="small" color="info">{{ config.operations.length }} Operations</v-chip></v-col>
+            <v-col cols="auto"><v-chip size="small" color="info">{{ machineTools.length }} Machines</v-chip></v-col>
+            <v-col cols="auto"><v-chip size="small" color="info">{{ dailyPlannedHours.toFixed(1) }}h/day</v-chip></v-col>
+            <v-col cols="auto"><v-chip size="small" color="info">{{ config.horizon_days || 1 }} day horizon</v-chip></v-col>
+          </v-row>
+
+          <!-- Main Tabs -->
+          <v-tabs v-model="activeTab" color="primary" density="compact" class="mb-3">
+            <v-tab value="operations">Operations</v-tab>
+            <v-tab value="schedule">Schedule</v-tab>
+            <v-tab value="demand">Demand</v-tab>
+            <v-tab value="breakdowns">Breakdowns</v-tab>
+          </v-tabs>
+
+          <v-window v-model="activeTab">
+            <!-- Operations Tab -->
+            <v-window-item value="operations">
+              <v-card variant="outlined">
+                <v-card-title class="d-flex align-center">
+                  <span>Operations</span>
+                  <v-spacer></v-spacer>
+                  <v-btn size="small" color="primary" variant="tonal" @click="addOperation" class="mr-2">
+                    <v-icon start>mdi-plus</v-icon> Add Row
+                  </v-btn>
+                  <v-btn size="small" variant="tonal" @click="loadSampleData">
+                    <v-icon start>mdi-tshirt-crew</v-icon> Sample Data
+                  </v-btn>
+                </v-card-title>
+                <v-card-text style="max-height: 400px; overflow-y: auto;">
+                  <table class="ops-table" v-if="config.operations.length > 0">
+                    <thead>
+                      <tr>
+                        <th style="width:30px"></th>
+                        <th>Product</th>
+                        <th style="width:50px">Step</th>
+                        <th>Operation</th>
+                        <th>Machine/Tool</th>
+                        <th style="width:70px">SAM</th>
+                        <th style="width:50px">Ops</th>
+                        <th style="width:60px">Grade%</th>
+                        <th style="width:60px">FPD%</th>
+                        <th style="width:70px">Rework%</th>
+                        <th style="width:90px">Variability</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(op, i) in config.operations" :key="i">
+                        <td><v-btn icon="mdi-close" size="x-small" variant="text" color="error" @click="removeOperation(i)"></v-btn></td>
+                        <td><input v-model="op.product" placeholder="Product"></td>
+                        <td><input v-model.number="op.step" type="number" min="1"></td>
+                        <td><input v-model="op.operation" placeholder="Operation name"></td>
+                        <td><input v-model="op.machine_tool" placeholder="Machine/Tool"></td>
+                        <td><input v-model.number="op.sam_min" type="number" step="0.1" min="0.01"></td>
+                        <td><input v-model.number="op.operators" type="number" min="1" max="20"></td>
+                        <td><input v-model.number="op.grade_pct" type="number" min="1" max="100"></td>
+                        <td><input v-model.number="op.fpd_pct" type="number" min="0" max="50"></td>
+                        <td><input v-model.number="op.rework_pct" type="number" step="0.1" min="0" max="100"></td>
+                        <td>
+                          <select v-model="op.variability">
+                            <option value="triangular">Triangular</option>
+                            <option value="deterministic">None</option>
+                          </select>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <v-alert v-else type="info" variant="tonal">
+                    No operations defined. Click "Add Row" or "Sample Data" to get started.
+                  </v-alert>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+
+            <!-- Schedule Tab -->
+            <v-window-item value="schedule">
+              <v-card variant="outlined">
+                <v-card-text>
+                  <v-row>
+                    <v-col cols="6">
+                      <div class="text-subtitle-2 mb-2">Shifts</div>
+                      <v-slider v-model="config.schedule.shifts_enabled" :min="1" :max="3" :step="1" thumb-label show-ticks label="Shifts per day"></v-slider>
+                      <v-text-field v-model.number="config.schedule.shift1_hours" label="Shift 1 hours" type="number" density="compact" :min="0.5" :max="12" :step="0.5"></v-text-field>
+                      <v-text-field v-if="config.schedule.shifts_enabled >= 2" v-model.number="config.schedule.shift2_hours" label="Shift 2 hours" type="number" density="compact"></v-text-field>
+                      <v-text-field v-if="config.schedule.shifts_enabled >= 3" v-model.number="config.schedule.shift3_hours" label="Shift 3 hours" type="number" density="compact"></v-text-field>
+                    </v-col>
+                    <v-col cols="6">
+                      <div class="text-subtitle-2 mb-2">Work Days & Overtime</div>
+                      <v-slider v-model="config.schedule.work_days" :min="1" :max="7" :step="1" thumb-label show-ticks label="Work days per week"></v-slider>
+                      <v-switch v-model="config.schedule.ot_enabled" label="Overtime enabled" density="compact"></v-switch>
+                      <template v-if="config.schedule.ot_enabled">
+                        <v-text-field v-model.number="config.schedule.weekday_ot_hours" label="Weekday OT hours" type="number" density="compact"></v-text-field>
+                        <v-text-field v-model.number="config.schedule.weekend_ot_days" label="Weekend OT days" type="number" density="compact"></v-text-field>
+                        <v-text-field v-model.number="config.schedule.weekend_ot_hours" label="Weekend OT hours" type="number" density="compact"></v-text-field>
+                      </template>
+                    </v-col>
+                  </v-row>
+                  <v-alert type="info" variant="tonal" density="compact" class="mt-2">
+                    Daily: {{ dailyPlannedHours.toFixed(1) }}h | Weekly: {{ weeklyHours.toFixed(1) }}h
+                  </v-alert>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+
+            <!-- Demand Tab -->
+            <v-window-item value="demand">
+              <v-card variant="outlined">
+                <v-card-title class="d-flex align-center">
+                  <v-select v-model="config.mode" :items="['demand-driven', 'mix-driven']" label="Mode" density="compact" style="max-width:200px" hide-details class="mr-3"></v-select>
+                  <v-text-field v-if="config.mode === 'mix-driven'" v-model.number="config.total_demand" label="Total daily demand" type="number" density="compact" style="max-width:180px" hide-details class="mr-3"></v-text-field>
+                  <v-select v-model="config.horizon_days" :items="[1,2,3,5,7]" label="Horizon (days)" density="compact" style="max-width:140px" hide-details class="mr-3"></v-select>
+                  <v-spacer></v-spacer>
+                  <v-btn size="small" color="primary" variant="tonal" @click="addDemand">
+                    <v-icon start>mdi-plus</v-icon> Add Product
+                  </v-btn>
+                </v-card-title>
+                <v-card-text>
+                  <table class="ops-table" v-if="config.demands.length > 0">
+                    <thead>
+                      <tr>
+                        <th style="width:30px"></th>
+                        <th>Product</th>
+                        <th style="width:100px">Bundle Size</th>
+                        <th v-if="config.mode !== 'mix-driven'" style="width:120px">Daily Demand</th>
+                        <th v-if="config.mode !== 'mix-driven'" style="width:120px">Weekly Demand</th>
+                        <th v-if="config.mode === 'mix-driven'" style="width:120px">Mix Share %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(d, i) in config.demands" :key="i">
+                        <td><v-btn icon="mdi-close" size="x-small" variant="text" color="error" @click="config.demands.splice(i, 1)"></v-btn></td>
+                        <td>
+                          <select v-model="d.product">
+                            <option v-for="p in products" :key="p" :value="p">{{ p }}</option>
+                          </select>
+                        </td>
+                        <td><input v-model.number="d.bundle_size" type="number" min="1" max="100"></td>
+                        <td v-if="config.mode !== 'mix-driven'"><input v-model.number="d.daily_demand" type="number" min="0"></td>
+                        <td v-if="config.mode !== 'mix-driven'"><input v-model.number="d.weekly_demand" type="number" min="0"></td>
+                        <td v-if="config.mode === 'mix-driven'"><input v-model.number="d.mix_share_pct" type="number" min="0" max="100" step="0.1"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+
+            <!-- Breakdowns Tab -->
+            <v-window-item value="breakdowns">
+              <v-card variant="outlined">
+                <v-card-title class="d-flex align-center">
+                  <span>Equipment Breakdowns</span>
+                  <v-spacer></v-spacer>
+                  <v-btn size="small" color="primary" variant="tonal" @click="addBreakdown">
+                    <v-icon start>mdi-plus</v-icon> Add Rule
+                  </v-btn>
+                </v-card-title>
+                <v-card-text>
+                  <table class="ops-table" v-if="config.breakdowns.length > 0">
+                    <thead><tr><th style="width:30px"></th><th>Machine/Tool</th><th style="width:120px">Breakdown %</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(b, i) in config.breakdowns" :key="i">
+                        <td><v-btn icon="mdi-close" size="x-small" variant="text" color="error" @click="config.breakdowns.splice(i, 1)"></v-btn></td>
+                        <td>
+                          <select v-model="b.machine_tool">
+                            <option v-for="t in machineTools" :key="t" :value="t">{{ t }}</option>
+                          </select>
+                        </td>
+                        <td><input v-model.number="b.breakdown_pct" type="number" min="0" max="100" step="0.1"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <v-alert v-else type="success" variant="tonal" density="compact">
+                    <v-icon start>mdi-check-circle</v-icon> No breakdowns configured — all machines assumed 100% available.
+                  </v-alert>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+          </v-window>
+
+          <!-- Validation Panel -->
+          <v-card v-if="validation" variant="outlined" class="mt-3" :color="validation.is_valid ? 'success' : 'error'">
+            <v-card-title class="text-body-2">
+              <v-icon :color="validation.is_valid ? 'success' : 'error'" class="mr-1">{{ validation.is_valid ? 'mdi-check-circle' : 'mdi-alert-circle' }}</v-icon>
+              Validation: {{ validation.is_valid ? 'PASS' : 'FAILED' }}
+              <v-chip size="x-small" class="ml-2" v-if="validation.errors.length">{{ validation.errors.length }} errors</v-chip>
+              <v-chip size="x-small" class="ml-1" v-if="validation.warnings.length">{{ validation.warnings.length }} warnings</v-chip>
+            </v-card-title>
+            <v-card-text v-if="validation.errors.length || validation.warnings.length">
+              <v-alert v-for="e in validation.errors" :key="e.message" type="error" variant="tonal" density="compact" class="mb-1">
+                {{ e.message }}<br><small>{{ e.recommendation }}</small>
+              </v-alert>
+              <v-alert v-for="w in validation.warnings" :key="w.message" type="warning" variant="tonal" density="compact" class="mb-1">
+                {{ w.message }}<br><small>{{ w.recommendation }}</small>
+              </v-alert>
+            </v-card-text>
+          </v-card>
+
+          <!-- Action Buttons -->
+          <v-row class="mt-3" dense>
+            <v-col cols="auto">
+              <v-btn color="primary" variant="tonal" @click="doValidate" :loading="loading.validate">
+                <v-icon start>mdi-check</v-icon> Validate
+              </v-btn>
+            </v-col>
+            <v-col cols="auto">
+              <v-btn color="success" @click="doRun" :loading="loading.run" :disabled="!validation?.is_valid">
+                <v-icon start>mdi-play</v-icon> Run Simulation
+              </v-btn>
+            </v-col>
+            <v-col cols="auto">
+              <v-btn color="deep-purple" variant="tonal" @click="doMonteCarlo" :loading="loading.mc" :disabled="!validation?.is_valid">
+                <v-icon start>mdi-chart-bell-curve</v-icon> Monte Carlo ({{ mcReplications }})
+              </v-btn>
+            </v-col>
+            <v-col cols="auto">
+              <v-text-field v-model.number="mcReplications" label="Reps" type="number" density="compact" style="max-width:80px" hide-details :min="5" :max="100"></v-text-field>
+            </v-col>
+            <v-spacer></v-spacer>
+            <v-col cols="auto">
+              <v-btn variant="text" @click="doExport"><v-icon start>mdi-download</v-icon> Export</v-btn>
+            </v-col>
+            <v-col cols="auto">
+              <v-btn variant="text" @click="doImport"><v-icon start>mdi-upload</v-icon> Import</v-btn>
+            </v-col>
+            <v-col cols="auto">
+              <v-btn variant="text" color="error" @click="doReset"><v-icon start>mdi-refresh</v-icon> Reset</v-btn>
+            </v-col>
+          </v-row>
+
+          <!-- Error Alert -->
+          <v-alert v-if="errorMsg" type="error" variant="tonal" class="mt-3" closable @click:close="errorMsg=''">{{ errorMsg }}</v-alert>
+
+          <!-- Results Section -->
+          <template v-if="results">
+            <v-divider class="my-4"></v-divider>
+            <v-card variant="outlined">
+              <v-card-title class="d-flex align-center">
+                <v-icon class="mr-2" color="success">mdi-check-circle</v-icon>
+                Results: {{ results.daily_summary.daily_throughput_pcs }} / {{ results.daily_summary.daily_demand_pcs }} pcs
+                <v-chip class="ml-2" :color="results.daily_summary.daily_coverage_pct >= 100 ? 'success' : results.daily_summary.daily_coverage_pct >= 90 ? 'warning' : 'error'">
+                  {{ results.daily_summary.daily_coverage_pct }}% coverage
+                </v-chip>
+                <v-chip class="ml-2" size="small">{{ results.simulation_duration_seconds.toFixed(3) }}s</v-chip>
+              </v-card-title>
+
+              <v-card-text>
+                <v-tabs v-model="resultTab" density="compact" color="primary" class="mb-3">
+                  <v-tab value="summary">Summary</v-tab>
+                  <v-tab value="stations">Stations</v-tab>
+                  <v-tab value="weekly">Weekly</v-tab>
+                  <v-tab value="products">Products</v-tab>
+                  <v-tab value="rebalancing">Rebalancing</v-tab>
+                  <v-tab value="bundles">Bundles</v-tab>
+                  <v-tab value="assumptions">Assumptions</v-tab>
+                </v-tabs>
+
+                <v-window v-model="resultTab">
+                  <!-- Summary -->
+                  <v-window-item value="summary">
+                    <v-row>
+                      <v-col cols="4">
+                        <v-card variant="tonal" class="result-card">
+                          <v-card-title class="text-body-2">Daily Summary</v-card-title>
+                          <v-card-text class="text-body-2">
+                            <div>Shifts: {{ results.daily_summary.total_shifts_per_day }}/day ({{ results.daily_summary.daily_planned_hours }}h)</div>
+                            <div>Throughput: <strong>{{ results.daily_summary.daily_throughput_pcs }}</strong> pcs</div>
+                            <div>Demand: {{ results.daily_summary.daily_demand_pcs }} pcs</div>
+                            <div>Cycle Time: {{ results.daily_summary.avg_cycle_time_min }} min avg</div>
+                            <div>WIP: {{ results.daily_summary.avg_wip_pcs }} pcs avg</div>
+                          </v-card-text>
+                        </v-card>
+                      </v-col>
+                      <v-col cols="4">
+                        <v-card variant="tonal" class="result-card">
+                          <v-card-title class="text-body-2">Free Capacity</v-card-title>
+                          <v-card-text class="text-body-2">
+                            <div>Max Capacity: {{ results.free_capacity.daily_max_capacity_pcs }} pcs</div>
+                            <div>Usage: {{ results.free_capacity.demand_usage_pct }}%</div>
+                            <div>Free Hours: {{ results.free_capacity.free_line_hours_per_day }}h/day</div>
+                            <div>Equiv. Free Ops: {{ results.free_capacity.equivalent_free_operators_full_shift }}</div>
+                          </v-card-text>
+                        </v-card>
+                      </v-col>
+                      <v-col cols="4">
+                        <v-card variant="tonal" :class="['result-card', bottlenecks.length > 0 ? 'bottleneck-card' : 'donor-card']">
+                          <v-card-title class="text-body-2">Bottlenecks</v-card-title>
+                          <v-card-text class="text-body-2">
+                            <div v-for="b in bottlenecks" :key="b.machine_tool">
+                              <v-icon color="error" size="small">mdi-alert</v-icon>
+                              {{ b.machine_tool }}: {{ b.util_pct }}%
+                            </div>
+                            <div v-if="bottlenecks.length === 0" class="text-success">No bottlenecks detected</div>
+                            <div class="mt-2" v-if="donors.length > 0">
+                              <div class="text-caption text-grey">Potential donors:</div>
+                              <div v-for="d in donors" :key="d.machine_tool">{{ d.machine_tool }}: {{ d.util_pct }}%</div>
+                            </div>
+                          </v-card-text>
+                        </v-card>
+                      </v-col>
+                    </v-row>
+                  </v-window-item>
+
+                  <!-- Stations -->
+                  <v-window-item value="stations">
+                    <v-data-table :headers="stationHeaders" :items="results.station_performance" density="compact" items-per-page="-1">
+                      <template v-slot:item.util_pct="{ item }">
+                        <div style="display:flex;align-items:center;gap:6px">
+                          <div class="util-bar" :style="{width: Math.min(item.util_pct, 100)+'%', maxWidth:'120px', background: item.is_bottleneck ? '#e15759' : item.util_pct >= 80 ? '#f28e2b' : '#59a14f'}"></div>
+                          <span class="mono">{{ item.util_pct }}%</span>
+                        </div>
+                      </template>
+                      <template v-slot:item.is_bottleneck="{ item }">
+                        <v-icon v-if="item.is_bottleneck" color="error" size="small">mdi-alert-circle</v-icon>
+                        <v-icon v-else-if="item.is_donor" color="success" size="small">mdi-arrow-down-circle</v-icon>
+                      </template>
+                    </v-data-table>
+                  </v-window-item>
+
+                  <!-- Weekly -->
+                  <v-window-item value="weekly">
+                    <v-data-table :headers="weeklyHeaders" :items="results.weekly_demand_capacity" density="compact" items-per-page="-1">
+                      <template v-slot:item.status="{ item }">
+                        <v-chip :color="item.status === 'OK' ? 'success' : item.status === 'Tight' ? 'warning' : 'error'" size="small">{{ item.status }}</v-chip>
+                      </template>
+                    </v-data-table>
+                  </v-window-item>
+
+                  <!-- Products -->
+                  <v-window-item value="products">
+                    <v-data-table :headers="productHeaders" :items="results.per_product_summary" density="compact" items-per-page="-1">
+                      <template v-slot:item.daily_coverage_pct="{ item }">
+                        <v-chip :color="item.daily_coverage_pct >= 100 ? 'success' : item.daily_coverage_pct >= 90 ? 'warning' : 'error'" size="small">{{ item.daily_coverage_pct }}%</v-chip>
+                      </template>
+                    </v-data-table>
+                  </v-window-item>
+
+                  <!-- Rebalancing -->
+                  <v-window-item value="rebalancing">
+                    <v-alert v-if="results.rebalancing_suggestions.length === 0" type="success" variant="tonal">
+                      No rebalancing needed — line is balanced.
+                    </v-alert>
+                    <v-data-table v-else :headers="rebalanceHeaders" :items="results.rebalancing_suggestions" density="compact" items-per-page="-1">
+                      <template v-slot:item.role="{ item }">
+                        <v-chip :color="item.role === 'Bottleneck' ? 'error' : 'success'" size="small">{{ item.role }}</v-chip>
+                      </template>
+                    </v-data-table>
+                  </v-window-item>
+
+                  <!-- Bundles -->
+                  <v-window-item value="bundles">
+                    <v-data-table :headers="bundleHeaders" :items="results.bundle_metrics" density="compact" items-per-page="-1"></v-data-table>
+                  </v-window-item>
+
+                  <!-- Assumptions -->
+                  <v-window-item value="assumptions">
+                    <v-row>
+                      <v-col cols="6">
+                        <div class="text-subtitle-2 mb-2">Configuration</div>
+                        <div class="text-body-2" v-for="(v, k) in results.assumption_log.schedule" :key="k">{{ k }}: {{ v }}</div>
+                      </v-col>
+                      <v-col cols="6">
+                        <div class="text-subtitle-2 mb-2">Formulas</div>
+                        <div class="text-body-2" v-for="(v, k) in results.assumption_log.formula_implementations" :key="k"><strong>{{ k }}</strong>: {{ v }}</div>
+                        <div class="text-subtitle-2 mt-3 mb-2">Limitations</div>
+                        <ul class="text-body-2"><li v-for="l in results.assumption_log.limitations_and_caveats" :key="l">{{ l }}</li></ul>
+                      </v-col>
+                    </v-row>
+                  </v-window-item>
+                </v-window>
+              </v-card-text>
+            </v-card>
+          </template>
+
+          <!-- Monte Carlo Results -->
+          <template v-if="mcResults">
+            <v-divider class="my-4"></v-divider>
+            <v-card variant="outlined" color="deep-purple">
+              <v-card-title>
+                <v-icon class="mr-2">mdi-chart-bell-curve</v-icon>
+                Monte Carlo: {{ mcResults.replications }} replications
+                <v-chip class="ml-2" :color="mcResults.demand_met_pct >= 90 ? 'success' : mcResults.demand_met_pct >= 50 ? 'warning' : 'error'">
+                  Demand met {{ mcResults.demand_met_pct }}% of runs
+                </v-chip>
+              </v-card-title>
+              <v-card-text>
+                <v-row>
+                  <v-col cols="3" v-for="stat in [
+                    {label:'Throughput', data:mcResults.throughput, unit:'pcs'},
+                    {label:'Cycle Time', data:mcResults.cycle_time, unit:'min'},
+                    {label:'Max WIP', data:mcResults.max_wip, unit:'pcs'},
+                  ]" :key="stat.label">
+                    <v-card variant="tonal" class="result-card">
+                      <v-card-title class="text-body-2">{{ stat.label }}</v-card-title>
+                      <v-card-text class="text-body-2 mono">
+                        <div>Mean: {{ stat.data.mean }} {{ stat.unit }}</div>
+                        <div>P5: {{ stat.data.p5 }} | P50: {{ stat.data.p50 }} | P95: {{ stat.data.p95 }}</div>
+                        <div>Range: {{ stat.data.min }}–{{ stat.data.max }}</div>
+                      </v-card-text>
+                    </v-card>
+                  </v-col>
+                </v-row>
+              </v-card-text>
+            </v-card>
+          </template>
+
+        </v-container>
+      </v-main>
+    </v-app>
+  </div>
+
+  <!-- Hidden file input for import -->
+  <input type="file" id="importFile" accept=".json" style="display:none" onchange="window.__importConfig(event)">
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.0/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+  <script>
+    const { createApp, ref, reactive, computed } = Vue;
+
+    const API = '/api/sim';
+
+    const app = createApp({
+      setup() {
+        const activeTab = ref('operations');
+        const resultTab = ref('summary');
+        const engineInfo = ref(null);
+        const validation = ref(null);
+        const results = ref(null);
+        const mcResults = ref(null);
+        const mcReplications = ref(30);
+        const errorMsg = ref('');
+        const loading = reactive({ validate: false, run: false, mc: false });
+
+        const config = reactive({
+          operations: [],
+          schedule: { shifts_enabled: 1, shift1_hours: 8, shift2_hours: 0, shift3_hours: 0, work_days: 5, ot_enabled: false, weekday_ot_hours: 0, weekend_ot_days: 0, weekend_ot_hours: 0 },
+          demands: [],
+          breakdowns: [],
+          mode: 'demand-driven',
+          total_demand: null,
+          horizon_days: 1,
+        });
+
+        const products = computed(() => [...new Set(config.operations.map(op => op.product).filter(Boolean))]);
+        const machineTools = computed(() => [...new Set(config.operations.map(op => op.machine_tool).filter(Boolean))]);
+        const dailyPlannedHours = computed(() => {
+          let h = config.schedule.shift1_hours || 0;
+          if (config.schedule.shifts_enabled >= 2) h += config.schedule.shift2_hours || 0;
+          if (config.schedule.shifts_enabled >= 3) h += config.schedule.shift3_hours || 0;
+          return h;
+        });
+        const weeklyHours = computed(() => dailyPlannedHours.value * config.schedule.work_days);
+
+        const bottlenecks = computed(() => results.value?.station_performance?.filter(s => s.is_bottleneck) || []);
+        const donors = computed(() => results.value?.station_performance?.filter(s => s.is_donor) || []);
+
+        // Table headers
+        const stationHeaders = [
+          { title: 'Product', key: 'product' }, { title: 'Step', key: 'step' },
+          { title: 'Operation', key: 'operation' }, { title: 'Machine', key: 'machine_tool' },
+          { title: 'Ops', key: 'operators' }, { title: 'Utilization', key: 'util_pct' },
+          { title: 'Queue Wait', key: 'queue_wait_time_min' }, { title: '', key: 'is_bottleneck' },
+        ];
+        const weeklyHeaders = [
+          { title: 'Product', key: 'product' }, { title: 'Weekly Demand', key: 'weekly_demand_pcs' },
+          { title: 'Weekly Capacity', key: 'max_weekly_capacity_pcs' },
+          { title: 'Coverage %', key: 'demand_coverage_pct' }, { title: 'Status', key: 'status' },
+        ];
+        const productHeaders = [
+          { title: 'Product', key: 'product' }, { title: 'Bundle', key: 'bundle_size_pcs' },
+          { title: 'Daily Demand', key: 'daily_demand_pcs' }, { title: 'Daily Output', key: 'daily_throughput_pcs' },
+          { title: 'Coverage', key: 'daily_coverage_pct' },
+          { title: 'Weekly Demand', key: 'weekly_demand_pcs' }, { title: 'Weekly Output', key: 'weekly_throughput_pcs' },
+        ];
+        const rebalanceHeaders = [
+          { title: 'Operation', key: 'operation' }, { title: 'Machine', key: 'machine_tool' },
+          { title: 'Before', key: 'operators_before' }, { title: 'After', key: 'operators_after' },
+          { title: 'Util Before', key: 'util_before_pct' }, { title: 'Util After', key: 'util_after_pct' },
+          { title: 'Role', key: 'role' }, { title: 'Action', key: 'comment' },
+        ];
+        const bundleHeaders = [
+          { title: 'Product', key: 'product' }, { title: 'Bundle Size', key: 'bundle_size_pcs' },
+          { title: 'Bundles/Day', key: 'bundles_arriving_per_day' },
+          { title: 'Avg in System', key: 'avg_bundles_in_system' },
+          { title: 'Max in System', key: 'max_bundles_in_system' },
+          { title: 'Avg Cycle Time', key: 'avg_bundle_cycle_time_min' },
+        ];
+
+        // Actions
+        async function doValidate() {
+          loading.validate = true; errorMsg.value = '';
+          try {
+            const resp = await fetch(`${API}/validate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config }) });
+            validation.value = await resp.json();
+          } catch (e) { errorMsg.value = e.message; } finally { loading.validate = false; }
+        }
+
+        async function doRun() {
+          loading.run = true; errorMsg.value = '';
+          try {
+            const resp = await fetch(`${API}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config }) });
+            const data = await resp.json();
+            if (data.success) { results.value = data.results; validation.value = data.validation_report; }
+            else { errorMsg.value = data.message || 'Simulation failed'; validation.value = data.validation_report; }
+          } catch (e) { errorMsg.value = e.message; } finally { loading.run = false; }
+        }
+
+        async function doMonteCarlo() {
+          loading.mc = true; errorMsg.value = '';
+          try {
+            const resp = await fetch(`${API}/monte-carlo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config, replications: mcReplications.value }) });
+            const data = await resp.json();
+            if (data.success !== false) mcResults.value = data;
+            else errorMsg.value = data.message || 'Monte Carlo failed';
+          } catch (e) { errorMsg.value = e.message; } finally { loading.mc = false; }
+        }
+
+        function addOperation() {
+          const nextStep = config.operations.length > 0 ? Math.max(...config.operations.map(o => o.step || 0)) + 1 : 1;
+          const product = products.value[0] || '';
+          config.operations.push({ product, step: nextStep, operation: '', machine_tool: '', sam_min: 1.0, operators: 1, grade_pct: 85, fpd_pct: 15, rework_pct: 0, variability: 'triangular' });
+        }
+
+        function removeOperation(i) { config.operations.splice(i, 1); }
+
+        function addDemand() {
+          const product = products.value.find(p => !config.demands.some(d => d.product === p)) || '';
+          config.demands.push({ product, bundle_size: 10, daily_demand: 100, weekly_demand: 500, mix_share_pct: null });
+        }
+
+        function addBreakdown() {
+          const tool = machineTools.value.find(t => !config.breakdowns.some(b => b.machine_tool === t)) || '';
+          config.breakdowns.push({ machine_tool: tool, breakdown_pct: 2 });
+        }
+
+        function loadSampleData() {
+          config.operations = [
+            { product: 'TSHIRT_A', step: 1, operation: 'Cut fabric', machine_tool: 'Cutting Table', sam_min: 2.0, operators: 2, grade_pct: 85, fpd_pct: 15, rework_pct: 0, variability: 'triangular' },
+            { product: 'TSHIRT_A', step: 2, operation: 'Sew shoulder seams', machine_tool: 'Overlock', sam_min: 1.5, operators: 1, grade_pct: 85, fpd_pct: 15, rework_pct: 0, variability: 'triangular' },
+            { product: 'TSHIRT_A', step: 3, operation: 'Attach sleeves', machine_tool: 'Overlock', sam_min: 2.5, operators: 1, grade_pct: 85, fpd_pct: 15, rework_pct: 0, variability: 'triangular' },
+            { product: 'TSHIRT_A', step: 4, operation: 'Sew side seams', machine_tool: 'Overlock', sam_min: 2.0, operators: 1, grade_pct: 85, fpd_pct: 15, rework_pct: 0, variability: 'triangular' },
+            { product: 'TSHIRT_A', step: 5, operation: 'Hem bottom', machine_tool: 'Coverstitch', sam_min: 1.0, operators: 1, grade_pct: 85, fpd_pct: 15, rework_pct: 0, variability: 'triangular' },
+            { product: 'TSHIRT_A', step: 6, operation: 'Hem sleeves', machine_tool: 'Coverstitch', sam_min: 1.5, operators: 1, grade_pct: 85, fpd_pct: 15, rework_pct: 0, variability: 'triangular' },
+            { product: 'TSHIRT_A', step: 7, operation: 'Attach collar', machine_tool: 'Flatlock', sam_min: 3.0, operators: 2, grade_pct: 85, fpd_pct: 15, rework_pct: 0, variability: 'triangular' },
+            { product: 'TSHIRT_A', step: 8, operation: 'Quality inspection', machine_tool: 'Inspection Table', sam_min: 1.0, operators: 1, grade_pct: 85, fpd_pct: 15, rework_pct: 0, variability: 'triangular' },
+            { product: 'TSHIRT_A', step: 9, operation: 'Pack and label', machine_tool: 'Packing Table', sam_min: 0.5, operators: 1, grade_pct: 85, fpd_pct: 15, rework_pct: 0, variability: 'triangular' },
+          ];
+          config.schedule = { shifts_enabled: 1, shift1_hours: 8, shift2_hours: 0, shift3_hours: 0, work_days: 5, ot_enabled: false, weekday_ot_hours: 0, weekend_ot_days: 0, weekend_ot_hours: 0 };
+          config.demands = [{ product: 'TSHIRT_A', bundle_size: 10, daily_demand: 200, weekly_demand: 1000, mix_share_pct: null }];
+          config.breakdowns = [{ machine_tool: 'Overlock', breakdown_pct: 2 }, { machine_tool: 'Coverstitch', breakdown_pct: 1 }];
+          config.mode = 'demand-driven';
+          config.horizon_days = 1;
+          validation.value = null; results.value = null; mcResults.value = null;
+        }
+
+        function doExport() {
+          const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'simulation-config.json';
+          a.click();
+        }
+
+        function doImport() { document.getElementById('importFile').click(); }
+
+        window.__importConfig = function(event) {
+          const file = event.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const imported = JSON.parse(e.target.result);
+              Object.assign(config, imported);
+              validation.value = null; results.value = null; mcResults.value = null;
+            } catch { errorMsg.value = 'Invalid JSON file'; }
+          };
+          reader.readAsText(file);
+          event.target.value = '';
+        };
+
+        function doReset() {
+          config.operations = [];
+          config.demands = [];
+          config.breakdowns = [];
+          config.schedule = { shifts_enabled: 1, shift1_hours: 8, shift2_hours: 0, shift3_hours: 0, work_days: 5, ot_enabled: false, weekday_ot_hours: 0, weekend_ot_days: 0, weekend_ot_hours: 0 };
+          config.mode = 'demand-driven';
+          config.total_demand = null;
+          config.horizon_days = 1;
+          validation.value = null; results.value = null; mcResults.value = null;
+        }
+
+        // Fetch engine info on load
+        fetch(`${API}/info`).then(r => r.json()).then(d => engineInfo.value = d).catch(() => {});
+
+        return {
+          activeTab, resultTab, engineInfo, validation, results, mcResults, mcReplications,
+          errorMsg, loading, config, products, machineTools, dailyPlannedHours, weeklyHours,
+          bottlenecks, donors,
+          stationHeaders, weeklyHeaders, productHeaders, rebalanceHeaders, bundleHeaders,
+          doValidate, doRun, doMonteCarlo, addOperation, removeOperation, addDemand, addBreakdown,
+          loadSampleData, doExport, doImport, doReset,
+        };
+      },
+    });
+
+    app.use(Vuetify.createVuetify({ theme: { defaultTheme: 'light' } }));
+    app.mount('#app');
+  </script>
+</body>
+</html>

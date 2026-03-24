@@ -17,6 +17,7 @@ import {
   type PlanStatus,
 } from '../learning/index.js';
 import type { ProviderRouter } from '../providers/router.js';
+import { handleSimApi } from './sim-api.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 // In dev: src/web/ → src/web/public/
@@ -111,16 +112,34 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     server = createHttpServer(handleRequest);
   }
 
-  // Serve static files with security headers
+  // Serve static files and API routes with security headers
   function handleRequest(
     req: import('node:http').IncomingMessage,
     res: import('node:http').ServerResponse,
   ): void {
-    let urlPath = req.url?.split('?')[0] || '/';
-    if (urlPath === '/') urlPath = '/index.html';
+    const urlPath = req.url?.split('?')[0] || '/';
+
+    // ── API routes (handle before static files) ──
+    if (urlPath.startsWith('/api/')) {
+      handleSimApi(req, res, urlPath).catch((err) => {
+        logger.error({ err }, 'Sim API unhandled error');
+        res.writeHead(500);
+        res.end('Internal Server Error');
+      });
+      return;
+    }
+
+    // ── Static file serving ──
+    let filePath: string;
+    if (urlPath === '/') {
+      filePath = resolve(PUBLIC_DIR, 'index.html');
+    } else if (urlPath === '/sim' || urlPath === '/sim/') {
+      filePath = resolve(PUBLIC_DIR, 'simulation', 'index.html');
+    } else {
+      filePath = resolve(PUBLIC_DIR, urlPath.slice(1));
+    }
 
     // Only serve files from public directory
-    const filePath = resolve(PUBLIC_DIR, urlPath.slice(1));
     if (!filePath.startsWith(PUBLIC_DIR)) {
       res.writeHead(403, SECURITY_HEADERS);
       res.end('Forbidden');
@@ -136,9 +155,14 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     const ext = extname(filePath);
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
+    // Relax CSP for simulation page (needs CDN scripts for Vue, Vuetify, AG Grid)
+    const headers = urlPath.startsWith('/sim') || filePath.includes('simulation')
+      ? { ...SECURITY_HEADERS, 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com; font-src https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:;" }
+      : SECURITY_HEADERS;
+
     try {
       const content = readFileSync(filePath);
-      res.writeHead(200, { 'Content-Type': contentType, ...SECURITY_HEADERS });
+      res.writeHead(200, { 'Content-Type': contentType, ...headers });
       res.end(content);
     } catch {
       res.writeHead(500, SECURITY_HEADERS);

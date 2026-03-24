@@ -12,6 +12,7 @@ import { initInventoryTables } from './inventory.js';
 import { initControlPlanTables } from './control-plan.js';
 import { initFmeaTables } from './fmea.js';
 import { initRcaTables } from './rca.js';
+import { initSimulationTables } from './simulation/index.js';
 
 let db: Database.Database;
 
@@ -36,6 +37,7 @@ export function initDatabase(): Database.Database {
   initControlPlanTables();
   initFmeaTables();
   initRcaTables();
+  initSimulationTables();
   return db;
 }
 
