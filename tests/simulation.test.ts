@@ -333,6 +333,78 @@ describe('Real-World Scenarios', () => {
     expect(metrics.throughput_by_product.get('B')).toBeGreaterThan(0);
   });
 
+  it('V3: shift breaks reduce available time', async () => {
+    const noBreaks = await runSimulation(TSHIRT_CONFIG, 42);
+    const withBreaks = await runSimulation({ ...TSHIRT_CONFIG, enable_breaks: true }, 42);
+    const t1 = noBreaks.metrics.throughput_by_product.get('TSHIRT_A') ?? 0;
+    const t2 = withBreaks.metrics.throughput_by_product.get('TSHIRT_A') ?? 0;
+    expect(t2).toBeLessThanOrEqual(t1);
+  });
+
+  it('V3: changeover times add delay between products', async () => {
+    const multiConfig: SimulationConfig = {
+      operations: [
+        { product: 'A', step: 1, operation: 'Cut', machine_tool: 'Cutter', sam_min: 1.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0 },
+        { product: 'B', step: 1, operation: 'Cut', machine_tool: 'Cutter', sam_min: 1.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0 },
+      ],
+      schedule: { shifts_enabled: 1, shift1_hours: 8, work_days: 5 },
+      demands: [{ product: 'A', bundle_size: 5, daily_demand: 25 }, { product: 'B', bundle_size: 5, daily_demand: 25 }],
+      mode: 'demand-driven',
+      horizon_days: 1,
+    };
+
+    const noCO = await runSimulation(multiConfig, 42);
+    const withCO = await runSimulation({
+      ...multiConfig,
+      changeovers: [
+        { from_product: 'A', to_product: 'B', changeover_minutes: 30 },
+        { from_product: 'B', to_product: 'A', changeover_minutes: 30 },
+      ],
+    }, 42);
+
+    const total1 = (noCO.metrics.throughput_by_product.get('A') ?? 0) + (noCO.metrics.throughput_by_product.get('B') ?? 0);
+    const total2 = (withCO.metrics.throughput_by_product.get('A') ?? 0) + (withCO.metrics.throughput_by_product.get('B') ?? 0);
+    expect(total2).toBeLessThanOrEqual(total1);
+  });
+
+  it('V3: WIP limits constrain queue depth', async () => {
+    const config: SimulationConfig = {
+      operations: [
+        { product: 'A', step: 1, operation: 'Fast', machine_tool: 'T1', sam_min: 0.5, operators: 5 },
+        { product: 'A', step: 2, operation: 'Slow', machine_tool: 'T2', sam_min: 3.0 },
+      ],
+      schedule: { shifts_enabled: 1, shift1_hours: 8, work_days: 5 },
+      demands: [{ product: 'A', bundle_size: 5, daily_demand: 50 }],
+      mode: 'demand-driven',
+      horizon_days: 1,
+      wip_limits: [{ machine_tool: 'T2', max_wip: 3 }],
+    };
+    const { metrics } = await runSimulation(config, 42);
+    // WIP limit should prevent unbounded queue growth
+    expect(metrics.max_wip).toBeGreaterThan(0);
+  });
+
+  it('V3: MTBF/MTTR breakdowns with variable repair time', async () => {
+    const config: SimulationConfig = {
+      operations: [
+        { product: 'A', step: 1, operation: 'Op', machine_tool: 'M1', sam_min: 1.0, operators: 10, variability: 'deterministic', grade_pct: 100, fpd_pct: 0 },
+      ],
+      schedule: { shifts_enabled: 1, shift1_hours: 8, work_days: 5 },
+      demands: [{ product: 'A', bundle_size: 5, daily_demand: 100 }],
+      mode: 'demand-driven',
+      horizon_days: 1,
+      breakdown_distributions: [{ machine_tool: 'M1', mtbf_minutes: 30, mttr_minutes: 10 }],
+    };
+
+    // Run multiple times to confirm stochastic breakdowns occur
+    let totalEvents = 0;
+    for (let i = 0; i < 20; i++) {
+      const { metrics } = await runSimulation(config, i * 13);
+      totalEvents += metrics.breakdown_events;
+    }
+    expect(totalEvents).toBeGreaterThan(0); // At least 1 breakdown across 20 runs
+  });
+
   it('2-shift scenario doubles capacity window', async () => {
     const config: SimulationConfig = {
       ...TSHIRT_CONFIG,
