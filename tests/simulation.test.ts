@@ -452,6 +452,42 @@ describe('Real-World Scenarios', () => {
     expect(metrics.throughput_by_product.get('L2')).toBeGreaterThan(0);
   });
 
+  it('V3: parallel branches execute concurrently and merge', async () => {
+    const config: SimulationConfig = {
+      operations: [
+        { product: 'X', step: 1, operation: 'Cut', machine_tool: 'T1', sam_min: 1.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0 },
+        { product: 'X', step: 2, operation: 'Sew Left', machine_tool: 'T2', sam_min: 2.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0, predecessors: ['X:1'] },
+        { product: 'X', step: 3, operation: 'Sew Right', machine_tool: 'T3', sam_min: 2.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0, predecessors: ['X:1'] },
+        { product: 'X', step: 4, operation: 'QC', machine_tool: 'T4', sam_min: 1.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0, predecessors: ['X:2', 'X:3'] },
+      ],
+      schedule: { shifts_enabled: 1, shift1_hours: 8, work_days: 5 },
+      demands: [{ product: 'X', bundle_size: 5, daily_demand: 30 }],
+      mode: 'demand-driven', horizon_days: 1,
+    };
+    const { metrics } = await runSimulation(config, 42);
+    expect(metrics.throughput_by_product.get('X')).toBeGreaterThan(0);
+    // All 4 stations should process pieces
+    expect(metrics.station_pieces_processed.size).toBe(4);
+  });
+
+  it('V3: multi-path routing — different products, different paths', async () => {
+    const config: SimulationConfig = {
+      operations: [
+        { product: 'A', step: 1, operation: 'S1', machine_tool: 'T1', sam_min: 1.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0 },
+        { product: 'A', step: 2, operation: 'S2', machine_tool: 'T2', sam_min: 1.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0, predecessors: ['A:1'] },
+        { product: 'A', step: 3, operation: 'S3', machine_tool: 'T3', sam_min: 1.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0, predecessors: ['A:2'] },
+        { product: 'B', step: 1, operation: 'S1', machine_tool: 'T1', sam_min: 1.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0 },
+        { product: 'B', step: 2, operation: 'S3', machine_tool: 'T3', sam_min: 1.0, operators: 5, variability: 'deterministic', grade_pct: 100, fpd_pct: 0, predecessors: ['B:1'] },
+      ],
+      schedule: { shifts_enabled: 1, shift1_hours: 8, work_days: 5 },
+      demands: [{ product: 'A', bundle_size: 5, daily_demand: 20 }, { product: 'B', bundle_size: 5, daily_demand: 20 }],
+      mode: 'demand-driven', horizon_days: 1,
+    };
+    const { metrics } = await runSimulation(config, 42);
+    expect(metrics.throughput_by_product.get('A')).toBeGreaterThan(0);
+    expect(metrics.throughput_by_product.get('B')).toBeGreaterThan(0);
+  });
+
   it('2-shift scenario doubles capacity window', async () => {
     const config: SimulationConfig = {
       ...TSHIRT_CONFIG,

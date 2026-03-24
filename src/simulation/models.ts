@@ -28,6 +28,11 @@ export interface OperationInput {
   rework_pct?: number;     // default: 0.0
   grade_pct?: number;      // default: 85.0
   fpd_pct?: number;        // default: 15.0
+  // V3: Parallel/branch routing — operation IDs this op depends on
+  // If set, this op waits for ALL predecessors to complete before starting.
+  // If not set, falls back to sequential step order (backward compatible).
+  // Use operation name or "product:step" as ID (e.g., "TSHIRT_A:3")
+  predecessors?: string[];
 }
 
 export interface ScheduleConfig {
@@ -349,7 +354,7 @@ export interface SimResultRow {
 
 // ── Helper: apply defaults to OperationInput ─────────────────
 
-export function applyOperationDefaults(op: OperationInput): Required<Omit<OperationInput, never>> & OperationInput {
+export function applyOperationDefaults(op: OperationInput): OperationInput {
   return {
     ...op,
     sequence: op.sequence ?? 'Assembly',

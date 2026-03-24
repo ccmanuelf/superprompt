@@ -445,9 +445,101 @@ export class ProductionLineSimulator {
     this.currentWipByStation.set(machineTool, Math.max(0, current - 1));
   }
 
+  /** Get operation ID for predecessor matching. */
+  private getOpId(op: OperationInput): string {
+    return `${op.product}:${op.step}`;
+  }
+
+  /** Check if any operation uses predecessors (DAG mode). */
+  private hasPredecessors(operations: OperationInput[]): boolean {
+    return operations.some((op) => op.predecessors && op.predecessors.length > 0);
+  }
+
   /**
-   * Process a single bundle through all operations.
-   * This is the core simulation process — equivalent to SimPy's generator.
+   * Process a single operation for a bundle (extracted for reuse).
+   */
+  private async processOneOperation(
+    op: OperationInput, product: string, bundleSize: number, transitionTime: number,
+  ): Promise<void> {
+    // Entry transition delay
+    await this.env.timeout(transitionTime);
+
+    // V3: Wait for WIP capacity (kanban backpressure)
+    await this.waitForWipCapacity(op.machine_tool);
+    this.enterStation(op.machine_tool);
+
+    const arrivalTime = this.env.now;
+
+    const resource = this.resources.get(op.machine_tool);
+    if (!resource) { this.leaveStation(op.machine_tool); return; }
+
+    const release = await resource.request();
+
+    // Record queue wait time
+    const waitTime = this.env.now - arrivalTime;
+    const queueWaits = this.metrics.station_queue_waits.get(op.machine_tool) ?? [];
+    queueWaits.push(waitTime);
+    this.metrics.station_queue_waits.set(op.machine_tool, queueWaits);
+
+    // V3: Changeover delay
+    const changeoverDelay = this.getChangeoverDelay(op.machine_tool, product);
+    if (changeoverDelay > 0) await this.env.timeout(changeoverDelay);
+
+    // Breakdown check
+    const breakdownDelay = this.checkBreakdown(op.machine_tool);
+    if (breakdownDelay > 0) await this.env.timeout(breakdownDelay);
+
+    // Process each piece
+    for (let piece = 0; piece < bundleSize; piece++) {
+      while (this.isOnBreak) await this.env.timeout(1);
+
+      // Material check
+      const matReqs = this.materialRequirements.get(`${product}|${op.step}`);
+      if (matReqs) {
+        for (const req of matReqs) {
+          while ((this.materialStock.get(req.material_id) ?? Infinity) < req.qty_per_piece) {
+            this.metrics.material_starvation_events++;
+            const starveStart = this.env.now;
+            await this.env.timeout(1);
+            this.metrics.material_starvation_time += this.env.now - starveStart;
+          }
+          const currentStock = this.materialStock.get(req.material_id) ?? 0;
+          this.materialStock.set(req.material_id, currentStock - req.qty_per_piece);
+        }
+      }
+
+      const processTime = this.calculateProcessTime(op);
+      await this.env.timeout(processTime);
+
+      const busyTime = this.metrics.station_busy_time.get(op.machine_tool) ?? 0;
+      this.metrics.station_busy_time.set(op.machine_tool, busyTime + processTime);
+
+      const piecesProcessed = this.metrics.station_pieces_processed.get(op.machine_tool) ?? 0;
+      this.metrics.station_pieces_processed.set(op.machine_tool, piecesProcessed + 1);
+
+      const reworkPct = op.rework_pct ?? 0;
+      if (reworkPct > 0 && this.rng.next() * 100 < reworkPct) {
+        this.metrics.rework_count++;
+        const reworkByStation = this.metrics.rework_by_station.get(op.machine_tool) ?? 0;
+        this.metrics.rework_by_station.set(op.machine_tool, reworkByStation + 1);
+        const reworkTime = this.calculateProcessTime(op);
+        await this.env.timeout(reworkTime);
+        const reworkBusy = this.metrics.station_busy_time.get(op.machine_tool) ?? 0;
+        this.metrics.station_busy_time.set(op.machine_tool, reworkBusy + reworkTime);
+      }
+    }
+
+    release();
+    this.leaveStation(op.machine_tool);
+    await this.env.timeout(transitionTime);
+  }
+
+  /**
+   * Process a bundle through operations — supports both sequential and DAG routing.
+   *
+   * Sequential (V2 compatible): operations execute in step order.
+   * DAG (V3 parallel): operations with predecessors wait for dependencies,
+   * independent operations run concurrently.
    */
   private async bundleProcess(
     bundleId: number,
@@ -464,95 +556,49 @@ export class ProductionLineSimulator {
 
     const transitionTime = this.getBundleTransitionTime(bundleSize);
 
-    for (const op of operations) {
-      // Entry transition delay
-      await this.env.timeout(transitionTime);
+    if (this.hasPredecessors(operations)) {
+      // ── DAG mode: parallel/branch routing ──
+      const completed = new Set<string>();
+      const opMap = new Map(operations.map((op) => [this.getOpId(op), op]));
+      const remaining = new Set(operations.map((op) => this.getOpId(op)));
 
-      // V3: Wait for WIP capacity (kanban backpressure)
-      await this.waitForWipCapacity(op.machine_tool);
-      this.enterStation(op.machine_tool);
-
-      const arrivalTime = this.env.now;
-
-      // Request the machine/tool resource
-      const resource = this.resources.get(op.machine_tool);
-      if (!resource) { this.leaveStation(op.machine_tool); continue; }
-
-      const release = await resource.request();
-
-      // Record queue wait time
-      const waitTime = this.env.now - arrivalTime;
-      const queueWaits = this.metrics.station_queue_waits.get(op.machine_tool) ?? [];
-      queueWaits.push(waitTime);
-      this.metrics.station_queue_waits.set(op.machine_tool, queueWaits);
-
-      // V3: Changeover delay when switching products
-      const changeoverDelay = this.getChangeoverDelay(op.machine_tool, product);
-      if (changeoverDelay > 0) {
-        await this.env.timeout(changeoverDelay);
-      }
-
-      // Check for equipment breakdown (V3: uses MTBF/MTTR when configured)
-      const breakdownDelay = this.checkBreakdown(op.machine_tool);
-      if (breakdownDelay > 0) {
-        await this.env.timeout(breakdownDelay);
-      }
-
-      // Process each piece in the bundle
-      for (let piece = 0; piece < bundleSize; piece++) {
-        // V3: Wait if on break
-        while (this.isOnBreak) {
-          await this.env.timeout(1);
-        }
-
-        // V3: Check material availability
-        const matReqs = this.materialRequirements.get(`${product}|${op.step}`);
-        if (matReqs) {
-          for (const req of matReqs) {
-            while ((this.materialStock.get(req.material_id) ?? Infinity) < req.qty_per_piece) {
-              // Starvation — wait for replenishment
-              this.metrics.material_starvation_events++;
-              const starveStart = this.env.now;
-              await this.env.timeout(1); // check every minute
-              this.metrics.material_starvation_time += this.env.now - starveStart;
-            }
-            // Consume material
-            const currentStock = this.materialStock.get(req.material_id) ?? 0;
-            this.materialStock.set(req.material_id, currentStock - req.qty_per_piece);
+      while (remaining.size > 0) {
+        // Find operations whose predecessors are all completed
+        const ready: OperationInput[] = [];
+        for (const opId of remaining) {
+          const op = opMap.get(opId)!;
+          const preds = op.predecessors ?? [];
+          if (preds.every((p) => completed.has(p))) {
+            ready.push(op);
           }
         }
 
-        const processTime = this.calculateProcessTime(op);
-        await this.env.timeout(processTime);
-
-        // Accumulate busy time and piece count
-        const busyTime = this.metrics.station_busy_time.get(op.machine_tool) ?? 0;
-        this.metrics.station_busy_time.set(op.machine_tool, busyTime + processTime);
-
-        const piecesProcessed = this.metrics.station_pieces_processed.get(op.machine_tool) ?? 0;
-        this.metrics.station_pieces_processed.set(op.machine_tool, piecesProcessed + 1);
-
-        // Check for rework
-        const reworkPct = op.rework_pct ?? 0;
-        if (reworkPct > 0 && this.rng.next() * 100 < reworkPct) {
-          this.metrics.rework_count++;
-          const reworkByStation = this.metrics.rework_by_station.get(op.machine_tool) ?? 0;
-          this.metrics.rework_by_station.set(op.machine_tool, reworkByStation + 1);
-
-          const reworkTime = this.calculateProcessTime(op);
-          await this.env.timeout(reworkTime);
-
-          const reworkBusy = this.metrics.station_busy_time.get(op.machine_tool) ?? 0;
-          this.metrics.station_busy_time.set(op.machine_tool, reworkBusy + reworkTime);
+        if (ready.length === 0) {
+          // Deadlock — remaining ops have unresolvable predecessors
+          // Fall back: process remaining sequentially to avoid infinite loop
+          for (const opId of remaining) {
+            await this.processOneOperation(opMap.get(opId)!, product, bundleSize, transitionTime);
+            completed.add(opId);
+          }
+          remaining.clear();
+          break;
         }
+
+        // Execute all ready operations in parallel
+        await Promise.all(
+          ready.map(async (op) => {
+            await this.processOneOperation(op, product, bundleSize, transitionTime);
+            const opId = this.getOpId(op);
+            completed.add(opId);
+            remaining.delete(opId);
+          }),
+        );
       }
-
-      // Release the resource
-      release();
-      this.leaveStation(op.machine_tool);
-
-      // Exit transition delay
-      await this.env.timeout(transitionTime);
+    } else {
+      // ── Sequential mode (V2 compatible) ──
+      for (const op of operations) {
+        await this.processOneOperation(op, product, bundleSize, transitionTime);
+      }
     }
 
     // Bundle completed
