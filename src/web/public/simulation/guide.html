@@ -75,6 +75,8 @@
                 <li>Changeover times between products</li>
                 <li>Shift breaks and warmup periods</li>
                 <li>Multi-line shared resource pools</li>
+                <li>Parallel/branch routing with merge points (predecessor-based DAG)</li>
+                <li>Multi-path routing (different products, different operation paths)</li>
               </ul>
             </v-card-text>
           </v-card>
@@ -86,7 +88,7 @@
                 <li>Continuous-flow manufacturing (chemicals, food processing, steel)</li>
                 <li>Job-shop scheduling (dynamic routing through shared machines)</li>
                 <li>Highly automated cells (CNC, robotics with fixed cycle times)</li>
-                <li>Parallel/branch routing (skip/merge operations)</li>
+                <!-- Parallel routing is now supported via predecessors -->
                 <li>Batch process accumulation (e.g., dyeing, heat treatment)</li>
               </ul>
             </v-card-text>
@@ -202,6 +204,17 @@
                 <p><strong>Warmup:</strong> First 30 minutes of each shift at 80% efficiency. Enable with <span class="code">enable_warmup: true</span></p>
               </v-expansion-panel-text>
             </v-expansion-panel>
+            <v-expansion-panel title="Parallel / Branch Routing">
+              <v-expansion-panel-text>
+                <p>Operations can specify <span class="code">predecessors</span> to define a DAG (Directed Acyclic Graph) instead of strict sequential flow.</p>
+                <p><strong>Parallel branches:</strong> Two operations with the same predecessor run concurrently.</p>
+                <p><strong>Merge points:</strong> An operation with multiple predecessors waits for ALL to complete.</p>
+                <p><strong>Multi-path:</strong> Different products can have different operation sequences through shared machines.</p>
+                <p>Config: <span class="code">predecessors: ["PRODUCT:step", "PRODUCT:step"]</span> on each operation</p>
+                <p>Example: Cut (step 1) → Sew Left (step 2, pred: 1) + Sew Right (step 3, pred: 1) → QC (step 4, pred: 2+3)</p>
+                <p>If no predecessors specified, falls back to sequential step order (V2 compatible).</p>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
             <v-expansion-panel title="Multi-Line Shared Resources">
               <v-expansion-panel-text>
                 <p>Share operator pools across parallel lines (e.g., shared QC, shared cutting). The shared pool replaces individual tool resources.</p>
@@ -270,6 +283,7 @@
               <tr><td>learning_curves</td><td>array</td><td>[]</td><td>Operator skill improvement over time</td></tr>
               <tr><td>breakdown_distributions</td><td>array</td><td>[]</td><td>MTBF/MTTR per machine (replaces fixed delay)</td></tr>
               <tr><td>shared_resource_pools</td><td>array</td><td>[]</td><td>Cross-line shared operator pools</td></tr>
+              <tr><td>predecessors (per op)</td><td>string[]</td><td>none</td><td>Operation IDs this op depends on (e.g., ["PRODUCT:1"]). Enables parallel routing.</td></tr>
             </tbody>
           </v-table>
 
@@ -289,7 +303,7 @@
           <!-- 14. Limitations -->
           <h3 id="limitations">14. Known Limitations</h3>
           <ul>
-            <li>Linear-only routing — every product must flow step 1 → 2 → 3 → N (no skip/branch/merge)</li>
+            <li>Parallel routing requires explicit predecessor configuration (not auto-detected from step numbers)</li>
             <li>No batch accumulation (wait for N bundles before starting)</li>
             <li>No continuous-flow modeling (flow rates, tank levels)</li>
             <li>No job-shop dynamic routing</li>
