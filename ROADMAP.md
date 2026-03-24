@@ -7,7 +7,7 @@
 
 clauded is evolving from personal AI assistant into a **full AI partner platform ("Jarvis")**. Core autonomy sprints S1-S8 complete. Platform expansion sprints S10-S13 planned.
 
-**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 ✅ → S13 ✅ → S14 (ClawMFG Chat ×6) → S15 (ClawMFG Web ×7) → S16 (Simulations) → S9 (Docs) → S4 (E2E) → S3 (Cloud)**
+**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 ✅ → S13 ✅ → S14 ✅ → S16 ✅ → S15 (ClawMFG Web ×7) → S9 (Docs) → S4 (E2E) → S3 (Cloud)**
 
 ---
 
