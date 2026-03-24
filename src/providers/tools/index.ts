@@ -47,6 +47,8 @@ import { inventoryPlanDefinition, inventoryPlan } from './inventory.js';
 import { spcSetupDefinition, spcSetup } from './spc-setup.js';
 import { fmeaManageDefinition, fmeaManage } from './fmea.js';
 import { rcaManageDefinition, rcaManage } from './rca.js';
+import { simulationDefinition, productionSimulation } from './simulation.js';
+import { minizincOptimizeDefinition, minizincOptimize } from './minizinc-tool.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -241,6 +243,19 @@ export function registerBuiltinTools(): void {
       definition: rcaManageDefinition,
       execute: async (args, chatId) =>
         rcaManage(args as Record<string, unknown>, chatId),
+      source: 'builtin',
+    },
+    // ── Simulation tools ──
+    {
+      definition: simulationDefinition,
+      execute: async (args) =>
+        productionSimulation(args as Record<string, unknown>),
+      source: 'builtin',
+    },
+    {
+      definition: minizincOptimizeDefinition,
+      execute: async (args) =>
+        minizincOptimize(args as Record<string, unknown>),
       source: 'builtin',
     },
   ];

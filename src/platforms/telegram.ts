@@ -2225,6 +2225,51 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     }
   });
 
+  // ── Simulation Command ─────────────────────────────────
+
+  bot.command('sim', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/sim(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listScenarios } = await import('../simulation/index.js');
+        const scenarios = listScenarios();
+        if (scenarios.length === 0) { await ctx.reply('No simulation scenarios. Use the web UI at /sim or ask the AI.'); return; }
+        const lines = scenarios.map((s) =>
+          `<b>${escapeHtml(s.name)}</b> — ${new Date(s.updated_at).toLocaleDateString()}`
+        );
+        await ctx.reply(`<b>Simulation Scenarios (${scenarios.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete': {
+        const name = parts.slice(1).join(' ');
+        if (!name) { await ctx.reply('Usage: /sim delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getScenarioByName, deleteScenario } = await import('../simulation/index.js');
+        const scenario = getScenarioByName(name);
+        if (!scenario) { await ctx.reply(`Scenario "${name}" not found.`); return; }
+        deleteScenario(scenario.id);
+        await ctx.reply(`Deleted simulation scenario "${name}".`);
+        return;
+      }
+
+      default:
+        const webPort = config.VOICE_WEB_PORT || 3030;
+        await ctx.reply(
+          '<b>Production Line Simulator:</b>\n\n' +
+            `Web UI: <code>http://localhost:${webPort}/sim</code>\n\n` +
+            '/sim list — List saved scenarios\n' +
+            '/sim delete &lt;name&gt; — Delete scenario\n\n' +
+            'Or ask the AI: "Simulate a T-shirt line with 9 operations"',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
   // ── RCA Command ────────────────────────────────────────
 
   bot.command('rca', async (ctx) => {
