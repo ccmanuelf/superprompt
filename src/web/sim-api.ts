@@ -32,6 +32,7 @@ import {
   optimizeSequence,
   optimizeSchedule,
   rebalanceLine,
+  optimizeAndValidate,
 } from '../minizinc.js';
 
 /**
@@ -249,6 +250,30 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
           jsonResponse(res, 400, { error: `Unknown optimization type: ${type}` });
           return true;
       }
+    }
+
+    case '/optimize-and-validate': {
+      const config = body.config as SimulationConfig;
+      if (!config) { jsonResponse(res, 400, { error: 'config is required' }); return true; }
+      const optType = (body.optimization_type as string) || 'operators';
+      if (!isMiniZincAvailable()) {
+        jsonResponse(res, 503, { error: 'MiniZinc solver not available' });
+        return true;
+      }
+
+      const result = await optimizeAndValidate({
+        optimization_type: optType as 'operators' | 'rebalance',
+        config,
+        replications: typeof body.replications === 'number' ? body.replications : 30,
+      });
+
+      if (!result) {
+        jsonResponse(res, 200, { success: false, message: 'Optimization found no feasible solution' });
+        return true;
+      }
+
+      jsonResponse(res, 200, { success: true, ...result });
+      return true;
     }
 
     case '/scenarios': {

@@ -348,3 +348,151 @@ solve minimize max_util;
     max_utilization_after: Math.round(maxUtil * 100) / 100,
   };
 }
+
+// ── Auto-Chain: Optimize → Simulate → Validate ──────────────
+
+export interface OptimizeAndValidateInput {
+  optimization_type: 'operators' | 'rebalance';
+  config: import('./simulation/models.js').SimulationConfig;
+  replications?: number;
+}
+
+export interface OptimizeAndValidateResult {
+  optimization: OperatorAssignmentResult | RebalancingResult;
+  original_throughput: number;
+  optimized_throughput: import('./simulation/models.js').DistributionStats;
+  demand_met_pct: number;
+  improvement_pct: number;
+  confidence: string;
+  recommendation: string;
+}
+
+/**
+ * MiniZinc → Sim auto-chain: optimize operators, apply to config,
+ * run Monte Carlo, report if the "optimal" solution survives uncertainty.
+ * Exported for testing.
+ */
+export async function optimizeAndValidate(
+  input: OptimizeAndValidateInput,
+): Promise<OptimizeAndValidateResult | null> {
+  const { runSimulation } = await import('./simulation/engine.js');
+  const { runMonteCarlo } = await import('./simulation/monte-carlo.js');
+  const { getDailyPlannedHours } = await import('./simulation/models.js');
+
+  const config = input.config;
+  const reps = input.replications ?? 30;
+
+  // Step 1: Run original config once to get baseline throughput
+  const { metrics: baseMetrics } = await runSimulation(config, 42);
+  let originalThroughput = 0;
+  for (const [, count] of baseMetrics.throughput_by_product) originalThroughput += count;
+
+  // Step 2: Optimize
+  const availableMinutes = getDailyPlannedHours(config.schedule) * 60 * (config.horizon_days ?? 1);
+  let dailyDemand = 0;
+  for (const d of config.demands) {
+    if (d.daily_demand) dailyDemand += d.daily_demand;
+    else if (d.weekly_demand) dailyDemand += d.weekly_demand / config.schedule.work_days;
+    else if (config.mode === 'mix-driven' && config.total_demand && d.mix_share_pct) {
+      dailyDemand += config.total_demand * d.mix_share_pct / 100;
+    }
+  }
+  const totalDemand = dailyDemand * (config.horizon_days ?? 1);
+
+  let optimization: OperatorAssignmentResult | RebalancingResult | null = null;
+  let optimizedConfig = { ...config, operations: [...config.operations] };
+
+  if (input.optimization_type === 'operators') {
+    // Build station list from unique machine tools
+    const toolSam = new Map<string, number>();
+    for (const op of config.operations) {
+      const current = toolSam.get(op.machine_tool) ?? 0;
+      toolSam.set(op.machine_tool, current + op.sam_min);
+    }
+
+    const stations = [...toolSam.entries()].map(([name, sam]) => ({ name, sam_per_piece: sam }));
+    const result = optimizeOperators({ stations, available_minutes: availableMinutes, demand: Math.ceil(totalDemand) });
+    if (!result) return null;
+    optimization = result;
+
+    // Apply optimized operators back to config
+    const toolOps = new Map<string, number>();
+    for (const sa of result.station_assignments) toolOps.set(sa.station, sa.operators);
+
+    optimizedConfig.operations = config.operations.map((op) => {
+      const totalForTool = toolOps.get(op.machine_tool);
+      if (totalForTool !== undefined) {
+        // Distribute equally among operations sharing this tool
+        const opsForTool = config.operations.filter((o) => o.machine_tool === op.machine_tool);
+        const perOp = Math.max(1, Math.round(totalForTool / opsForTool.length));
+        return { ...op, operators: perOp };
+      }
+      return op;
+    });
+  } else {
+    // Rebalance — use current station performance
+    const { calculateAllBlocks } = await import('./simulation/calculations.js');
+    const { validateSimulationConfig } = await import('./simulation/validation.js');
+    const report = validateSimulationConfig(config);
+    const results = calculateAllBlocks(config, baseMetrics, report, 0);
+
+    const totalOps = config.operations.reduce((s, op) => s + (op.operators ?? 1), 0);
+    const stations = results.station_performance
+      .filter((s, i, arr) => arr.findIndex((x) => x.machine_tool === s.machine_tool) === i)
+      .map((s) => ({
+        name: s.machine_tool,
+        current_operators: s.operators,
+        utilization_pct: s.util_pct,
+        sam_per_piece: config.operations.filter((op) => op.machine_tool === s.machine_tool).reduce((sum, op) => sum + op.sam_min, 0),
+      }));
+
+    const result = rebalanceLine({ stations, total_operators: totalOps, available_minutes: availableMinutes, demand: Math.ceil(totalDemand) });
+    if (!result) return null;
+    optimization = result;
+
+    // Apply rebalanced operators
+    const toolOps = new Map<string, number>();
+    for (const sa of result.station_assignments) toolOps.set(sa.station, sa.operators_after);
+
+    optimizedConfig.operations = config.operations.map((op) => {
+      const totalForTool = toolOps.get(op.machine_tool);
+      if (totalForTool !== undefined) {
+        const opsForTool = config.operations.filter((o) => o.machine_tool === op.machine_tool);
+        const perOp = Math.max(1, Math.round(totalForTool / opsForTool.length));
+        return { ...op, operators: perOp };
+      }
+      return op;
+    });
+  }
+
+  // Step 3: Run Monte Carlo on optimized config
+  const mc = await runMonteCarlo(optimizedConfig, reps);
+
+  // Step 4: Report
+  const improvementPct = originalThroughput > 0
+    ? ((mc.throughput.mean - originalThroughput) / originalThroughput) * 100 : 0;
+
+  let confidence: string;
+  let recommendation: string;
+
+  if (mc.demand_met_pct >= 95) {
+    confidence = 'HIGH';
+    recommendation = `Optimized solution meets demand in ${mc.demand_met_pct}% of runs. Safe to implement.`;
+  } else if (mc.demand_met_pct >= 80) {
+    confidence = 'MEDIUM';
+    recommendation = `Optimized solution meets demand in ${mc.demand_met_pct}% of runs. Consider adding buffer capacity.`;
+  } else {
+    confidence = 'LOW';
+    recommendation = `Optimized solution only meets demand in ${mc.demand_met_pct}% of runs. Add operators or reduce demand.`;
+  }
+
+  return {
+    optimization,
+    original_throughput: originalThroughput,
+    optimized_throughput: mc.throughput,
+    demand_met_pct: mc.demand_met_pct,
+    improvement_pct: Math.round(improvementPct * 100) / 100,
+    confidence,
+    recommendation,
+  };
+}

@@ -16,6 +16,7 @@ export const simulationDefinition: Tool = {
 Actions:
 - run: Run simulation. Requires config_json (JSON string of SimulationConfig). Optional: scenario_name to save.
 - monte_carlo: Run N replications. Requires config_json. Optional: replications (default 30).
+- optimize_validate: Auto-chain: MiniZinc optimizes → applies to config → Monte Carlo validates → reports confidence. Requires config_json. Optional: optimization_type (operators/rebalance), replications.
 - validate: Validate config. Requires config_json.
 - list: List saved scenarios.
 - status: Show scenario results. Requires scenario_name.
@@ -26,7 +27,8 @@ Also available: web UI at /sim on the web dashboard.`,
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['run', 'monte_carlo', 'validate', 'list', 'status'] },
+        action: { type: 'string', enum: ['run', 'monte_carlo', 'optimize_validate', 'validate', 'list', 'status'] },
+        optimization_type: { type: 'string', description: 'For optimize_validate: operators or rebalance' },
         config_json: { type: 'string', description: 'SimulationConfig as JSON string' },
         scenario_name: { type: 'string' },
         replications: { type: 'number', description: 'Monte Carlo replications (default 30)' },
@@ -82,6 +84,32 @@ export async function productionSimulation(
           cycle_time: mc.cycle_time,
           demand_met_pct: mc.demand_met_pct,
           message: `Monte Carlo: ${mc.replications} reps. Throughput mean=${mc.throughput.mean} P5=${mc.throughput.p5} P95=${mc.throughput.p95}. Demand met ${mc.demand_met_pct}% of runs.`,
+        };
+      }
+
+      case 'optimize_validate': {
+        if (!args.config_json) return { error: 'config_json is required.' };
+        const config = JSON.parse(args.config_json as string) as SimulationConfig;
+        const { optimizeAndValidate } = await import('../../minizinc.js');
+        const optType = (args.optimization_type as string) || 'operators';
+
+        const result = await optimizeAndValidate({
+          optimization_type: optType as 'operators' | 'rebalance',
+          config,
+          replications: (args.replications as number) || 30,
+        });
+
+        if (!result) return { error: 'Optimization found no feasible solution.' };
+
+        return {
+          success: true,
+          confidence: result.confidence,
+          recommendation: result.recommendation,
+          original_throughput: result.original_throughput,
+          optimized_mean_throughput: result.optimized_throughput.mean,
+          demand_met_pct: result.demand_met_pct,
+          improvement_pct: result.improvement_pct,
+          message: `[${result.confidence}] ${result.recommendation} Throughput: ${result.original_throughput} → ${result.optimized_throughput.mean} (${result.improvement_pct > 0 ? '+' : ''}${result.improvement_pct}%)`,
         };
       }
 
