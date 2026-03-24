@@ -417,6 +417,110 @@
             </v-card>
           </template>
 
+          <!-- Visual Line Layout -->
+          <template v-if="results">
+            <v-divider class="my-4"></v-divider>
+            <v-card variant="outlined">
+              <v-card-title>
+                <v-icon class="mr-2">mdi-transit-connection-variant</v-icon>
+                Line Layout
+              </v-card-title>
+              <v-card-text>
+                <div style="display:flex;align-items:center;gap:8px;overflow-x:auto;padding:16px 0;">
+                  <template v-for="(station, idx) in lineLayout" :key="station.machine_tool">
+                    <div style="min-width:120px;text-align:center;">
+                      <div :style="{
+                        background: station.is_bottleneck ? '#e15759' : station.util_pct >= 80 ? '#f28e2b' : '#59a14f',
+                        color: 'white', borderRadius: '8px', padding: '12px 8px', position: 'relative'
+                      }">
+                        <div style="font-weight:600;font-size:12px;">{{ station.machine_tool }}</div>
+                        <div style="font-size:20px;font-weight:700;">{{ station.util_pct }}%</div>
+                        <div style="font-size:11px;">{{ station.operators }} ops</div>
+                        <div style="font-size:10px;opacity:0.8;">Q: {{ station.queue_wait_time_min }}m</div>
+                        <!-- Interactive rebalance buttons -->
+                        <div style="margin-top:6px;display:flex;justify-content:center;gap:4px;">
+                          <v-btn icon="mdi-minus" size="x-small" variant="tonal" color="white"
+                            @click="adjustOperator(station.machine_tool, -1)" :disabled="station.operators <= 1"></v-btn>
+                          <v-btn icon="mdi-plus" size="x-small" variant="tonal" color="white"
+                            @click="adjustOperator(station.machine_tool, +1)"></v-btn>
+                        </div>
+                      </div>
+                      <div v-if="station.is_bottleneck" style="color:#e15759;font-size:10px;font-weight:600;margin-top:4px;">BOTTLENECK</div>
+                      <div v-else-if="station.is_donor" style="color:#59a14f;font-size:10px;font-weight:600;margin-top:4px;">DONOR</div>
+                    </div>
+                    <v-icon v-if="idx < lineLayout.length - 1" size="small" color="grey">mdi-arrow-right</v-icon>
+                  </template>
+                </div>
+              </v-card-text>
+            </v-card>
+          </template>
+
+          <!-- Optimize & Validate (Auto-Chain) -->
+          <template v-if="results && engineInfo?.minizinc_available">
+            <v-card variant="outlined" color="teal" class="mt-3">
+              <v-card-title class="text-body-1">
+                <v-icon class="mr-2">mdi-auto-fix</v-icon>
+                MiniZinc Optimize → Validate
+              </v-card-title>
+              <v-card-text>
+                <v-row dense align="center">
+                  <v-col cols="auto">
+                    <v-select v-model="optimizeType" :items="['operators', 'rebalance']" label="Type" density="compact" style="max-width:160px" hide-details></v-select>
+                  </v-col>
+                  <v-col cols="auto">
+                    <v-btn color="teal" @click="doOptimizeValidate" :loading="loading.optimize">
+                      <v-icon start>mdi-rocket-launch</v-icon> Optimize & Validate
+                    </v-btn>
+                  </v-col>
+                </v-row>
+                <v-alert v-if="optimizeResult" :type="optimizeResult.confidence === 'HIGH' ? 'success' : optimizeResult.confidence === 'MEDIUM' ? 'warning' : 'error'" variant="tonal" class="mt-3">
+                  <div class="font-weight-bold">[{{ optimizeResult.confidence }}] {{ optimizeResult.recommendation }}</div>
+                  <div class="mt-1">Throughput: {{ optimizeResult.original_throughput }} → {{ optimizeResult.optimized_throughput?.mean }} pcs ({{ optimizeResult.improvement_pct > 0 ? '+' : '' }}{{ optimizeResult.improvement_pct }}%)</div>
+                  <div>Demand met: {{ optimizeResult.demand_met_pct }}% of Monte Carlo runs</div>
+                </v-alert>
+              </v-card-text>
+            </v-card>
+          </template>
+
+          <!-- Sensitivity Analysis -->
+          <template v-if="results">
+            <v-card variant="outlined" class="mt-3">
+              <v-card-title>
+                <v-icon class="mr-2">mdi-tune-vertical</v-icon>
+                Sensitivity Analysis
+              </v-card-title>
+              <v-card-text>
+                <v-row dense align="center">
+                  <v-col cols="auto">
+                    <v-select v-model="sensitivityParam" :items="['demand', 'operators', 'shift_hours']" label="Parameter" density="compact" style="max-width:160px" hide-details></v-select>
+                  </v-col>
+                  <v-col cols="auto">
+                    <v-text-field v-model.number="sensitivityRange" label="± %" type="number" density="compact" style="max-width:80px" hide-details :min="5" :max="50"></v-text-field>
+                  </v-col>
+                  <v-col cols="auto">
+                    <v-text-field v-model.number="sensitivitySteps" label="Steps" type="number" density="compact" style="max-width:80px" hide-details :min="3" :max="11"></v-text-field>
+                  </v-col>
+                  <v-col cols="auto">
+                    <v-btn color="indigo" variant="tonal" @click="doSensitivity" :loading="loading.sensitivity">
+                      <v-icon start>mdi-chart-line</v-icon> Run Sweep
+                    </v-btn>
+                  </v-col>
+                </v-row>
+                <v-simple-table v-if="sensitivityResults.length > 0" density="compact" class="mt-3">
+                  <thead><tr><th>{{ sensitivityParam }}</th><th>Throughput</th><th>Coverage %</th><th>Bottleneck</th></tr></thead>
+                  <tbody>
+                    <tr v-for="sr in sensitivityResults" :key="sr.param_value" :style="{background: sr.is_base ? '#e3f2fd' : ''}">
+                      <td class="mono">{{ sr.param_label }}</td>
+                      <td class="mono">{{ sr.throughput }} pcs</td>
+                      <td><v-chip :color="sr.coverage >= 100 ? 'success' : sr.coverage >= 90 ? 'warning' : 'error'" size="x-small">{{ sr.coverage }}%</v-chip></td>
+                      <td class="text-body-2">{{ sr.bottleneck }}</td>
+                    </tr>
+                  </tbody>
+                </v-simple-table>
+              </v-card-text>
+            </v-card>
+          </template>
+
           <!-- Monte Carlo Results -->
           <template v-if="mcResults">
             <v-divider class="my-4"></v-divider>
@@ -473,8 +577,14 @@
         const results = ref(null);
         const mcResults = ref(null);
         const mcReplications = ref(30);
+        const optimizeType = ref('operators');
+        const optimizeResult = ref(null);
+        const sensitivityParam = ref('demand');
+        const sensitivityRange = ref(20);
+        const sensitivitySteps = ref(5);
+        const sensitivityResults = ref([]);
         const errorMsg = ref('');
-        const loading = reactive({ validate: false, run: false, mc: false });
+        const loading = reactive({ validate: false, run: false, mc: false, optimize: false, sensitivity: false });
 
         const config = reactive({
           operations: [],
@@ -498,6 +608,15 @@
 
         const bottlenecks = computed(() => results.value?.station_performance?.filter(s => s.is_bottleneck) || []);
         const donors = computed(() => results.value?.station_performance?.filter(s => s.is_donor) || []);
+
+        // Visual line layout — deduplicate by machine tool, show in operation order
+        const lineLayout = computed(() => {
+          if (!results.value?.station_performance) return [];
+          const seen = new Set();
+          return results.value.station_performance
+            .sort((a, b) => a.step - b.step)
+            .filter(s => { if (seen.has(s.machine_tool)) return false; seen.add(s.machine_tool); return true; });
+        });
 
         // Table headers
         const stationHeaders = [
@@ -634,16 +753,95 @@
           validation.value = null; results.value = null; mcResults.value = null;
         }
 
+        // Interactive rebalance: adjust operator count and re-run
+        async function adjustOperator(machineTool, delta) {
+          for (const op of config.operations) {
+            if (op.machine_tool === machineTool) {
+              op.operators = Math.max(1, (op.operators || 1) + delta);
+              break; // adjust first matching operation
+            }
+          }
+          // Auto re-run
+          await doRun();
+        }
+
+        // MiniZinc auto-chain
+        async function doOptimizeValidate() {
+          loading.optimize = true; errorMsg.value = '';
+          try {
+            const resp = await fetch(`${API}/optimize-and-validate`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ config, optimization_type: optimizeType.value, replications: mcReplications.value }),
+            });
+            const data = await resp.json();
+            if (data.success) optimizeResult.value = data;
+            else errorMsg.value = data.message || 'Optimization failed';
+          } catch (e) { errorMsg.value = e.message; } finally { loading.optimize = false; }
+        }
+
+        // Sensitivity analysis
+        async function doSensitivity() {
+          loading.sensitivity = true; errorMsg.value = ''; sensitivityResults.value = [];
+          try {
+            const param = sensitivityParam.value;
+            const range = sensitivityRange.value / 100;
+            const steps = sensitivitySteps.value;
+            const results_arr = [];
+
+            for (let i = 0; i < steps; i++) {
+              const factor = 1 + range * (2 * i / (steps - 1) - 1); // -range to +range
+              const label = `${(factor * 100).toFixed(0)}%`;
+              const isBase = Math.abs(factor - 1) < 0.01;
+
+              // Create modified config
+              const modConfig = JSON.parse(JSON.stringify(config));
+
+              if (param === 'demand') {
+                for (const d of modConfig.demands) {
+                  if (d.daily_demand) d.daily_demand = Math.round(d.daily_demand * factor);
+                  if (d.weekly_demand) d.weekly_demand = Math.round(d.weekly_demand * factor);
+                }
+              } else if (param === 'operators') {
+                for (const op of modConfig.operations) {
+                  op.operators = Math.max(1, Math.round((op.operators || 1) * factor));
+                }
+              } else if (param === 'shift_hours') {
+                modConfig.schedule.shift1_hours = Math.max(1, modConfig.schedule.shift1_hours * factor);
+              }
+
+              const resp = await fetch(`${API}/run`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ config: modConfig }),
+              });
+              const data = await resp.json();
+              if (data.success) {
+                const topStation = data.results.station_performance[0];
+                results_arr.push({
+                  param_label: label,
+                  param_value: factor,
+                  is_base: isBase,
+                  throughput: data.results.daily_summary.daily_throughput_pcs,
+                  coverage: data.results.daily_summary.daily_coverage_pct,
+                  bottleneck: topStation ? `${topStation.machine_tool} (${topStation.util_pct}%)` : 'N/A',
+                });
+              }
+            }
+            sensitivityResults.value = results_arr;
+          } catch (e) { errorMsg.value = e.message; } finally { loading.sensitivity = false; }
+        }
+
         // Fetch engine info on load
         fetch(`${API}/info`).then(r => r.json()).then(d => engineInfo.value = d).catch(() => {});
 
         return {
           activeTab, resultTab, engineInfo, validation, results, mcResults, mcReplications,
           errorMsg, loading, config, products, machineTools, dailyPlannedHours, weeklyHours,
-          bottlenecks, donors,
+          bottlenecks, donors, lineLayout,
+          optimizeType, optimizeResult, sensitivityParam, sensitivityRange, sensitivitySteps, sensitivityResults,
           stationHeaders, weeklyHeaders, productHeaders, rebalanceHeaders, bundleHeaders,
           doValidate, doRun, doMonteCarlo, addOperation, removeOperation, addDemand, addBreakdown,
           loadSampleData, doExport, doImport, doReset,
+          adjustOperator, doOptimizeValidate, doSensitivity,
         };
       },
     });

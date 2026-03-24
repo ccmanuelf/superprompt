@@ -252,6 +252,55 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
       }
     }
 
+    case '/sensitivity': {
+      const config = body.config as SimulationConfig;
+      if (!config) { jsonResponse(res, 400, { error: 'config is required' }); return true; }
+
+      const param = (body.param as string) || 'demand';
+      const range = typeof body.range === 'number' ? body.range / 100 : 0.2;
+      const steps = typeof body.steps === 'number' ? body.steps : 5;
+
+      const report = validateSimulationConfig(config);
+      if (!report.is_valid) {
+        jsonResponse(res, 200, { success: false, message: 'Validation failed' });
+        return true;
+      }
+
+      const results = [];
+      for (let i = 0; i < steps; i++) {
+        const factor = 1 + range * (2 * i / (steps - 1) - 1);
+        const modConfig = JSON.parse(JSON.stringify(config)) as SimulationConfig;
+
+        if (param === 'demand') {
+          for (const d of modConfig.demands) {
+            if (d.daily_demand) d.daily_demand = Math.round(d.daily_demand * factor);
+            if (d.weekly_demand) d.weekly_demand = Math.round(d.weekly_demand * factor);
+          }
+        } else if (param === 'operators') {
+          for (const op of modConfig.operations) {
+            op.operators = Math.max(1, Math.round((op.operators ?? 1) * factor));
+          }
+        } else if (param === 'shift_hours') {
+          modConfig.schedule.shift1_hours = Math.max(1, modConfig.schedule.shift1_hours * factor);
+        }
+
+        const { metrics, durationSeconds } = await runSimulation(modConfig);
+        const modReport = validateSimulationConfig(modConfig);
+        const simResults = calculateAllBlocks(modConfig, metrics, modReport, durationSeconds);
+        const topStation = simResults.station_performance[0];
+
+        results.push({
+          factor: Math.round(factor * 100),
+          throughput: simResults.daily_summary.daily_throughput_pcs,
+          coverage: simResults.daily_summary.daily_coverage_pct,
+          bottleneck: topStation ? `${topStation.machine_tool} (${topStation.util_pct}%)` : 'N/A',
+        });
+      }
+
+      jsonResponse(res, 200, { success: true, param, results });
+      return true;
+    }
+
     case '/optimize-and-validate': {
       const config = body.config as SimulationConfig;
       if (!config) { jsonResponse(res, 400, { error: 'config is required' }); return true; }
