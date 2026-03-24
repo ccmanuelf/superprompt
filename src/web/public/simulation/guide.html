@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulation User Guide — clauded</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    [v-cloak] { display: none; }
+    .code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 13px; }
+    .section { max-width: 900px; margin: 0 auto; }
+    h3 { border-bottom: 2px solid #1976d2; padding-bottom: 4px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <v-app>
+      <v-app-bar color="primary" density="compact">
+        <v-btn icon="mdi-arrow-left" href="/sim"></v-btn>
+        <v-app-bar-title>
+          <v-icon class="mr-2">mdi-book-open-variant</v-icon>
+          Production Line Simulator — User Guide
+        </v-app-bar-title>
+      </v-app-bar>
+
+      <v-main>
+        <v-container class="section py-6">
+
+          <v-alert type="info" variant="tonal" class="mb-6">
+            <strong>Version 3.0</strong> — Discrete-event simulation engine with MiniZinc optimization, Monte Carlo validation, and interactive line visualization.
+          </v-alert>
+
+          <!-- TOC -->
+          <v-card variant="outlined" class="mb-6">
+            <v-card-title>Table of Contents</v-card-title>
+            <v-card-text>
+              <ol>
+                <li><a href="#overview">Overview & Capabilities</a></li>
+                <li><a href="#chat-vs-ui">Chat vs Web UI — What Goes Where</a></li>
+                <li><a href="#quickstart">Quick Start (5 minutes)</a></li>
+                <li><a href="#operations">Operations Configuration</a></li>
+                <li><a href="#schedule">Schedule & Shifts</a></li>
+                <li><a href="#demand">Demand Configuration</a></li>
+                <li><a href="#advanced">Advanced Features</a></li>
+                <li><a href="#results">Understanding Results (8 Blocks)</a></li>
+                <li><a href="#montecarlo">Monte Carlo Simulation</a></li>
+                <li><a href="#minizinc">MiniZinc Optimization</a></li>
+                <li><a href="#sensitivity">Sensitivity Analysis</a></li>
+                <li><a href="#parameters">Complete Parameter Reference</a></li>
+                <li><a href="#formulas">Formulas & Algorithms</a></li>
+                <li><a href="#limitations">Known Limitations</a></li>
+              </ol>
+            </v-card-text>
+          </v-card>
+
+          <!-- 1. Overview -->
+          <h3 id="overview">1. Overview & Capabilities</h3>
+          <p>This simulator models <strong>labor-intensive sequential manufacturing lines</strong> where bundles of pieces flow through stations, each staffed by operators sharing pooled machine/tool resources.</p>
+
+          <v-card variant="tonal" color="success" class="my-3">
+            <v-card-text>
+              <strong>What it can simulate:</strong>
+              <ul>
+                <li>Garment/sewing assembly lines (its primary domain)</li>
+                <li>Wire harness assembly, shoe manufacturing, leather goods</li>
+                <li>Manual electronics assembly, upholstery</li>
+                <li>Any sequential-flow, labor-intensive process</li>
+                <li>Multi-product lines with demand-driven or mix-driven scheduling</li>
+                <li>Equipment breakdowns (fixed delay or MTBF/MTTR distributions)</li>
+                <li>Operator learning curves (skill improvement over time)</li>
+                <li>Material supply constraints (starvation tracking)</li>
+                <li>WIP limits / kanban backpressure</li>
+                <li>Changeover times between products</li>
+                <li>Shift breaks and warmup periods</li>
+                <li>Multi-line shared resource pools</li>
+              </ul>
+            </v-card-text>
+          </v-card>
+
+          <v-card variant="tonal" color="warning" class="my-3">
+            <v-card-text>
+              <strong>What it cannot simulate (yet):</strong>
+              <ul>
+                <li>Continuous-flow manufacturing (chemicals, food processing, steel)</li>
+                <li>Job-shop scheduling (dynamic routing through shared machines)</li>
+                <li>Highly automated cells (CNC, robotics with fixed cycle times)</li>
+                <li>Parallel/branch routing (skip/merge operations)</li>
+                <li>Batch process accumulation (e.g., dyeing, heat treatment)</li>
+              </ul>
+            </v-card-text>
+          </v-card>
+
+          <!-- 2. Chat vs UI -->
+          <h3 id="chat-vs-ui">2. Chat vs Web UI — What Goes Where</h3>
+
+          <v-table density="compact">
+            <thead><tr><th>Task</th><th>Web UI</th><th>Chat (Telegram)</th></tr></thead>
+            <tbody>
+              <tr><td>Configure operations (add/edit/delete)</td><td><v-icon color="success">mdi-check</v-icon> Primary</td><td><v-icon color="grey">mdi-minus</v-icon> Not practical</td></tr>
+              <tr><td>Configure schedule/demand/breakdowns</td><td><v-icon color="success">mdi-check</v-icon> Primary</td><td><v-icon color="grey">mdi-minus</v-icon> Not practical</td></tr>
+              <tr><td>Import/Export JSON configuration</td><td><v-icon color="success">mdi-check</v-icon></td><td><v-icon color="success">mdi-check</v-icon> Upload JSON file</td></tr>
+              <tr><td>Run simulation</td><td><v-icon color="success">mdi-check</v-icon></td><td><v-icon color="success">mdi-check</v-icon> <span class="code">production_simulation run</span></td></tr>
+              <tr><td>Run Monte Carlo</td><td><v-icon color="success">mdi-check</v-icon></td><td><v-icon color="success">mdi-check</v-icon> <span class="code">production_simulation monte_carlo</span></td></tr>
+              <tr><td>View results (8 blocks)</td><td><v-icon color="success">mdi-check</v-icon> Full detail</td><td><v-icon color="success">mdi-check</v-icon> Summary only</td></tr>
+              <tr><td>Visual line layout</td><td><v-icon color="success">mdi-check</v-icon></td><td><v-icon color="error">mdi-close</v-icon></td></tr>
+              <tr><td>Interactive rebalance (+/- operators)</td><td><v-icon color="success">mdi-check</v-icon></td><td><v-icon color="error">mdi-close</v-icon></td></tr>
+              <tr><td>Sensitivity analysis</td><td><v-icon color="success">mdi-check</v-icon></td><td><v-icon color="error">mdi-close</v-icon></td></tr>
+              <tr><td>MiniZinc optimize & validate</td><td><v-icon color="success">mdi-check</v-icon></td><td><v-icon color="success">mdi-check</v-icon> <span class="code">optimize_validate</span></td></tr>
+              <tr><td>Save/load scenarios</td><td><v-icon color="success">mdi-check</v-icon></td><td><v-icon color="success">mdi-check</v-icon> <span class="code">/sim list</span></td></tr>
+              <tr><td>MiniZinc standalone optimization</td><td><v-icon color="error">mdi-close</v-icon></td><td><v-icon color="success">mdi-check</v-icon> <span class="code">minizinc_optimize</span></td></tr>
+              <tr><td>Quick status checks</td><td><v-icon color="grey">mdi-minus</v-icon></td><td><v-icon color="success">mdi-check</v-icon> Natural language</td></tr>
+            </tbody>
+          </v-table>
+
+          <v-alert type="info" variant="tonal" class="mt-3">
+            <strong>Rule of thumb:</strong> Use the <strong>Web UI</strong> for configuration, visualization, and interactive exploration. Use <strong>Chat</strong> for quick queries, automated workflows, and optimization requests.
+          </v-alert>
+
+          <!-- 3. Quick Start -->
+          <h3 id="quickstart">3. Quick Start (5 minutes)</h3>
+          <ol>
+            <li>Open the simulator at <span class="code">/sim</span> on your clauded web dashboard</li>
+            <li>Click <strong>"Sample Data"</strong> to load the T-shirt manufacturing example</li>
+            <li>Click <strong>"Validate"</strong> — should show green "PASS"</li>
+            <li>Click <strong>"Run Simulation"</strong> — results appear below</li>
+            <li>Look at the <strong>Line Layout</strong> — bottlenecks are red, donors are green</li>
+            <li>Try clicking <strong>+</strong> on a bottleneck station — it re-runs automatically</li>
+            <li>Click <strong>"Monte Carlo (30)"</strong> for confidence intervals</li>
+            <li>Try <strong>"Export"</strong> to save your config as JSON for later</li>
+          </ol>
+
+          <!-- 4-6. Configuration -->
+          <h3 id="operations">4. Operations Configuration</h3>
+          <p>Each row in the Operations table defines one step in the production process:</p>
+          <v-table density="compact">
+            <thead><tr><th>Column</th><th>Description</th><th>Required</th><th>Default</th></tr></thead>
+            <tbody>
+              <tr><td>Product</td><td>Product identifier (e.g., "TSHIRT_A")</td><td>Yes</td><td>—</td></tr>
+              <tr><td>Step</td><td>Sequential order (1, 2, 3... no gaps)</td><td>Yes</td><td>—</td></tr>
+              <tr><td>Operation</td><td>Description (e.g., "Sew shoulder seams")</td><td>Yes</td><td>—</td></tr>
+              <tr><td>Machine/Tool</td><td>Resource identifier (e.g., "Overlock")</td><td>Yes</td><td>—</td></tr>
+              <tr><td>SAM</td><td>Standard Allowed Minutes per piece</td><td>Yes</td><td>—</td></tr>
+              <tr><td>Operators</td><td>Number of operators at this station</td><td>No</td><td>1</td></tr>
+              <tr><td>Grade %</td><td>Operator skill level (100% = fully trained)</td><td>No</td><td>85%</td></tr>
+              <tr><td>FPD %</td><td>Fatigue & Personal Delay allowance</td><td>No</td><td>15%</td></tr>
+              <tr><td>Rework %</td><td>Per-piece rework probability</td><td>No</td><td>0%</td></tr>
+              <tr><td>Variability</td><td>Triangular (stochastic ±10%) or None</td><td>No</td><td>Triangular</td></tr>
+            </tbody>
+          </v-table>
+
+          <v-alert type="warning" variant="tonal" class="mt-3">
+            <strong>Resource pooling:</strong> If two operations share the same Machine/Tool name, their operators are pooled. This means they compete for the same resource — which models reality where e.g., two sewing operations share the same overlock machines.
+          </v-alert>
+
+          <h3 id="schedule">5. Schedule & Shifts</h3>
+          <p>Configure shifts (1-3), hours per shift, work days per week, and optional overtime. Total daily hours must not exceed 24.</p>
+
+          <h3 id="demand">6. Demand Configuration</h3>
+          <p><strong>Demand-driven:</strong> Set daily and/or weekly demand per product directly.<br>
+          <strong>Mix-driven:</strong> Set total daily demand + percentage mix per product (must sum to 100%).</p>
+
+          <!-- 7. Advanced -->
+          <h3 id="advanced">7. Advanced Features</h3>
+
+          <v-expansion-panels variant="accordion" class="my-3">
+            <v-expansion-panel title="Breakdowns (V2 fixed + V3 MTBF/MTTR)">
+              <v-expansion-panel-text>
+                <p><strong>V2 mode:</strong> Set breakdown probability % per machine tool. When triggered, fixed 30-minute delay.</p>
+                <p><strong>V3 mode:</strong> Configure MTBF (Mean Time Between Failures) and MTTR (Mean Time To Repair) per machine. Failures follow exponential distribution, repair times follow triangular distribution around MTTR.</p>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+            <v-expansion-panel title="Changeover Times">
+              <v-expansion-panel-text>
+                <p>Define changeover delay (in minutes) when switching from Product A to Product B on the same machine. Critical for multi-product lines.</p>
+                <p>Config: <span class="code">changeovers: [{from_product, to_product, changeover_minutes}]</span></p>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+            <v-expansion-panel title="WIP Limits (Kanban)">
+              <v-expansion-panel-text>
+                <p>Set maximum WIP per station. When the queue is full, upstream stations block (backpressure). Models real floor space constraints.</p>
+                <p>Config: <span class="code">wip_limits: [{machine_tool, max_wip}]</span></p>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+            <v-expansion-panel title="Learning Curves">
+              <v-expansion-panel-text>
+                <p>Model operator skill improvement over time: <span class="code">grade(t) = grade_final - (grade_final - grade_start) × e^(-λt)</span></p>
+                <p>Config: <span class="code">learning_curves: [{machine_tool, grade_start, grade_final, learning_rate}]</span></p>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+            <v-expansion-panel title="Material Constraints">
+              <v-expansion-panel-text>
+                <p>Define material supply with initial stock and replenishment schedule. Operations consume material per piece — if stock runs out, the station waits (starvation).</p>
+                <p>Config: <span class="code">materials: [{material_id, initial_stock, replenishment_qty, replenishment_interval_minutes}]</span></p>
+                <p>Config: <span class="code">material_requirements: [{operation_step, product, material_id, qty_per_piece}]</span></p>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+            <v-expansion-panel title="Shift Breaks & Warmup">
+              <v-expansion-panel-text>
+                <p><strong>Breaks:</strong> 2×15min + 1×30min per 8-hour shift. Enable with <span class="code">enable_breaks: true</span></p>
+                <p><strong>Warmup:</strong> First 30 minutes of each shift at 80% efficiency. Enable with <span class="code">enable_warmup: true</span></p>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+            <v-expansion-panel title="Multi-Line Shared Resources">
+              <v-expansion-panel-text>
+                <p>Share operator pools across parallel lines (e.g., shared QC, shared cutting). The shared pool replaces individual tool resources.</p>
+                <p>Config: <span class="code">shared_resource_pools: [{pool_name, machine_tools: [...], total_capacity}]</span></p>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+          </v-expansion-panels>
+
+          <!-- 8. Results -->
+          <h3 id="results">8. Understanding Results (8 Blocks)</h3>
+          <v-table density="compact">
+            <thead><tr><th>Block</th><th>What It Shows</th><th>Key Metrics</th></tr></thead>
+            <tbody>
+              <tr><td>1. Weekly Capacity</td><td>Can you meet weekly demand?</td><td>Coverage % (OK ≥110%, Tight ≥90%, Shortfall &lt;90%)</td></tr>
+              <tr><td>2. Daily Summary</td><td>Overall daily performance</td><td>Throughput, demand, coverage, cycle time, WIP</td></tr>
+              <tr><td>3. Station Performance</td><td>Per-station utilization</td><td>Utilization %, queue wait, bottleneck (≥95%), donor (≤70%)</td></tr>
+              <tr><td>4. Free Capacity</td><td>How much spare capacity?</td><td>Free hours/day, equivalent free operators</td></tr>
+              <tr><td>5. Bundle Metrics</td><td>Bundle flow behavior</td><td>Bundles/day, avg in system, cycle time per bundle</td></tr>
+              <tr><td>6. Per Product</td><td>Product-level demand vs output</td><td>Daily/weekly demand, throughput, coverage per product</td></tr>
+              <tr><td>7. Rebalancing</td><td>Operator reallocation suggestions</td><td>Move operators from donors to bottlenecks</td></tr>
+              <tr><td>8. Assumptions</td><td>Audit trail</td><td>All config, formulas used, limitations</td></tr>
+            </tbody>
+          </v-table>
+
+          <!-- 9. Monte Carlo -->
+          <h3 id="montecarlo">9. Monte Carlo Simulation</h3>
+          <p>Runs N replications (default 30) with different random seeds. Reports:</p>
+          <ul>
+            <li><strong>Mean ± StdDev</strong> for throughput, cycle time, WIP</li>
+            <li><strong>Percentiles</strong>: P5 (worst case), P50 (median), P95 (best case)</li>
+            <li><strong>Demand Met %</strong>: How often the line meets demand across all replications</li>
+          </ul>
+          <v-alert type="info" variant="tonal" class="mt-2">Use Monte Carlo whenever stochastic elements are present (variability, breakdowns, rework). A single run can be misleading.</v-alert>
+
+          <!-- 10. MiniZinc -->
+          <h3 id="minizinc">10. MiniZinc Optimization</h3>
+          <p>Four optimization models available (requires MiniZinc solver):</p>
+          <v-table density="compact">
+            <thead><tr><th>Model</th><th>Question</th><th>Output</th></tr></thead>
+            <tbody>
+              <tr><td>Operator Assignment</td><td>What's the minimum headcount to meet demand?</td><td>Operators per station</td></tr>
+              <tr><td>Sequencing</td><td>In what order to run products to minimize changeover?</td><td>Optimal product sequence</td></tr>
+              <tr><td>Scheduling</td><td>How many operators per shift to minimize cost?</td><td>Daily shift schedule</td></tr>
+              <tr><td>Rebalancing</td><td>How to redistribute fixed headcount for best balance?</td><td>Operator redistribution</td></tr>
+            </tbody>
+          </v-table>
+          <p class="mt-2"><strong>Auto-Chain (Optimize & Validate):</strong> MiniZinc optimizes → applies result to config → runs Monte Carlo → reports confidence level (HIGH/MEDIUM/LOW) with recommendation.</p>
+
+          <!-- 11. Sensitivity -->
+          <h3 id="sensitivity">11. Sensitivity Analysis</h3>
+          <p>Sweep a parameter (demand, operators, or shift hours) across a range (e.g., ±20% in 5 steps) to see how output changes. Helps answer: "How sensitive is my line to demand changes?"</p>
+
+          <!-- 12. Parameter Reference -->
+          <h3 id="parameters">12. Complete Parameter Reference</h3>
+          <v-table density="compact">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td>mode</td><td>string</td><td>demand-driven</td><td>"demand-driven" or "mix-driven"</td></tr>
+              <tr><td>horizon_days</td><td>number</td><td>1</td><td>Simulation length (1-7 days)</td></tr>
+              <tr><td>enable_breaks</td><td>boolean</td><td>false</td><td>Model shift breaks (2×15m + 1×30m)</td></tr>
+              <tr><td>enable_warmup</td><td>boolean</td><td>false</td><td>First 30 min at 80% efficiency</td></tr>
+              <tr><td>changeovers</td><td>array</td><td>[]</td><td>Product-to-product changeover times</td></tr>
+              <tr><td>wip_limits</td><td>array</td><td>[]</td><td>Max WIP per station (kanban)</td></tr>
+              <tr><td>materials</td><td>array</td><td>[]</td><td>Material supply definitions</td></tr>
+              <tr><td>material_requirements</td><td>array</td><td>[]</td><td>Material consumption per operation</td></tr>
+              <tr><td>learning_curves</td><td>array</td><td>[]</td><td>Operator skill improvement over time</td></tr>
+              <tr><td>breakdown_distributions</td><td>array</td><td>[]</td><td>MTBF/MTTR per machine (replaces fixed delay)</td></tr>
+              <tr><td>shared_resource_pools</td><td>array</td><td>[]</td><td>Cross-line shared operator pools</td></tr>
+            </tbody>
+          </v-table>
+
+          <!-- 13. Formulas -->
+          <h3 id="formulas">13. Formulas & Algorithms</h3>
+          <v-card variant="tonal" class="my-3">
+            <v-card-text>
+              <div><strong>Processing Time:</strong> <span class="code">Actual = SAM × (1 + Variability + FPD/100 + (100-Grade)/100 + WarmupPenalty)</span></div>
+              <div class="mt-2"><strong>Variability:</strong> Triangular distribution centered at 0, range ±10%</div>
+              <div class="mt-2"><strong>Learning Curve:</strong> <span class="code">grade(t) = grade_final - (grade_final - grade_start) × e^(-λt)</span></div>
+              <div class="mt-2"><strong>Bottleneck:</strong> Station with utilization ≥ 95%</div>
+              <div class="mt-2"><strong>Donor:</strong> Station with utilization ≤ 70% AND operators > 1</div>
+              <div class="mt-2"><strong>Coverage:</strong> OK ≥ 110%, Tight ≥ 90%, Shortfall < 90%</div>
+            </v-card-text>
+          </v-card>
+
+          <!-- 14. Limitations -->
+          <h3 id="limitations">14. Known Limitations</h3>
+          <ul>
+            <li>Linear-only routing — every product must flow step 1 → 2 → 3 → N (no skip/branch/merge)</li>
+            <li>No batch accumulation (wait for N bundles before starting)</li>
+            <li>No continuous-flow modeling (flow rates, tank levels)</li>
+            <li>No job-shop dynamic routing</li>
+            <li>Bundle rework extracts single pieces; rest of bundle continues</li>
+            <li>Weekly capacity assumes uniform daily production</li>
+            <li>MiniZinc must be installed for optimization features</li>
+          </ul>
+
+        </v-container>
+      </v-main>
+    </v-app>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.0/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+  <script>
+    const app = Vue.createApp({});
+    app.use(Vuetify.createVuetify({ theme: { defaultTheme: 'light' } }));
+    app.mount('#app');
+  </script>
+</body>
+</html>

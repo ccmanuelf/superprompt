@@ -135,6 +135,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       filePath = resolve(PUBLIC_DIR, 'index.html');
     } else if (urlPath === '/sim' || urlPath === '/sim/') {
       filePath = resolve(PUBLIC_DIR, 'simulation', 'index.html');
+    } else if (urlPath === '/sim/guide' || urlPath === '/sim/guide/') {
+      filePath = resolve(PUBLIC_DIR, 'simulation', 'guide.html');
     } else {
       filePath = resolve(PUBLIC_DIR, urlPath.slice(1));
     }

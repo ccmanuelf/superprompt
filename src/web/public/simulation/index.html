@@ -37,6 +37,9 @@
         <v-chip class="mr-2" size="small" :color="engineInfo?.minizinc_available ? 'success' : 'warning'">
           MiniZinc {{ engineInfo?.minizinc_available ? 'OK' : 'N/A' }}
         </v-chip>
+        <v-btn variant="text" color="white" href="/sim/guide" size="small">
+          <v-icon start>mdi-book-open-variant</v-icon> Guide
+        </v-btn>
       </v-app-bar>
 
       <v-main>
