@@ -32,7 +32,8 @@ RUN apt-get update && \
     libjpeg62-turbo libgif7 librsvg2-2 \
     chromium libatk-bridge2.0-0 libdrm2 libxcomposite1 \
     libxdamage1 libxrandr2 libgbm1 libasound2 libxshmfence1 \
-    libnss3 libatk1.0-0 libcups2 && \
+    libnss3 libatk1.0-0 libcups2 \
+    minizinc && \
     npm install -g @anthropic-ai/claude-code@latest && \
     rm -rf /var/lib/apt/lists/*
 
