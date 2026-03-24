@@ -261,7 +261,8 @@
               <tr><td>Rebalancing</td><td>How to redistribute fixed headcount for best balance?</td><td>Operator redistribution</td></tr>
             </tbody>
           </v-table>
-          <p class="mt-2"><strong>Auto-Chain (Optimize & Validate):</strong> MiniZinc optimizes → applies result to config → runs Monte Carlo → reports confidence level (HIGH/MEDIUM/LOW) with recommendation.</p>
+          <p class="mt-2"><strong>Auto-Chain (Optimize & Validate):</strong> MiniZinc optimizes → applies result to config → runs Monte Carlo → reports confidence level (HIGH/MEDIUM/LOW) with recommendation.<br>
+          API endpoint: <span class="code">POST /api/sim/optimize-and-validate</span> with <span class="code">{config, optimization_type, replications}</span></p>
 
           <!-- 11. Sensitivity -->
           <h3 id="sensitivity">11. Sensitivity Analysis</h3>
@@ -269,10 +270,17 @@
 
           <!-- 12. Parameter Reference -->
           <h3 id="parameters">12. Complete Parameter Reference</h3>
+
+          <div class="text-subtitle-2 mt-3 mb-1">Top-level Config</div>
           <v-table density="compact">
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
+              <tr><td>operations</td><td>array</td><td>required</td><td>List of OperationInput objects (see below)</td></tr>
+              <tr><td>schedule</td><td>object</td><td>required</td><td>ScheduleConfig (see below)</td></tr>
+              <tr><td>demands</td><td>array</td><td>required</td><td>List of DemandInput (product, bundle_size, daily_demand or weekly_demand or mix_share_pct)</td></tr>
+              <tr><td>breakdowns</td><td>array</td><td>[]</td><td>V2 breakdowns: [{machine_tool, breakdown_pct}]</td></tr>
               <tr><td>mode</td><td>string</td><td>demand-driven</td><td>"demand-driven" or "mix-driven"</td></tr>
+              <tr><td>total_demand</td><td>number</td><td>null</td><td>Total daily demand (required in mix-driven mode)</td></tr>
               <tr><td>horizon_days</td><td>number</td><td>1</td><td>Simulation length (1-7 days)</td></tr>
               <tr><td>enable_breaks</td><td>boolean</td><td>false</td><td>Model shift breaks (2×15m + 1×30m)</td></tr>
               <tr><td>enable_warmup</td><td>boolean</td><td>false</td><td>First 30 min at 80% efficiency</td></tr>
@@ -284,6 +292,40 @@
               <tr><td>breakdown_distributions</td><td>array</td><td>[]</td><td>MTBF/MTTR per machine (replaces fixed delay)</td></tr>
               <tr><td>shared_resource_pools</td><td>array</td><td>[]</td><td>Cross-line shared operator pools</td></tr>
               <tr><td>predecessors (per op)</td><td>string[]</td><td>none</td><td>Operation IDs this op depends on (e.g., ["PRODUCT:1"]). Enables parallel routing.</td></tr>
+            </tbody>
+          </v-table>
+
+          <div class="text-subtitle-2 mt-3 mb-1">OperationInput Fields</div>
+          <v-table density="compact">
+            <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td>product</td><td>string</td><td>required</td><td>Product identifier</td></tr>
+              <tr><td>step</td><td>number</td><td>required</td><td>Sequential order (1-based, no gaps)</td></tr>
+              <tr><td>operation</td><td>string</td><td>required</td><td>Operation description</td></tr>
+              <tr><td>machine_tool</td><td>string</td><td>required</td><td>Resource identifier (pooled with same name)</td></tr>
+              <tr><td>sam_min</td><td>number</td><td>required</td><td>Standard Allowed Minutes per piece</td></tr>
+              <tr><td>operators</td><td>number</td><td>1</td><td>Number of operators at this station</td></tr>
+              <tr><td>grade_pct</td><td>number</td><td>85</td><td>Operator skill level (100 = fully trained)</td></tr>
+              <tr><td>fpd_pct</td><td>number</td><td>15</td><td>Fatigue & Personal Delay %</td></tr>
+              <tr><td>rework_pct</td><td>number</td><td>0</td><td>Per-piece rework probability %</td></tr>
+              <tr><td>variability</td><td>string</td><td>triangular</td><td>"triangular" (stochastic ±10%) or "deterministic"</td></tr>
+              <tr><td>predecessors</td><td>string[]</td><td>none</td><td>Predecessor op IDs for parallel routing</td></tr>
+            </tbody>
+          </v-table>
+
+          <div class="text-subtitle-2 mt-3 mb-1">ScheduleConfig Fields</div>
+          <v-table density="compact">
+            <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td>shifts_enabled</td><td>number</td><td>1</td><td>Shifts per day (1-3)</td></tr>
+              <tr><td>shift1_hours</td><td>number</td><td>8</td><td>Shift 1 duration in hours</td></tr>
+              <tr><td>shift2_hours</td><td>number</td><td>0</td><td>Shift 2 duration (if shifts_enabled ≥ 2)</td></tr>
+              <tr><td>shift3_hours</td><td>number</td><td>0</td><td>Shift 3 duration (if shifts_enabled ≥ 3)</td></tr>
+              <tr><td>work_days</td><td>number</td><td>5</td><td>Work days per week (1-7)</td></tr>
+              <tr><td>ot_enabled</td><td>boolean</td><td>false</td><td>Enable overtime</td></tr>
+              <tr><td>weekday_ot_hours</td><td>number</td><td>0</td><td>Overtime hours per weekday</td></tr>
+              <tr><td>weekend_ot_days</td><td>number</td><td>0</td><td>Weekend overtime days</td></tr>
+              <tr><td>weekend_ot_hours</td><td>number</td><td>0</td><td>Hours per weekend overtime day</td></tr>
             </tbody>
           </v-table>
 
