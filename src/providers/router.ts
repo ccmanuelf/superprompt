@@ -13,6 +13,7 @@ import {
   isAutoRouteEnabled,
 } from '../db.js';
 import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAutoTrigger } from '../skills.js';
+import { CAPABILITIES_PROMPT, generateMfgContextHint } from '../capabilities.js';
 
 const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
 
@@ -335,11 +336,13 @@ export class ProviderRouter {
     // Inject voice hint when the message is from a voice note
     const voiceHint = params.isVoice ? VOICE_RESPONSE_HINT : '';
 
-    // Inject document capabilities, quality rules, command list, and kanban prompt for both providers
+    // Inject capabilities, document generation, quality rules, command list, and kanban prompt
+    // Manufacturing context hint is generated per-message based on conversational intent
+    const mfgHint = generateMfgContextHint(params.message);
     // Language hint is Claude-only (Ollama has its own in the model system prompt)
     const systemPrompt = provider.name === 'claude'
-      ? [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : [voiceHint, params.systemPrompt, skillPrompt, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
+      ? [voiceHint, params.systemPrompt, skillPrompt, CAPABILITIES_PROMPT, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
+      : [voiceHint, params.systemPrompt, skillPrompt, CAPABILITIES_PROMPT, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)

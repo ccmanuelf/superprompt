@@ -928,25 +928,36 @@ export function createTelegramBot(router: ProviderRouter): Bot {
   bot.command('start', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
     await ctx.reply(
-      'Hello! I\'m <b>clauded</b>, your AI assistant.\n\n' +
-        'Commands:\n' +
-        '/chatid — Show your chat ID\n' +
-        '/newchat — Start a fresh session\n' +
-        '/memory — Show stored memories\n' +
-        '/voice — Toggle voice replies\n' +
-        '/claude — Switch to Claude\n' +
-        '/ollama — Switch to Ollama\n' +
-        '/auto — Toggle automatic provider routing\n' +
-        '/provider — Show current provider &amp; routing mode\n' +
-        '/models — List available Ollama models\n' +
-        '/model &lt;name&gt; — Switch Ollama model\n' +
-        '/schedule — Manage scheduled tasks\n' +
-        '/skill — Manage AI skills\n' +
-        '/tool — Manage tools (list, upload, fix)\n' +
-        '/careful — Toggle safety guardrails mode\n' +
-        '/digest — Activity digests (daily/weekly/now)\n' +
-        '/board — Kanban board (list, add, move, assign)\n' +
-        '/reload — Reload user tools from DB',
+      'Hello! I\'m <b>clauded</b>, your AI engineering partner.\n\n' +
+
+        '<b>💬 Chat &amp; AI</b>\n' +
+        '/newchat — Fresh session  •  /memory — Stored memories\n' +
+        '/claude /ollama /auto — Switch AI provider\n' +
+        '/skill — AI personas  •  /careful — Safety mode\n\n' +
+
+        '<b>🏭 Manufacturing Tools</b>\n' +
+        '/capacity — Capacity planning  •  /sim — Production simulation\n' +
+        '/sequence — Job sequencing  •  /vsm — Value Stream Mapping\n' +
+        '/toc — Theory of Constraints  •  /conwip — CONWIP/Heijunka\n' +
+        '/doe — Design of Experiments  •  /fsm — State machines\n' +
+        '/balance — Line balance  •  /sigma — Six Sigma SPC\n' +
+        '/fmea — Failure Mode Analysis  •  /rca — Root Cause Analysis\n' +
+        '/spc — Control Plans  •  /inventory — Inventory planning\n\n' +
+
+        '<b>📋 Productivity</b>\n' +
+        '/board — Kanban board  •  /learn — Learning coach\n' +
+        '/schedule — Scheduled tasks  •  /digest — Activity digests\n' +
+        '/research — Academic papers  •  /cite — Citations\n\n' +
+
+        '<b>🔧 System</b>\n' +
+        '/tool — Manage tools  •  /voice — Toggle voice replies\n' +
+        '/provider — Current AI info  •  /reload — Reload tools\n\n' +
+
+        '<b>🌐 Web Dashboards</b> (open in browser):\n' +
+        '/ (voice chat) • /sim • /capacity • /sequence • /vsm\n' +
+        '/toc • /conwip • /doe • /fsm • /board • /learn\n\n' +
+
+        '<i>Ask me anything — or say "what can you do?" for the full guide.</i>',
       { parse_mode: 'HTML' },
     );
   });
