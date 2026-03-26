@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Capacity Planning Dashboard — clauded</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    [v-cloak] { display: none; }
+    .mono { font-family: 'Roboto Mono', monospace; }
+    .cap-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .cap-table th, .cap-table td { border: 1px solid #e0e0e0; padding: 6px 8px; text-align: left; }
+    .cap-table th { background: #f5f5f5; font-weight: 500; position: sticky; top: 0; z-index: 1; }
+    .cap-table input, .cap-table select { width: 100%; border: none; background: transparent; font-size: 13px; padding: 2px; }
+    .cap-table input:focus { outline: 2px solid #1976d2; border-radius: 2px; }
+    .cap-table tr:hover { background: #fafafa; }
+    .util-bar { height: 22px; border-radius: 3px; min-width: 4px; transition: width 0.3s; }
+    .severity-critical { background: #e15759; }
+    .severity-warning { background: #f28e2b; }
+    .severity-ok { background: #59a14f; }
+    .heatmap-cell { width: 60px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 500; border-radius: 3px; margin: 1px; color: #fff; }
+    .heatmap-critical { background: #e15759; }
+    .heatmap-warning { background: #f28e2b; }
+    .heatmap-ok { background: #59a14f; }
+    .heatmap-low { background: #76b7b2; }
+    .result-card { border-left: 4px solid #1976d2; }
+    .bottleneck-card { border-left-color: #e15759; }
+    .roi-positive { color: #2e7d32; }
+    .roi-negative { color: #c62828; }
+    .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+    .fade-enter-from, .fade-leave-to { opacity: 0; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <v-app>
+      <!-- App Bar -->
+      <v-app-bar color="indigo-darken-2" density="compact">
+        <v-app-bar-title>
+          <v-icon class="mr-2">mdi-chart-timeline-variant-shimmer</v-icon>
+          Capacity Planning Dashboard
+        </v-app-bar-title>
+        <v-spacer></v-spacer>
+        <v-chip class="mr-2" size="small" color="success" v-if="engineInfo">v1.0</v-chip>
+        <v-chip class="mr-2" size="small" color="info">{{ lines.length }} Lines</v-chip>
+        <v-btn variant="text" color="white" href="/sim" size="small">
+          <v-icon start>mdi-cog-play</v-icon> Simulator
+        </v-btn>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid class="pa-4">
+
+          <!-- Summary Stats Bar -->
+          <v-row dense class="mb-3" v-if="analysisResult">
+            <v-col cols="auto">
+              <v-chip size="small" :color="analysisResult.overall_utilization_pct >= 95 ? 'error' : analysisResult.overall_utilization_pct >= 80 ? 'warning' : 'success'">
+                Overall: {{ analysisResult.overall_utilization_pct.toFixed(1) }}%
+              </v-chip>
+            </v-col>
+            <v-col cols="auto">
+              <v-chip size="small" color="info">{{ analysisResult.total_capacity_hours.toFixed(0) }}h capacity</v-chip>
+            </v-col>
+            <v-col cols="auto">
+              <v-chip size="small" color="info">{{ analysisResult.total_demand_hours.toFixed(0) }}h demand</v-chip>
+            </v-col>
+            <v-col cols="auto" v-if="analysisResult.bottleneck_count > 0">
+              <v-chip size="small" color="error">{{ analysisResult.bottleneck_count }} bottleneck{{ analysisResult.bottleneck_count > 1 ? 's' : '' }}</v-chip>
+            </v-col>
+          </v-row>
+
+          <!-- Main Tabs -->
+          <v-tabs v-model="activeTab" color="indigo" density="compact" class="mb-3">
+            <v-tab value="setup">
+              <v-icon start>mdi-cog</v-icon> Setup
+            </v-tab>
+            <v-tab value="analysis" :disabled="!analysisResult">
+              <v-icon start>mdi-chart-bar</v-icon> Analysis
+            </v-tab>
+            <v-tab value="heatmap" :disabled="!analysisResult">
+              <v-icon start>mdi-grid</v-icon> Heatmap
+            </v-tab>
+            <v-tab value="scenarios">
+              <v-icon start>mdi-compare-horizontal</v-icon> Scenarios
+            </v-tab>
+            <v-tab value="montecarlo">
+              <v-icon start>mdi-dice-multiple</v-icon> Monte Carlo
+            </v-tab>
+            <v-tab value="roi">
+              <v-icon start>mdi-currency-usd</v-icon> ROI
+            </v-tab>
+            <v-tab value="saved">
+              <v-icon start>mdi-content-save</v-icon> Saved
+            </v-tab>
+          </v-tabs>
+
+          <v-window v-model="activeTab">
+
+            <!-- ═══════ SETUP TAB ═══════ -->
+            <v-window-item value="setup">
+              <v-row>
+                <!-- Plan Info -->
+                <v-col cols="12">
+                  <v-card variant="outlined" class="mb-3">
+                    <v-card-title class="text-subtitle-1">Plan Configuration</v-card-title>
+                    <v-card-text>
+                      <v-row dense>
+                        <v-col cols="12" md="3">
+                          <v-text-field v-model="planName" label="Plan Name" density="compact" variant="outlined"
+                            placeholder="e.g., Week 13 Plan"></v-text-field>
+                        </v-col>
+                        <v-col cols="12" md="3">
+                          <v-text-field v-model="periodLabel" label="Period" density="compact" variant="outlined"
+                            placeholder="e.g., Week 13 - 2026"></v-text-field>
+                        </v-col>
+                        <v-col cols="6" md="2">
+                          <v-text-field v-model="periodStart" label="Start Date" type="date" density="compact" variant="outlined"></v-text-field>
+                        </v-col>
+                        <v-col cols="6" md="2">
+                          <v-text-field v-model="periodEnd" label="End Date" type="date" density="compact" variant="outlined"></v-text-field>
+                        </v-col>
+                      </v-row>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Calendar -->
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">
+                      <v-icon start>mdi-calendar</v-icon> Calendar
+                    </v-card-title>
+                    <v-card-text>
+                      <v-text-field v-model.number="calendar.working_days" label="Working Days" type="number"
+                        density="compact" variant="outlined" min="1" max="365" class="mb-2"></v-text-field>
+                      <v-select v-model="calendar.shifts_per_day" :items="[1,2,3]" label="Shifts/Day"
+                        density="compact" variant="outlined" class="mb-2"></v-select>
+                      <v-text-field v-model.number="calendar.hours_per_shift" label="Hours/Shift" type="number"
+                        density="compact" variant="outlined" min="1" max="12" step="0.5"></v-text-field>
+                      <div class="text-caption text-grey mt-2">
+                        Total: {{ (calendar.working_days * calendar.shifts_per_day * calendar.hours_per_shift).toFixed(0) }} gross hours
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Production Lines -->
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-factory</v-icon> Production Lines
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addLine">
+                        <v-icon start>mdi-plus</v-icon> Add Line
+                      </v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <div style="overflow-x: auto;">
+                        <table class="cap-table">
+                          <thead>
+                            <tr>
+                              <th style="width:40px;"></th>
+                              <th>Code</th>
+                              <th>Name</th>
+                              <th>Department</th>
+                              <th style="width:80px;">Operators</th>
+                              <th style="width:90px;">Efficiency %</th>
+                              <th style="width:100px;">Absenteeism %</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="(line, i) in lines" :key="i">
+                              <td>
+                                <v-btn icon size="x-small" color="error" variant="text" @click="removeLine(i)">
+                                  <v-icon size="small">mdi-close</v-icon>
+                                </v-btn>
+                              </td>
+                              <td><input v-model="line.code" placeholder="LINE_01"></td>
+                              <td><input v-model="line.name" placeholder="Sewing Line 1"></td>
+                              <td><input v-model="line.department" placeholder="Sewing"></td>
+                              <td><input v-model.number="line.max_operators" type="number" min="1" max="200"></td>
+                              <td><input v-model.number="line.efficiencyPct" type="number" min="1" max="100" step="1"></td>
+                              <td><input v-model.number="line.absenteeismPct" type="number" min="0" max="50" step="1"></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="text-caption text-grey mt-2" v-if="lines.length === 0">
+                        Add production lines to begin capacity analysis.
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Demand -->
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-package-variant</v-icon> Demand
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addDemand">
+                        <v-icon start>mdi-plus</v-icon> Add Demand
+                      </v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <div style="overflow-x: auto;">
+                        <table class="cap-table">
+                          <thead>
+                            <tr>
+                              <th style="width:40px;"></th>
+                              <th>Product</th>
+                              <th>Assigned Line</th>
+                              <th style="width:100px;">Quantity</th>
+                              <th style="width:100px;">SAM (min)</th>
+                              <th style="width:100px;">Direct Hours</th>
+                              <th style="width:80px;">Priority</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="(d, i) in demands" :key="i">
+                              <td>
+                                <v-btn icon size="x-small" color="error" variant="text" @click="removeDemand(i)">
+                                  <v-icon size="small">mdi-close</v-icon>
+                                </v-btn>
+                              </td>
+                              <td><input v-model="d.product" placeholder="Style XYZ"></td>
+                              <td>
+                                <select v-model="d.line_id">
+                                  <option value="">-- Select --</option>
+                                  <option v-for="l in lines" :key="l.id" :value="l.id">{{ l.code }}</option>
+                                </select>
+                              </td>
+                              <td><input v-model.number="d.quantity" type="number" min="0"></td>
+                              <td><input v-model.number="d.sam_minutes" type="number" min="0" step="0.1" placeholder="Optional"></td>
+                              <td><input v-model.number="d.hours" type="number" min="0" step="0.5" placeholder="Optional"></td>
+                              <td><input v-model.number="d.priority" type="number" min="1" max="10"></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Analyze Button -->
+                <v-col cols="12" class="text-center">
+                  <v-btn color="indigo" size="large" :loading="loading" @click="runAnalysis"
+                    :disabled="lines.length === 0">
+                    <v-icon start>mdi-play</v-icon> Run Capacity Analysis
+                  </v-btn>
+                  <v-btn color="teal" variant="outlined" size="large" class="ml-3" :loading="loadingSimValidate"
+                    @click="runSimulateValidate" :disabled="lines.length === 0">
+                    <v-icon start>mdi-cog-play</v-icon> Validate with Simulation (S16)
+                  </v-btn>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══════ ANALYSIS TAB ═══════ -->
+            <v-window-item value="analysis">
+              <v-row v-if="analysisResult">
+                <!-- Overall Summary -->
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined" class="result-card">
+                    <v-card-title class="text-subtitle-1">Overall Summary</v-card-title>
+                    <v-card-text>
+                      <div class="d-flex justify-space-between mb-2">
+                        <span>Total Capacity:</span>
+                        <strong class="mono">{{ analysisResult.total_capacity_hours.toFixed(1) }}h</strong>
+                      </div>
+                      <div class="d-flex justify-space-between mb-2">
+                        <span>Total Demand:</span>
+                        <strong class="mono">{{ analysisResult.total_demand_hours.toFixed(1) }}h</strong>
+                      </div>
+                      <div class="d-flex justify-space-between mb-2">
+                        <span>Utilization:</span>
+                        <strong class="mono" :class="utilColor(analysisResult.overall_utilization_pct)">
+                          {{ analysisResult.overall_utilization_pct.toFixed(1) }}%
+                        </strong>
+                      </div>
+                      <div class="d-flex justify-space-between">
+                        <span>Bottlenecks:</span>
+                        <strong class="mono" :class="analysisResult.bottleneck_count > 0 ? 'text-red' : 'text-green'">
+                          {{ analysisResult.bottleneck_count }}
+                        </strong>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Constraint Ranking -->
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined" class="result-card" :class="{'bottleneck-card': analysisResult.bottleneck_count > 0}">
+                    <v-card-title class="text-subtitle-1">Constraint Ranking</v-card-title>
+                    <v-card-text>
+                      <div v-for="cr in analysisResult.constraint_ranking" :key="cr.rank" class="mb-2">
+                        <div class="d-flex align-center">
+                          <v-chip size="x-small" :color="severityColor(cr.severity)" class="mr-2">#{{ cr.rank }}</v-chip>
+                          <strong>{{ cr.line_code }}</strong>
+                          <span class="mx-2 mono">{{ cr.utilization_pct.toFixed(1) }}%</span>
+                          <span v-if="cr.over_capacity_hours > 0" class="text-red text-caption">
+                            (+{{ cr.over_capacity_hours.toFixed(1) }}h over)
+                          </span>
+                        </div>
+                        <div class="text-caption text-grey ml-8">{{ cr.recommendation }}</div>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Per-Line Results Table -->
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Line-by-Line Results</v-card-title>
+                    <v-card-text>
+                      <div style="overflow-x:auto;">
+                        <table class="cap-table">
+                          <thead>
+                            <tr>
+                              <th>Line</th>
+                              <th>Department</th>
+                              <th>Operators</th>
+                              <th>Gross Hrs</th>
+                              <th>Net Hrs</th>
+                              <th>Capacity Hrs</th>
+                              <th>Demand Hrs</th>
+                              <th>Utilization</th>
+                              <th>Available</th>
+                              <th>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="l in analysisResult.lines" :key="l.line_id">
+                              <td><strong>{{ l.line_code }}</strong></td>
+                              <td>{{ l.department || '-' }}</td>
+                              <td class="mono">{{ l.operators_available }}</td>
+                              <td class="mono">{{ l.gross_hours.toFixed(1) }}</td>
+                              <td class="mono">{{ l.net_hours.toFixed(1) }}</td>
+                              <td class="mono">{{ l.capacity_hours.toFixed(1) }}</td>
+                              <td class="mono">{{ l.demand_hours.toFixed(1) }}</td>
+                              <td>
+                                <div style="display:flex;align-items:center;gap:6px;">
+                                  <div class="util-bar" :class="'severity-'+l.bottleneck_severity"
+                                    :style="{width: Math.min(l.utilization_pct, 100)+'%', maxWidth:'120px'}"></div>
+                                  <span class="mono" :class="utilColor(l.utilization_pct)">{{ l.utilization_pct.toFixed(1) }}%</span>
+                                </div>
+                              </td>
+                              <td class="mono" :class="l.available_hours > 0 ? 'text-green' : 'text-red'">
+                                {{ l.available_hours > 0 ? l.available_hours.toFixed(1)+'h' : '-'+l.over_capacity_hours.toFixed(1)+'h' }}
+                              </td>
+                              <td>
+                                <v-chip size="x-small" :color="severityColor(l.bottleneck_severity)">
+                                  {{ l.bottleneck_severity.toUpperCase() }}
+                                </v-chip>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Chart -->
+                <v-col cols="12" v-if="analysisChart">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Utilization Chart</v-card-title>
+                    <v-card-text class="text-center">
+                      <img :src="analysisChart" style="max-width:100%;border-radius:8px;" alt="Utilization chart">
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Simulation Validation Result -->
+                <v-col cols="12" v-if="simValidationResult">
+                  <v-card variant="outlined" class="result-card">
+                    <v-card-title class="text-subtitle-1">
+                      <v-icon start color="teal">mdi-check-decagram</v-icon>
+                      S16 Simulation Validation
+                    </v-card-title>
+                    <v-card-text>
+                      <v-alert :type="simValidationResult.simulation_result ? 'success' : 'info'" variant="tonal" class="mb-3">
+                        {{ simValidationResult.bridge_note }}
+                      </v-alert>
+                      <div v-if="simValidationResult.simulation_result">
+                        <div class="d-flex justify-space-between mb-1">
+                          <span>Sim Daily Throughput:</span>
+                          <strong class="mono">{{ simValidationResult.simulation_result.daily_summary?.daily_throughput_pcs ?? 'N/A' }} pcs</strong>
+                        </div>
+                        <div class="d-flex justify-space-between mb-1">
+                          <span>Sim Daily Coverage:</span>
+                          <strong class="mono">{{ (simValidationResult.simulation_result.daily_summary?.daily_coverage_pct ?? 0).toFixed(1) }}%</strong>
+                        </div>
+                        <div class="d-flex justify-space-between mb-1">
+                          <span>Avg Cycle Time:</span>
+                          <strong class="mono">{{ (simValidationResult.simulation_result.daily_summary?.avg_cycle_time_min ?? 0).toFixed(2) }} min</strong>
+                        </div>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══════ HEATMAP TAB ═══════ -->
+            <v-window-item value="heatmap">
+              <v-row v-if="heatmapData">
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">
+                      <v-icon start>mdi-grid</v-icon>
+                      Resource Utilization Heatmap (Lines x Periods)
+                    </v-card-title>
+                    <v-card-text>
+                      <div style="overflow-x:auto;">
+                        <table class="cap-table">
+                          <thead>
+                            <tr>
+                              <th>Line</th>
+                              <th v-for="col in heatmapData.columns" :key="col" style="text-align:center;">{{ col }}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="row in heatmapData.rows" :key="row">
+                              <td><strong>{{ row }}</strong></td>
+                              <td v-for="col in heatmapData.columns" :key="col" style="text-align:center;">
+                                <div class="heatmap-cell"
+                                  :class="heatmapClass(getHeatmapCell(row, col))">
+                                  {{ getHeatmapCell(row, col).toFixed(0) }}%
+                                </div>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="d-flex align-center mt-3 text-caption">
+                        <span class="mr-2">Legend:</span>
+                        <div class="heatmap-cell heatmap-low mr-1" style="width:auto;padding:0 8px;">&lt;50%</div>
+                        <div class="heatmap-cell heatmap-ok mr-1" style="width:auto;padding:0 8px;">50-79%</div>
+                        <div class="heatmap-cell heatmap-warning mr-1" style="width:auto;padding:0 8px;">80-94%</div>
+                        <div class="heatmap-cell heatmap-critical mr-1" style="width:auto;padding:0 8px;">&ge;95%</div>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══════ SCENARIOS TAB ═══════ -->
+            <v-window-item value="scenarios">
+              <v-row>
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Scenario Builder</v-card-title>
+                    <v-card-text>
+                      <v-select v-model="scenarioType" :items="scenarioTypes" item-title="text" item-value="value"
+                        label="Scenario Type" density="compact" variant="outlined" class="mb-2"></v-select>
+
+                      <!-- Type-specific params -->
+                      <template v-if="scenarioType === 'overtime'">
+                        <v-text-field v-model.number="scenarioParams.overtime_pct" label="Overtime %" type="number"
+                          density="compact" variant="outlined" min="1" max="100"></v-text-field>
+                        <v-text-field v-model.number="scenarioParams.overtime_cost_per_hour" label="OT Cost $/hr" type="number"
+                          density="compact" variant="outlined" min="0"></v-text-field>
+                      </template>
+                      <template v-if="scenarioType === 'three_shift'">
+                        <v-select v-model="scenarioParams.target_shifts" :items="[2,3]" label="Target Shifts"
+                          density="compact" variant="outlined"></v-select>
+                        <v-text-field v-model.number="scenarioParams.night_shift_efficiency" label="Night Shift Efficiency (0-1)" type="number"
+                          density="compact" variant="outlined" min="0.5" max="1" step="0.05"></v-text-field>
+                      </template>
+                      <template v-if="scenarioType === 'efficiency_improvement'">
+                        <v-text-field v-model.number="scenarioParams.efficiency_new_pct" label="Efficiency Gain (decimal, e.g. 0.10)" type="number"
+                          density="compact" variant="outlined" min="0.01" max="0.5" step="0.01"></v-text-field>
+                      </template>
+                      <template v-if="scenarioType === 'absenteeism_spike'">
+                        <v-text-field v-model.number="scenarioParams.absenteeism_new_pct" label="New Absenteeism (decimal, e.g. 0.15)" type="number"
+                          density="compact" variant="outlined" min="0.01" max="0.5" step="0.01"></v-text-field>
+                      </template>
+                      <template v-if="scenarioType === 'subcontract'">
+                        <v-text-field v-model.number="scenarioParams.subcontract_pct" label="Subcontract %" type="number"
+                          density="compact" variant="outlined" min="1" max="100"></v-text-field>
+                        <v-text-field v-model.number="scenarioParams.subcontract_cost_per_unit" label="Cost $/unit" type="number"
+                          density="compact" variant="outlined" min="0"></v-text-field>
+                      </template>
+                      <template v-if="scenarioType === 'setup_reduction'">
+                        <v-text-field v-model.number="scenarioParams.setup_reduction_pct" label="Setup Reduction %" type="number"
+                          density="compact" variant="outlined" min="1" max="100"></v-text-field>
+                      </template>
+
+                      <v-btn color="indigo" block class="mt-3" :loading="loadingScenario"
+                        @click="runScenarioAnalysis" :disabled="lines.length === 0 || !scenarioType">
+                        <v-icon start>mdi-play</v-icon> Run Scenario
+                      </v-btn>
+
+                      <v-divider class="my-4"></v-divider>
+
+                      <v-btn color="teal" block variant="outlined" :loading="loadingCompare"
+                        @click="runAllScenarios" :disabled="lines.length === 0">
+                        <v-icon start>mdi-compare-horizontal</v-icon> Compare All Scenarios
+                      </v-btn>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Scenario Result -->
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined" v-if="scenarioResult">
+                    <v-card-title class="text-subtitle-1">
+                      {{ scenarioResult.scenario.name }} — Results
+                    </v-card-title>
+                    <v-card-text>
+                      <v-row dense>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Capacity Change</div>
+                          <div class="text-h6 mono" :class="scenarioResult.delta.capacity_hours_change >= 0 ? 'text-green' : 'text-red'">
+                            {{ scenarioResult.delta.capacity_hours_change >= 0 ? '+' : '' }}{{ scenarioResult.delta.capacity_hours_change.toFixed(1) }}h
+                          </div>
+                          <div class="text-caption">({{ scenarioResult.delta.capacity_hours_change_pct.toFixed(1) }}%)</div>
+                        </v-col>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Utilization Change</div>
+                          <div class="text-h6 mono" :class="scenarioResult.delta.utilization_change_pct <= 0 ? 'text-green' : 'text-red'">
+                            {{ scenarioResult.delta.utilization_change_pct >= 0 ? '+' : '' }}{{ scenarioResult.delta.utilization_change_pct.toFixed(1) }}%
+                          </div>
+                        </v-col>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Bottlenecks Resolved</div>
+                          <div class="text-h6 mono text-green">{{ scenarioResult.delta.bottlenecks_resolved }}</div>
+                          <div class="text-caption">({{ scenarioResult.delta.bottlenecks_remaining }} remaining)</div>
+                        </v-col>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Additional Cost</div>
+                          <div class="text-h6 mono">${{ scenarioResult.delta.additional_cost.toLocaleString() }}</div>
+                          <div class="text-caption" v-if="scenarioResult.delta.cost_per_additional_unit < Infinity">
+                            ${{ scenarioResult.delta.cost_per_additional_unit.toFixed(2) }}/unit
+                          </div>
+                        </v-col>
+                      </v-row>
+
+                      <!-- Projected vs Baseline -->
+                      <v-divider class="my-3"></v-divider>
+                      <div class="d-flex justify-space-between mb-1">
+                        <span>Baseline Utilization:</span>
+                        <strong class="mono">{{ scenarioResult.baseline.overall_utilization_pct.toFixed(1) }}%</strong>
+                      </div>
+                      <div class="d-flex justify-space-between mb-1">
+                        <span>Projected Utilization:</span>
+                        <strong class="mono" :class="utilColor(scenarioResult.projected.overall_utilization_pct)">
+                          {{ scenarioResult.projected.overall_utilization_pct.toFixed(1) }}%
+                        </strong>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+
+                  <!-- Scenario Comparison -->
+                  <v-card variant="outlined" v-if="comparisonResult" class="mt-3">
+                    <v-card-title class="text-subtitle-1">Scenario Comparison</v-card-title>
+                    <v-card-text>
+                      <v-alert type="info" variant="tonal" class="mb-3">
+                        {{ comparisonResult.recommendation }}
+                      </v-alert>
+                      <div style="overflow-x:auto;">
+                        <table class="cap-table">
+                          <thead>
+                            <tr>
+                              <th>Scenario</th>
+                              <th>Util Change</th>
+                              <th>Cap Change</th>
+                              <th>Bottlenecks</th>
+                              <th>Cost</th>
+                              <th>$/Unit</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="s in comparisonResult.scenarios" :key="s.scenario.name"
+                              :style="s.scenario.name === comparisonResult.best_scenario ? 'background:#e8f5e9;' : ''">
+                              <td>
+                                <strong>{{ s.scenario.name }}</strong>
+                                <v-icon v-if="s.scenario.name === comparisonResult.best_scenario" color="green" size="small">mdi-star</v-icon>
+                              </td>
+                              <td class="mono" :class="s.delta.utilization_change_pct <= 0 ? 'text-green' : 'text-red'">
+                                {{ s.delta.utilization_change_pct >= 0 ? '+' : '' }}{{ s.delta.utilization_change_pct.toFixed(1) }}%
+                              </td>
+                              <td class="mono">{{ s.delta.capacity_hours_change >= 0 ? '+' : '' }}{{ s.delta.capacity_hours_change.toFixed(0) }}h</td>
+                              <td class="mono">{{ s.delta.bottlenecks_remaining }}</td>
+                              <td class="mono">${{ s.delta.additional_cost.toLocaleString() }}</td>
+                              <td class="mono">{{ s.delta.cost_per_additional_unit < 999999 ? '$'+s.delta.cost_per_additional_unit.toFixed(2) : '-' }}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+
+                  <!-- Scenario Chart -->
+                  <v-card variant="outlined" class="mt-3" v-if="scenarioChart">
+                    <v-card-text class="text-center">
+                      <img :src="scenarioChart" style="max-width:100%;border-radius:8px;" alt="Scenario chart">
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══════ MONTE CARLO TAB ═══════ -->
+            <v-window-item value="montecarlo">
+              <v-row>
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Monte Carlo Settings</v-card-title>
+                    <v-card-text>
+                      <v-text-field v-model.number="mcReplications" label="Replications" type="number"
+                        density="compact" variant="outlined" min="100" max="10000" step="100" class="mb-2"></v-text-field>
+
+                      <v-select v-model="mcEfficiencyDist" :items="distTypes" label="Efficiency Distribution"
+                        density="compact" variant="outlined" class="mb-2"></v-select>
+
+                      <v-select v-model="mcAbsenteeismDist" :items="distTypes" label="Absenteeism Distribution"
+                        density="compact" variant="outlined" class="mb-2"></v-select>
+
+                      <v-select v-model="mcDemandDist" :items="distTypes" label="Demand Distribution"
+                        density="compact" variant="outlined" class="mb-2"></v-select>
+
+                      <v-btn color="indigo" block :loading="loadingMC" @click="runMonteCarlo"
+                        :disabled="lines.length === 0">
+                        <v-icon start>mdi-dice-multiple</v-icon> Run Monte Carlo
+                      </v-btn>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined" v-if="mcResults">
+                    <v-card-title class="text-subtitle-1">
+                      Monte Carlo Results ({{ mcResults.replications }} runs)
+                    </v-card-title>
+                    <v-card-text>
+                      <v-row dense>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Mean Utilization</div>
+                          <div class="text-h6 mono">{{ mcResults.overall_utilization.mean.toFixed(1) }}%</div>
+                        </v-col>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Std Dev</div>
+                          <div class="text-h6 mono">{{ mcResults.overall_utilization.stddev.toFixed(2) }}%</div>
+                        </v-col>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">P5 — P95</div>
+                          <div class="text-h6 mono">{{ mcResults.overall_utilization.p5.toFixed(1) }} — {{ mcResults.overall_utilization.p95.toFixed(1) }}%</div>
+                        </v-col>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Bottleneck Prob</div>
+                          <div class="text-h6 mono" :class="mcResults.bottleneck_probability > 50 ? 'text-red' : 'text-green'">
+                            {{ mcResults.bottleneck_probability.toFixed(1) }}%
+                          </div>
+                        </v-col>
+                      </v-row>
+
+                      <v-divider class="my-3"></v-divider>
+
+                      <!-- Confidence Intervals -->
+                      <div class="text-subtitle-2 mb-2">Confidence Intervals</div>
+                      <div class="d-flex justify-space-between mb-1" v-for="ci in [
+                        {label:'90%', data: mcResults.confidence_90},
+                        {label:'95%', data: mcResults.confidence_95},
+                        {label:'99%', data: mcResults.confidence_99}
+                      ]" :key="ci.label">
+                        <span>{{ ci.label }} CI:</span>
+                        <strong class="mono">{{ ci.data.lower.toFixed(1) }}% — {{ ci.data.upper.toFixed(1) }}%</strong>
+                      </div>
+
+                      <v-divider class="my-3"></v-divider>
+
+                      <!-- Per-Line Bottleneck Probability -->
+                      <div class="text-subtitle-2 mb-2">Per-Line Bottleneck Probability</div>
+                      <div v-for="(prob, lineId) in mcResults.per_line_bottleneck_probability" :key="lineId"
+                        class="d-flex align-center mb-1">
+                        <strong class="mr-2" style="min-width:80px;">{{ getLineCode(lineId) }}</strong>
+                        <div style="flex:1;height:18px;background:#eee;border-radius:9px;overflow:hidden;">
+                          <div :style="{width: Math.min(prob, 100)+'%', height:'100%', borderRadius:'9px'}"
+                            :class="prob >= 50 ? 'severity-critical' : prob >= 20 ? 'severity-warning' : 'severity-ok'"></div>
+                        </div>
+                        <span class="mono ml-2" style="min-width:50px;">{{ prob.toFixed(1) }}%</span>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+
+                  <!-- MC Chart -->
+                  <v-card variant="outlined" class="mt-3" v-if="mcChart">
+                    <v-card-text class="text-center">
+                      <img :src="mcChart" style="max-width:100%;border-radius:8px;" alt="Monte Carlo histogram">
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══════ ROI TAB ═══════ -->
+            <v-window-item value="roi">
+              <v-row>
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Investment Parameters</v-card-title>
+                    <v-card-text>
+                      <v-text-field v-model="roiInput.scenario_name" label="Scenario Name" density="compact"
+                        variant="outlined" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="roiInput.investment_cost" label="Investment Cost ($)" type="number"
+                        density="compact" variant="outlined" min="0" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="roiInput.monthly_operating_cost" label="Monthly Operating Cost ($)" type="number"
+                        density="compact" variant="outlined" min="0" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="roiInput.capacity_gain_hours" label="Capacity Gain (hours/month)" type="number"
+                        density="compact" variant="outlined" min="0" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="roiInput.revenue_per_unit" label="Revenue per Unit ($)" type="number"
+                        density="compact" variant="outlined" min="0" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="roiInput.units_per_hour" label="Units per Hour" type="number"
+                        density="compact" variant="outlined" min="0.1" step="0.1" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="roiInput.discount_rate" label="Discount Rate (annual %)" type="number"
+                        density="compact" variant="outlined" min="0" max="1" step="0.01" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="roiInput.analysis_months" label="Analysis Horizon (months)" type="number"
+                        density="compact" variant="outlined" min="1" max="120"></v-text-field>
+
+                      <v-btn color="indigo" block class="mt-3" :loading="loadingROI" @click="calculateROI">
+                        <v-icon start>mdi-calculator</v-icon> Calculate ROI
+                      </v-btn>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined" v-if="roiResult">
+                    <v-card-title class="text-subtitle-1">ROI Results — {{ roiResult.scenario_name }}</v-card-title>
+                    <v-card-text>
+                      <v-row dense>
+                        <v-col cols="6" md="4">
+                          <div class="text-caption text-grey">Payback Period</div>
+                          <div class="text-h5 mono" :class="roiResult.payback_months <= 12 ? 'roi-positive' : 'roi-negative'">
+                            {{ roiResult.payback_months === Infinity ? '∞' : roiResult.payback_months.toFixed(1) }} mo
+                          </div>
+                        </v-col>
+                        <v-col cols="6" md="4">
+                          <div class="text-caption text-grey">NPV</div>
+                          <div class="text-h5 mono" :class="roiResult.npv >= 0 ? 'roi-positive' : 'roi-negative'">
+                            ${{ Math.round(roiResult.npv).toLocaleString() }}
+                          </div>
+                        </v-col>
+                        <v-col cols="6" md="4">
+                          <div class="text-caption text-grey">ROI</div>
+                          <div class="text-h5 mono" :class="roiResult.roi_pct >= 0 ? 'roi-positive' : 'roi-negative'">
+                            {{ roiResult.roi_pct.toFixed(1) }}%
+                          </div>
+                        </v-col>
+                      </v-row>
+
+                      <v-divider class="my-3"></v-divider>
+
+                      <v-row dense>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Monthly Net Benefit</div>
+                          <div class="mono">${{ Math.round(roiResult.monthly_net_benefit).toLocaleString() }}</div>
+                        </v-col>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Add'l Units/Month</div>
+                          <div class="mono">{{ roiResult.additional_units_per_month.toFixed(0) }}</div>
+                        </v-col>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Break-Even Util</div>
+                          <div class="mono">{{ roiResult.break_even_utilization_pct.toFixed(1) }}%</div>
+                        </v-col>
+                        <v-col cols="6" md="3">
+                          <div class="text-caption text-grey">Cost/Add'l Unit</div>
+                          <div class="mono">{{ roiResult.cost_per_additional_unit === Infinity ? 'N/A' : '$' + roiResult.cost_per_additional_unit.toFixed(2) }}</div>
+                        </v-col>
+                      </v-row>
+
+                      <v-divider class="my-3"></v-divider>
+                      <v-alert variant="tonal" :type="roiResult.npv >= 0 ? 'success' : 'warning'">
+                        {{ roiResult.recommendation }}
+                      </v-alert>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══════ SAVED TAB ═══════ -->
+            <v-window-item value="saved">
+              <v-row>
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-content-save</v-icon> Saved Plans
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" variant="tonal" @click="loadSavedPlans">
+                        <v-icon start>mdi-refresh</v-icon> Refresh
+                      </v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <div v-if="savedPlans.length === 0" class="text-grey text-center pa-4">
+                        No saved plans. Run an analysis with a plan name to auto-save.
+                      </div>
+                      <v-list v-else density="compact">
+                        <v-list-item v-for="plan in savedPlans" :key="plan.id" @click="loadPlan(plan.id)">
+                          <v-list-item-title>{{ plan.name }}</v-list-item-title>
+                          <v-list-item-subtitle>
+                            {{ new Date(plan.updated_at).toLocaleString() }}
+                            <v-chip v-if="plan.has_result" size="x-small" color="success" class="ml-2">Has Results</v-chip>
+                          </v-list-item-subtitle>
+                          <template v-slot:append>
+                            <v-btn icon size="small" color="error" variant="text" @click.stop="deletePlan(plan.id)">
+                              <v-icon>mdi-delete</v-icon>
+                            </v-btn>
+                          </template>
+                        </v-list-item>
+                      </v-list>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+          </v-window>
+        </v-container>
+      </v-main>
+
+      <!-- Snackbar -->
+      <v-snackbar v-model="snackbar" :color="snackColor" timeout="4000" location="bottom right">
+        {{ snackMsg }}
+      </v-snackbar>
+    </v-app>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.0/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+  <script>
+    const API = '/api/capacity';
+    const { createApp } = Vue;
+
+    let lineCounter = 0;
+
+    const app = createApp({
+      data() {
+        return {
+          // UI state
+          activeTab: 'setup',
+          loading: false,
+          loadingScenario: false,
+          loadingCompare: false,
+          loadingMC: false,
+          loadingROI: false,
+          loadingSimValidate: false,
+          snackbar: false,
+          snackMsg: '',
+          snackColor: 'info',
+          engineInfo: null,
+
+          // Plan config
+          planName: 'Capacity Plan 1',
+          periodLabel: '',
+          periodStart: new Date().toISOString().slice(0, 10),
+          periodEnd: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+          calendar: { working_days: 5, shifts_per_day: 1, hours_per_shift: 8 },
+          lines: [],
+          demands: [],
+
+          // Results
+          analysisResult: null,
+          analysisChart: null,
+          heatmapData: null,
+          simValidationResult: null,
+
+          // Scenarios
+          scenarioType: 'overtime',
+          scenarioTypes: [
+            { text: 'Overtime +20%', value: 'overtime' },
+            { text: '3-Shift Operation', value: 'three_shift' },
+            { text: 'Efficiency Improvement', value: 'efficiency_improvement' },
+            { text: 'Absenteeism Spike', value: 'absenteeism_spike' },
+            { text: 'Subcontract', value: 'subcontract' },
+            { text: 'Setup Reduction', value: 'setup_reduction' },
+          ],
+          scenarioParams: {
+            overtime_pct: 20,
+            overtime_cost_per_hour: 15,
+            target_shifts: 3,
+            night_shift_efficiency: 0.80,
+            efficiency_new_pct: 0.10,
+            absenteeism_new_pct: 0.15,
+            subcontract_pct: 40,
+            subcontract_cost_per_unit: 2.50,
+            setup_reduction_pct: 30,
+          },
+          scenarioResult: null,
+          comparisonResult: null,
+          scenarioChart: null,
+
+          // Monte Carlo
+          mcReplications: 1000,
+          mcEfficiencyDist: 'Default (Normal ±5%)',
+          mcAbsenteeismDist: 'Default (Normal ±20%)',
+          mcDemandDist: 'Default (Normal ±10%)',
+          distTypes: ['Default (Normal ±5%)', 'Default (Normal ±10%)', 'Default (Normal ±20%)', 'Triangular', 'Uniform'],
+          mcResults: null,
+          mcChart: null,
+
+          // ROI
+          roiInput: {
+            scenario_name: 'New Line Investment',
+            investment_cost: 50000,
+            monthly_operating_cost: 2000,
+            capacity_gain_hours: 160,
+            revenue_per_unit: 5,
+            units_per_hour: 50,
+            discount_rate: 0.10,
+            analysis_months: 24,
+          },
+          roiResult: null,
+
+          // Saved plans
+          savedPlans: [],
+        };
+      },
+
+      methods: {
+        // ── Config Builders ──
+        buildConfig() {
+          return {
+            name: this.planName,
+            period_label: this.periodLabel || this.planName,
+            period_start: this.periodStart,
+            period_end: this.periodEnd,
+            lines: this.lines.map(l => ({
+              id: l.id,
+              code: l.code,
+              name: l.name,
+              department: l.department || undefined,
+              max_operators: l.max_operators,
+              efficiency_factor: (l.efficiencyPct || 85) / 100,
+              absenteeism_factor: (l.absenteeismPct || 5) / 100,
+            })),
+            calendar: { ...this.calendar },
+            demands: this.demands.filter(d => d.line_id && d.quantity > 0).map(d => ({
+              product: d.product || 'Product',
+              line_id: d.line_id,
+              quantity: d.quantity,
+              sam_minutes: d.sam_minutes || undefined,
+              hours: d.hours || undefined,
+              priority: d.priority || 1,
+            })),
+          };
+        },
+
+        // ── Line/Demand Management ──
+        addLine() {
+          lineCounter++;
+          this.lines.push({
+            id: 'line_' + lineCounter,
+            code: 'LINE_' + String(lineCounter).padStart(2, '0'),
+            name: 'Production Line ' + lineCounter,
+            department: '',
+            max_operators: 12,
+            efficiencyPct: 85,
+            absenteeismPct: 5,
+          });
+        },
+        removeLine(i) { this.lines.splice(i, 1); },
+        addDemand() {
+          this.demands.push({
+            product: '',
+            line_id: this.lines[0]?.id || '',
+            quantity: 1000,
+            sam_minutes: null,
+            hours: null,
+            priority: 1,
+          });
+        },
+        removeDemand(i) { this.demands.splice(i, 1); },
+
+        // ── API Calls ──
+        async runAnalysis() {
+          this.loading = true;
+          try {
+            const resp = await fetch(API + '/analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ config: this.buildConfig() }),
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.analysisResult = data.result;
+            this.heatmapData = data.heatmap;
+            this.analysisChart = data.chart || null;
+            this.activeTab = 'analysis';
+            this.notify('Analysis complete', 'success');
+          } catch (e) {
+            this.notify('Error: ' + e.message, 'error');
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        async runSimulateValidate() {
+          this.loadingSimValidate = true;
+          try {
+            const resp = await fetch(API + '/simulate-validate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ config: this.buildConfig() }),
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.analysisResult = data.capacity_result;
+            this.simValidationResult = data;
+            this.activeTab = 'analysis';
+            this.notify('Simulation validation complete', 'success');
+          } catch (e) {
+            this.notify('Error: ' + e.message, 'error');
+          } finally {
+            this.loadingSimValidate = false;
+          }
+        },
+
+        async runScenarioAnalysis() {
+          this.loadingScenario = true;
+          try {
+            const scenario = {
+              type: this.scenarioType,
+              name: this.scenarioTypes.find(t => t.value === this.scenarioType)?.text || this.scenarioType,
+              description: '',
+              ...this.getTypeParams(),
+            };
+            const resp = await fetch(API + '/scenario', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ config: this.buildConfig(), scenario }),
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.scenarioResult = data.result;
+            this.scenarioChart = data.chart || null;
+            this.notify('Scenario analysis complete', 'success');
+          } catch (e) {
+            this.notify('Error: ' + e.message, 'error');
+          } finally {
+            this.loadingScenario = false;
+          }
+        },
+
+        async runAllScenarios() {
+          this.loadingCompare = true;
+          try {
+            const scenarios = this.scenarioTypes.map(t => ({
+              type: t.value,
+              name: t.text,
+              description: '',
+              ...this.getTypeParamsFor(t.value),
+            }));
+            const resp = await fetch(API + '/compare', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ config: this.buildConfig(), scenarios }),
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.comparisonResult = data.comparison;
+            this.scenarioChart = data.chart || null;
+            this.notify('Comparison complete', 'success');
+          } catch (e) {
+            this.notify('Error: ' + e.message, 'error');
+          } finally {
+            this.loadingCompare = false;
+          }
+        },
+
+        async runMonteCarlo() {
+          this.loadingMC = true;
+          try {
+            const resp = await fetch(API + '/monte-carlo', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                config: this.buildConfig(),
+                replications: this.mcReplications,
+              }),
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.mcResults = data.results;
+            this.mcChart = data.chart || null;
+            this.notify('Monte Carlo complete (' + this.mcReplications + ' runs)', 'success');
+          } catch (e) {
+            this.notify('Error: ' + e.message, 'error');
+          } finally {
+            this.loadingMC = false;
+          }
+        },
+
+        async calculateROI() {
+          this.loadingROI = true;
+          try {
+            const resp = await fetch(API + '/roi', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.roiInput),
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.roiResult = data.result;
+            this.notify('ROI calculated', 'success');
+          } catch (e) {
+            this.notify('Error: ' + e.message, 'error');
+          } finally {
+            this.loadingROI = false;
+          }
+        },
+
+        async loadSavedPlans() {
+          try {
+            const resp = await fetch(API + '/plans');
+            const data = await resp.json();
+            this.savedPlans = data.plans || [];
+          } catch (e) {
+            this.notify('Failed to load plans', 'error');
+          }
+        },
+
+        async loadPlan(id) {
+          try {
+            const resp = await fetch(API + '/plans/' + id);
+            const data = await resp.json();
+            if (!data.config) throw new Error('Invalid plan');
+            const cfg = data.config;
+            this.planName = cfg.name;
+            this.periodLabel = cfg.period_label;
+            this.periodStart = cfg.period_start;
+            this.periodEnd = cfg.period_end;
+            this.calendar = cfg.calendar;
+            this.lines = cfg.lines.map(l => ({
+              id: l.id,
+              code: l.code,
+              name: l.name,
+              department: l.department || '',
+              max_operators: l.max_operators,
+              efficiencyPct: Math.round(l.efficiency_factor * 100),
+              absenteeismPct: Math.round(l.absenteeism_factor * 100),
+            }));
+            this.demands = cfg.demands.map(d => ({
+              product: d.product,
+              line_id: d.line_id,
+              quantity: d.quantity,
+              sam_minutes: d.sam_minutes || null,
+              hours: d.hours || null,
+              priority: d.priority || 1,
+            }));
+            if (data.result) {
+              this.analysisResult = data.result;
+            }
+            this.activeTab = 'setup';
+            this.notify('Plan loaded: ' + cfg.name, 'success');
+          } catch (e) {
+            this.notify('Error loading plan: ' + e.message, 'error');
+          }
+        },
+
+        async deletePlan(id) {
+          try {
+            await fetch(API + '/plans/' + id, { method: 'DELETE' });
+            this.savedPlans = this.savedPlans.filter(p => p.id !== id);
+            this.notify('Plan deleted', 'info');
+          } catch (e) {
+            this.notify('Error deleting plan', 'error');
+          }
+        },
+
+        // ── Helpers ──
+        getTypeParams() {
+          return this.getTypeParamsFor(this.scenarioType);
+        },
+        getTypeParamsFor(type) {
+          const p = this.scenarioParams;
+          switch (type) {
+            case 'overtime': return { overtime_pct: p.overtime_pct, overtime_cost_per_hour: p.overtime_cost_per_hour };
+            case 'three_shift': return { target_shifts: p.target_shifts, night_shift_efficiency: p.night_shift_efficiency };
+            case 'efficiency_improvement': return { efficiency_new_pct: p.efficiency_new_pct };
+            case 'absenteeism_spike': return { absenteeism_new_pct: p.absenteeism_new_pct };
+            case 'subcontract': return { subcontract_pct: p.subcontract_pct, subcontract_cost_per_unit: p.subcontract_cost_per_unit };
+            case 'setup_reduction': return { setup_reduction_pct: p.setup_reduction_pct };
+            default: return {};
+          }
+        },
+
+        utilColor(pct) {
+          if (pct >= 95) return 'text-red';
+          if (pct >= 80) return 'text-orange';
+          return 'text-green';
+        },
+        severityColor(s) {
+          if (s === 'critical') return 'error';
+          if (s === 'warning') return 'warning';
+          return 'success';
+        },
+        getHeatmapCell(row, col) {
+          if (!this.heatmapData) return 0;
+          const cell = this.heatmapData.cells.find(c => c.line_code === row && c.period === col);
+          return cell?.utilization_pct ?? 0;
+        },
+        heatmapClass(pct) {
+          if (pct >= 95) return 'heatmap-critical';
+          if (pct >= 80) return 'heatmap-warning';
+          if (pct >= 50) return 'heatmap-ok';
+          return 'heatmap-low';
+        },
+        getLineCode(lineId) {
+          const line = this.lines.find(l => l.id === lineId);
+          return line?.code || lineId;
+        },
+        notify(msg, color) {
+          this.snackMsg = msg;
+          this.snackColor = color || 'info';
+          this.snackbar = true;
+        },
+      },
+
+      async mounted() {
+        // Load engine info
+        try {
+          const resp = await fetch(API + '/info');
+          this.engineInfo = await resp.json();
+        } catch (e) { /* ignore */ }
+
+        // Load saved plans
+        this.loadSavedPlans();
+
+        // Add a starter line and demand for first-time users
+        if (this.lines.length === 0) {
+          this.addLine();
+          this.addLine();
+          this.addDemand();
+          this.addDemand();
+          // Set second demand to second line
+          if (this.demands[1] && this.lines[1]) {
+            this.demands[1].line_id = this.lines[1].id;
+          }
+        }
+      },
+    });
+
+    app.use(Vuetify.createVuetify({
+      theme: { defaultTheme: 'light' },
+    }));
+    app.mount('#app');
+  </script>
+</body>
+</html>

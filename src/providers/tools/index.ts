@@ -49,6 +49,13 @@ import { fmeaManageDefinition, fmeaManage } from './fmea.js';
 import { rcaManageDefinition, rcaManage } from './rca.js';
 import { simulationDefinition, productionSimulation } from './simulation.js';
 import { minizincOptimizeDefinition, minizincOptimize } from './minizinc-tool.js';
+import { capacityDefinition, capacityPlanning } from './capacity.js';
+import { sequencerDefinition, jobSequencer } from './sequencer.js';
+import { vsmDefinition, valueStreamMap } from './vsm.js';
+import { tocDefinition, tocAnalysis } from './toc.js';
+import { conwipDefinition, conwipHeijunka } from './conwip.js';
+import { doeDefinition, designOfExperiments } from './doe.js';
+import { fsmDefinition, stateMachineSimulator } from './fsm.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -256,6 +263,48 @@ export function registerBuiltinTools(): void {
       definition: minizincOptimizeDefinition,
       execute: async (args) =>
         minizincOptimize(args as Record<string, unknown>),
+      source: 'builtin',
+    },
+    {
+      definition: capacityDefinition,
+      execute: async (args) =>
+        capacityPlanning(args as Record<string, unknown>),
+      source: 'builtin',
+    },
+    {
+      definition: sequencerDefinition,
+      execute: async (args) =>
+        jobSequencer(args as Record<string, unknown>),
+      source: 'builtin',
+    },
+    {
+      definition: vsmDefinition,
+      execute: async (args) =>
+        valueStreamMap(args as Record<string, unknown>),
+      source: 'builtin',
+    },
+    {
+      definition: tocDefinition,
+      execute: async (args) =>
+        tocAnalysis(args as Record<string, unknown>),
+      source: 'builtin',
+    },
+    {
+      definition: conwipDefinition,
+      execute: async (args) =>
+        conwipHeijunka(args as Record<string, unknown>),
+      source: 'builtin',
+    },
+    {
+      definition: doeDefinition,
+      execute: async (args) =>
+        designOfExperiments(args as Record<string, unknown>),
+      source: 'builtin',
+    },
+    {
+      definition: fsmDefinition,
+      execute: async (args) =>
+        stateMachineSimulator(args as Record<string, unknown>),
       source: 'builtin',
     },
   ];

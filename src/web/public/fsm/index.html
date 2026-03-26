@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>State Machine Simulator — clauded</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    [v-cloak] { display: none; }
+    .mono { font-family: 'Roboto Mono', monospace; }
+    .fsm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .fsm-table th, .fsm-table td { border: 1px solid #e0e0e0; padding: 5px 7px; text-align: left; }
+    .fsm-table th { background: #f5f5f5; font-weight: 500; }
+    .fsm-table input, .fsm-table select { width: 100%; border: none; background: transparent; font-size: 13px; padding: 2px; }
+    .fsm-table input:focus { outline: 2px solid #1976d2; border-radius: 2px; }
+    /* State node visualization */
+    .state-node { display: inline-flex; flex-direction: column; align-items: center; padding: 10px 16px;
+      border: 3px solid; border-radius: 12px; min-width: 90px; background: #fff; position: relative; cursor: default; transition: all 0.3s; }
+    .state-node.active { box-shadow: 0 0 12px rgba(0,0,0,0.3); transform: scale(1.05); }
+    .state-node.initial { border-style: double; border-width: 4px; }
+    .state-node.final { border-radius: 12px; outline: 2px solid; outline-offset: 3px; }
+    .state-arrow { display: inline-flex; align-items: center; font-size: 16px; color: #666; margin: 0 4px; flex-direction: column; }
+    .state-arrow .event-label { font-size: 9px; color: #999; max-width: 80px; text-align: center; word-wrap: break-word; }
+    /* Residence bar */
+    .res-bar { height: 18px; border-radius: 3px; display: inline-block; min-width: 2px; }
+    .res-stack { display: flex; height: 24px; border-radius: 4px; overflow: hidden; }
+    /* Event log */
+    .log-entry { font-size: 12px; padding: 3px 6px; border-bottom: 1px solid #f0f0f0; }
+    .log-entry:hover { background: #fafafa; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <v-app>
+      <v-app-bar color="cyan-darken-3" density="compact">
+        <v-app-bar-title><v-icon class="mr-2">mdi-state-machine</v-icon> State Machine Simulator</v-app-bar-title>
+        <v-spacer></v-spacer>
+        <v-chip class="mr-2" size="small" color="success">v1.0</v-chip>
+        <v-chip class="mr-2" size="small" color="info" v-if="analysis">{{ analysis.system_metrics.avg_utilization_pct.toFixed(0) }}% util</v-chip>
+        <v-btn variant="text" color="white" href="/sim" size="small"><v-icon start>mdi-cog-play</v-icon> Sim</v-btn>
+        <v-btn variant="text" color="white" href="/toc" size="small"><v-icon start>mdi-traffic-light</v-icon> TOC</v-btn>
+        <v-btn variant="text" color="white" href="/vsm" size="small"><v-icon start>mdi-sitemap</v-icon> VSM</v-btn>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid class="pa-4">
+          <v-tabs v-model="activeTab" color="cyan" density="compact" class="mb-3">
+            <v-tab value="setup"><v-icon start>mdi-cog</v-icon> Setup</v-tab>
+            <v-tab value="diagram"><v-icon start>mdi-graph</v-icon> Diagram</v-tab>
+            <v-tab value="simulate" :disabled="machines.length === 0"><v-icon start>mdi-play</v-icon> Simulate</v-tab>
+            <v-tab value="analysis" :disabled="!analysis"><v-icon start>mdi-chart-pie</v-icon> Analysis</v-tab>
+            <v-tab value="bridge"><v-icon start>mdi-bridge</v-icon> Bridge</v-tab>
+            <v-tab value="saved"><v-icon start>mdi-content-save</v-icon> Saved</v-tab>
+          </v-tabs>
+
+          <v-window v-model="activeTab">
+            <!-- ═══ SETUP ═══ -->
+            <v-window-item value="setup">
+              <v-row>
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-tune</v-icon> Config</v-card-title>
+                    <v-card-text>
+                      <v-text-field v-model="configName" label="Name" density="compact" variant="outlined" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="simDuration" label="Duration (min)" type="number" density="compact" variant="outlined" min="1" class="mb-2"></v-text-field>
+                      <v-select v-model="selectedTemplate" :items="templateItems" label="Load Template" density="compact" variant="outlined" class="mb-2"></v-select>
+                      <v-btn color="cyan" block variant="tonal" @click="loadTemplate" :disabled="!selectedTemplate">
+                        <v-icon start>mdi-download</v-icon> Load Template
+                      </v-btn>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-state-machine</v-icon> Machines ({{ machines.length }})
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addMachine"><v-icon start>mdi-plus</v-icon> Add Machine</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <v-expansion-panels variant="accordion">
+                        <v-expansion-panel v-for="(m, mi) in machines" :key="mi">
+                          <v-expansion-panel-title>
+                            <strong>{{ m.name }}</strong>
+                            <v-chip size="x-small" class="ml-2" color="info">{{ m.states.length }} states</v-chip>
+                            <v-chip size="x-small" class="ml-1" color="info">{{ m.transitions.length }} transitions</v-chip>
+                            <v-spacer></v-spacer>
+                            <v-btn icon size="x-small" color="error" variant="text" @click.stop="machines.splice(mi,1)"><v-icon size="small">mdi-delete</v-icon></v-btn>
+                          </v-expansion-panel-title>
+                          <v-expansion-panel-text>
+                            <v-text-field v-model="m.name" label="Machine Name" density="compact" variant="outlined" class="mb-2"></v-text-field>
+                            <!-- States -->
+                            <div class="text-subtitle-2 mb-1">States</div>
+                            <div v-for="(s, si) in m.states" :key="si" class="d-flex align-center mb-1" style="gap:4px;">
+                              <v-btn icon size="x-small" color="error" variant="text" @click="m.states.splice(si,1)"><v-icon size="x-small">mdi-close</v-icon></v-btn>
+                              <v-text-field v-model="s.name" label="State" density="compact" variant="outlined" style="max-width:120px;"></v-text-field>
+                              <v-select v-model="s.mfg_type" :items="mfgTypes" label="Type" density="compact" variant="outlined" style="max-width:130px;"></v-select>
+                              <v-checkbox v-model="s.is_initial" label="Initial" density="compact" style="max-width:80px;"></v-checkbox>
+                              <v-text-field v-model.number="s.avg_duration" label="Avg (min)" type="number" density="compact" variant="outlined" style="max-width:80px;"></v-text-field>
+                            </div>
+                            <v-btn size="x-small" variant="tonal" @click="addState(m)" class="mb-3"><v-icon start size="small">mdi-plus</v-icon> State</v-btn>
+                            <!-- Transitions -->
+                            <div class="text-subtitle-2 mb-1">Transitions</div>
+                            <div v-for="(t, ti) in m.transitions" :key="ti" class="d-flex align-center mb-1" style="gap:4px;">
+                              <v-btn icon size="x-small" color="error" variant="text" @click="m.transitions.splice(ti,1)"><v-icon size="x-small">mdi-close</v-icon></v-btn>
+                              <v-select v-model="t.from_state_id" :items="stateItems(m)" label="From" density="compact" variant="outlined" style="max-width:120px;"></v-select>
+                              <span>→</span>
+                              <v-select v-model="t.to_state_id" :items="stateItems(m)" label="To" density="compact" variant="outlined" style="max-width:120px;"></v-select>
+                              <v-text-field v-model="t.event" label="Event" density="compact" variant="outlined" style="max-width:140px;"></v-text-field>
+                              <v-text-field v-model="t.guard" label="Guard" density="compact" variant="outlined" style="max-width:120px;"></v-text-field>
+                            </div>
+                            <v-btn size="x-small" variant="tonal" @click="addTransition(m)"><v-icon start size="small">mdi-plus</v-icon> Transition</v-btn>
+                          </v-expansion-panel-text>
+                        </v-expansion-panel>
+                      </v-expansion-panels>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ DIAGRAM ═══ -->
+            <v-window-item value="diagram">
+              <v-card variant="outlined" v-for="m in machines" :key="m.id" class="mb-3">
+                <v-card-title class="text-subtitle-1"><v-icon start>mdi-graph</v-icon> {{ m.name }}</v-card-title>
+                <v-card-text>
+                  <div style="overflow-x:auto;padding:16px 0;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
+                    <template v-for="(s, si) in m.states" :key="s.id">
+                      <div class="state-node" :class="{initial: s.is_initial, final: s.is_final, active: isCurrentState(m.id, s.id)}"
+                        :style="{borderColor: stateColor(s.mfg_type)}">
+                        <div class="text-caption font-weight-bold">{{ s.name }}</div>
+                        <v-chip :style="{background: stateColor(s.mfg_type), color:'#fff'}" size="x-small">{{ s.mfg_type }}</v-chip>
+                        <div class="text-caption text-grey" v-if="s.avg_duration">~{{ s.avg_duration }}m</div>
+                      </div>
+                      <div v-if="si < m.states.length - 1" class="state-arrow">
+                        <span class="event-label" v-if="getTransitionBetween(m, m.states[si], m.states[si+1])">
+                          {{ getTransitionBetween(m, m.states[si], m.states[si+1]).event }}
+                        </span>
+                        →
+                      </div>
+                    </template>
+                  </div>
+                  <!-- Transition list -->
+                  <div class="text-caption text-grey mt-2">
+                    <div v-for="t in m.transitions" :key="t.id" class="mb-0">
+                      {{ getStateName(m, t.from_state_id) }} —<em>{{ t.event }}</em>→ {{ getStateName(m, t.to_state_id) }}
+                      <span v-if="t.guard" style="color:#f28e2b;"> [{{ t.guard }}]</span>
+                      <span v-if="t.probability" style="color:#76b7b2;"> (p={{ t.probability }})</span>
+                    </div>
+                  </div>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+
+            <!-- ═══ SIMULATE ═══ -->
+            <v-window-item value="simulate">
+              <v-row>
+                <v-col cols="12" class="text-center mb-3">
+                  <v-btn color="cyan" size="large" :loading="loadingSim" @click="runSimulation" :disabled="machines.length === 0">
+                    <v-icon start>mdi-play</v-icon> Run Full Simulation ({{ simDuration }} min)
+                  </v-btn>
+                </v-col>
+
+                <!-- Event Log -->
+                <v-col cols="12" v-if="simState">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">
+                      Event Log ({{ simState.event_log.length }} events, T={{ simState.time.toFixed(1) }}min)
+                    </v-card-title>
+                    <v-card-text style="max-height:400px;overflow-y:auto;">
+                      <div v-for="(log, i) in simState.event_log.slice().reverse().slice(0, 100)" :key="i" class="log-entry">
+                        <span class="mono text-grey" style="min-width:50px;display:inline-block;">T={{ log.time.toFixed(1) }}</span>
+                        <strong>{{ log.machine_name }}</strong>:
+                        <span :style="{color: stateColor(getMfgType(log.from_state, log.machine_id))}">{{ log.from_state }}</span>
+                        —<em>{{ log.event }}</em>→
+                        <span :style="{color: stateColor(getMfgType(log.to_state, log.machine_id))}">{{ log.to_state }}</span>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ ANALYSIS ═══ -->
+            <v-window-item value="analysis">
+              <v-row v-if="analysis">
+                <!-- System Metrics -->
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">System Metrics</v-card-title>
+                    <v-card-text>
+                      <v-row dense>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Total Transitions</div><div class="text-h6 mono">{{ analysis.system_metrics.total_transitions }}</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Avg Utilization</div><div class="text-h6 mono">{{ analysis.system_metrics.avg_utilization_pct.toFixed(1) }}%</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Avg Availability</div><div class="text-h6 mono">{{ analysis.system_metrics.avg_availability_pct.toFixed(1) }}%</div></v-col>
+                        <v-col cols="6" md="3"><div class="text-caption text-grey">Bottleneck</div><div class="text-h6 mono text-red">{{ analysis.system_metrics.bottleneck_machine || 'None' }}</div></v-col>
+                        <v-col cols="6" md="3" v-if="analysis.system_metrics.most_breakdowns_machine"><div class="text-caption text-grey">Most Breakdowns</div><div class="text-h6 mono">{{ analysis.system_metrics.most_breakdowns_machine }}</div></v-col>
+                      </v-row>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Per-Machine State Residence -->
+                <v-col cols="12" md="6" v-for="ma in analysis.machines" :key="ma.machine_id">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">{{ ma.machine_name }} — State Residence</v-card-title>
+                    <v-card-text>
+                      <!-- Stacked bar -->
+                      <div class="res-stack mb-2">
+                        <div v-for="sr in ma.state_residence.filter(s => s.pct_of_total > 0)" :key="sr.state_id"
+                          :style="{width: sr.pct_of_total+'%', background: stateColor(sr.mfg_type)}"
+                          :title="sr.state_name + ': ' + sr.pct_of_total.toFixed(1) + '%'">
+                        </div>
+                      </div>
+                      <table class="fsm-table">
+                        <thead><tr><th>State</th><th>Type</th><th>Time</th><th>%</th><th>Visits</th><th>Avg</th></tr></thead>
+                        <tbody>
+                          <tr v-for="sr in ma.state_residence" :key="sr.state_id">
+                            <td><strong>{{ sr.state_name }}</strong></td>
+                            <td><v-chip size="x-small" :style="{background: stateColor(sr.mfg_type), color:'#fff'}">{{ sr.mfg_type }}</v-chip></td>
+                            <td class="mono">{{ sr.total_time.toFixed(1) }}m</td>
+                            <td class="mono">{{ sr.pct_of_total.toFixed(1) }}%</td>
+                            <td class="mono">{{ sr.visit_count }}</td>
+                            <td class="mono">{{ sr.avg_duration.toFixed(1) }}m</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div class="d-flex justify-space-between mt-2 text-caption">
+                        <span>Utilization: <strong>{{ ma.utilization_pct.toFixed(1) }}%</strong></span>
+                        <span>Availability: <strong>{{ ma.availability_pct.toFixed(1) }}%</strong></span>
+                        <span>Transitions: <strong>{{ ma.transition_count }}</strong></span>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Validation -->
+                <v-col cols="12" v-if="analysis.validation.issues.length > 0">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Validation</v-card-title>
+                    <v-card-text>
+                      <div v-for="issue in analysis.validation.issues" :key="issue.message" class="mb-1">
+                        <v-chip size="x-small" :color="issue.severity === 'error' ? 'error' : issue.severity === 'warning' ? 'warning' : 'info'" class="mr-2">{{ issue.severity }}</v-chip>
+                        {{ issue.message }}
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Charts -->
+                <v-col cols="12" md="6" v-if="residenceChart">
+                  <v-card variant="outlined"><v-card-text class="text-center">
+                    <img :src="residenceChart" style="max-width:100%;border-radius:8px;">
+                  </v-card-text></v-card>
+                </v-col>
+                <v-col cols="12" md="6" v-if="utilChart">
+                  <v-card variant="outlined"><v-card-text class="text-center">
+                    <img :src="utilChart" style="max-width:100%;border-radius:8px;">
+                  </v-card-text></v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ BRIDGE ═══ -->
+            <v-window-item value="bridge">
+              <v-row>
+                <v-col cols="12">
+                  <v-alert type="info" variant="tonal" class="mb-3">
+                    The FSM simulator connects to other ClawMFG tools. Import data from S16 Simulation, VSM, TOC, or Sequencer to visualize manufacturing states.
+                  </v-alert>
+                </v-col>
+                <v-col cols="12" md="3" v-for="bridge in bridges" :key="bridge.id">
+                  <v-card variant="outlined" class="text-center pa-4">
+                    <v-icon size="40" :color="bridge.color">{{ bridge.icon }}</v-icon>
+                    <div class="text-subtitle-2 mt-2">{{ bridge.label }}</div>
+                    <div class="text-caption text-grey">{{ bridge.description }}</div>
+                    <v-btn :color="bridge.color" variant="tonal" size="small" class="mt-2" :href="bridge.href">
+                      Open {{ bridge.tool }}
+                    </v-btn>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ SAVED ═══ -->
+            <v-window-item value="saved">
+              <v-card variant="outlined">
+                <v-card-title class="text-subtitle-1 d-flex align-center">
+                  <v-icon start>mdi-content-save</v-icon> Saved
+                  <v-spacer></v-spacer>
+                  <v-btn size="small" variant="tonal" @click="loadSaved"><v-icon start>mdi-refresh</v-icon> Refresh</v-btn>
+                </v-card-title>
+                <v-card-text>
+                  <div v-if="savedList.length === 0" class="text-grey text-center pa-4">No saved configs.</div>
+                  <v-list v-else density="compact">
+                    <v-list-item v-for="s in savedList" :key="s.id" @click="loadConfig(s.id)">
+                      <v-list-item-title>{{ s.name }}</v-list-item-title>
+                      <v-list-item-subtitle>{{ new Date(s.updated_at).toLocaleString() }}</v-list-item-subtitle>
+                      <template v-slot:append>
+                        <v-btn icon size="small" color="error" variant="text" @click.stop="deleteConfig(s.id)"><v-icon>mdi-delete</v-icon></v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+          </v-window>
+        </v-container>
+      </v-main>
+      <v-snackbar v-model="snackbar" :color="snackColor" timeout="4000" location="bottom right">{{ snackMsg }}</v-snackbar>
+    </v-app>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.0/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+  <script>
+    const API = '/api/fsm';
+    const COLORS = { idle:'#76b7b2', processing:'#59a14f', queued:'#f28e2b', changeover:'#edc949', broken_down:'#e15759', starved:'#ff9da7', blocked:'#af7aa1', on_break:'#bab0ac', warmup:'#9c755f', custom:'#4e79a7' };
+    const { createApp } = Vue;
+    let mCtr = 0, sCtr = 0, tCtr = 0;
+
+    const app = createApp({
+      data() {
+        return {
+          activeTab: 'setup', loadingSim: false,
+          snackbar: false, snackMsg: '', snackColor: 'info',
+          configName: 'Production Line FSM', simDuration: 480,
+          selectedTemplate: 'cnc_machine',
+          templateItems: [],
+          machines: [],
+          mfgTypes: ['idle','processing','queued','changeover','broken_down','starved','blocked','on_break','warmup','custom'],
+          simState: null, analysis: null,
+          residenceChart: null, utilChart: null,
+          savedList: [],
+          bridges: [
+            { id: 'sim', label: 'S16 Simulation', description: 'Import station performance → state residence', icon: 'mdi-cog-play', color: 'primary', tool: 'Simulator', href: '/sim' },
+            { id: 'vsm', label: 'S15.3 VSM', description: 'Import VA/NVA breakdown → process states', icon: 'mdi-sitemap', color: 'deep-purple', tool: 'VSM', href: '/vsm' },
+            { id: 'toc', label: 'S15.4 TOC', description: 'Import constraint utilization → CCR states', icon: 'mdi-traffic-light', color: 'red', tool: 'TOC', href: '/toc' },
+            { id: 'seq', label: 'S15.2 Sequencer', description: 'Import job schedule → event timeline', icon: 'mdi-sort-clock-ascending', color: 'teal', tool: 'Sequencer', href: '/sequence' },
+          ],
+        };
+      },
+      methods: {
+        stateColor(type) { return COLORS[type] || '#999'; },
+        stateItems(m) { return m.states.map(s => ({ title: s.name, value: s.id })); },
+        getStateName(m, id) { return m.states.find(s => s.id === id)?.name || id; },
+        getTransitionBetween(m, from, to) { return m.transitions.find(t => t.from_state_id === from.id && t.to_state_id === to.id); },
+        isCurrentState(machineId, stateId) {
+          if (!this.simState) return false;
+          const ms = this.simState.machines.find(m => m.machine_id === machineId);
+          return ms?.current_state_id === stateId;
+        },
+        getMfgType(stateName, machineId) {
+          for (const m of this.machines) {
+            if (m.id === machineId) {
+              const s = m.states.find(st => st.name === stateName);
+              if (s) return s.mfg_type;
+            }
+          }
+          return 'custom';
+        },
+
+        addMachine() {
+          mCtr++;
+          this.machines.push({ id: 'mach_' + mCtr, name: 'Machine ' + mCtr, states: [], transitions: [] });
+        },
+        addState(m) {
+          sCtr++;
+          m.states.push({ id: 'st_' + sCtr, name: 'State ' + sCtr, mfg_type: 'idle', is_initial: m.states.length === 0, is_final: false, x: 0, y: 0, avg_duration: 10 });
+        },
+        addTransition(m) {
+          tCtr++;
+          m.transitions.push({ id: 'tr_' + tCtr, from_state_id: m.states[0]?.id || '', to_state_id: m.states[1]?.id || m.states[0]?.id || '', event: 'event_' + tCtr, guard: '' });
+        },
+
+        async loadTemplate() {
+          if (!this.selectedTemplate) return;
+          try {
+            const resp = await fetch(API + '/templates/' + this.selectedTemplate);
+            const data = await resp.json();
+            if (!data.template) throw new Error('Template not found');
+            const t = data.template;
+            mCtr++;
+            const machine = { id: 'mach_' + mCtr, name: t.label + ' ' + mCtr, ...t.definition };
+            this.machines.push(machine);
+            this.notify('Loaded template: ' + t.label, 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+        },
+
+        buildConfig() {
+          return { name: this.configName, machines: this.machines, sim_duration_minutes: this.simDuration };
+        },
+
+        async runSimulation() {
+          this.loadingSim = true;
+          try {
+            const resp = await fetch(API + '/simulate', { method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ config: this.buildConfig() }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.simState = data.simulation_state;
+            this.analysis = data.analysis;
+            this.residenceChart = data.residence_chart || null;
+            this.utilChart = data.util_chart || null;
+            this.activeTab = 'analysis';
+            this.notify('Simulation complete — ' + data.analysis.system_metrics.total_transitions + ' transitions', 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loadingSim = false; }
+        },
+
+        async loadSaved() {
+          try { const resp = await fetch(API + '/configs'); const data = await resp.json(); this.savedList = data.configs || []; } catch { /* */ }
+        },
+        async loadConfig(id) {
+          try {
+            const resp = await fetch(API + '/configs/' + id); const data = await resp.json();
+            if (data.config) {
+              const cfg = data.config;
+              this.configName = cfg.name; this.simDuration = cfg.sim_duration_minutes || 480;
+              this.machines = cfg.machines || [];
+            }
+            if (data.result) this.analysis = data.result;
+            this.activeTab = 'setup';
+            this.notify('Loaded', 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+        },
+        async deleteConfig(id) {
+          try { await fetch(API + '/configs/' + id, { method: 'DELETE' }); this.savedList = this.savedList.filter(s => s.id !== id); } catch { /* */ }
+        },
+        notify(msg, color) { this.snackMsg = msg; this.snackColor = color || 'info'; this.snackbar = true; },
+      },
+      async mounted() {
+        // Load templates list
+        try { const resp = await fetch(API + '/templates'); const data = await resp.json();
+          this.templateItems = (data.templates || []).map(t => ({ title: t.label, value: t.name }));
+        } catch { /* */ }
+        this.loadSaved();
+        // Load CNC template by default
+        this.loadTemplate();
+      },
+    });
+    app.use(Vuetify.createVuetify({ theme: { defaultTheme: 'light' } }));
+    app.mount('#app');
+  </script>
+</body>
+</html>

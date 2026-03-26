@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CONWIP & Heijunka — clauded</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    [v-cloak] { display: none; }
+    .mono { font-family: 'Roboto Mono', monospace; }
+    .cw-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .cw-table th, .cw-table td { border: 1px solid #e0e0e0; padding: 5px 7px; text-align: left; }
+    .cw-table th { background: #f5f5f5; font-weight: 500; }
+    .cw-table input { width: 100%; border: none; background: transparent; font-size: 13px; padding: 2px; }
+    .cw-table input:focus { outline: 2px solid #1976d2; border-radius: 2px; }
+    .token { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+      border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; margin: 2px; cursor: default; }
+    .hj-cell { width: 60px; height: 40px; display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 4px; margin: 1px; font-size: 11px; font-weight: 500; color: #fff; cursor: pointer; }
+    .hj-empty { background: #eee; color: #999; }
+    .leveling-gauge { width: 100px; height: 100px; border-radius: 50%; border: 8px solid; display: flex;
+      align-items: center; justify-content: center; font-size: 22px; font-weight: 700; margin: 0 auto; }
+    .stage-box { min-width: 90px; padding: 8px; border: 2px solid #ccc; border-radius: 6px; text-align: center;
+      background: #fff; margin: 4px; }
+    .stage-box.bottleneck { border-color: #e15759; background: #fbe9e7; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <v-app>
+      <v-app-bar color="amber-darken-3" density="compact">
+        <v-app-bar-title><v-icon class="mr-2">mdi-card-multiple</v-icon> CONWIP & Heijunka</v-app-bar-title>
+        <v-spacer></v-spacer>
+        <v-btn variant="text" color="white" href="/toc" size="small"><v-icon start>mdi-traffic-light</v-icon> TOC</v-btn>
+        <v-btn variant="text" color="white" href="/vsm" size="small"><v-icon start>mdi-sitemap</v-icon> VSM</v-btn>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid class="pa-4">
+          <v-tabs v-model="activeTab" color="amber-darken-3" density="compact" class="mb-3">
+            <v-tab value="conwip"><v-icon start>mdi-card-multiple</v-icon> CONWIP</v-tab>
+            <v-tab value="heijunka"><v-icon start>mdi-view-grid</v-icon> Heijunka</v-tab>
+            <v-tab value="saved"><v-icon start>mdi-content-save</v-icon> Saved</v-tab>
+          </v-tabs>
+
+          <v-window v-model="activeTab">
+            <!-- ═══ CONWIP TAB ═══ -->
+            <v-window-item value="conwip">
+              <v-row>
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-tune</v-icon> CONWIP Config</v-card-title>
+                    <v-card-text>
+                      <v-text-field v-model="cwName" label="Name" density="compact" variant="outlined" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="cwWipLimit" label="WIP Limit (tokens)" type="number" density="compact" variant="outlined" min="1" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="cwDemand" label="Demand (units/day)" type="number" density="compact" variant="outlined" min="1" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="cwMinutes" label="Available min/day" type="number" density="compact" variant="outlined" min="1"></v-text-field>
+                      <v-btn color="amber-darken-3" block class="mt-3" :loading="loadingCW" @click="runCONWIP" :disabled="cwStages.length === 0">
+                        <v-icon start>mdi-play</v-icon> Analyze CONWIP
+                      </v-btn>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-arrow-right-bold-box</v-icon> Stages
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addCWStage"><v-icon start>mdi-plus</v-icon> Add</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <table class="cw-table">
+                        <thead><tr><th style="width:30px;"></th><th>#</th><th>Name</th><th style="width:80px;">C/T (min)</th><th style="width:80px;">Cap (u/hr)</th></tr></thead>
+                        <tbody>
+                          <tr v-for="(s, i) in cwStages" :key="i">
+                            <td><v-btn icon size="x-small" color="error" variant="text" @click="cwStages.splice(i,1)"><v-icon size="small">mdi-close</v-icon></v-btn></td>
+                            <td class="mono">{{ i + 1 }}</td>
+                            <td><input v-model="s.name"></td>
+                            <td><input v-model.number="s.cycle_time_minutes" type="number" min="0.1" step="0.1"></td>
+                            <td><input v-model.number="s.capacity_per_hour" type="number" min="1"></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- CONWIP Results -->
+                <v-col cols="12" v-if="cwResult">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">CONWIP Token Board</v-card-title>
+                    <v-card-text>
+                      <!-- Visual stages with tokens -->
+                      <div style="display:flex;align-items:flex-start;gap:8px;overflow-x:auto;padding:12px 0;">
+                        <div v-for="stage in cwResult.stage_utilization" :key="stage.stage_id"
+                          class="stage-box" :class="{'bottleneck': stage.is_bottleneck}">
+                          <div class="text-caption font-weight-bold">{{ stage.stage_name }}</div>
+                          <div class="mono text-caption">{{ stage.utilization_pct.toFixed(0) }}%</div>
+                          <div style="min-height:44px;">
+                            <span v-for="token in tokensForStage(stage.stage_id)" :key="token.id"
+                              class="token" :style="{background: tokenColor(token.product_id)}">
+                              {{ token.product_name.charAt(0) }}
+                            </span>
+                          </div>
+                          <div class="text-caption text-grey">{{ stage.wip_count }} WIP</div>
+                        </div>
+                      </div>
+
+                      <v-divider class="my-3"></v-divider>
+                      <v-row dense>
+                        <v-col cols="6" md="3"><div class="text-caption text-grey">WIP Limit</div><div class="text-h6 mono">{{ cwResult.wip_limit }}</div></v-col>
+                        <v-col cols="6" md="3"><div class="text-caption text-grey">Throughput</div><div class="text-h6 mono">{{ cwResult.throughput_per_hour.toFixed(1) }} u/hr</div></v-col>
+                        <v-col cols="6" md="3"><div class="text-caption text-grey">Avg Cycle Time</div><div class="text-h6 mono">{{ cwResult.avg_cycle_time.toFixed(1) }} min</div></v-col>
+                        <v-col cols="6" md="3"><div class="text-caption text-grey">WIP Turns/Day</div><div class="text-h6 mono">{{ cwResult.wip_turns_per_day.toFixed(1) }}</div></v-col>
+                      </v-row>
+
+                      <v-divider class="my-3"></v-divider>
+                      <div v-for="r in cwResult.recommendations" :key="r" class="text-body-2 mb-1">
+                        <v-icon size="small" color="info" class="mr-1">mdi-lightbulb</v-icon> {{ r }}
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" v-if="cwChart">
+                  <v-card variant="outlined"><v-card-text class="text-center">
+                    <img :src="cwChart" style="max-width:100%;border-radius:8px;">
+                  </v-card-text></v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ HEIJUNKA TAB ═══ -->
+            <v-window-item value="heijunka">
+              <v-row>
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-tune</v-icon> Heijunka Config</v-card-title>
+                    <v-card-text>
+                      <v-text-field v-model="hjName" label="Name" density="compact" variant="outlined" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="hjTakt" label="Takt Time (min)" type="number" density="compact" variant="outlined" min="0.1" step="0.1" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="hjPackOut" label="Pack-Out Quantity" type="number" density="compact" variant="outlined" min="1" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="hjSlotsPerShift" label="Slots per Shift" type="number" density="compact" variant="outlined" min="1" class="mb-2"></v-text-field>
+                      <v-select v-model="hjShifts" :items="[1,2,3]" label="Shifts/Day" density="compact" variant="outlined" class="mb-2"></v-select>
+                      <v-text-field v-model.number="hjDemand" label="Demand/Day" type="number" density="compact" variant="outlined" min="1"></v-text-field>
+                      <div class="text-caption text-grey mt-1">Pitch = {{ hjTakt }} × {{ hjPackOut }} = <strong>{{ (hjTakt * hjPackOut).toFixed(1) }} min</strong></div>
+                      <v-btn color="amber-darken-3" block class="mt-3" :loading="loadingHJ" @click="runHeijunka" :disabled="hjProducts.length === 0">
+                        <v-icon start>mdi-play</v-icon> Level Production
+                      </v-btn>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-package-variant</v-icon> Products
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addHJProduct"><v-icon start>mdi-plus</v-icon> Add</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <table class="cw-table">
+                        <thead><tr><th style="width:30px;"></th><th>Name</th><th style="width:70px;">Mix %</th><th style="width:70px;">C/T (min)</th><th style="width:70px;">C/O (min)</th></tr></thead>
+                        <tbody>
+                          <tr v-for="(p, i) in hjProducts" :key="i">
+                            <td><v-btn icon size="x-small" color="error" variant="text" @click="hjProducts.splice(i,1)"><v-icon size="small">mdi-close</v-icon></v-btn></td>
+                            <td><input v-model="p.name"></td>
+                            <td><input v-model.number="p.mix_pct" type="number" min="0" max="100"></td>
+                            <td><input v-model.number="p.cycle_time_minutes" type="number" min="0.1" step="0.1"></td>
+                            <td><input v-model.number="p.changeover_minutes" type="number" min="0"></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div class="text-caption mt-1" :class="totalMix === 100 ? 'text-green' : 'text-red'">
+                        Total mix: {{ totalMix }}% {{ totalMix === 100 ? '✓' : '(must equal 100%)' }}
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Heijunka Results -->
+                <template v-if="hjResult">
+                  <!-- Leveling Score -->
+                  <v-col cols="12" md="3" class="text-center">
+                    <v-card variant="outlined" class="pa-4">
+                      <div class="text-subtitle-2 mb-2">Leveling Score</div>
+                      <div class="leveling-gauge" :style="{borderColor: hjResult.leveling_score >= 80 ? '#59a14f' : hjResult.leveling_score >= 60 ? '#f28e2b' : '#e15759', color: hjResult.leveling_score >= 80 ? '#59a14f' : hjResult.leveling_score >= 60 ? '#f28e2b' : '#e15759'}">
+                        {{ hjResult.leveling_score.toFixed(0) }}
+                      </div>
+                      <div class="text-caption text-grey mt-2">100 = perfectly level</div>
+                    </v-card>
+                  </v-col>
+
+                  <!-- Key metrics -->
+                  <v-col cols="12" md="9">
+                    <v-card variant="outlined">
+                      <v-card-title class="text-subtitle-1">Heijunka Results</v-card-title>
+                      <v-card-text>
+                        <v-row dense>
+                          <v-col cols="6" md="2"><div class="text-caption text-grey">Takt</div><div class="text-h6 mono">{{ hjResult.takt_time.toFixed(1) }}m</div></v-col>
+                          <v-col cols="6" md="2"><div class="text-caption text-grey">Pitch</div><div class="text-h6 mono">{{ hjResult.pitch.toFixed(1) }}m</div></v-col>
+                          <v-col cols="6" md="2"><div class="text-caption text-grey">Changeovers</div><div class="text-h6 mono">{{ hjResult.changeover_count }}</div></v-col>
+                          <v-col cols="6" md="2"><div class="text-caption text-grey">C/O Time</div><div class="text-h6 mono">{{ hjResult.total_changeover_minutes.toFixed(0) }}m</div></v-col>
+                          <v-col cols="6" md="4">
+                            <div class="text-caption text-grey">Shifts</div>
+                            <div class="mono" v-for="sp in hjResult.shift_plans" :key="sp.shift">
+                              S{{ sp.shift }}: {{ sp.total_quantity }} pcs, {{ sp.changeovers }} C/O
+                            </div>
+                          </v-col>
+                        </v-row>
+                      </v-card-text>
+                    </v-card>
+                  </v-col>
+
+                  <!-- Heijunka Box -->
+                  <v-col cols="12">
+                    <v-card variant="outlined">
+                      <v-card-title class="text-subtitle-1"><v-icon start>mdi-view-grid</v-icon> Heijunka Box</v-card-title>
+                      <v-card-text>
+                        <div style="overflow-x:auto;">
+                          <table class="cw-table">
+                            <thead>
+                              <tr>
+                                <th>Product</th>
+                                <th v-for="slot in hjResult.heijunka_box.slots" :key="slot" style="text-align:center;font-size:11px;">{{ slot }}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="product in hjResult.heijunka_box.products" :key="product">
+                                <td><strong>{{ product }}</strong></td>
+                                <td v-for="(slot, si) in hjResult.heijunka_box.slots" :key="si" style="text-align:center;padding:2px;">
+                                  <div v-if="cellForProductSlot(product, si)" class="hj-cell"
+                                    :style="{background: cellForProductSlot(product, si).color}">
+                                    {{ cellForProductSlot(product, si).quantity }}
+                                  </div>
+                                  <div v-else class="hj-cell hj-empty">-</div>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </v-card-text>
+                    </v-card>
+                  </v-col>
+
+                  <!-- Mix deviation -->
+                  <v-col cols="12" md="6">
+                    <v-card variant="outlined">
+                      <v-card-title class="text-subtitle-1">Product Mix</v-card-title>
+                      <v-card-text>
+                        <table class="cw-table">
+                          <thead><tr><th>Product</th><th>Target %</th><th>Actual %</th><th>Deviation</th></tr></thead>
+                          <tbody>
+                            <tr v-for="m in hjResult.actual_mix" :key="m.product_id">
+                              <td><strong>{{ m.product_name }}</strong></td>
+                              <td class="mono">{{ m.target_pct.toFixed(1) }}%</td>
+                              <td class="mono">{{ m.actual_pct.toFixed(1) }}%</td>
+                              <td class="mono" :class="Math.abs(m.deviation_pct) <= 2 ? 'text-green' : 'text-orange'">
+                                {{ m.deviation_pct >= 0 ? '+' : '' }}{{ m.deviation_pct.toFixed(1) }}%
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </v-card-text>
+                    </v-card>
+                  </v-col>
+
+                  <!-- Changeover suggestions -->
+                  <v-col cols="12" md="6">
+                    <v-card variant="outlined">
+                      <v-card-title class="text-subtitle-1">Changeover Suggestions</v-card-title>
+                      <v-card-text>
+                        <div v-for="s in hjResult.changeover_suggestions" :key="s" class="mb-2">
+                          <v-icon size="small" color="info" class="mr-1">mdi-lightbulb</v-icon> {{ s }}
+                        </div>
+                      </v-card-text>
+                    </v-card>
+                  </v-col>
+
+                  <v-col cols="12" v-if="hjChart">
+                    <v-card variant="outlined"><v-card-text class="text-center">
+                      <img :src="hjChart" style="max-width:100%;border-radius:8px;">
+                    </v-card-text></v-card>
+                  </v-col>
+                </template>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ SAVED ═══ -->
+            <v-window-item value="saved">
+              <v-card variant="outlined">
+                <v-card-title class="text-subtitle-1 d-flex align-center">
+                  <v-icon start>mdi-content-save</v-icon> Saved
+                  <v-spacer></v-spacer>
+                  <v-btn size="small" variant="tonal" @click="loadSaved"><v-icon start>mdi-refresh</v-icon> Refresh</v-btn>
+                </v-card-title>
+                <v-card-text>
+                  <div v-if="savedList.length === 0" class="text-grey text-center pa-4">No saved configs.</div>
+                  <v-list v-else density="compact">
+                    <v-list-item v-for="s in savedList" :key="s.id">
+                      <v-list-item-title>{{ s.name }}</v-list-item-title>
+                      <v-list-item-subtitle>{{ new Date(s.updated_at).toLocaleString() }}</v-list-item-subtitle>
+                      <template v-slot:append>
+                        <v-btn icon size="small" color="error" variant="text" @click.stop="deleteSaved(s.id)"><v-icon>mdi-delete</v-icon></v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+          </v-window>
+        </v-container>
+      </v-main>
+      <v-snackbar v-model="snackbar" :color="snackColor" timeout="4000" location="bottom right">{{ snackMsg }}</v-snackbar>
+    </v-app>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.0/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+  <script>
+    const API = '/api/conwip';
+    const COLORS = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc949','#af7aa1','#ff9da7'];
+    const { createApp } = Vue;
+    let stgCtr = 0, prodCtr = 0;
+
+    const app = createApp({
+      data() {
+        return {
+          activeTab: 'conwip', snackbar: false, snackMsg: '', snackColor: 'info',
+          loadingCW: false, loadingHJ: false,
+          // CONWIP
+          cwName: 'Assembly Line CONWIP', cwWipLimit: 15, cwDemand: 200, cwMinutes: 460,
+          cwStages: [], cwProducts: [],
+          cwResult: null, cwChart: null,
+          // Heijunka
+          hjName: 'Heijunka Plan', hjTakt: 4.6, hjPackOut: 10, hjSlotsPerShift: 8, hjShifts: 1, hjDemand: 200,
+          hjProducts: [], hjResult: null, hjChart: null,
+          savedList: [],
+        };
+      },
+      computed: {
+        totalMix() { return this.hjProducts.reduce((s, p) => s + (p.mix_pct || 0), 0); },
+      },
+      methods: {
+        addCWStage() { stgCtr++; this.cwStages.push({ id: 'stg_' + stgCtr, name: 'Stage ' + stgCtr, sequence: this.cwStages.length + 1, cycle_time_minutes: 2, capacity_per_hour: 30 }); },
+        addHJProduct() { prodCtr++; this.hjProducts.push({ id: 'prod_' + prodCtr, name: 'Product ' + String.fromCharCode(64 + prodCtr), mix_pct: 0, cycle_time_minutes: 3, changeover_minutes: 10 }); },
+
+        async runCONWIP() {
+          this.loadingCW = true;
+          try {
+            const config = { name: this.cwName, stages: this.cwStages.map((s, i) => ({ ...s, sequence: i + 1 })),
+              wip_limit: this.cwWipLimit, products: this.cwProducts.length > 0 ? this.cwProducts : [{ id: 'p1', name: 'Product', mix_pct: 100, cycle_time_minutes: 3, changeover_minutes: 0 }],
+              available_minutes_per_day: this.cwMinutes, demand_per_day: this.cwDemand };
+            const resp = await fetch(API + '/conwip', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ config }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.cwResult = data.result;
+            this.cwChart = data.chart || null;
+            this.notify('CONWIP analysis complete', 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loadingCW = false; }
+        },
+
+        async runHeijunka() {
+          this.loadingHJ = true;
+          try {
+            const config = { name: this.hjName, products: this.hjProducts.map((p, i) => ({ ...p, color: COLORS[i % COLORS.length] })),
+              takt_time_minutes: this.hjTakt, pitch_minutes: this.hjTakt * this.hjPackOut,
+              pack_out_quantity: this.hjPackOut, slots_per_shift: this.hjSlotsPerShift,
+              shifts_per_day: this.hjShifts, demand_per_day: this.hjDemand };
+            const resp = await fetch(API + '/heijunka', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ config }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.hjResult = data.result;
+            this.hjChart = data.chart || null;
+            this.notify('Heijunka leveling complete — score: ' + data.result.leveling_score.toFixed(0), 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loadingHJ = false; }
+        },
+
+        tokensForStage(stageId) { return this.cwResult?.tokens.filter(t => t.current_stage_id === stageId) || []; },
+        tokenColor(productId) { const idx = (this.cwProducts.length > 0 ? this.cwProducts : [{ id: 'p1' }]).findIndex(p => p.id === productId); return COLORS[Math.max(0, idx) % COLORS.length]; },
+        cellForProductSlot(productName, slotIndex) {
+          if (!this.hjResult) return null;
+          const cell = this.hjResult.heijunka_box.cells[slotIndex];
+          return cell?.product_name === productName ? cell : null;
+        },
+
+        async loadSaved() {
+          try { const resp = await fetch(API + '/configs'); const data = await resp.json(); this.savedList = data.configs || []; } catch { /* */ }
+        },
+        async deleteSaved(id) {
+          try { await fetch(API + '/configs/' + id, { method: 'DELETE' }); this.savedList = this.savedList.filter(s => s.id !== id); } catch { /* */ }
+        },
+        notify(msg, color) { this.snackMsg = msg; this.snackColor = color || 'info'; this.snackbar = true; },
+      },
+      mounted() {
+        this.loadSaved();
+        // Starter CONWIP stages
+        ['Cutting', 'Forming', 'Welding', 'Paint', 'Assembly', 'QC'].forEach((name, i) => {
+          stgCtr++;
+          this.cwStages.push({ id: 'stg_' + stgCtr, name, sequence: i + 1, cycle_time_minutes: [1.5, 2.5, 4, 3, 3.5, 1][i], capacity_per_hour: [40, 24, 15, 20, 17, 60][i] });
+        });
+        // Starter Heijunka products
+        [{ name: 'Widget A', mix: 50, ct: 3, co: 10 }, { name: 'Widget B', mix: 30, ct: 4, co: 15 }, { name: 'Widget C', mix: 20, ct: 2.5, co: 8 }].forEach(p => {
+          prodCtr++;
+          this.hjProducts.push({ id: 'prod_' + prodCtr, name: p.name, mix_pct: p.mix, cycle_time_minutes: p.ct, changeover_minutes: p.co });
+        });
+      },
+    });
+    app.use(Vuetify.createVuetify({ theme: { defaultTheme: 'light' } }));
+    app.mount('#app');
+  </script>
+</body>
+</html>

@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TOC & WIP Tracking — clauded</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    [v-cloak] { display: none; }
+    .mono { font-family: 'Roboto Mono', monospace; }
+    .toc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .toc-table th, .toc-table td { border: 1px solid #e0e0e0; padding: 5px 7px; text-align: left; }
+    .toc-table th { background: #f5f5f5; font-weight: 500; position: sticky; top: 0; z-index: 1; }
+    .toc-table input { width: 100%; border: none; background: transparent; font-size: 13px; padding: 2px; }
+    .toc-table input:focus { outline: 2px solid #1976d2; border-radius: 2px; }
+    .ccr-row { background: #fbe9e7 !important; border-left: 4px solid #e15759; }
+    .buffer-bar { height: 28px; border-radius: 4px; display: flex; overflow: hidden; }
+    .buffer-green { background: #59a14f; }
+    .buffer-yellow { background: #f28e2b; }
+    .buffer-red { background: #e15759; }
+    .buffer-empty { background: #e0e0e0; }
+    .wip-gauge { width: 80px; height: 80px; border-radius: 50%; border: 6px solid; display: flex;
+      align-items: center; justify-content: center; font-weight: 700; font-size: 14px; margin: 0 auto; }
+    .wip-ok { border-color: #59a14f; color: #59a14f; }
+    .wip-warning { border-color: #f28e2b; color: #f28e2b; }
+    .wip-critical { border-color: #e15759; color: #e15759; }
+    .ta-card { border-left: 4px solid #4e79a7; }
+    .dbr-step { display: inline-flex; flex-direction: column; align-items: center; padding: 12px;
+      border: 2px solid #ccc; border-radius: 8px; min-width: 100px; background: #fff; }
+    .dbr-drum { border-color: #e15759; background: #fbe9e7; }
+    .dbr-buffer { border-color: #f28e2b; background: #fff3e0; border-style: dashed; }
+    .dbr-rope { border-color: #59a14f; background: #e8f5e9; }
+    .dbr-arrow { font-size: 20px; color: #999; margin: 0 8px; display: inline-flex; align-items: center; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <v-app>
+      <v-app-bar color="red-darken-3" density="compact">
+        <v-app-bar-title>
+          <v-icon class="mr-2">mdi-traffic-light</v-icon>
+          TOC & WIP Tracking
+        </v-app-bar-title>
+        <v-spacer></v-spacer>
+        <v-chip class="mr-2" size="small" color="white" text-color="red" v-if="analysis">
+          CCR: {{ analysis.constraint.ccr_name }} ({{ analysis.constraint.ccr_utilization_pct.toFixed(0) }}%)
+        </v-chip>
+        <v-btn variant="text" color="white" href="/vsm" size="small"><v-icon start>mdi-sitemap</v-icon> VSM</v-btn>
+        <v-btn variant="text" color="white" href="/capacity" size="small"><v-icon start>mdi-chart-timeline-variant-shimmer</v-icon> Capacity</v-btn>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid class="pa-4">
+          <v-tabs v-model="activeTab" color="red" density="compact" class="mb-3">
+            <v-tab value="setup"><v-icon start>mdi-cog</v-icon> Setup</v-tab>
+            <v-tab value="constraint" :disabled="!analysis"><v-icon start>mdi-target</v-icon> Constraint</v-tab>
+            <v-tab value="dbr" :disabled="!analysis"><v-icon start>mdi-drum</v-icon> DBR</v-tab>
+            <v-tab value="throughput" :disabled="!analysis"><v-icon start>mdi-currency-usd</v-icon> Throughput $</v-tab>
+            <v-tab value="wip" :disabled="!analysis"><v-icon start>mdi-gauge</v-icon> WIP</v-tab>
+            <v-tab value="saved"><v-icon start>mdi-content-save</v-icon> Saved</v-tab>
+          </v-tabs>
+
+          <v-window v-model="activeTab">
+            <!-- ═══ SETUP ═══ -->
+            <v-window-item value="setup">
+              <v-row>
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-tune</v-icon> System Config</v-card-title>
+                    <v-card-text>
+                      <v-text-field v-model="configName" label="Name" density="compact" variant="outlined" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="demandPerDay" label="Demand (units/day)" type="number" density="compact" variant="outlined" min="1" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="availableHours" label="Available Hours/Day" type="number" density="compact" variant="outlined" min="1" max="24" class="mb-2"></v-text-field>
+                      <v-divider class="my-2"></v-divider>
+                      <div class="text-subtitle-2 mb-1">Throughput Accounting</div>
+                      <v-text-field v-model.number="sellingPrice" label="Selling Price ($/unit)" type="number" density="compact" variant="outlined" min="0" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="tvc" label="TVC ($/unit)" type="number" density="compact" variant="outlined" min="0" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="oe" label="Operating Expense ($/month)" type="number" density="compact" variant="outlined" min="0" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="investment" label="Investment ($)" type="number" density="compact" variant="outlined" min="0"></v-text-field>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-factory</v-icon> Work Centers
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addWC"><v-icon start>mdi-plus</v-icon> Add</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <div style="overflow-x:auto;">
+                        <table class="toc-table">
+                          <thead><tr>
+                            <th style="width:30px;"></th><th>Name</th><th>Department</th>
+                            <th style="width:80px;">Cap (u/hr)</th><th style="width:70px;">Hours</th>
+                            <th style="width:60px;">Ops</th><th style="width:70px;">WIP</th><th style="width:80px;">WIP Limit</th>
+                          </tr></thead>
+                          <tbody>
+                            <tr v-for="(wc, i) in workCenters" :key="i">
+                              <td><v-btn icon size="x-small" color="error" variant="text" @click="workCenters.splice(i,1)"><v-icon size="small">mdi-close</v-icon></v-btn></td>
+                              <td><input v-model="wc.name"></td>
+                              <td><input v-model="wc.department"></td>
+                              <td><input v-model.number="wc.capacity_units_per_hour" type="number" min="1"></td>
+                              <td><input v-model.number="wc.available_hours_per_day" type="number" min="1" max="24"></td>
+                              <td><input v-model.number="wc.operators" type="number" min="1"></td>
+                              <td><input v-model.number="wc.current_wip" type="number" min="0"></td>
+                              <td><input v-model.number="wc.wip_limit" type="number" min="0" placeholder="Auto"></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" class="text-center">
+                  <v-btn color="red-darken-3" size="large" :loading="loading" @click="runAnalysis" :disabled="workCenters.length === 0">
+                    <v-icon start>mdi-play</v-icon> Analyze System (5 Focusing Steps)
+                  </v-btn>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ CONSTRAINT ═══ -->
+            <v-window-item value="constraint">
+              <v-row v-if="analysis">
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start color="red">mdi-target</v-icon> Capacity Constraint Resource (CCR)</v-card-title>
+                    <v-card-text>
+                      <v-alert type="error" variant="tonal" class="mb-3">
+                        <strong>{{ analysis.constraint.ccr_name }}</strong> is the system constraint at
+                        <strong>{{ analysis.constraint.ccr_utilization_pct.toFixed(1) }}%</strong> utilization.
+                        Max throughput: {{ analysis.constraint.max_system_throughput_per_day.toFixed(0) }} units/day
+                        ({{ analysis.constraint.demand_coverage_pct.toFixed(0) }}% of demand).
+                      </v-alert>
+
+                      <table class="toc-table">
+                        <thead><tr><th>Rank</th><th>Work Center</th><th>Capacity</th><th>Load (hrs)</th><th>Available (hrs)</th><th>Utilization</th><th>Excess (hrs)</th></tr></thead>
+                        <tbody>
+                          <tr v-for="(wc, i) in analysis.constraint.work_center_ranking" :key="wc.id" :class="{'ccr-row': wc.is_ccr}">
+                            <td class="mono">{{ i + 1 }}</td>
+                            <td><strong>{{ wc.name }}</strong> <v-icon v-if="wc.is_ccr" color="red" size="small">mdi-alert</v-icon></td>
+                            <td class="mono">{{ wc.capacity_per_hour }} u/hr</td>
+                            <td class="mono">{{ wc.load_hours.toFixed(1) }}</td>
+                            <td class="mono">{{ wc.available_hours }}</td>
+                            <td>
+                              <div style="display:flex;align-items:center;gap:6px;">
+                                <div style="width:80px;height:16px;background:#eee;border-radius:8px;overflow:hidden;">
+                                  <div :style="{width:Math.min(wc.utilization_pct,100)+'%',height:'100%',borderRadius:'8px',background:wc.is_ccr?'#e15759':wc.utilization_pct>=80?'#f28e2b':'#59a14f'}"></div>
+                                </div>
+                                <span class="mono">{{ wc.utilization_pct.toFixed(1) }}%</span>
+                              </div>
+                            </td>
+                            <td class="mono" :class="wc.excess_hours > 0 ? 'text-green' : 'text-red'">{{ wc.excess_hours.toFixed(1) }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- 5 Focusing Steps -->
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-numeric-5-circle</v-icon> Goldratt's 5 Focusing Steps</v-card-title>
+                    <v-card-text>
+                      <div v-for="(step, i) in analysis.five_focusing_steps" :key="i" class="mb-3">
+                        <div :class="'text-body-2'" style="line-height:1.6;">{{ step }}</div>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" v-if="utilChart">
+                  <v-card variant="outlined"><v-card-text class="text-center">
+                    <img :src="utilChart" style="max-width:100%;border-radius:8px;" alt="Utilization chart">
+                  </v-card-text></v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ DBR ═══ -->
+            <v-window-item value="dbr">
+              <v-row v-if="analysis">
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-drum</v-icon> Drum-Buffer-Rope</v-card-title>
+                    <v-card-text>
+                      <!-- Visual DBR -->
+                      <div style="display:flex;align-items:center;flex-wrap:wrap;padding:16px 0;">
+                        <div class="dbr-step dbr-rope">
+                          <v-icon color="green">mdi-link-variant</v-icon>
+                          <div class="text-caption font-weight-bold">ROPE</div>
+                          <div class="text-caption">Material Release</div>
+                          <div class="mono text-caption">Paced to drum</div>
+                        </div>
+                        <div class="dbr-arrow">→ → →</div>
+                        <div class="dbr-step dbr-buffer">
+                          <v-icon color="orange">mdi-shield-half-full</v-icon>
+                          <div class="text-caption font-weight-bold">BUFFER</div>
+                          <div class="text-caption">Constraint Buffer</div>
+                          <div class="mono text-caption">{{ analysis.dbr.constraint_buffer.total_size.toFixed(1) }}h</div>
+                        </div>
+                        <div class="dbr-arrow">→</div>
+                        <div class="dbr-step dbr-drum">
+                          <v-icon color="red">mdi-drum</v-icon>
+                          <div class="text-caption font-weight-bold">DRUM</div>
+                          <div class="text-caption">{{ analysis.dbr.drum_work_center }}</div>
+                          <div class="mono text-caption">{{ analysis.dbr.drum_rate.toFixed(1) }} u/hr</div>
+                        </div>
+                        <div class="dbr-arrow">→ → →</div>
+                        <div class="dbr-step dbr-buffer">
+                          <v-icon color="orange">mdi-shield-half-full</v-icon>
+                          <div class="text-caption font-weight-bold">BUFFER</div>
+                          <div class="text-caption">Shipping Buffer</div>
+                          <div class="mono text-caption">{{ analysis.dbr.shipping_buffer.total_size.toFixed(1) }}h</div>
+                        </div>
+                        <div class="dbr-arrow">→</div>
+                        <div class="dbr-step">
+                          <v-icon>mdi-truck-delivery</v-icon>
+                          <div class="text-caption font-weight-bold">SHIP</div>
+                        </div>
+                      </div>
+
+                      <v-divider class="my-3"></v-divider>
+
+                      <!-- Buffer Status -->
+                      <div class="text-subtitle-2 mb-2">Buffer Status</div>
+                      <div v-for="buf in [analysis.dbr.constraint_buffer, analysis.dbr.shipping_buffer]" :key="buf.id" class="mb-3">
+                        <div class="d-flex justify-space-between mb-1">
+                          <strong>{{ buf.name }}</strong>
+                          <v-chip :color="buf.zone === 'green' ? 'success' : buf.zone === 'yellow' ? 'warning' : 'error'" size="x-small">
+                            {{ buf.zone.toUpperCase() }} — {{ buf.consumption_pct.toFixed(0) }}% consumed
+                          </v-chip>
+                        </div>
+                        <div class="buffer-bar" style="height:24px;">
+                          <div :class="'buffer-'+buf.zone" :style="{width: buf.consumption_pct+'%'}"></div>
+                          <div class="buffer-empty" :style="{width: (100-buf.consumption_pct)+'%'}"></div>
+                        </div>
+                        <div class="text-caption text-grey mt-1">{{ buf.action }}</div>
+                      </div>
+
+                      <v-divider class="my-3"></v-divider>
+
+                      <!-- Rope Releases -->
+                      <div class="text-subtitle-2 mb-2">Rope Release Schedule</div>
+                      <table class="toc-table">
+                        <thead><tr><th>#</th><th>Release Time</th><th>Work Center</th><th>Units</th><th>Notes</th></tr></thead>
+                        <tbody>
+                          <tr v-for="r in analysis.dbr.rope_releases" :key="r.sequence">
+                            <td class="mono">{{ r.sequence }}</td>
+                            <td class="mono">{{ r.release_time_hours.toFixed(1) }}h</td>
+                            <td>{{ r.work_center_name }}</td>
+                            <td class="mono">{{ r.units }}</td>
+                            <td class="text-caption">{{ r.notes }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" v-if="bufferChart">
+                  <v-card variant="outlined"><v-card-text class="text-center">
+                    <img :src="bufferChart" style="max-width:100%;border-radius:8px;" alt="Buffer chart">
+                  </v-card-text></v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ THROUGHPUT ACCOUNTING ═══ -->
+            <v-window-item value="throughput">
+              <v-row v-if="analysis">
+                <v-col cols="12" md="6">
+                  <v-card variant="outlined" class="ta-card">
+                    <v-card-title class="text-subtitle-1">Throughput Accounting</v-card-title>
+                    <v-card-text>
+                      <div class="d-flex justify-space-between mb-2"><span>Selling Price:</span><strong class="mono">${{ analysis.throughput.selling_price.toFixed(2) }}/unit</strong></div>
+                      <div class="d-flex justify-space-between mb-2"><span>Total Variable Cost:</span><strong class="mono">${{ analysis.throughput.tvc.toFixed(2) }}/unit</strong></div>
+                      <v-divider class="my-2"></v-divider>
+                      <div class="d-flex justify-space-between mb-2"><span><strong>Throughput (T):</strong></span><strong class="mono text-green">${{ analysis.throughput.throughput_per_unit.toFixed(2) }}/unit</strong></div>
+                      <div class="d-flex justify-space-between mb-2"><span>T/Day:</span><strong class="mono">${{ analysis.throughput.throughput_per_day.toLocaleString() }}</strong></div>
+                      <div class="d-flex justify-space-between mb-2"><span>T/Month:</span><strong class="mono">${{ analysis.throughput.throughput_per_period.toLocaleString() }}</strong></div>
+                      <v-divider class="my-2"></v-divider>
+                      <div class="d-flex justify-space-between mb-2"><span>Operating Expense (OE):</span><strong class="mono">${{ analysis.throughput.operating_expense.toLocaleString() }}/mo</strong></div>
+                      <div class="d-flex justify-space-between mb-2"><span><strong>Net Profit (T - OE):</strong></span><strong class="mono" :class="analysis.throughput.net_profit >= 0 ? 'text-green' : 'text-red'">${{ analysis.throughput.net_profit.toLocaleString() }}/mo</strong></div>
+                      <div class="d-flex justify-space-between mb-2"><span><strong>ROI:</strong></span><strong class="mono" :class="analysis.throughput.roi_pct >= 0 ? 'text-green' : 'text-red'">{{ analysis.throughput.roi_pct.toFixed(1) }}%</strong></div>
+                      <div class="d-flex justify-space-between mb-2"><span>Productivity (T/OE):</span><strong class="mono">{{ analysis.throughput.productivity.toFixed(2) }}</strong></div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" md="6">
+                  <v-card variant="outlined" class="ta-card">
+                    <v-card-title class="text-subtitle-1">Constraint Economics</v-card-title>
+                    <v-card-text>
+                      <div class="d-flex justify-space-between mb-2"><span>T per Constraint Minute:</span><strong class="mono">${{ analysis.throughput.throughput_per_constraint_minute.toFixed(2) }}</strong></div>
+                      <div class="d-flex justify-space-between mb-2"><span>Constraint Utilization:</span><strong class="mono">{{ analysis.throughput.constraint_utilization_pct.toFixed(1) }}%</strong></div>
+                      <v-divider class="my-2"></v-divider>
+                      <v-alert type="warning" variant="tonal">
+                        <strong>Revenue lost per hour of constraint downtime: ${{ analysis.throughput.revenue_lost_per_hour_constraint_down.toLocaleString() }}</strong>
+                      </v-alert>
+                      <div class="text-caption mt-2">
+                        Every minute the constraint is idle costs ${{ (analysis.throughput.revenue_lost_per_hour_constraint_down / 60).toFixed(2) }}.
+                        Prioritize: no idle time, stagger breaks, PM off-shift.
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ WIP ═══ -->
+            <v-window-item value="wip">
+              <v-row v-if="analysis">
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-gauge</v-icon> WIP Level Gauges</v-card-title>
+                    <v-card-text>
+                      <v-row dense>
+                        <v-col v-for="g in analysis.wip_gauges" :key="g.work_center_id" cols="6" md="3" lg="2" class="text-center">
+                          <div class="wip-gauge" :class="'wip-'+g.status">{{ g.current_wip }}</div>
+                          <div class="text-caption font-weight-bold mt-1">{{ g.work_center_name }}</div>
+                          <div class="text-caption text-grey">Limit: {{ g.wip_limit }}</div>
+                          <div class="text-caption text-grey">{{ g.hours_of_work.toFixed(1) }}h of work</div>
+                          <v-chip :color="g.status === 'ok' ? 'success' : g.status === 'warning' ? 'warning' : 'error'" size="x-small" class="mt-1">
+                            {{ g.utilization_pct.toFixed(0) }}%
+                          </v-chip>
+                        </v-col>
+                      </v-row>
+                      <div class="d-flex align-center mt-3 text-caption">
+                        Total WIP: <strong class="mono ml-1">{{ analysis.total_wip }} units</strong>
+                        <span class="ml-3">Value: <strong class="mono">${{ (analysis.total_wip * tvc).toLocaleString() }}</strong></span>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+                <v-col cols="12" v-if="wipChart">
+                  <v-card variant="outlined"><v-card-text class="text-center">
+                    <img :src="wipChart" style="max-width:100%;border-radius:8px;" alt="WIP chart">
+                  </v-card-text></v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ SAVED ═══ -->
+            <v-window-item value="saved">
+              <v-card variant="outlined">
+                <v-card-title class="text-subtitle-1 d-flex align-center">
+                  <v-icon start>mdi-content-save</v-icon> Saved Configs
+                  <v-spacer></v-spacer>
+                  <v-btn size="small" variant="tonal" @click="loadSaved"><v-icon start>mdi-refresh</v-icon> Refresh</v-btn>
+                </v-card-title>
+                <v-card-text>
+                  <div v-if="savedList.length === 0" class="text-grey text-center pa-4">No saved configs.</div>
+                  <v-list v-else density="compact">
+                    <v-list-item v-for="s in savedList" :key="s.id" @click="loadConfig(s.id)">
+                      <v-list-item-title>{{ s.name }}</v-list-item-title>
+                      <v-list-item-subtitle>{{ new Date(s.updated_at).toLocaleString() }}</v-list-item-subtitle>
+                      <template v-slot:append>
+                        <v-btn icon size="small" color="error" variant="text" @click.stop="deleteConfig(s.id)"><v-icon>mdi-delete</v-icon></v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+          </v-window>
+        </v-container>
+      </v-main>
+      <v-snackbar v-model="snackbar" :color="snackColor" timeout="4000" location="bottom right">{{ snackMsg }}</v-snackbar>
+    </v-app>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.0/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+  <script>
+    const API = '/api/toc';
+    const { createApp } = Vue;
+    let wcCounter = 0;
+
+    const app = createApp({
+      data() {
+        return {
+          activeTab: 'setup', loading: false,
+          snackbar: false, snackMsg: '', snackColor: 'info',
+          configName: 'Production System', demandPerDay: 200, availableHours: 8,
+          sellingPrice: 50, tvc: 20, oe: 100000, investment: 500000,
+          workCenters: [],
+          analysis: null, utilChart: null, bufferChart: null, wipChart: null,
+          savedList: [],
+        };
+      },
+      methods: {
+        buildConfig() {
+          return {
+            name: this.configName,
+            work_centers: this.workCenters.map(wc => ({
+              id: wc.id, name: wc.name, department: wc.department || undefined,
+              capacity_units_per_hour: wc.capacity_units_per_hour,
+              available_hours_per_day: wc.available_hours_per_day,
+              operators: wc.operators, current_wip: wc.current_wip,
+              wip_limit: wc.wip_limit || undefined,
+            })),
+            selling_price_per_unit: this.sellingPrice,
+            total_variable_cost_per_unit: this.tvc,
+            operating_expense_per_period: this.oe,
+            investment: this.investment,
+            demand_units_per_day: this.demandPerDay,
+            available_hours_per_day: this.availableHours,
+          };
+        },
+        addWC() {
+          wcCounter++;
+          this.workCenters.push({
+            id: 'wc_' + wcCounter, name: 'Work Center ' + wcCounter, department: '',
+            capacity_units_per_hour: 25 + Math.round(Math.random() * 25),
+            available_hours_per_day: 8, operators: 3, current_wip: Math.round(Math.random() * 50),
+            wip_limit: null,
+          });
+        },
+        async runAnalysis() {
+          this.loading = true;
+          try {
+            const resp = await fetch(API + '/analyze', { method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ config: this.buildConfig() }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.analysis = data.result;
+            this.utilChart = data.utilization_chart || null;
+            this.bufferChart = data.buffer_chart || null;
+            this.wipChart = data.wip_chart || null;
+            this.activeTab = 'constraint';
+            this.notify('TOC analysis complete — CCR: ' + data.result.constraint.ccr_name, 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loading = false; }
+        },
+        async loadSaved() {
+          try { const resp = await fetch(API + '/configs'); const data = await resp.json(); this.savedList = data.configs || []; }
+          catch { this.notify('Failed to load', 'error'); }
+        },
+        async loadConfig(id) {
+          try {
+            const resp = await fetch(API + '/configs/' + id); const data = await resp.json();
+            if (!data.config) throw new Error('Invalid');
+            const cfg = data.config;
+            this.configName = cfg.name; this.demandPerDay = cfg.demand_units_per_day;
+            this.availableHours = cfg.available_hours_per_day;
+            this.sellingPrice = cfg.selling_price_per_unit; this.tvc = cfg.total_variable_cost_per_unit;
+            this.oe = cfg.operating_expense_per_period; this.investment = cfg.investment;
+            this.workCenters = cfg.work_centers.map(wc => ({ ...wc }));
+            if (data.result) this.analysis = data.result;
+            this.activeTab = 'setup';
+            this.notify('Loaded: ' + cfg.name, 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+        },
+        async deleteConfig(id) {
+          try { await fetch(API + '/configs/' + id, { method: 'DELETE' }); this.savedList = this.savedList.filter(s => s.id !== id); }
+          catch { this.notify('Delete failed', 'error'); }
+        },
+        notify(msg, color) { this.snackMsg = msg; this.snackColor = color || 'info'; this.snackbar = true; },
+      },
+      mounted() {
+        this.loadSaved();
+        // Starter: typical 4-station production line
+        ['Cutting', 'Assembly', 'Welding', 'Paint', 'QC/Pack'].forEach((name, i) => {
+          wcCounter++;
+          this.workCenters.push({
+            id: 'wc_' + wcCounter, name, department: '',
+            capacity_units_per_hour: [40, 25, 20, 30, 50][i],
+            available_hours_per_day: 8, operators: [2, 4, 3, 2, 2][i],
+            current_wip: [15, 40, 60, 25, 10][i], wip_limit: null,
+          });
+        });
+      },
+    });
+    app.use(Vuetify.createVuetify({ theme: { defaultTheme: 'light' } }));
+    app.mount('#app');
+  </script>
+</body>
+</html>

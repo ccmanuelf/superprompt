@@ -1,0 +1,179 @@
+/**
+ * Design of Experiments — Public API, DB & Charts
+ */
+
+import { randomBytes } from 'node:crypto';
+import { getDatabase } from '../db.js';
+import type {
+  SavedDOE,
+  ANOVATable,
+  MainEffect,
+  InteractionEffect,
+  ExperimentMatrix,
+} from './models.js';
+
+export * from './models.js';
+export { generateMatrix, analyzeDOE, createConfirmationRun } from './analysis.js';
+
+// ── Database ─────────────────────────────────────────────────
+
+export function initDoeTables(): void {
+  const db = getDatabase();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS doe_experiments (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      config_json TEXT NOT NULL,
+      result_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_doe_experiments_name ON doe_experiments(name);
+  `);
+}
+
+function genId(): string { return randomBytes(16).toString('hex'); }
+
+export function saveDOE(name: string, config: unknown, result?: unknown): SavedDOE {
+  const db = getDatabase();
+  const configJson = JSON.stringify(config);
+  const resultJson = result ? JSON.stringify(result) : null;
+  const existing = db.prepare('SELECT * FROM doe_experiments WHERE name = ? COLLATE NOCASE').get(name) as SavedDOE | undefined;
+  if (existing) {
+    db.prepare('UPDATE doe_experiments SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?')
+      .run(configJson, resultJson, Date.now(), existing.id);
+    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: Date.now() };
+  }
+  const id = genId();
+  const now = Date.now();
+  db.prepare('INSERT INTO doe_experiments (id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, name, configJson, resultJson, now, now);
+  return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
+}
+
+export function getDOE(nameOrId: string): SavedDOE | undefined {
+  const db = getDatabase();
+  return (db.prepare('SELECT * FROM doe_experiments WHERE id = ?').get(nameOrId) ??
+    db.prepare('SELECT * FROM doe_experiments WHERE name = ? COLLATE NOCASE').get(nameOrId)) as SavedDOE | undefined;
+}
+
+export function listDOEs(): SavedDOE[] {
+  return getDatabase().prepare('SELECT * FROM doe_experiments ORDER BY updated_at DESC').all() as SavedDOE[];
+}
+
+export function deleteDOE(id: string): boolean {
+  return getDatabase().prepare('DELETE FROM doe_experiments WHERE id = ?').run(id).changes > 0;
+}
+
+// ── Charts ───────────────────────────────────────────────────
+
+/**
+ * Main effects plot — mean response at each factor level.
+ */
+export async function generateMainEffectsChart(
+  effects: MainEffect[],
+  title: string,
+): Promise<string> {
+  const { ChartJSNodeCanvas } = await import('chartjs-node-canvas');
+  const ChartDataLabels = (await import('chartjs-plugin-datalabels')).default;
+
+  const chartCanvas = new ChartJSNodeCanvas({
+    width: Math.max(600, effects.length * 200 + 100),
+    height: 350,
+    backgroundColour: 'white',
+    plugins: { modern: [ChartDataLabels] },
+  });
+
+  const COLORS = ['#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f', '#edc949'];
+
+  const datasets = effects.map((e, i) => ({
+    label: e.factor_name,
+    data: e.mean_responses,
+    borderColor: COLORS[i % COLORS.length],
+    backgroundColor: COLORS[i % COLORS.length],
+    borderWidth: 2,
+    pointRadius: 5,
+    fill: false,
+  }));
+
+  // Use the factor with most levels for x-axis labels
+  const maxLevels = Math.max(...effects.map((e) => e.levels.length));
+  const labels = Array.from({ length: maxLevels }, (_, i) => `Level ${i + 1}`);
+
+  const config = {
+    type: 'line' as const,
+    data: { labels, datasets },
+    options: {
+      responsive: false,
+      plugins: {
+        title: { display: true, text: title, font: { size: 16 } },
+        datalabels: {
+          anchor: 'end' as const, align: 'top' as const,
+          formatter: (v: number) => v.toFixed(2), font: { size: 9 },
+        },
+        legend: { position: 'bottom' as const },
+      },
+      scales: {
+        y: { title: { display: true, text: 'Mean Response' } },
+        x: { title: { display: true, text: 'Factor Level' } },
+      },
+    },
+  };
+
+  const buf = await chartCanvas.renderToBuffer(config as never);
+  return buf.toString('base64');
+}
+
+/**
+ * ANOVA contribution Pareto chart.
+ */
+export async function generateANOVAChart(
+  anova: ANOVATable,
+  title: string,
+): Promise<string> {
+  const { ChartJSNodeCanvas } = await import('chartjs-node-canvas');
+  const ChartDataLabels = (await import('chartjs-plugin-datalabels')).default;
+
+  const sorted = [...anova.rows].sort((a, b) => b.contribution_pct - a.contribution_pct);
+
+  const chartCanvas = new ChartJSNodeCanvas({
+    width: Math.max(600, sorted.length * 80 + 200),
+    height: 400,
+    backgroundColour: 'white',
+    plugins: { modern: [ChartDataLabels] },
+  });
+
+  const config = {
+    type: 'bar' as const,
+    data: {
+      labels: sorted.map((r) => r.source),
+      datasets: [{
+        label: 'Contribution %',
+        data: sorted.map((r) => r.contribution_pct),
+        backgroundColor: sorted.map((r) => r.significant ? '#e15759' : '#bab0ac'),
+      }],
+    },
+    options: {
+      responsive: false,
+      plugins: {
+        title: { display: true, text: title, font: { size: 16 } },
+        datalabels: {
+          anchor: 'end' as const, align: 'top' as const,
+          formatter: (v: number) => `${v.toFixed(1)}%`, font: { size: 10 },
+        },
+        legend: { display: false },
+        subtitle: {
+          display: true,
+          text: `R² = ${anova.r_squared.toFixed(4)} | Adj R² = ${anova.adj_r_squared.toFixed(4)}`,
+          font: { size: 12 },
+        },
+      },
+      scales: {
+        y: { beginAtZero: true, max: 100, title: { display: true, text: 'Contribution %' } },
+      },
+    },
+  };
+
+  const buf = await chartCanvas.renderToBuffer(config as never);
+  return buf.toString('base64');
+}

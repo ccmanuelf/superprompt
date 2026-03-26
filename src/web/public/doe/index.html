@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Design of Experiments — clauded</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    [v-cloak] { display: none; }
+    .mono { font-family: 'Roboto Mono', monospace; }
+    .doe-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .doe-table th, .doe-table td { border: 1px solid #e0e0e0; padding: 5px 7px; text-align: left; }
+    .doe-table th { background: #f5f5f5; font-weight: 500; position: sticky; top: 0; z-index: 1; }
+    .doe-table input { width: 100%; border: none; background: transparent; font-size: 13px; padding: 2px; }
+    .doe-table input:focus { outline: 2px solid #1976d2; border-radius: 2px; }
+    .significant { background: #fbe9e7 !important; font-weight: 600; }
+    .coded-neg { color: #e15759; }
+    .coded-pos { color: #59a14f; }
+    .coded-zero { color: #f28e2b; }
+    .response-input { width: 70px; border: 1px solid #ddd; border-radius: 3px; padding: 3px; font-size: 12px; text-align: right; }
+    .response-input:focus { border-color: #1976d2; outline: none; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <v-app>
+      <v-app-bar color="blue-grey-darken-2" density="compact">
+        <v-app-bar-title><v-icon class="mr-2">mdi-flask</v-icon> Design of Experiments</v-app-bar-title>
+        <v-spacer></v-spacer>
+        <v-chip class="mr-2" size="small" color="success">v1.0</v-chip>
+        <v-btn variant="text" color="white" href="/sim" size="small"><v-icon start>mdi-cog-play</v-icon> Sim</v-btn>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid class="pa-4">
+          <v-tabs v-model="activeTab" color="blue-grey" density="compact" class="mb-3">
+            <v-tab value="design"><v-icon start>mdi-wizard-hat</v-icon> Design</v-tab>
+            <v-tab value="matrix" :disabled="!matrix"><v-icon start>mdi-table</v-icon> Matrix</v-tab>
+            <v-tab value="anova" :disabled="!analysis"><v-icon start>mdi-chart-bar</v-icon> ANOVA</v-tab>
+            <v-tab value="effects" :disabled="!analysis"><v-icon start>mdi-chart-line</v-icon> Effects</v-tab>
+            <v-tab value="desirability" :disabled="!analysis?.desirability"><v-icon start>mdi-target</v-icon> Desirability</v-tab>
+            <v-tab value="saved"><v-icon start>mdi-content-save</v-icon> Saved</v-tab>
+          </v-tabs>
+
+          <v-window v-model="activeTab">
+            <!-- ═══ DESIGN WIZARD ═══ -->
+            <v-window-item value="design">
+              <v-row>
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-tune</v-icon> Experiment Setup</v-card-title>
+                    <v-card-text>
+                      <v-text-field v-model="expName" label="Experiment Name" density="compact" variant="outlined" class="mb-2"></v-text-field>
+                      <v-select v-model="designType" :items="designTypes" item-title="text" item-value="value"
+                        label="Design Type" density="compact" variant="outlined" class="mb-2"></v-select>
+                      <v-text-field v-model.number="replicates" label="Replicates" type="number" density="compact" variant="outlined" min="1" max="5" class="mb-2"></v-text-field>
+                      <v-checkbox v-model="randomize" label="Randomize run order" density="compact" class="mb-2"></v-checkbox>
+                      <v-text-field v-if="designType === 'central_composite'" v-model.number="centerPoints"
+                        label="Center Points" type="number" density="compact" variant="outlined" min="1" max="10"></v-text-field>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Factors -->
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-tune-vertical</v-icon> Factors
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addFactor"><v-icon start>mdi-plus</v-icon> Add</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <div v-for="(f, i) in factors" :key="i" class="mb-3 pa-2" style="border:1px solid #eee;border-radius:4px;">
+                        <div class="d-flex align-center mb-1">
+                          <v-text-field v-model="f.name" label="Factor" density="compact" variant="outlined" style="max-width:150px;" class="mr-2"></v-text-field>
+                          <v-text-field v-model="f.unit" label="Unit" density="compact" variant="outlined" style="max-width:80px;" class="mr-2"></v-text-field>
+                          <v-btn icon size="x-small" color="error" variant="text" @click="factors.splice(i,1)"><v-icon size="small">mdi-close</v-icon></v-btn>
+                        </div>
+                        <div class="d-flex align-center">
+                          <v-text-field v-model.number="f.low" label="Low" type="number" density="compact" variant="outlined" style="max-width:80px;" class="mr-2"></v-text-field>
+                          <v-text-field v-model.number="f.high" label="High" type="number" density="compact" variant="outlined" style="max-width:80px;" class="mr-2"></v-text-field>
+                          <v-text-field v-if="needsCenter" v-model.number="f.center" label="Center" type="number" density="compact" variant="outlined" style="max-width:80px;"></v-text-field>
+                        </div>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Responses -->
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-bullseye-arrow</v-icon> Responses
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addResponse"><v-icon start>mdi-plus</v-icon> Add</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <div v-for="(r, i) in responses" :key="i" class="mb-3 pa-2" style="border:1px solid #eee;border-radius:4px;">
+                        <div class="d-flex align-center mb-1">
+                          <v-text-field v-model="r.name" label="Response" density="compact" variant="outlined" style="max-width:150px;" class="mr-2"></v-text-field>
+                          <v-text-field v-model="r.unit" label="Unit" density="compact" variant="outlined" style="max-width:80px;" class="mr-2"></v-text-field>
+                          <v-btn icon size="x-small" color="error" variant="text" @click="responses.splice(i,1)"><v-icon size="small">mdi-close</v-icon></v-btn>
+                        </div>
+                        <div class="d-flex align-center">
+                          <v-text-field v-model.number="r.target" label="Target" type="number" density="compact" variant="outlined" style="max-width:80px;" class="mr-2"></v-text-field>
+                          <v-checkbox v-model="r.minimize" label="Minimize" density="compact" class="mr-2"></v-checkbox>
+                        </div>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" class="text-center">
+                  <v-btn color="blue-grey" size="large" :loading="loadingGen" @click="generateDesign"
+                    :disabled="factors.length === 0 || responses.length === 0">
+                    <v-icon start>mdi-table-plus</v-icon> Generate Experiment Matrix
+                  </v-btn>
+                  <div class="text-caption text-grey mt-2" v-if="factors.length >= 2">
+                    {{ designType === 'full_factorial' ? Math.pow(2, factors.length) * replicates : '~' + (factors.length * 4 + 3) }} runs estimated
+                  </div>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ MATRIX TAB ═══ -->
+            <v-window-item value="matrix">
+              <v-row v-if="matrix">
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-table</v-icon>
+                      {{ matrix.design_label }} — {{ matrix.total_runs }} runs
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="blue-grey" variant="tonal" :loading="loadingAnalyze" @click="analyzeResults"
+                        :disabled="!hasAnyResponses">
+                        <v-icon start>mdi-chart-bar</v-icon> Analyze
+                      </v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <v-alert v-if="!hasAnyResponses" type="info" variant="tonal" class="mb-3">
+                        Enter measured response values for each run, then click Analyze.
+                      </v-alert>
+                      <div style="overflow-x:auto;">
+                        <table class="doe-table">
+                          <thead>
+                            <tr>
+                              <th>Run</th><th>Std</th>
+                              <th v-for="f in matrix.factors" :key="f">{{ f }}</th>
+                              <th v-for="r in matrix.responses" :key="r" style="background:#e3f2fd;">{{ r }}</th>
+                              <th style="width:50px;">Type</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="run in sortedRuns" :key="run.run_order">
+                              <td class="mono">{{ run.run_order }}</td>
+                              <td class="mono text-grey">{{ run.standard_order }}</td>
+                              <td v-for="fName in matrix.factors" :key="fName" class="mono">
+                                <span :class="codedClass(run.factor_coded[factorId(fName)])">
+                                  {{ factorValue(run, fName) }}
+                                </span>
+                              </td>
+                              <td v-for="rName in matrix.responses" :key="rName">
+                                <input class="response-input" type="number" step="any"
+                                  :value="run.responses[responseId(rName)]"
+                                  @input="setResponse(run.run_order, responseId(rName), $event.target.value)">
+                              </td>
+                              <td class="text-caption text-grey">
+                                {{ run.is_center_point ? 'C' : run.is_axial_point ? 'A' : '' }}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ ANOVA TAB ═══ -->
+            <v-window-item value="anova">
+              <v-row v-if="analysis">
+                <v-col cols="12" v-for="at in analysis.anova" :key="at.response_name">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">
+                      ANOVA — {{ at.response_name }}
+                      <v-chip size="small" class="ml-2" :color="at.model_significant ? 'success' : 'warning'">
+                        {{ at.model_significant ? 'Model Significant' : 'Not Significant' }}
+                      </v-chip>
+                      <v-chip size="small" class="ml-2" color="info">R² = {{ at.r_squared.toFixed(4) }}</v-chip>
+                    </v-card-title>
+                    <v-card-text>
+                      <table class="doe-table">
+                        <thead><tr><th>Source</th><th>SS</th><th>DF</th><th>MS</th><th>F</th><th>p-value</th><th>Contrib %</th><th>Sig?</th></tr></thead>
+                        <tbody>
+                          <tr v-for="row in at.rows" :key="row.source" :class="{'significant': row.significant}">
+                            <td><strong>{{ row.source }}</strong></td>
+                            <td class="mono">{{ row.sum_of_squares.toFixed(4) }}</td>
+                            <td class="mono">{{ row.df }}</td>
+                            <td class="mono">{{ row.mean_square.toFixed(4) }}</td>
+                            <td class="mono">{{ row.f_value.toFixed(2) }}</td>
+                            <td class="mono" :class="row.p_value < 0.05 ? 'text-red font-weight-bold' : ''">{{ row.p_value.toFixed(4) }}</td>
+                            <td class="mono">{{ row.contribution_pct.toFixed(1) }}%</td>
+                            <td><v-icon :color="row.significant ? 'error' : 'grey'" size="small">{{ row.significant ? 'mdi-check-bold' : 'mdi-minus' }}</v-icon></td>
+                          </tr>
+                          <tr style="background:#f5f5f5;">
+                            <td><strong>Residual</strong></td>
+                            <td class="mono">{{ at.residual_ss.toFixed(4) }}</td>
+                            <td class="mono">{{ at.residual_df }}</td>
+                            <td class="mono">{{ at.residual_df > 0 ? (at.residual_ss / at.residual_df).toFixed(4) : '-' }}</td>
+                            <td colspan="4"></td>
+                          </tr>
+                          <tr style="background:#e8e8e8;">
+                            <td><strong>Total</strong></td>
+                            <td class="mono">{{ at.total_ss.toFixed(4) }}</td>
+                            <td colspan="6"></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" v-if="anovaChart">
+                  <v-card variant="outlined"><v-card-text class="text-center">
+                    <img :src="anovaChart" style="max-width:100%;border-radius:8px;" alt="ANOVA chart">
+                  </v-card-text></v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ EFFECTS TAB ═══ -->
+            <v-window-item value="effects">
+              <v-row v-if="analysis">
+                <!-- Main Effects -->
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Main Effects</v-card-title>
+                    <v-card-text>
+                      <table class="doe-table">
+                        <thead><tr><th>Factor</th><th>Levels</th><th>Mean at Low</th><th>Mean at High</th><th>Effect Size</th></tr></thead>
+                        <tbody>
+                          <tr v-for="e in analysis.main_effects" :key="e.factor_id">
+                            <td><strong>{{ e.factor_name }}</strong></td>
+                            <td class="mono">{{ e.levels.join(', ') }}</td>
+                            <td class="mono">{{ e.mean_responses[0]?.toFixed(4) }}</td>
+                            <td class="mono">{{ e.mean_responses[e.mean_responses.length - 1]?.toFixed(4) }}</td>
+                            <td class="mono" :class="Math.abs(e.effect_size) > 1 ? 'font-weight-bold' : ''">{{ e.effect_size.toFixed(4) }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Interactions -->
+                <v-col cols="12" v-if="analysis.interactions.length > 0">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Interactions</v-card-title>
+                    <v-card-text>
+                      <table class="doe-table">
+                        <thead><tr><th>Interaction</th><th>Strength</th><th>Combinations</th></tr></thead>
+                        <tbody>
+                          <tr v-for="ix in analysis.interactions" :key="ix.factor_a + ix.factor_b">
+                            <td><strong>{{ ix.factor_a_name }} × {{ ix.factor_b_name }}</strong></td>
+                            <td class="mono">{{ ix.interaction_strength.toFixed(4) }}</td>
+                            <td class="mono text-caption">{{ ix.combinations.map(c => `(${c.level_a},${c.level_b})→${c.mean_response.toFixed(2)}`).join(' | ') }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" v-if="effectsChart">
+                  <v-card variant="outlined"><v-card-text class="text-center">
+                    <img :src="effectsChart" style="max-width:100%;border-radius:8px;" alt="Effects chart">
+                  </v-card-text></v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ DESIRABILITY TAB ═══ -->
+            <v-window-item value="desirability">
+              <v-row v-if="analysis?.desirability">
+                <v-col cols="12" md="4" class="text-center">
+                  <v-card variant="outlined" class="pa-4">
+                    <div class="text-subtitle-2 mb-2">Overall Desirability</div>
+                    <div style="width:100px;height:100px;border-radius:50%;border:8px solid;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;margin:0 auto;"
+                      :style="{borderColor: analysis.desirability.overall_desirability >= 0.8 ? '#59a14f' : analysis.desirability.overall_desirability >= 0.5 ? '#f28e2b' : '#e15759', color: analysis.desirability.overall_desirability >= 0.8 ? '#59a14f' : analysis.desirability.overall_desirability >= 0.5 ? '#f28e2b' : '#e15759'}">
+                      {{ (analysis.desirability.overall_desirability * 100).toFixed(0) }}%
+                    </div>
+                    <div class="text-caption text-grey mt-2">Geometric mean of individual desirabilities</div>
+                  </v-card>
+                </v-col>
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Optimal Settings</v-card-title>
+                    <v-card-text>
+                      <div class="text-subtitle-2 mb-2">Optimal Factor Levels</div>
+                      <div v-for="(val, fId) in analysis.desirability.optimal_factors" :key="fId" class="d-flex justify-space-between mb-1">
+                        <span>{{ factorNameById(fId) }}:</span>
+                        <strong class="mono">{{ typeof val === 'number' ? val.toFixed(2) : val }}</strong>
+                      </div>
+                      <v-divider class="my-3"></v-divider>
+                      <div class="text-subtitle-2 mb-2">Per-Response Desirability</div>
+                      <div v-for="pr in analysis.desirability.per_response" :key="pr.response_name" class="d-flex justify-space-between mb-1">
+                        <span>{{ pr.response_name }}:</span>
+                        <span class="mono">{{ pr.predicted_value.toFixed(4) }} (d={{ pr.desirability.toFixed(3) }})</span>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ SAVED TAB ═══ -->
+            <v-window-item value="saved">
+              <v-card variant="outlined">
+                <v-card-title class="text-subtitle-1 d-flex align-center">
+                  <v-icon start>mdi-content-save</v-icon> Saved Experiments
+                  <v-spacer></v-spacer>
+                  <v-btn size="small" variant="tonal" @click="loadSaved"><v-icon start>mdi-refresh</v-icon> Refresh</v-btn>
+                </v-card-title>
+                <v-card-text>
+                  <div v-if="savedList.length === 0" class="text-grey text-center pa-4">No saved experiments.</div>
+                  <v-list v-else density="compact">
+                    <v-list-item v-for="s in savedList" :key="s.id" @click="loadExperiment(s.id)">
+                      <v-list-item-title>{{ s.name }}</v-list-item-title>
+                      <v-list-item-subtitle>{{ new Date(s.updated_at).toLocaleString() }}</v-list-item-subtitle>
+                      <template v-slot:append>
+                        <v-btn icon size="small" color="error" variant="text" @click.stop="deleteExp(s.id)"><v-icon>mdi-delete</v-icon></v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+          </v-window>
+        </v-container>
+      </v-main>
+      <v-snackbar v-model="snackbar" :color="snackColor" timeout="4000" location="bottom right">{{ snackMsg }}</v-snackbar>
+    </v-app>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.0/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+  <script>
+    const API = '/api/doe';
+    const { createApp } = Vue;
+    let fCtr = 0, rCtr = 0;
+
+    const app = createApp({
+      data() {
+        return {
+          activeTab: 'design', loadingGen: false, loadingAnalyze: false,
+          snackbar: false, snackMsg: '', snackColor: 'info',
+          expName: 'Solder Paste Experiment',
+          designType: 'full_factorial',
+          designTypes: [
+            { text: 'Full Factorial (2^k)', value: 'full_factorial' },
+            { text: 'Fractional Factorial (2^(k-p))', value: 'fractional' },
+            { text: 'Taguchi L-Array', value: 'taguchi' },
+            { text: 'Box-Behnken', value: 'box_behnken' },
+            { text: 'Central Composite (CCD)', value: 'central_composite' },
+          ],
+          replicates: 1, randomize: true, centerPoints: 3,
+          factors: [], responses: [],
+          matrix: null, analysis: null,
+          effectsChart: null, anovaChart: null,
+          savedList: [],
+          // Maps for ID lookups
+          _factorMap: {}, _responseMap: {},
+        };
+      },
+      computed: {
+        needsCenter() { return ['box_behnken', 'central_composite', 'taguchi'].includes(this.designType); },
+        sortedRuns() { return this.matrix ? [...this.matrix.runs].sort((a, b) => a.run_order - b.run_order) : []; },
+        hasAnyResponses() {
+          if (!this.matrix) return false;
+          return this.matrix.runs.some(r => Object.values(r.responses).some(v => v !== null && v !== undefined));
+        },
+      },
+      methods: {
+        addFactor() {
+          fCtr++;
+          this.factors.push({ id: 'f_' + fCtr, name: 'Factor ' + String.fromCharCode(64 + fCtr), unit: '', low: 100, high: 200, center: 150 });
+        },
+        addResponse() {
+          rCtr++;
+          this.responses.push({ id: 'r_' + rCtr, name: 'Response ' + rCtr, unit: '', target: null, minimize: false, weight: 1 });
+        },
+        buildConfig() {
+          const factors = this.factors.map(f => {
+            const levels = this.needsCenter && f.center != null
+              ? [f.low, f.center, f.high] : [f.low, f.high];
+            return { id: f.id, name: f.name, type: 'numeric', levels, unit: f.unit };
+          });
+          const responses = this.responses.map(r => ({
+            id: r.id, name: r.name, unit: r.unit, target: r.target || undefined,
+            minimize: r.minimize, weight: r.weight || 1,
+          }));
+          this._factorMap = Object.fromEntries(factors.map(f => [f.name, f.id]));
+          this._responseMap = Object.fromEntries(responses.map(r => [r.name, r.id]));
+          return {
+            name: this.expName, design_type: this.designType, factors, responses,
+            replicates: this.replicates, randomize: this.randomize,
+            center_points: this.centerPoints,
+          };
+        },
+        factorId(name) { return this._factorMap[name] || name; },
+        responseId(name) { return this._responseMap[name] || name; },
+        factorNameById(id) { return this.factors.find(f => f.id === id)?.name || id; },
+        factorValue(run, fName) {
+          const id = this.factorId(fName);
+          return run.factor_levels[id]?.toFixed?.(2) ?? run.factor_levels[id] ?? '-';
+        },
+        codedClass(coded) {
+          if (coded == null) return '';
+          if (coded < -0.1) return 'coded-neg';
+          if (coded > 0.1) return 'coded-pos';
+          return 'coded-zero';
+        },
+        setResponse(runOrder, respId, val) {
+          const run = this.matrix.runs.find(r => r.run_order === runOrder);
+          if (run) run.responses[respId] = val !== '' ? parseFloat(val) : null;
+        },
+
+        async generateDesign() {
+          this.loadingGen = true;
+          try {
+            const config = this.buildConfig();
+            const resp = await fetch(API + '/generate', { method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ config }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.matrix = data.matrix;
+            this.analysis = null;
+            this.activeTab = 'matrix';
+            this.notify(`Generated ${data.matrix.total_runs} runs (${data.matrix.design_label})`, 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loadingGen = false; }
+        },
+
+        async analyzeResults() {
+          this.loadingAnalyze = true;
+          try {
+            const config = this.buildConfig();
+            const resp = await fetch(API + '/analyze', { method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ config, matrix: this.matrix }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.analysis = data.analysis;
+            this.effectsChart = data.effects_chart || null;
+            this.anovaChart = data.anova_chart || null;
+            this.activeTab = 'anova';
+            this.notify('Analysis complete', 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loadingAnalyze = false; }
+        },
+
+        async loadSaved() {
+          try { const resp = await fetch(API + '/experiments'); const data = await resp.json(); this.savedList = data.experiments || []; }
+          catch { this.notify('Failed to load', 'error'); }
+        },
+        async loadExperiment(id) {
+          try {
+            const resp = await fetch(API + '/experiments/' + id); const data = await resp.json();
+            if (data.config?.config) {
+              const cfg = data.config.config;
+              this.expName = cfg.name; this.designType = cfg.design_type;
+              this.replicates = cfg.replicates || 1; this.randomize = cfg.randomize !== false;
+              this.factors = cfg.factors.map(f => ({ id: f.id, name: f.name, unit: f.unit || '', low: f.levels[0], high: f.levels[f.levels.length - 1], center: f.levels.length > 2 ? f.levels[1] : null }));
+              this.responses = cfg.responses.map(r => ({ id: r.id, name: r.name, unit: r.unit || '', target: r.target || null, minimize: r.minimize || false, weight: r.weight || 1 }));
+              this._factorMap = Object.fromEntries(cfg.factors.map(f => [f.name, f.id]));
+              this._responseMap = Object.fromEntries(cfg.responses.map(r => [r.name, r.id]));
+              if (data.config.matrix) this.matrix = data.config.matrix;
+            }
+            if (data.result) this.analysis = data.result;
+            this.activeTab = this.matrix ? 'matrix' : 'design';
+            this.notify('Loaded: ' + this.expName, 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+        },
+        async deleteExp(id) {
+          try { await fetch(API + '/experiments/' + id, { method: 'DELETE' }); this.savedList = this.savedList.filter(s => s.id !== id); }
+          catch { this.notify('Delete failed', 'error'); }
+        },
+        notify(msg, color) { this.snackMsg = msg; this.snackColor = color || 'info'; this.snackbar = true; },
+      },
+      mounted() {
+        this.loadSaved();
+        // Starter: 3-factor solder paste experiment
+        [{ name: 'Temperature', unit: '°C', low: 230, high: 260, center: 245 },
+         { name: 'Pressure', unit: 'PSI', low: 20, high: 40, center: 30 },
+         { name: 'Speed', unit: 'mm/s', low: 10, high: 30, center: 20 }].forEach(f => {
+          fCtr++;
+          this.factors.push({ id: 'f_' + fCtr, ...f });
+        });
+        [{ name: 'Solder Strength', unit: 'N', target: null, minimize: false },
+         { name: 'Defect Rate', unit: '%', target: 0, minimize: true }].forEach(r => {
+          rCtr++;
+          this.responses.push({ id: 'r_' + rCtr, ...r, weight: 1 });
+        });
+      },
+    });
+    app.use(Vuetify.createVuetify({ theme: { defaultTheme: 'light' } }));
+    app.mount('#app');
+  </script>
+</body>
+</html>

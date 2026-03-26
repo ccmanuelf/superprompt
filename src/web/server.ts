@@ -18,6 +18,13 @@ import {
 } from '../learning/index.js';
 import type { ProviderRouter } from '../providers/router.js';
 import { handleSimApi } from './sim-api.js';
+import { handleCapacityApi } from './capacity-api.js';
+import { handleSequencerApi } from './sequencer-api.js';
+import { handleVsmApi } from './vsm-api.js';
+import { handleTocApi } from './toc-api.js';
+import { handleConwipApi } from './conwip-api.js';
+import { handleDoeApi } from './doe-api.js';
+import { handleFsmApi } from './fsm-api.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 // In dev: src/web/ → src/web/public/
@@ -121,11 +128,55 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
 
     // ── API routes (handle before static files) ──
     if (urlPath.startsWith('/api/')) {
-      handleSimApi(req, res, urlPath).catch((err) => {
-        logger.error({ err }, 'Sim API unhandled error');
-        res.writeHead(500);
-        res.end('Internal Server Error');
-      });
+      if (urlPath.startsWith('/api/capacity')) {
+        handleCapacityApi(req, res, urlPath).catch((err) => {
+          logger.error({ err }, 'Capacity API unhandled error');
+          res.writeHead(500);
+          res.end('Internal Server Error');
+        });
+      } else if (urlPath.startsWith('/api/sequence')) {
+        handleSequencerApi(req, res, urlPath).catch((err) => {
+          logger.error({ err }, 'Sequencer API unhandled error');
+          res.writeHead(500);
+          res.end('Internal Server Error');
+        });
+      } else if (urlPath.startsWith('/api/vsm')) {
+        handleVsmApi(req, res, urlPath).catch((err) => {
+          logger.error({ err }, 'VSM API unhandled error');
+          res.writeHead(500);
+          res.end('Internal Server Error');
+        });
+      } else if (urlPath.startsWith('/api/toc')) {
+        handleTocApi(req, res, urlPath).catch((err) => {
+          logger.error({ err }, 'TOC API unhandled error');
+          res.writeHead(500);
+          res.end('Internal Server Error');
+        });
+      } else if (urlPath.startsWith('/api/conwip')) {
+        handleConwipApi(req, res, urlPath).catch((err) => {
+          logger.error({ err }, 'CONWIP API unhandled error');
+          res.writeHead(500);
+          res.end('Internal Server Error');
+        });
+      } else if (urlPath.startsWith('/api/doe')) {
+        handleDoeApi(req, res, urlPath).catch((err) => {
+          logger.error({ err }, 'DOE API unhandled error');
+          res.writeHead(500);
+          res.end('Internal Server Error');
+        });
+      } else if (urlPath.startsWith('/api/fsm')) {
+        handleFsmApi(req, res, urlPath).catch((err) => {
+          logger.error({ err }, 'FSM API unhandled error');
+          res.writeHead(500);
+          res.end('Internal Server Error');
+        });
+      } else {
+        handleSimApi(req, res, urlPath).catch((err) => {
+          logger.error({ err }, 'Sim API unhandled error');
+          res.writeHead(500);
+          res.end('Internal Server Error');
+        });
+      }
       return;
     }
 
@@ -137,6 +188,20 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       filePath = resolve(PUBLIC_DIR, 'simulation', 'index.html');
     } else if (urlPath === '/sim/guide' || urlPath === '/sim/guide/') {
       filePath = resolve(PUBLIC_DIR, 'simulation', 'guide.html');
+    } else if (urlPath === '/capacity' || urlPath === '/capacity/') {
+      filePath = resolve(PUBLIC_DIR, 'capacity', 'index.html');
+    } else if (urlPath === '/sequence' || urlPath === '/sequence/') {
+      filePath = resolve(PUBLIC_DIR, 'sequencer', 'index.html');
+    } else if (urlPath === '/vsm' || urlPath === '/vsm/') {
+      filePath = resolve(PUBLIC_DIR, 'vsm', 'index.html');
+    } else if (urlPath === '/toc' || urlPath === '/toc/') {
+      filePath = resolve(PUBLIC_DIR, 'toc', 'index.html');
+    } else if (urlPath === '/conwip' || urlPath === '/conwip/') {
+      filePath = resolve(PUBLIC_DIR, 'conwip', 'index.html');
+    } else if (urlPath === '/doe' || urlPath === '/doe/') {
+      filePath = resolve(PUBLIC_DIR, 'doe', 'index.html');
+    } else if (urlPath === '/fsm' || urlPath === '/fsm/') {
+      filePath = resolve(PUBLIC_DIR, 'fsm', 'index.html');
     } else {
       filePath = resolve(PUBLIC_DIR, urlPath.slice(1));
     }
@@ -158,7 +223,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
     // Relax CSP for simulation page (needs CDN scripts for Vue, Vuetify, AG Grid)
-    const headers = urlPath.startsWith('/sim') || filePath.includes('simulation')
+    const headers = urlPath.startsWith('/sim') || filePath.includes('simulation') || urlPath.startsWith('/capacity') || filePath.includes('capacity') || urlPath.startsWith('/sequence') || filePath.includes('sequencer') || urlPath.startsWith('/vsm') || filePath.includes('vsm') || urlPath.startsWith('/toc') || filePath.includes('/toc/') || urlPath.startsWith('/conwip') || filePath.includes('conwip') || urlPath.startsWith('/doe') || filePath.includes('/doe/') || urlPath.startsWith('/fsm') || filePath.includes('/fsm/')
       ? { ...SECURITY_HEADERS, 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com; font-src https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:;" }
       : SECURITY_HEADERS;
 

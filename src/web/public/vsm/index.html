@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Value Stream Mapping — clauded</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    [v-cloak] { display: none; }
+    .mono { font-family: 'Roboto Mono', monospace; }
+    .vsm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .vsm-table th, .vsm-table td { border: 1px solid #e0e0e0; padding: 5px 7px; text-align: left; }
+    .vsm-table th { background: #f5f5f5; font-weight: 500; position: sticky; top: 0; z-index: 1; }
+    .vsm-table input, .vsm-table select { width: 100%; border: none; background: transparent; font-size: 13px; padding: 2px; }
+    .vsm-table input:focus, .vsm-table select:focus { outline: 2px solid #1976d2; border-radius: 2px; }
+    .vsm-table tr:hover { background: #fafafa; }
+    .va-chip { background: #59a14f !important; color: #fff !important; }
+    .nva-chip { background: #e15759 !important; color: #fff !important; }
+    .bnva-chip { background: #f28e2b !important; color: #fff !important; }
+    .pce-gauge { width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 24px; font-weight: 700; border: 8px solid; margin: 0 auto; }
+    .pce-good { border-color: #59a14f; color: #59a14f; }
+    .pce-ok { border-color: #f28e2b; color: #f28e2b; }
+    .pce-bad { border-color: #e15759; color: #e15759; }
+    .flow-step { display: inline-flex; flex-direction: column; align-items: center; min-width: 100px;
+      border: 2px solid #1976d2; border-radius: 6px; padding: 8px; margin: 4px; background: #fff; position: relative; }
+    .flow-step.va { border-color: #59a14f; }
+    .flow-step.nva { border-color: #e15759; }
+    .flow-step.bnva { border-color: #f28e2b; }
+    .flow-arrow { display: inline-flex; align-items: center; font-size: 20px; color: #999; margin: 0 2px; }
+    .flow-inventory { display: inline-flex; flex-direction: column; align-items: center; margin: 0 4px; }
+    .flow-inventory .triangle { width: 0; height: 0; border-left: 15px solid transparent; border-right: 15px solid transparent;
+      border-bottom: 20px solid #f28e2b; }
+    .kaizen-burst { background: #fff3e0; border: 2px dashed #f28e2b; border-radius: 4px; padding: 4px 8px;
+      font-size: 11px; margin-top: 4px; }
+    .improvement-positive { color: #2e7d32; }
+    .improvement-negative { color: #c62828; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <v-app>
+      <v-app-bar color="deep-purple-darken-2" density="compact">
+        <v-app-bar-title>
+          <v-icon class="mr-2">mdi-sitemap</v-icon>
+          Value Stream Mapping
+        </v-app-bar-title>
+        <v-spacer></v-spacer>
+        <v-chip class="mr-2" size="small" color="success">v1.0</v-chip>
+        <v-chip class="mr-2" size="small" color="info">{{ steps.length }} Steps</v-chip>
+        <v-btn variant="text" color="white" href="/capacity" size="small"><v-icon start>mdi-chart-timeline-variant-shimmer</v-icon> Capacity</v-btn>
+        <v-btn variant="text" color="white" href="/sequence" size="small"><v-icon start>mdi-sort-clock-ascending</v-icon> Sequence</v-btn>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid class="pa-4">
+          <!-- Summary bar -->
+          <v-row dense class="mb-3" v-if="analysis">
+            <v-col cols="auto"><v-chip size="small" color="info">Takt: {{ analysis.takt_time.toFixed(2) }} min</v-chip></v-col>
+            <v-col cols="auto"><v-chip size="small" :color="analysis.pce_pct >= 25 ? 'success' : analysis.pce_pct >= 10 ? 'warning' : 'error'">PCE: {{ analysis.pce_pct.toFixed(1) }}%</v-chip></v-col>
+            <v-col cols="auto"><v-chip size="small" color="info">Lead: {{ analysis.total_lead_time.toFixed(1) }} min</v-chip></v-col>
+            <v-col cols="auto"><v-chip size="small" color="success">VA: {{ analysis.total_va_time.toFixed(1) }} min</v-chip></v-col>
+            <v-col cols="auto" v-if="analysis.bottleneck_step"><v-chip size="small" color="error">Bottleneck: {{ analysis.bottleneck_step }}</v-chip></v-col>
+          </v-row>
+
+          <v-tabs v-model="activeTab" color="deep-purple" density="compact" class="mb-3">
+            <v-tab value="setup"><v-icon start>mdi-cog</v-icon> Setup</v-tab>
+            <v-tab value="flow" :disabled="steps.length === 0"><v-icon start>mdi-sitemap</v-icon> Process Flow</v-tab>
+            <v-tab value="analysis" :disabled="!analysis"><v-icon start>mdi-chart-waterfall</v-icon> Analysis</v-tab>
+            <v-tab value="timwoods" :disabled="!analysis"><v-icon start>mdi-delete-variant</v-icon> TIMWOODS</v-tab>
+            <v-tab value="compare"><v-icon start>mdi-compare</v-icon> Compare</v-tab>
+            <v-tab value="saved"><v-icon start>mdi-content-save</v-icon> Saved</v-tab>
+          </v-tabs>
+
+          <v-window v-model="activeTab">
+
+            <!-- ═══ SETUP TAB ═══ -->
+            <v-window-item value="setup">
+              <v-row>
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-tune</v-icon> Configuration</v-card-title>
+                    <v-card-text>
+                      <v-text-field v-model="mapName" label="Map Name" density="compact" variant="outlined" class="mb-2"></v-text-field>
+                      <v-text-field v-model="productFamily" label="Product Family" density="compact" variant="outlined" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="customerDemand" label="Customer Demand (units/day)" type="number" density="compact" variant="outlined" min="1" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="availableMinutes" label="Available Minutes/Day" type="number" density="compact" variant="outlined" min="1" class="mb-2"></v-text-field>
+                      <v-select v-model="mapState" :items="['current','future']" label="State" density="compact" variant="outlined" class="mb-2"></v-select>
+                      <div class="text-caption text-grey">Takt = {{ availableMinutes }} / {{ customerDemand }} = <strong>{{ taktTime.toFixed(2) }} min/unit</strong></div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" md="8">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-transit-connection-variant</v-icon> Process Steps
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addStep"><v-icon start>mdi-plus</v-icon> Add Step</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <div style="overflow-x:auto;">
+                        <table class="vsm-table">
+                          <thead><tr>
+                            <th style="width:30px;"></th><th style="width:30px;">#</th>
+                            <th>Name</th><th style="width:60px;">C/T (min)</th><th style="width:60px;">C/O (min)</th>
+                            <th style="width:60px;">Uptime%</th><th style="width:55px;">Ops</th>
+                            <th style="width:65px;">Category</th><th style="width:60px;">Wait</th>
+                            <th style="width:65px;">Transport</th><th style="width:55px;">WIP</th><th style="width:55px;">Batch</th>
+                          </tr></thead>
+                          <tbody>
+                            <tr v-for="(s, i) in steps" :key="i">
+                              <td><v-btn icon size="x-small" color="error" variant="text" @click="removeStep(i)"><v-icon size="small">mdi-close</v-icon></v-btn></td>
+                              <td class="mono">{{ s.sequence }}</td>
+                              <td><input v-model="s.name"></td>
+                              <td><input v-model.number="s.cycle_time" type="number" min="0" step="0.1"></td>
+                              <td><input v-model.number="s.changeover_time" type="number" min="0"></td>
+                              <td><input v-model.number="s.uptime_pct" type="number" min="0" max="100"></td>
+                              <td><input v-model.number="s.operators" type="number" min="1"></td>
+                              <td><select v-model="s.category">
+                                <option value="VA">VA</option><option value="NVA">NVA</option><option value="BNVA">BNVA</option>
+                              </select></td>
+                              <td><input v-model.number="s.wait_time" type="number" min="0"></td>
+                              <td><input v-model.number="s.transport_time" type="number" min="0"></td>
+                              <td><input v-model.number="s.wip_before" type="number" min="0"></td>
+                              <td><input v-model.number="s.batch_size" type="number" min="1"></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Kaizen Bursts -->
+                <v-col cols="12" md="6">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start color="orange">mdi-flash</v-icon> Kaizen Bursts
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="warning" variant="tonal" @click="addKaizen"><v-icon start>mdi-plus</v-icon> Add</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <div v-for="(k, i) in kaizens" :key="i" class="d-flex align-center mb-2">
+                        <v-btn icon size="x-small" color="error" variant="text" @click="kaizens.splice(i,1)" class="mr-2"><v-icon size="small">mdi-close</v-icon></v-btn>
+                        <v-select v-model="k.step_id" :items="stepItems" label="Step" density="compact" variant="outlined" style="max-width:150px;" class="mr-2"></v-select>
+                        <v-text-field v-model="k.description" label="Improvement" density="compact" variant="outlined" class="mr-2"></v-text-field>
+                        <v-select v-model="k.priority" :items="['high','medium','low']" label="Priority" density="compact" variant="outlined" style="max-width:100px;"></v-select>
+                      </div>
+                      <div v-if="kaizens.length === 0" class="text-grey text-caption">No kaizen bursts. Add improvement opportunities.</div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Inventory Points -->
+                <v-col cols="12" md="6">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start color="orange">mdi-package-variant</v-icon> Inventory Points
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="warning" variant="tonal" @click="addInventory"><v-icon start>mdi-plus</v-icon> Add</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <div v-for="(inv, i) in inventoryPoints" :key="i" class="d-flex align-center mb-2">
+                        <v-btn icon size="x-small" color="error" variant="text" @click="inventoryPoints.splice(i,1)" class="mr-2"><v-icon size="small">mdi-close</v-icon></v-btn>
+                        <v-text-field v-model="inv.name" label="Name" density="compact" variant="outlined" style="max-width:150px;" class="mr-2"></v-text-field>
+                        <v-select v-model="inv.after_step_id" :items="stepItems" label="After Step" density="compact" variant="outlined" style="max-width:150px;" class="mr-2"></v-select>
+                        <v-text-field v-model.number="inv.quantity" label="Qty" type="number" density="compact" variant="outlined" style="max-width:80px;"></v-text-field>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" class="text-center">
+                  <v-btn color="deep-purple" size="large" :loading="loading" @click="runAnalysis" :disabled="steps.length === 0">
+                    <v-icon start>mdi-play</v-icon> Analyze Value Stream
+                  </v-btn>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ FLOW TAB ═══ -->
+            <v-window-item value="flow">
+              <v-card variant="outlined">
+                <v-card-title class="text-subtitle-1"><v-icon start>mdi-sitemap</v-icon> Process Flow Visualization</v-card-title>
+                <v-card-text>
+                  <div style="overflow-x:auto;padding:20px 0;display:flex;align-items:flex-start;flex-wrap:nowrap;">
+                    <!-- Supplier -->
+                    <div class="flow-step" style="border-color:#4e79a7;min-width:80px;">
+                      <v-icon color="blue">mdi-truck-delivery</v-icon>
+                      <div class="text-caption font-weight-bold">Supplier</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+
+                    <template v-for="(s, i) in sortedSteps" :key="s.id">
+                      <!-- Inventory triangle before step (if WIP) -->
+                      <div v-if="s.wip_before > 0" class="flow-inventory">
+                        <div class="triangle"></div>
+                        <div class="text-caption mono">{{ s.wip_before }} pcs</div>
+                      </div>
+
+                      <!-- Process step box -->
+                      <div class="flow-step" :class="s.category.toLowerCase()">
+                        <div class="text-caption font-weight-bold">{{ s.name }}</div>
+                        <div class="text-caption mono">C/T: {{ s.cycle_time }} min</div>
+                        <div class="text-caption mono" v-if="s.changeover_time > 0">C/O: {{ s.changeover_time }} min</div>
+                        <div class="text-caption mono">{{ s.operators }} op</div>
+                        <div class="text-caption">{{ s.uptime_pct }}% uptime</div>
+                        <v-chip :class="s.category === 'VA' ? 'va-chip' : s.category === 'NVA' ? 'nva-chip' : 'bnva-chip'" size="x-small">{{ s.category }}</v-chip>
+                        <!-- Kaizen bursts -->
+                        <div v-for="k in kaizensForStep(s.id)" :key="k.id" class="kaizen-burst">
+                          <v-icon size="x-small" color="orange">mdi-flash</v-icon> {{ k.description }}
+                        </div>
+                      </div>
+
+                      <div v-if="i < sortedSteps.length - 1" class="flow-arrow">
+                        <span v-if="s.transport_time > 0" class="text-caption" style="font-size:9px;color:#76b7b2;">{{ s.transport_time }}m</span>
+                        →
+                      </div>
+                    </template>
+
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step" style="border-color:#4e79a7;min-width:80px;">
+                      <v-icon color="blue">mdi-account</v-icon>
+                      <div class="text-caption font-weight-bold">Customer</div>
+                      <div class="text-caption mono">{{ customerDemand }}/day</div>
+                    </div>
+                  </div>
+
+                  <!-- Timeline bar -->
+                  <div v-if="analysis" style="margin-top:16px;display:flex;border-top:2px solid #333;">
+                    <div v-for="b in analysis.lead_time_breakdown" :key="b.step_id"
+                      :style="{flex: b.total_step_time, borderRight:'1px solid #ccc',padding:'4px',textAlign:'center',fontSize:'10px'}">
+                      <div :class="b.category === 'VA' ? 'text-green' : 'text-red'">{{ b.cycle_time.toFixed(1) }}m {{ b.category }}</div>
+                      <div v-if="b.wait_time > 0" style="color:#f28e2b;">+{{ b.wait_time.toFixed(0) }}m wait</div>
+                    </div>
+                  </div>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+
+            <!-- ═══ ANALYSIS TAB ═══ -->
+            <v-window-item value="analysis">
+              <v-row v-if="analysis">
+                <!-- PCE Gauge -->
+                <v-col cols="12" md="3" class="text-center">
+                  <v-card variant="outlined" class="pa-4">
+                    <div class="text-subtitle-2 mb-2">Process Cycle Efficiency</div>
+                    <div class="pce-gauge" :class="analysis.pce_pct >= 25 ? 'pce-good' : analysis.pce_pct >= 10 ? 'pce-ok' : 'pce-bad'">
+                      {{ analysis.pce_pct.toFixed(1) }}%
+                    </div>
+                    <div class="text-caption text-grey mt-2">VA Time / Lead Time</div>
+                    <div class="text-caption mt-1">
+                      World-class: &gt;25% | Typical: 5-10%
+                    </div>
+                  </v-card>
+                </v-col>
+
+                <!-- Summary metrics -->
+                <v-col cols="12" md="9">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Lead Time Breakdown</v-card-title>
+                    <v-card-text>
+                      <v-row dense>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Lead Time</div><div class="text-h6 mono">{{ analysis.total_lead_time.toFixed(1) }}m</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">VA Time</div><div class="text-h6 mono text-green">{{ analysis.total_va_time.toFixed(1) }}m</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">NVA Time</div><div class="text-h6 mono text-red">{{ analysis.total_nva_time.toFixed(1) }}m</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Wait Time</div><div class="text-h6 mono" style="color:#f28e2b;">{{ analysis.total_wait_time.toFixed(1) }}m</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">WIP</div><div class="text-h6 mono">{{ analysis.total_wip_units }} pcs</div><div class="text-caption">{{ analysis.total_wip_days.toFixed(1) }} days</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Takt Time</div><div class="text-h6 mono">{{ analysis.takt_time.toFixed(2) }}m</div></v-col>
+                      </v-row>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Per-step breakdown table -->
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">Step-by-Step Breakdown</v-card-title>
+                    <v-card-text>
+                      <table class="vsm-table">
+                        <thead><tr><th>Step</th><th>Category</th><th>Cycle</th><th>Wait</th><th>Transport</th><th>C/O/unit</th><th>Total</th><th>% of Lead</th></tr></thead>
+                        <tbody>
+                          <tr v-for="b in analysis.lead_time_breakdown" :key="b.step_id">
+                            <td><strong>{{ b.step_name }}</strong></td>
+                            <td><v-chip :class="b.category === 'VA' ? 'va-chip' : b.category === 'NVA' ? 'nva-chip' : 'bnva-chip'" size="x-small">{{ b.category }}</v-chip></td>
+                            <td class="mono">{{ b.cycle_time.toFixed(1) }}</td>
+                            <td class="mono" :class="b.wait_time > 0 ? 'text-orange' : ''">{{ b.wait_time.toFixed(1) }}</td>
+                            <td class="mono">{{ b.transport_time.toFixed(1) }}</td>
+                            <td class="mono">{{ b.changeover_per_unit.toFixed(2) }}</td>
+                            <td class="mono"><strong>{{ b.total_step_time.toFixed(1) }}</strong></td>
+                            <td class="mono">{{ analysis.total_lead_time > 0 ? ((b.total_step_time / analysis.total_lead_time)*100).toFixed(1) : 0 }}%</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Waterfall chart -->
+                <v-col cols="12" v-if="waterfallChart">
+                  <v-card variant="outlined">
+                    <v-card-text class="text-center">
+                      <img :src="waterfallChart" style="max-width:100%;border-radius:8px;" alt="Waterfall chart">
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ TIMWOODS TAB ═══ -->
+            <v-window-item value="timwoods">
+              <v-row v-if="analysis">
+                <v-col cols="12">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-delete-variant</v-icon> TIMWOODS Waste Analysis</v-card-title>
+                    <v-card-text>
+                      <div v-for="tw in analysis.timwoods" :key="tw.waste_type" class="mb-4">
+                        <div class="d-flex align-center mb-1">
+                          <strong class="mr-2">{{ tw.label }}</strong>
+                          <v-chip size="x-small" :color="tw.total_minutes > 0 ? 'error' : 'success'">{{ tw.total_minutes.toFixed(0) }} min ({{ tw.pct_of_lead_time.toFixed(1) }}%)</v-chip>
+                        </div>
+                        <div v-if="tw.total_minutes > 0" style="height:14px;background:#eee;border-radius:7px;overflow:hidden;max-width:400px;">
+                          <div :style="{width: Math.min(tw.pct_of_lead_time, 100)+'%', height:'100%', background:'#e15759', borderRadius:'7px'}"></div>
+                        </div>
+                        <div class="text-caption text-grey mt-1" v-if="tw.contributing_steps.length > 0">
+                          Steps: {{ tw.contributing_steps.join(', ') }}
+                        </div>
+                        <div class="text-caption" style="color:#1976d2;" v-if="tw.total_minutes > 0">
+                          <v-icon size="x-small">mdi-lightbulb</v-icon> {{ tw.suggestion }}
+                        </div>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" v-if="timwoodsChart">
+                  <v-card variant="outlined">
+                    <v-card-text class="text-center">
+                      <img :src="timwoodsChart" style="max-width:100%;border-radius:8px;" alt="TIMWOODS chart">
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ COMPARE TAB ═══ -->
+            <v-window-item value="compare">
+              <v-row>
+                <v-col cols="12">
+                  <v-alert type="info" variant="tonal" class="mb-3">
+                    Set up a "current" state map, analyze it, then create a "future" state with improvements. Click Compare to see the delta.
+                  </v-alert>
+                  <v-btn color="deep-purple" :loading="loadingCompare" @click="runCompare"
+                    :disabled="!savedCurrent || !savedFuture">
+                    <v-icon start>mdi-compare</v-icon> Compare Current vs Future
+                  </v-btn>
+                  <v-chip class="ml-3" size="small" :color="savedCurrent ? 'success' : 'default'">Current: {{ savedCurrent || 'not saved' }}</v-chip>
+                  <v-chip class="ml-2" size="small" :color="savedFuture ? 'success' : 'default'">Future: {{ savedFuture || 'not saved' }}</v-chip>
+                </v-col>
+
+                <v-col cols="12" v-if="comparison">
+                  <v-alert type="success" variant="tonal" class="mb-3">{{ comparison.summary }}</v-alert>
+                  <table class="vsm-table">
+                    <thead><tr><th>Metric</th><th>Current</th><th>Future</th><th>Change</th><th>Change %</th></tr></thead>
+                    <tbody>
+                      <tr v-for="imp in comparison.improvements" :key="imp.metric">
+                        <td><strong>{{ imp.metric }}</strong></td>
+                        <td class="mono">{{ imp.current_value.toFixed(1) }} {{ imp.unit }}</td>
+                        <td class="mono">{{ imp.future_value.toFixed(1) }} {{ imp.unit }}</td>
+                        <td class="mono" :class="isImprovement(imp) ? 'improvement-positive' : 'improvement-negative'">
+                          {{ imp.change >= 0 ? '+' : '' }}{{ imp.change.toFixed(1) }}
+                        </td>
+                        <td class="mono" :class="isImprovement(imp) ? 'improvement-positive' : 'improvement-negative'">
+                          {{ imp.change_pct >= 0 ? '+' : '' }}{{ imp.change_pct.toFixed(1) }}%
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </v-col>
+
+                <v-col cols="12" v-if="comparisonChart">
+                  <v-card variant="outlined">
+                    <v-card-text class="text-center">
+                      <img :src="comparisonChart" style="max-width:100%;border-radius:8px;" alt="Comparison chart">
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ SAVED TAB ═══ -->
+            <v-window-item value="saved">
+              <v-card variant="outlined">
+                <v-card-title class="text-subtitle-1 d-flex align-center">
+                  <v-icon start>mdi-content-save</v-icon> Saved Maps
+                  <v-spacer></v-spacer>
+                  <v-btn size="small" variant="tonal" @click="loadSaved"><v-icon start>mdi-refresh</v-icon> Refresh</v-btn>
+                </v-card-title>
+                <v-card-text>
+                  <div v-if="savedList.length === 0" class="text-grey text-center pa-4">No saved maps.</div>
+                  <v-list v-else density="compact">
+                    <v-list-item v-for="s in savedList" :key="s.id" @click="loadMap(s.id)">
+                      <v-list-item-title>{{ s.name }}</v-list-item-title>
+                      <v-list-item-subtitle>{{ new Date(s.updated_at).toLocaleString() }}</v-list-item-subtitle>
+                      <template v-slot:append>
+                        <v-btn icon size="small" color="error" variant="text" @click.stop="deleteMap(s.id)"><v-icon>mdi-delete</v-icon></v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+
+          </v-window>
+        </v-container>
+      </v-main>
+      <v-snackbar v-model="snackbar" :color="snackColor" timeout="4000" location="bottom right">{{ snackMsg }}</v-snackbar>
+    </v-app>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.0/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+  <script>
+    const API = '/api/vsm';
+    const { createApp } = Vue;
+    let stepCounter = 0;
+
+    const app = createApp({
+      data() {
+        return {
+          activeTab: 'setup', loading: false, loadingCompare: false,
+          snackbar: false, snackMsg: '', snackColor: 'info',
+          mapName: 'Assembly Line VSM', productFamily: 'Widget', customerDemand: 100, availableMinutes: 460,
+          mapState: 'current',
+          steps: [], kaizens: [], inventoryPoints: [],
+          analysis: null, waterfallChart: null, timwoodsChart: null,
+          comparison: null, comparisonChart: null,
+          savedList: [], savedCurrent: '', savedFuture: '',
+        };
+      },
+      computed: {
+        taktTime() { return this.customerDemand > 0 ? this.availableMinutes / this.customerDemand : 0; },
+        sortedSteps() { return [...this.steps].sort((a, b) => a.sequence - b.sequence); },
+        stepItems() { return this.steps.map(s => ({ title: s.name, value: s.id })); },
+      },
+      methods: {
+        buildConfig() {
+          return {
+            name: this.mapName, product_family: this.productFamily,
+            customer_demand_per_day: this.customerDemand, available_minutes_per_day: this.availableMinutes,
+            state: this.mapState,
+            steps: this.steps.map(s => ({ id: s.id, name: s.name, sequence: s.sequence, cycle_time: s.cycle_time,
+              changeover_time: s.changeover_time, uptime_pct: s.uptime_pct, category: s.category, operators: s.operators,
+              batch_size: s.batch_size, wip_before: s.wip_before, wait_time: s.wait_time, transport_time: s.transport_time })),
+            inventory_points: this.inventoryPoints.filter(ip => ip.quantity > 0),
+            kaizen_bursts: this.kaizens.filter(k => k.description),
+          };
+        },
+        addStep() {
+          stepCounter++;
+          this.steps.push({ id: 'step_' + stepCounter, name: 'Step ' + stepCounter, sequence: this.steps.length + 1,
+            cycle_time: 2, changeover_time: 0, uptime_pct: 100, category: 'VA', operators: 1,
+            batch_size: 1, wip_before: 0, wait_time: 0, transport_time: 0 });
+        },
+        removeStep(i) { this.steps.splice(i, 1); this.steps.forEach((s, j) => s.sequence = j + 1); },
+        addKaizen() { this.kaizens.push({ id: 'k_' + Date.now(), step_id: this.steps[0]?.id || '', description: '', priority: 'medium' }); },
+        addInventory() { this.inventoryPoints.push({ id: 'inv_' + Date.now(), name: 'WIP Buffer', after_step_id: this.steps[0]?.id || '', quantity: 50 }); },
+        kaizensForStep(stepId) { return this.kaizens.filter(k => k.step_id === stepId); },
+
+        async runAnalysis() {
+          this.loading = true;
+          try {
+            const resp = await fetch(API + '/analyze', { method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ config: this.buildConfig() }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.analysis = data.result;
+            this.waterfallChart = data.waterfall_chart || null;
+            this.timwoodsChart = data.timwoods_chart || null;
+            this.activeTab = 'analysis';
+            // Track current/future for comparison
+            if (this.mapState === 'current') this.savedCurrent = this.mapName;
+            else this.savedFuture = this.mapName;
+            this.notify('Analysis complete — PCE: ' + data.result.pce_pct.toFixed(1) + '%', 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loading = false; }
+        },
+
+        async runCompare() {
+          this.loadingCompare = true;
+          try {
+            const currentVsm = await fetch(API + '/maps/' + encodeURIComponent(this.savedCurrent)).then(r => r.json());
+            const futureVsm = await fetch(API + '/maps/' + encodeURIComponent(this.savedFuture)).then(r => r.json());
+            if (!currentVsm.config || !futureVsm.config) throw new Error('Both maps must be saved first');
+            const resp = await fetch(API + '/compare', { method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ current: currentVsm.config, future: futureVsm.config }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.comparison = data.comparison;
+            this.comparisonChart = data.comparison_chart || null;
+            this.notify('Comparison complete', 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loadingCompare = false; }
+        },
+
+        isImprovement(imp) {
+          // For most metrics, decrease is good. For PCE, increase is good.
+          if (imp.metric === 'PCE' || imp.metric === 'VA Time') return imp.change >= 0;
+          return imp.change <= 0;
+        },
+
+        async loadSaved() {
+          try { const resp = await fetch(API + '/maps'); const data = await resp.json(); this.savedList = data.maps || []; }
+          catch { this.notify('Failed to load', 'error'); }
+        },
+        async loadMap(id) {
+          try {
+            const resp = await fetch(API + '/maps/' + id); const data = await resp.json();
+            if (!data.config) throw new Error('Invalid');
+            const cfg = data.config;
+            this.mapName = cfg.name; this.productFamily = cfg.product_family;
+            this.customerDemand = cfg.customer_demand_per_day; this.availableMinutes = cfg.available_minutes_per_day;
+            this.mapState = cfg.state || 'current';
+            this.steps = cfg.steps.map(s => ({ ...s }));
+            this.inventoryPoints = cfg.inventory_points || [];
+            this.kaizens = cfg.kaizen_bursts || [];
+            if (data.result) this.analysis = data.result;
+            this.activeTab = 'setup';
+            this.notify('Loaded: ' + cfg.name, 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+        },
+        async deleteMap(id) {
+          try { await fetch(API + '/maps/' + id, { method: 'DELETE' }); this.savedList = this.savedList.filter(s => s.id !== id); }
+          catch { this.notify('Delete failed', 'error'); }
+        },
+        notify(msg, color) { this.snackMsg = msg; this.snackColor = color || 'info'; this.snackbar = true; },
+      },
+      mounted() {
+        this.loadSaved();
+        // Starter data: typical manufacturing assembly line
+        const starterSteps = [
+          { name: 'Receive Material', cycle_time: 0.5, changeover_time: 0, uptime_pct: 100, category: 'BNVA', operators: 1, wait_time: 30, wip_before: 200 },
+          { name: 'Cut', cycle_time: 2.0, changeover_time: 15, uptime_pct: 90, category: 'VA', operators: 2, wait_time: 10, batch_size: 50 },
+          { name: 'Sew', cycle_time: 4.5, changeover_time: 10, uptime_pct: 85, category: 'VA', operators: 4, wait_time: 15, wip_before: 100 },
+          { name: 'Inspect', cycle_time: 1.0, changeover_time: 0, uptime_pct: 100, category: 'BNVA', operators: 1, wait_time: 5 },
+          { name: 'Pack', cycle_time: 1.5, changeover_time: 5, uptime_pct: 95, category: 'VA', operators: 2, transport_time: 3 },
+          { name: 'Ship', cycle_time: 0.5, changeover_time: 0, uptime_pct: 100, category: 'BNVA', operators: 1, wait_time: 20 },
+        ];
+        starterSteps.forEach((s, i) => {
+          stepCounter++;
+          this.steps.push({ id: 'step_' + stepCounter, sequence: i + 1, batch_size: 1, wip_before: 0, transport_time: 0, ...s });
+        });
+      },
+    });
+    app.use(Vuetify.createVuetify({ theme: { defaultTheme: 'light' } }));
+    app.mount('#app');
+  </script>
+</body>
+</html>

@@ -3068,6 +3068,318 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     }
   });
 
+  // ── Capacity Planning Command ─────────────────────────────
+
+  bot.command('capacity', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/capacity(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listPlans } = await import('../capacity/index.js');
+        const plans = listPlans();
+        if (plans.length === 0) { await ctx.reply('No capacity plans. Use the web UI at /capacity or ask the AI.'); return; }
+        const lines = plans.map((p) =>
+          `<b>${escapeHtml(p.name)}</b> — ${new Date(p.updated_at).toLocaleDateString()}`
+        );
+        await ctx.reply(`<b>Capacity Plans (${plans.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'view': {
+        const planName = parts.slice(1).join(' ');
+        if (!planName) { await ctx.reply('Usage: /capacity view &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getPlan } = await import('../capacity/index.js');
+        const plan = getPlan(planName);
+        if (!plan) { await ctx.reply(`Plan "${planName}" not found.`); return; }
+        const result = plan.result_json ? JSON.parse(plan.result_json) : null;
+        let msg = `<b>Capacity Plan: ${escapeHtml(plan.name)}</b>\n`;
+        if (result) {
+          msg += `\nOverall Utilization: <b>${result.overall_utilization_pct?.toFixed(1)}%</b>`;
+          msg += `\nCapacity: ${result.total_capacity_hours?.toFixed(0)}h | Demand: ${result.total_demand_hours?.toFixed(0)}h`;
+          msg += `\nBottlenecks: ${result.bottleneck_count}`;
+          if (result.constraint_ranking?.length > 0) {
+            msg += '\n\n<b>Constraints:</b>';
+            for (const c of result.constraint_ranking.slice(0, 5)) {
+              msg += `\n#${c.rank} ${c.line_code}: ${c.utilization_pct?.toFixed(1)}% — ${c.recommendation}`;
+            }
+          }
+        } else {
+          msg += '\n(No analysis results yet — run analysis from web UI)';
+        }
+        await ctx.reply(msg, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete': {
+        const planName = parts.slice(1).join(' ');
+        if (!planName) { await ctx.reply('Usage: /capacity delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getPlan, deletePlan } = await import('../capacity/index.js');
+        const plan = getPlan(planName);
+        if (!plan) { await ctx.reply(`Plan "${planName}" not found.`); return; }
+        deletePlan(plan.id);
+        await ctx.reply(`Deleted capacity plan "${planName}".`);
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>Capacity Planning Commands:</b>\n\n' +
+            '/capacity list — List saved plans\n' +
+            '/capacity view &lt;name&gt; — View plan results\n' +
+            '/capacity delete &lt;name&gt; — Delete plan\n\n' +
+            '<b>Web UI:</b> Open /capacity on the dashboard for the full interactive experience.\n\n' +
+            'Or ask the AI: "Run capacity analysis for 3 sewing lines, 5 working days, 2 shifts"',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
+  // ── FSM Command ──────────────────────────────────────────
+
+  bot.command('fsm', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/fsm(@\w+)?/, '').trim();
+    const subcommand = args.split(/\s+/)[0]?.toLowerCase() || 'help';
+
+    if (subcommand === 'list') {
+      const { listFSMs } = await import('../fsm/index.js');
+      const configs = listFSMs();
+      if (configs.length === 0) { await ctx.reply('No FSM configs. Use /fsm on the web dashboard.'); return; }
+      const lines = configs.map((c) => `<b>${escapeHtml(c.name)}</b> — ${new Date(c.updated_at).toLocaleDateString()}`);
+      await ctx.reply(`<b>FSM Configs (${configs.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+    } else if (subcommand === 'templates') {
+      const { listTemplates } = await import('../fsm/index.js');
+      const templates = listTemplates();
+      const lines = templates.map((t) => `<b>${t.label}</b> (${t.resource_type}) — ${t.description}`);
+      await ctx.reply(`<b>FSM Templates:</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+    } else {
+      await ctx.reply(
+        '<b>State Machine Simulator Commands:</b>\n\n' +
+          '/fsm list — List saved configs\n' +
+          '/fsm templates — List manufacturing templates\n\n' +
+          '<b>Web UI:</b> /fsm on dashboard\n\n' +
+          'Templates: CNC Machine, Conveyor System, AGV, Order Processing\n' +
+          'Bridges: S16 Simulation, VSM, TOC, Sequencer',
+        { parse_mode: 'HTML' },
+      );
+    }
+  });
+
+  // ── DOE Command ──────────────────────────────────────────
+
+  bot.command('doe', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/doe(@\w+)?/, '').trim();
+    const subcommand = args.split(/\s+/)[0]?.toLowerCase() || 'help';
+
+    if (subcommand === 'list') {
+      const { listDOEs } = await import('../doe/index.js');
+      const exps = listDOEs();
+      if (exps.length === 0) { await ctx.reply('No DOE experiments. Use /doe on the web dashboard.'); return; }
+      const lines = exps.map((e) => `<b>${escapeHtml(e.name)}</b> — ${new Date(e.updated_at).toLocaleDateString()}`);
+      await ctx.reply(`<b>DOE Experiments (${exps.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+    } else {
+      await ctx.reply(
+        '<b>Design of Experiments Commands:</b>\n\n' +
+          '/doe list — List saved experiments\n\n' +
+          '<b>Web UI:</b> /doe on dashboard\n\n' +
+          'Designs: Full Factorial, Fractional, Taguchi, Box-Behnken, CCD\n' +
+          'Ask: "Set up a 2^3 full factorial for temperature, pressure, and speed"',
+        { parse_mode: 'HTML' },
+      );
+    }
+  });
+
+  // ── CONWIP/Heijunka Command ──────────────────────────────
+
+  bot.command('conwip', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/conwip(@\w+)?/, '').trim();
+    const subcommand = args.split(/\s+/)[0]?.toLowerCase() || 'help';
+
+    if (subcommand === 'list') {
+      const { listConwips } = await import('../conwip/index.js');
+      const configs = listConwips();
+      if (configs.length === 0) { await ctx.reply('No CONWIP/Heijunka configs. Use /conwip on the web dashboard.'); return; }
+      const lines = configs.map((c) => `<b>${escapeHtml(c.name)}</b> — ${new Date(c.updated_at).toLocaleDateString()}`);
+      await ctx.reply(`<b>Configs (${configs.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+    } else {
+      await ctx.reply(
+        '<b>CONWIP & Heijunka Commands:</b>\n\n' +
+          '/conwip list — List saved configs\n\n' +
+          '<b>Web UI:</b> /conwip on dashboard\n\n' +
+          'Or ask: "Set up a Heijunka box for 3 products with 50/30/20 mix"',
+        { parse_mode: 'HTML' },
+      );
+    }
+  });
+
+  // ── TOC Command ──────────────────────────────────────────
+
+  bot.command('toc', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/toc(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listTOCs } = await import('../toc/index.js');
+        const configs = listTOCs();
+        if (configs.length === 0) { await ctx.reply('No TOC configs. Use /toc on the web dashboard.'); return; }
+        const lines = configs.map((c) => `<b>${escapeHtml(c.name)}</b> — ${new Date(c.updated_at).toLocaleDateString()}`);
+        await ctx.reply(`<b>TOC Configs (${configs.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'view': {
+        const name = parts.slice(1).join(' ');
+        if (!name) { await ctx.reply('Usage: /toc view &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getTOC } = await import('../toc/index.js');
+        const toc = getTOC(name);
+        if (!toc) { await ctx.reply(`Config "${name}" not found.`); return; }
+        const result = toc.result_json ? JSON.parse(toc.result_json) : null;
+        let msg = `<b>TOC: ${escapeHtml(toc.name)}</b>\n`;
+        if (result) {
+          msg += `\nCCR: <b>${result.constraint?.ccr_name}</b> (${result.constraint?.ccr_utilization_pct?.toFixed(1)}%)`;
+          msg += `\nT/unit: $${result.throughput?.throughput_per_unit?.toFixed(2)}`;
+          msg += `\nNP: $${result.throughput?.net_profit?.toLocaleString()}/mo`;
+          msg += `\nROI: ${result.throughput?.roi_pct?.toFixed(1)}%`;
+        }
+        await ctx.reply(msg, { parse_mode: 'HTML' });
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>TOC & WIP Tracking Commands:</b>\n\n' +
+            '/toc list — List saved configs\n' +
+            '/toc view &lt;name&gt; — View analysis\n\n' +
+            '<b>Web UI:</b> Open /toc on the dashboard.\n\n' +
+            'Or ask: "Run TOC analysis for 5 work centers, identify the constraint"',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
+  // ── VSM Command ──────────────────────────────────────────
+
+  bot.command('vsm', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/vsm(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listVSMs } = await import('../vsm/index.js');
+        const maps = listVSMs();
+        if (maps.length === 0) { await ctx.reply('No VSM maps. Use the web UI at /vsm or ask the AI.'); return; }
+        const lines = maps.map((m) =>
+          `<b>${escapeHtml(m.name)}</b> — ${new Date(m.updated_at).toLocaleDateString()}`
+        );
+        await ctx.reply(`<b>VSM Maps (${maps.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'view': {
+        const mapName = parts.slice(1).join(' ');
+        if (!mapName) { await ctx.reply('Usage: /vsm view &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getVSM } = await import('../vsm/index.js');
+        const vsm = getVSM(mapName);
+        if (!vsm) { await ctx.reply(`Map "${mapName}" not found.`); return; }
+        const result = vsm.result_json ? JSON.parse(vsm.result_json) : null;
+        let msg = `<b>VSM: ${escapeHtml(vsm.name)}</b>\n`;
+        if (result) {
+          msg += `\nPCE: <b>${result.pce_pct?.toFixed(1)}%</b>`;
+          msg += `\nLead Time: ${result.total_lead_time?.toFixed(1)} min`;
+          msg += `\nVA: ${result.total_va_time?.toFixed(1)} min | NVA: ${result.total_nva_time?.toFixed(1)} min`;
+          msg += `\nTakt: ${result.takt_time?.toFixed(2)} min | WIP: ${result.total_wip_units} units`;
+          msg += `\nBottleneck: ${result.bottleneck_step}`;
+        } else {
+          msg += '\n(No analysis results yet)';
+        }
+        await ctx.reply(msg, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete': {
+        const mapName = parts.slice(1).join(' ');
+        if (!mapName) { await ctx.reply('Usage: /vsm delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getVSM, deleteVSM } = await import('../vsm/index.js');
+        const vsm = getVSM(mapName);
+        if (!vsm) { await ctx.reply(`Map "${mapName}" not found.`); return; }
+        deleteVSM(vsm.id);
+        await ctx.reply(`Deleted VSM "${mapName}".`);
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>Value Stream Mapping Commands:</b>\n\n' +
+            '/vsm list — List saved maps\n' +
+            '/vsm view &lt;name&gt; — View map analysis\n' +
+            '/vsm delete &lt;name&gt; — Delete map\n\n' +
+            '<b>Web UI:</b> Open /vsm on the dashboard.\n\n' +
+            'Or ask the AI: "Create a VSM for our PCB assembly line with 6 process steps"',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
+  // ── Sequencer Command ────────────────────────────────────
+
+  bot.command('sequence', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/sequence(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    switch (subcommand) {
+      case 'list': {
+        const { listSchedules } = await import('../sequencer/index.js');
+        const schedules = listSchedules();
+        if (schedules.length === 0) { await ctx.reply('No saved schedules. Use the web UI at /sequence or ask the AI.'); return; }
+        const lines = schedules.map((s) =>
+          `<b>${escapeHtml(s.name)}</b> — ${new Date(s.updated_at).toLocaleDateString()}`
+        );
+        await ctx.reply(`<b>Schedules (${schedules.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'delete': {
+        const name = parts.slice(1).join(' ');
+        if (!name) { await ctx.reply('Usage: /sequence delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
+        const { getSchedule, deleteSchedule } = await import('../sequencer/index.js');
+        const sched = getSchedule(name);
+        if (!sched) { await ctx.reply(`Schedule "${name}" not found.`); return; }
+        deleteSchedule(sched.id);
+        await ctx.reply(`Deleted schedule "${name}".`);
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>Job Sequencer Commands:</b>\n\n' +
+            '/sequence list — List saved schedules\n' +
+            '/sequence delete &lt;name&gt; — Delete schedule\n\n' +
+            '<b>Web UI:</b> Open /sequence on the dashboard.\n\n' +
+            'Or ask the AI: "Sequence 5 jobs on 2 machines using SPT and EDD, compare results"',
+          { parse_mode: 'HTML' },
+        );
+    }
+  });
+
   // ── Document Handler ──────────────────────────────────────
 
   bot.on('message:document', async (ctx) => {

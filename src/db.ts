@@ -13,6 +13,13 @@ import { initControlPlanTables } from './control-plan.js';
 import { initFmeaTables } from './fmea.js';
 import { initRcaTables } from './rca.js';
 import { initSimulationTables } from './simulation/index.js';
+import { initCapacityTables } from './capacity/index.js';
+import { initSequencerTables } from './sequencer/index.js';
+import { initVsmTables } from './vsm/index.js';
+import { initTocTables } from './toc/index.js';
+import { initConwipTables } from './conwip/index.js';
+import { initDoeTables } from './doe/index.js';
+import { initFsmTables } from './fsm/index.js';
 
 let db: Database.Database;
 
@@ -38,6 +45,13 @@ export function initDatabase(): Database.Database {
   initFmeaTables();
   initRcaTables();
   initSimulationTables();
+  initCapacityTables();
+  initSequencerTables();
+  initVsmTables();
+  initTocTables();
+  initConwipTables();
+  initDoeTables();
+  initFsmTables();
   return db;
 }
 

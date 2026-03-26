@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Sequence Simulator — clauded</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    [v-cloak] { display: none; }
+    .mono { font-family: 'Roboto Mono', monospace; }
+    .seq-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .seq-table th, .seq-table td { border: 1px solid #e0e0e0; padding: 5px 7px; text-align: left; }
+    .seq-table th { background: #f5f5f5; font-weight: 500; position: sticky; top: 0; z-index: 1; }
+    .seq-table input, .seq-table select { width: 100%; border: none; background: transparent; font-size: 13px; padding: 2px; }
+    .seq-table input:focus { outline: 2px solid #1976d2; border-radius: 2px; }
+    .seq-table tr:hover { background: #fafafa; }
+    .gantt-container { overflow-x: auto; position: relative; }
+    .gantt-bar { position: absolute; height: 28px; border-radius: 3px; display: flex; align-items: center;
+      padding: 0 4px; font-size: 10px; color: #fff; overflow: hidden; white-space: nowrap; cursor: pointer;
+      transition: opacity 0.2s; border: 1px solid rgba(0,0,0,0.15); }
+    .gantt-bar:hover { opacity: 0.85; z-index: 10; }
+    .gantt-bar.setup { background: #bab0ac !important; opacity: 0.7; }
+    .gantt-bar.late { border: 2px solid #c62828; }
+    .gantt-row { position: relative; height: 36px; border-bottom: 1px solid #eee; display: flex; align-items: center; }
+    .gantt-label { width: 120px; min-width: 120px; font-size: 12px; font-weight: 500; padding: 0 8px; }
+    .gantt-track { flex: 1; position: relative; height: 100%; }
+    .due-marker { position: absolute; top: 0; bottom: 0; width: 2px; background: #c62828; z-index: 5; }
+    .due-marker::after { content: '▼'; position: absolute; top: -12px; left: -4px; font-size: 10px; color: #c62828; }
+    .metric-card { border-left: 4px solid #1976d2; }
+    .best-row { background: #e8f5e9 !important; }
+    .setup-cell { text-align: center !important; font-size: 12px; }
+    .setup-cell.diagonal { background: #f5f5f5; color: #999; }
+    .setup-cell.has-value { background: #fff3e0; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <v-app>
+      <v-app-bar color="teal-darken-2" density="compact">
+        <v-app-bar-title>
+          <v-icon class="mr-2">mdi-sort-clock-ascending</v-icon>
+          Job Sequence Simulator
+        </v-app-bar-title>
+        <v-spacer></v-spacer>
+        <v-chip class="mr-2" size="small" color="success">v1.0</v-chip>
+        <v-chip class="mr-2" size="small" color="info">{{ jobs.length }} Jobs</v-chip>
+        <v-chip class="mr-2" size="small" color="info">{{ machines.length }} Machines</v-chip>
+        <v-btn variant="text" color="white" href="/capacity" size="small">
+          <v-icon start>mdi-chart-timeline-variant-shimmer</v-icon> Capacity
+        </v-btn>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid class="pa-4">
+          <v-tabs v-model="activeTab" color="teal" density="compact" class="mb-3">
+            <v-tab value="setup"><v-icon start>mdi-cog</v-icon> Setup</v-tab>
+            <v-tab value="gantt" :disabled="!currentResult"><v-icon start>mdi-chart-gantt</v-icon> Gantt</v-tab>
+            <v-tab value="compare"><v-icon start>mdi-compare-horizontal</v-icon> Compare Rules</v-tab>
+            <v-tab value="ga"><v-icon start>mdi-dna</v-icon> GA Optimize</v-tab>
+            <v-tab value="matrix" v-if="setupEntries.length > 0"><v-icon start>mdi-grid</v-icon> Setup Matrix</v-tab>
+            <v-tab value="saved"><v-icon start>mdi-content-save</v-icon> Saved</v-tab>
+          </v-tabs>
+
+          <v-window v-model="activeTab">
+
+            <!-- ═══ SETUP TAB ═══ -->
+            <v-window-item value="setup">
+              <v-row>
+                <v-col cols="12" md="3">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1"><v-icon start>mdi-wrench</v-icon> Config</v-card-title>
+                    <v-card-text>
+                      <v-text-field v-model="configName" label="Schedule Name" density="compact" variant="outlined" class="mb-2"></v-text-field>
+                      <v-select v-model="selectedRule" :items="ruleItems" label="Dispatch Rule" density="compact" variant="outlined" class="mb-2"></v-select>
+                      <v-btn color="teal" block :loading="loading" @click="runDispatch" :disabled="jobs.length === 0">
+                        <v-icon start>mdi-play</v-icon> Run {{ selectedRule }}
+                      </v-btn>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Jobs Grid -->
+                <v-col cols="12" md="9">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-clipboard-list</v-icon> Jobs
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addJob"><v-icon start>mdi-plus</v-icon> Add Job</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <div style="overflow-x:auto;">
+                        <table class="seq-table">
+                          <thead><tr>
+                            <th style="width:35px;"></th>
+                            <th>Name</th><th>Product</th><th style="width:70px;">Qty</th>
+                            <th style="width:80px;">Time (min)</th><th style="width:110px;">Due Date</th>
+                            <th style="width:60px;">Priority</th><th>Machine</th><th style="width:60px;">Status</th>
+                          </tr></thead>
+                          <tbody>
+                            <tr v-for="(j, i) in jobs" :key="i">
+                              <td><v-btn icon size="x-small" color="error" variant="text" @click="removeJob(i)"><v-icon size="small">mdi-close</v-icon></v-btn></td>
+                              <td><input v-model="j.name" placeholder="Job 1"></td>
+                              <td><input v-model="j.product" placeholder="Product A"></td>
+                              <td><input v-model.number="j.quantity" type="number" min="1"></td>
+                              <td><input v-model.number="j.processing_minutes" type="number" min="1"></td>
+                              <td><input v-model="j.due_date" type="date"></td>
+                              <td><input v-model.number="j.priority" type="number" min="1" max="10"></td>
+                              <td><select v-model="j.machine_id">
+                                <option value="">Any</option>
+                                <option v-for="m in machines" :key="m.id" :value="m.id">{{ m.name }}</option>
+                              </select></td>
+                              <td><v-chip :color="j.status === 'completed' ? 'success' : j.status === 'in_progress' ? 'warning' : 'default'" size="x-small">{{ j.status || 'pending' }}</v-chip></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Machines -->
+                <v-col cols="12" md="5">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-cogs</v-icon> Machines
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addMachine"><v-icon start>mdi-plus</v-icon> Add</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <table class="seq-table">
+                        <thead><tr><th style="width:35px;"></th><th>Name</th><th style="width:80px;">Hours/Day</th><th style="width:80px;">Efficiency</th></tr></thead>
+                        <tbody>
+                          <tr v-for="(m, i) in machines" :key="i">
+                            <td><v-btn icon size="x-small" color="error" variant="text" @click="removeMachine(i)"><v-icon size="small">mdi-close</v-icon></v-btn></td>
+                            <td><input v-model="m.name"></td>
+                            <td><input v-model.number="m.capacity_hours_per_day" type="number" min="1" max="24"></td>
+                            <td><input v-model.number="m.efficiency" type="number" min="0.1" max="1" step="0.05"></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Setup Times -->
+                <v-col cols="12" md="7">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1 d-flex align-center">
+                      <v-icon start>mdi-swap-horizontal</v-icon> Setup/Changeover Times
+                      <v-spacer></v-spacer>
+                      <v-btn size="small" color="primary" variant="tonal" @click="addSetupEntry"><v-icon start>mdi-plus</v-icon> Add</v-btn>
+                    </v-card-title>
+                    <v-card-text>
+                      <table class="seq-table" v-if="setupEntries.length > 0">
+                        <thead><tr><th style="width:35px;"></th><th>From Product</th><th>To Product</th><th style="width:90px;">Setup (min)</th></tr></thead>
+                        <tbody>
+                          <tr v-for="(s, i) in setupEntries" :key="i">
+                            <td><v-btn icon size="x-small" color="error" variant="text" @click="removeSetup(i)"><v-icon size="small">mdi-close</v-icon></v-btn></td>
+                            <td><input v-model="s.from_product"></td>
+                            <td><input v-model="s.to_product"></td>
+                            <td><input v-model.number="s.setup_minutes" type="number" min="0"></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div v-else class="text-grey text-caption pa-2">No setup times defined (zero changeover assumed).</div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <!-- Quick Metrics -->
+                <v-col cols="12" v-if="currentResult">
+                  <v-card variant="outlined" class="metric-card">
+                    <v-card-title class="text-subtitle-1">{{ currentResult.rule_or_method }} Results</v-card-title>
+                    <v-card-text>
+                      <v-row dense>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Makespan</div><div class="text-h6 mono">{{ currentResult.metrics.makespan.toFixed(0) }} min</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">On-Time</div><div class="text-h6 mono" :class="currentResult.metrics.on_time_pct >= 90 ? 'text-green' : 'text-red'">{{ currentResult.metrics.on_time_pct.toFixed(0) }}%</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Avg Flow Time</div><div class="text-h6 mono">{{ currentResult.metrics.avg_flow_time.toFixed(0) }} min</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Late Jobs</div><div class="text-h6 mono" :class="currentResult.metrics.num_late_jobs > 0 ? 'text-red' : 'text-green'">{{ currentResult.metrics.num_late_jobs }}</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Setup Time</div><div class="text-h6 mono">{{ currentResult.metrics.total_setup_time.toFixed(0) }} min</div></v-col>
+                        <v-col cols="6" md="2"><div class="text-caption text-grey">Utilization</div><div class="text-h6 mono">{{ currentResult.metrics.avg_utilization_pct.toFixed(0) }}%</div></v-col>
+                      </v-row>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ GANTT TAB ═══ -->
+            <v-window-item value="gantt">
+              <v-card variant="outlined" v-if="ganttData">
+                <v-card-title class="text-subtitle-1">
+                  <v-icon start>mdi-chart-gantt</v-icon>
+                  Schedule Gantt Chart — {{ currentResult?.rule_or_method }}
+                </v-card-title>
+                <v-card-text>
+                  <!-- Custom Gantt visualization -->
+                  <div class="gantt-container" :style="{minWidth: (ganttData.horizon * ganttScale + 200) + 'px'}">
+                    <!-- Time axis -->
+                    <div style="margin-left:120px;margin-bottom:4px;display:flex;font-size:10px;color:#999;">
+                      <span v-for="t in ganttTicks" :key="t" :style="{position:'absolute', left:(120 + t * ganttScale)+'px'}">{{ t }}</span>
+                    </div>
+                    <!-- Machine rows -->
+                    <div v-for="machine in ganttData.machines" :key="machine" class="gantt-row">
+                      <div class="gantt-label">{{ machine }}</div>
+                      <div class="gantt-track">
+                        <div v-for="(bar, bi) in ganttBarsForMachine(machine)" :key="bi"
+                          class="gantt-bar" :class="{setup: bar.is_setup, late: bar.is_late}"
+                          :style="{left: (bar.start * ganttScale)+'px', width: Math.max(2, (bar.end - bar.start) * ganttScale)+'px', background: bar.color}"
+                          :title="bar.job_name + ' (' + bar.start.toFixed(0) + '-' + bar.end.toFixed(0) + 'min)'">
+                          {{ bar.is_setup ? '' : bar.job_name }}
+                        </div>
+                        <!-- Due date markers -->
+                        <div v-for="dm in dueDateMarkersForMachine(machine)" :key="dm.job_id"
+                          class="due-marker" :style="{left: (dm.time * ganttScale)+'px'}"
+                          :title="'Due: ' + dm.time.toFixed(0) + 'min'"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Legend -->
+                  <div class="d-flex align-center mt-3 text-caption gap-3">
+                    <span class="mr-1">Legend:</span>
+                    <span style="display:inline-flex;align-items:center;"><span style="width:12px;height:12px;background:#bab0ac;border-radius:2px;display:inline-block;margin-right:4px;"></span> Setup</span>
+                    <span style="display:inline-flex;align-items:center;"><span style="width:12px;height:12px;border:2px solid #c62828;border-radius:2px;display:inline-block;margin-right:4px;"></span> Late</span>
+                    <span style="display:inline-flex;align-items:center;"><span style="width:2px;height:14px;background:#c62828;display:inline-block;margin-right:4px;"></span> Due Date</span>
+                  </div>
+                </v-card-text>
+              </v-card>
+
+              <!-- Schedule Table -->
+              <v-card variant="outlined" class="mt-3" v-if="currentResult">
+                <v-card-title class="text-subtitle-1">Schedule Detail</v-card-title>
+                <v-card-text>
+                  <div style="overflow-x:auto;">
+                    <table class="seq-table">
+                      <thead><tr><th>#</th><th>Job</th><th>Product</th><th>Machine</th><th>Start</th><th>End</th><th>Setup</th><th>Due</th><th>Late</th></tr></thead>
+                      <tbody>
+                        <tr v-for="e in currentResult.entries" :key="e.job_id + e.machine_id" :class="{'best-row': !e.is_late}">
+                          <td class="mono">{{ e.sequence_position }}</td>
+                          <td><strong>{{ e.job_name }}</strong></td>
+                          <td>{{ e.product }}</td>
+                          <td>{{ e.machine_name }}</td>
+                          <td class="mono">{{ e.start_time.toFixed(0) }}</td>
+                          <td class="mono">{{ e.end_time.toFixed(0) }}</td>
+                          <td class="mono">{{ e.setup_time > 0 ? e.setup_time.toFixed(0) : '-' }}</td>
+                          <td class="mono">{{ e.due_date_minutes ? e.due_date_minutes.toFixed(0) : '-' }}</td>
+                          <td><v-chip :color="e.is_late ? 'error' : 'success'" size="x-small">{{ e.is_late ? '+'+e.lateness_minutes.toFixed(0)+'min' : 'OK' }}</v-chip></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </v-card-text>
+              </v-card>
+
+              <!-- Server-rendered chart -->
+              <v-card variant="outlined" class="mt-3" v-if="ganttChart">
+                <v-card-text class="text-center">
+                  <img :src="ganttChart" style="max-width:100%;border-radius:8px;" alt="Gantt chart">
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+
+            <!-- ═══ COMPARE TAB ═══ -->
+            <v-window-item value="compare">
+              <v-row>
+                <v-col cols="12">
+                  <v-btn color="teal" :loading="loadingCompare" @click="runCompare" :disabled="jobs.length === 0">
+                    <v-icon start>mdi-compare-horizontal</v-icon> Compare All Rules (FIFO, SPT, LPT, EDD, CR, SLACK)
+                  </v-btn>
+                </v-col>
+
+                <v-col cols="12" v-if="comparison">
+                  <v-alert type="info" variant="tonal" class="mb-3">{{ comparison.recommendation }}</v-alert>
+                  <div style="overflow-x:auto;">
+                    <table class="seq-table">
+                      <thead><tr>
+                        <th>Rule</th><th>Makespan</th><th>Avg Flow</th><th>Lateness</th><th>Late Jobs</th><th>On-Time %</th><th>Setup</th><th>Util %</th><th>Time (ms)</th>
+                      </tr></thead>
+                      <tbody>
+                        <tr v-for="r in comparison.rules" :key="r.rule_or_method" :class="{'best-row': r.rule_or_method === comparison.best_overall}">
+                          <td>
+                            <strong>{{ r.rule_or_method }}</strong>
+                            <v-icon v-if="r.rule_or_method === comparison.best_overall" color="green" size="small">mdi-star</v-icon>
+                            <v-icon v-if="r.rule_or_method === comparison.best_makespan" color="blue" size="x-small" title="Best makespan">mdi-clock-fast</v-icon>
+                            <v-icon v-if="r.rule_or_method === comparison.best_lateness" color="red" size="x-small" title="Best lateness">mdi-calendar-check</v-icon>
+                          </td>
+                          <td class="mono">{{ r.metrics.makespan.toFixed(0) }}</td>
+                          <td class="mono">{{ r.metrics.avg_flow_time.toFixed(0) }}</td>
+                          <td class="mono" :class="r.metrics.total_lateness > 0 ? 'text-red' : ''">{{ r.metrics.total_lateness.toFixed(0) }}</td>
+                          <td class="mono">{{ r.metrics.num_late_jobs }}</td>
+                          <td class="mono" :class="r.metrics.on_time_pct >= 90 ? 'text-green' : 'text-red'">{{ r.metrics.on_time_pct.toFixed(0) }}%</td>
+                          <td class="mono">{{ r.metrics.total_setup_time.toFixed(0) }}</td>
+                          <td class="mono">{{ r.metrics.avg_utilization_pct.toFixed(0) }}%</td>
+                          <td class="mono text-grey">{{ r.computation_ms.toFixed(1) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </v-col>
+
+                <v-col cols="12" v-if="comparisonChart">
+                  <v-card variant="outlined">
+                    <v-card-text class="text-center">
+                      <img :src="comparisonChart" style="max-width:100%;border-radius:8px;" alt="Comparison chart">
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ GA TAB ═══ -->
+            <v-window-item value="ga">
+              <v-row>
+                <v-col cols="12" md="4">
+                  <v-card variant="outlined">
+                    <v-card-title class="text-subtitle-1">GA Parameters</v-card-title>
+                    <v-card-text>
+                      <v-select v-model="gaConfig.objective" :items="['makespan','lateness','setup_time','weighted']" label="Objective" density="compact" variant="outlined" class="mb-2"></v-select>
+                      <v-text-field v-model.number="gaConfig.population_size" label="Population" type="number" density="compact" variant="outlined" min="20" max="500" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="gaConfig.generations" label="Generations" type="number" density="compact" variant="outlined" min="50" max="1000" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="gaConfig.crossover_rate" label="Crossover Rate" type="number" density="compact" variant="outlined" min="0.5" max="1" step="0.05" class="mb-2"></v-text-field>
+                      <v-text-field v-model.number="gaConfig.mutation_rate" label="Mutation Rate" type="number" density="compact" variant="outlined" min="0.01" max="0.5" step="0.01"></v-text-field>
+                      <v-btn color="teal" block class="mt-3" :loading="loadingGA" @click="runGA" :disabled="jobs.length === 0">
+                        <v-icon start>mdi-dna</v-icon> Run Genetic Algorithm
+                      </v-btn>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" md="8" v-if="gaResult">
+                  <v-card variant="outlined" class="metric-card">
+                    <v-card-title class="text-subtitle-1">GA Result ({{ gaResult.computation_ms.toFixed(0) }}ms)</v-card-title>
+                    <v-card-text>
+                      <v-row dense>
+                        <v-col cols="6" md="3"><div class="text-caption text-grey">Makespan</div><div class="text-h6 mono">{{ gaResult.metrics.makespan.toFixed(0) }} min</div></v-col>
+                        <v-col cols="6" md="3"><div class="text-caption text-grey">On-Time</div><div class="text-h6 mono">{{ gaResult.metrics.on_time_pct.toFixed(0) }}%</div></v-col>
+                        <v-col cols="6" md="3"><div class="text-caption text-grey">Best Fitness</div><div class="text-h6 mono">{{ gaResult.best_fitness.toFixed(1) }}</div></v-col>
+                        <v-col cols="6" md="3"><div class="text-caption text-grey">Converged at Gen</div><div class="text-h6 mono">{{ gaResult.convergence_generation }}</div></v-col>
+                      </v-row>
+                    </v-card-text>
+                  </v-card>
+
+                  <v-card variant="outlined" class="mt-3" v-if="gaChart">
+                    <v-card-text class="text-center">
+                      <img :src="gaChart" style="max-width:100%;border-radius:8px;" alt="GA Gantt chart">
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-window-item>
+
+            <!-- ═══ SETUP MATRIX TAB ═══ -->
+            <v-window-item value="matrix" v-if="setupEntries.length > 0">
+              <v-card variant="outlined">
+                <v-card-title class="text-subtitle-1"><v-icon start>mdi-grid</v-icon> Setup Time Matrix (minutes)</v-card-title>
+                <v-card-text>
+                  <div style="overflow-x:auto;">
+                    <table class="seq-table" v-if="setupMatrix">
+                      <thead><tr><th></th><th v-for="p in setupMatrix.products" :key="p" class="setup-cell">{{ p }}</th></tr></thead>
+                      <tbody>
+                        <tr v-for="(row, ri) in setupMatrix.matrix" :key="ri">
+                          <th>{{ setupMatrix.products[ri] }}</th>
+                          <td v-for="(val, ci) in row" :key="ci" class="setup-cell" :class="{'diagonal': ri === ci, 'has-value': val > 0 && ri !== ci}">
+                            {{ ri === ci ? '-' : (val > 0 ? val : 0) }}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+
+            <!-- ═══ SAVED TAB ═══ -->
+            <v-window-item value="saved">
+              <v-card variant="outlined">
+                <v-card-title class="text-subtitle-1 d-flex align-center">
+                  <v-icon start>mdi-content-save</v-icon> Saved Schedules
+                  <v-spacer></v-spacer>
+                  <v-btn size="small" variant="tonal" @click="loadSaved"><v-icon start>mdi-refresh</v-icon> Refresh</v-btn>
+                </v-card-title>
+                <v-card-text>
+                  <div v-if="savedList.length === 0" class="text-grey text-center pa-4">No saved schedules.</div>
+                  <v-list v-else density="compact">
+                    <v-list-item v-for="s in savedList" :key="s.id" @click="loadSchedule(s.id)">
+                      <v-list-item-title>{{ s.name }}</v-list-item-title>
+                      <v-list-item-subtitle>{{ new Date(s.updated_at).toLocaleString() }}</v-list-item-subtitle>
+                      <template v-slot:append>
+                        <v-btn icon size="small" color="error" variant="text" @click.stop="deleteSaved(s.id)"><v-icon>mdi-delete</v-icon></v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-card-text>
+              </v-card>
+            </v-window-item>
+
+          </v-window>
+        </v-container>
+      </v-main>
+
+      <v-snackbar v-model="snackbar" :color="snackColor" timeout="4000" location="bottom right">{{ snackMsg }}</v-snackbar>
+    </v-app>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.0/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+  <script>
+    const API = '/api/sequence';
+    const { createApp } = Vue;
+    let jobCounter = 0, machineCounter = 0;
+
+    const app = createApp({
+      data() {
+        return {
+          activeTab: 'setup', loading: false, loadingCompare: false, loadingGA: false,
+          snackbar: false, snackMsg: '', snackColor: 'info',
+          configName: 'Schedule 1',
+          selectedRule: 'SPT',
+          ruleItems: ['FIFO', 'SPT', 'LPT', 'EDD', 'CR', 'SLACK'],
+          jobs: [], machines: [], setupEntries: [],
+          currentResult: null, ganttData: null, ganttChart: null,
+          comparison: null, comparisonChart: null,
+          gaConfig: { objective: 'makespan', population_size: 100, generations: 200, crossover_rate: 0.8, mutation_rate: 0.15 },
+          gaResult: null, gaChart: null,
+          setupMatrix: null,
+          savedList: [],
+          ganttScale: 2,
+        };
+      },
+      computed: {
+        ganttTicks() {
+          if (!this.ganttData) return [];
+          const step = Math.max(1, Math.round(this.ganttData.horizon / 10));
+          const ticks = [];
+          for (let t = 0; t <= this.ganttData.horizon; t += step) ticks.push(t);
+          return ticks;
+        },
+      },
+      methods: {
+        buildConfig() {
+          return {
+            name: this.configName,
+            jobs: this.jobs.map((j, i) => ({ id: j.id || 'job_' + i, name: j.name, product: j.product, quantity: j.quantity,
+              processing_minutes: j.processing_minutes, due_date: j.due_date || undefined, priority: j.priority || 1,
+              machine_id: j.machine_id || undefined, status: j.status || 'pending' })),
+            machines: this.machines.map(m => ({ id: m.id, name: m.name, capacity_hours_per_day: m.capacity_hours_per_day, efficiency: m.efficiency })),
+            setup_matrix: this.setupEntries.filter(s => s.from_product && s.to_product && s.setup_minutes > 0),
+          };
+        },
+        addJob() {
+          jobCounter++;
+          this.jobs.push({ id: 'job_' + jobCounter, name: 'Job ' + jobCounter, product: 'Product A', quantity: 100,
+            processing_minutes: 30 + Math.round(Math.random() * 60), due_date: '', priority: 1, machine_id: '', status: 'pending' });
+        },
+        removeJob(i) { this.jobs.splice(i, 1); },
+        addMachine() {
+          machineCounter++;
+          this.machines.push({ id: 'mach_' + machineCounter, name: 'Machine ' + machineCounter, capacity_hours_per_day: 8, efficiency: 1.0 });
+        },
+        removeMachine(i) { this.machines.splice(i, 1); },
+        addSetupEntry() {
+          const products = [...new Set(this.jobs.map(j => j.product))];
+          this.setupEntries.push({ from_product: products[0] || '', to_product: products[1] || '', setup_minutes: 15 });
+        },
+        removeSetup(i) { this.setupEntries.splice(i, 1); },
+
+        async runDispatch() {
+          this.loading = true;
+          try {
+            const resp = await fetch(API + '/dispatch', { method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ config: this.buildConfig(), rule: this.selectedRule }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.currentResult = data.result;
+            this.ganttData = data.gantt;
+            this.ganttChart = data.chart || null;
+            this.activeTab = 'gantt';
+            this.notify(this.selectedRule + ' schedule generated', 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loading = false; }
+        },
+
+        async runCompare() {
+          this.loadingCompare = true;
+          try {
+            const resp = await fetch(API + '/compare', { method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ config: this.buildConfig() }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.comparison = data.comparison;
+            this.comparisonChart = data.chart || null;
+            if (data.gantt_chart) this.ganttChart = data.gantt_chart;
+            this.notify('Comparison complete — best: ' + data.comparison.best_overall, 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loadingCompare = false; }
+        },
+
+        async runGA() {
+          this.loadingGA = true;
+          try {
+            const resp = await fetch(API + '/ga', { method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ config: this.buildConfig(), ga_config: this.gaConfig }) });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error);
+            this.gaResult = data.result;
+            this.currentResult = data.result;
+            this.ganttData = data.gantt;
+            this.gaChart = data.chart || null;
+            this.notify('GA optimized in ' + data.result.computation_ms.toFixed(0) + 'ms', 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+          finally { this.loadingGA = false; }
+        },
+
+        ganttBarsForMachine(machine) {
+          return this.ganttData?.bars.filter(b => b.machine_name === machine) || [];
+        },
+        dueDateMarkersForMachine(machine) {
+          if (!this.ganttData || !this.currentResult) return [];
+          const machineEntries = this.currentResult.entries.filter(e => e.machine_name === machine && e.due_date_minutes);
+          return machineEntries.map(e => ({ job_id: e.job_id, time: e.due_date_minutes }));
+        },
+
+        async loadSaved() {
+          try { const resp = await fetch(API + '/schedules'); const data = await resp.json(); this.savedList = data.schedules || []; }
+          catch { this.notify('Failed to load', 'error'); }
+        },
+        async loadSchedule(id) {
+          try {
+            const resp = await fetch(API + '/schedules/' + id);
+            const data = await resp.json();
+            if (!data.config) throw new Error('Invalid');
+            const cfg = data.config;
+            this.configName = cfg.name;
+            this.jobs = cfg.jobs.map(j => ({ ...j, due_date: j.due_date || '', machine_id: j.machine_id || '' }));
+            this.machines = cfg.machines || [];
+            this.setupEntries = cfg.setup_matrix || [];
+            this.activeTab = 'setup';
+            this.notify('Loaded: ' + cfg.name, 'success');
+          } catch (e) { this.notify('Error: ' + e.message, 'error'); }
+        },
+        async deleteSaved(id) {
+          try { await fetch(API + '/schedules/' + id, { method: 'DELETE' }); this.savedList = this.savedList.filter(s => s.id !== id); }
+          catch { this.notify('Delete failed', 'error'); }
+        },
+
+        notify(msg, color) { this.snackMsg = msg; this.snackColor = color || 'info'; this.snackbar = true; },
+      },
+      watch: {
+        setupEntries: {
+          deep: true,
+          handler(val) {
+            if (val.length > 0) {
+              const products = [...new Set(val.flatMap(s => [s.from_product, s.to_product]).filter(Boolean))].sort();
+              const map = new Map();
+              for (const s of val) map.set(s.from_product + '→' + s.to_product, s.setup_minutes);
+              this.setupMatrix = {
+                products,
+                matrix: products.map(from => products.map(to => from === to ? 0 : (map.get(from + '→' + to) ?? 0))),
+              };
+            } else {
+              this.setupMatrix = null;
+            }
+          },
+        },
+      },
+      mounted() {
+        this.loadSaved();
+        // Starter data
+        this.addMachine();
+        this.addMachine();
+        for (let i = 0; i < 5; i++) this.addJob();
+        // Vary products
+        if (this.jobs[2]) this.jobs[2].product = 'Product B';
+        if (this.jobs[3]) this.jobs[3].product = 'Product B';
+        if (this.jobs[4]) this.jobs[4].product = 'Product C';
+      },
+    });
+    app.use(Vuetify.createVuetify({ theme: { defaultTheme: 'light' } }));
+    app.mount('#app');
+  </script>
+</body>
+</html>
