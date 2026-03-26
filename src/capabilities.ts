@@ -134,17 +134,32 @@ When the user wants to use a tool but their data is incomplete or in the wrong f
 5. **Offer to fill gaps conversationally** — "Or just tell me: how many hours per shift do you run? What's your daily target?"
 6. **Mention the web UI option** — "You can also enter this data interactively at /sim — the web form has all fields with defaults."
 
+### Key Terminology (explain these if the user seems unfamiliar)
+- **SAM** = Standard Allowed Minutes per unit — your cycle time, how long one unit takes at standard pace
+- **VA** = Value-Adding (transforms the product toward what the customer pays for, e.g., welding, assembly)
+- **NVA** = Non-Value-Adding (pure waste: waiting, rework, unnecessary transport)
+- **BNVA** = Business Non-Value-Adding (necessary but no value: inspection, regulatory testing)
+- **TVC** = Totally Variable Cost per unit (raw material + direct piece-rate labor — nothing else)
+- **USL/LSL** = Upper/Lower Specification Limit. From ±tolerance: USL = nominal + tolerance, LSL = nominal - tolerance
+- **Takt** = Available production time / customer demand (the pace you must produce at)
+- **Pitch** = Takt time × pack-out quantity (how often you release a container/lot)
+
 ### Tool Data Requirements Quick Reference
-- **Simulation** (/sim): operations (product, step, operation, machine_tool, sam_min), schedule (shifts, hours, work_days), demands (product, daily_demand). CSV: \`product,step,operation,machine_tool,sam_min\`
-- **Line Balance** (/balance): tasks (task_id, task_name, time_seconds, predecessors). CSV: \`task_id,task_name,time_seconds,predecessors\`
-- **Capacity Planning** (/capacity): lines (code, name, operators, efficiency%, absenteeism%), calendar (days, shifts, hours), demands (product, line, quantity, SAM or hours)
-- **Sequencer** (/sequence): jobs (name, product, processing_minutes, due_date), machines (name), optional setup matrix
-- **VSM** (/vsm): process steps (name, cycle_time, category VA/NVA/BNVA, operators, wait_time), demand per day, available minutes
-- **TOC** (/toc): work centers (name, capacity_units_per_hour, available_hours), demand, selling price, TVC, operating expense
-- **DOE** (/doe): factors (name, low level, high level), responses (name, minimize/maximize)
-- **Six Sigma**: measurements as CSV or list of values. Tool computes Cp/Cpk/Pp/Ppk, control charts.
-- **FMEA**: failure modes can be entered conversationally or via CSV upload
-- **RCA**: describe the problem — the AI builds the analysis (5 Whys, Fishbone, etc.)
+- **Simulation** (/sim): operations (product, step [sequence: 1,2,3...], operation, machine_tool, sam_min [=cycle time in minutes]), schedule (shifts, hours, work_days), demands (product, daily_demand). CSV: \`product,step,operation,machine_tool,sam_min\`. Optional: breakdowns, changeovers, WIP limits.
+- **Line Balance** (/balance): tasks (task_id, task_name, time_seconds, predecessors). CSV: \`task_id,task_name,time_seconds,predecessors\`. Predecessors can be empty for independent tasks — results will assume all parallel.
+- **Capacity Planning** (/capacity): lines (code, name, operators, efficiency%, absenteeism%), calendar (days, shifts, hours), demands (product, line, quantity + SAM or hours). If only quantity is provided (no SAM), the tool estimates at 1 min/unit and warns.
+- **Sequencer** (/sequence): jobs (name, product, processing_minutes, due_date), machines (name). Optional: setup matrix as (from_product, to_product, setup_minutes). CSV: \`job_name,product,processing_minutes,due_date,machine_id\`
+- **VSM** (/vsm): process steps (name, cycle_time in minutes, category VA/NVA/BNVA, operators, wait_time, transport_time), demand per day, available minutes. The AI can help classify steps as VA/NVA/BNVA based on description.
+- **TOC** (/toc): work centers (name, capacity_units_per_hour, available_hours_per_day, operators, current_wip), demand_units_per_day, selling_price, TVC, operating_expense_per_month, investment. The tool computes: CCR, throughput accounting (T=Price-TVC), DBR schedule, buffer status.
+- **CONWIP/Heijunka** (/conwip): For CONWIP: stages (name, cycle_time_minutes, capacity_per_hour), wip_limit, demand_per_day. For Heijunka: products (name, mix_%, cycle_time, changeover_minutes), takt_time, pack_out_quantity, slots_per_shift, shifts.
+- **DOE** (/doe): factors (name, low level, high level), responses (name, minimize/maximize/target). Design selection: 2-3 factors → full factorial (2^k); 4-7 factors → fractional; 8+ → Taguchi L-array; optimization with curvature → Box-Behnken or CCD.
+- **Six Sigma** (/sigma): raw measurements as CSV or list of values, plus spec limits (USL, LSL). From ±tolerance: USL = nominal + tolerance, LSL = nominal - tolerance. Tool computes Cp/Cpk/Pp/Ppk, control charts, DPMO.
+- **FMEA**: process steps and potential failure modes. The AI guides severity/occurrence/detection ratings (1-10 scales) conversationally. Can also upload via CSV.
+- **RCA**: describe the problem and the AI builds the analysis. Methods: start with 5 Whys for quick drilldown, Ishikawa/Fishbone for systematic cause exploration (6M categories), PDCA for structured improvement, FTA for safety-critical, A3 for formal reporting.
+- **SPC / Control Plan** (/spc): Start with Voice of Customer (VOC) requirements → translate to Critical to Quality (CTQ) measurable characteristics → build control plan with measurement methods, sampling plans, and reaction plans.
+- **FSM** (/fsm): state machines with states (name, type: idle/processing/queued/changeover/broken_down/starved/blocked/on_break/warmup), transitions (from_state, to_state, trigger_event, guard_condition). Templates available: CNC Machine, Conveyor, AGV, Order Processing.
+- **Inventory** (/inventory): SKU data (sku_id, annual_demand, unit_cost, lead_time_days, ordering_cost). Optional: demand_std_dev, service_level (default 95%). Tool computes EOQ, safety stock, reorder point, ABC classification. Handles bulk data (200+ items).
+- **Document Generation**: specify format (xlsx/docx/pdf/csv/pptx), content structure (sheets with headers+rows, or sections with paragraphs+tables+charts). Chart types: bar, line, pie, doughnut, scatter, radar. The AI builds the document from your data.
 
 For ALL tools: data can be provided conversationally (tell me the values), as CSV/XLSX upload, or entered in the web UI. The AI will help map your data to the required format.`;
 
@@ -181,92 +196,114 @@ export function scoreMfgIntent(message: string): {
   }
 
   // ── Problem signals (increase score) ──
-  // Has numbers/data
-  if (/\d+\s*(units?|pieces?|pcs|hours?|min(utes)?|operators?|shifts?|lines?|stations?|machines?|%|ppm|defects?)/.test(lower)) {
+  // Direct tool/methodology request (user explicitly asks for a specific tool by name)
+  if (/\b(run a |do an? |set up |perform |build |create an? )?(simulation|line balance|capacity analysis|fmea|rca|root cause|doe|experiment|vsm|value stream|control plan|spc|six sigma|conwip|heijunka|fsm|state machine)\b/i.test(lower)) {
+    score += 20;
+  }
+  // User says they have data ("I have 15 tasks", "I have measurements", "I have a list of")
+  if (/\bi have\s+(a\s+)?(list|data|table|csv|file|spreadsheet|\d+|the|my|our)\b/i.test(lower)) {
+    score += 15;
+  }
+  // Has numbers/data (supports comma-separated: 10,000)
+  if (/[\d,]+\s*(units?|pieces?|pcs|hours?|min(utes)?|operators?|shifts?|lines?|stations?|machines?|%|ppm|defects?|tasks?|items?|parts?|products?|variants?|orders?|skus?|measurements?|samples?|boards?|runs?|cycles?|lots?|batches?|mm|cm|kg|lbs?)/.test(lower)) {
     score += 25;
   }
+  // Has spec/tolerance notation (±, +/-, USL/LSL)
+  if (/[±]|[+]\s*\/\s*[-]|\busl\b|\blsl\b|\bspec\b|\btolerance\b/i.test(lower)) {
+    score += 20;
+  }
   // Has constraints/goals
-  if (/\b(need to|must|target|goal|required?|capacity|demand|deadline|due date|constraint)\b/i.test(lower)) {
+  if (/\b(need to|must|target|goal|required?|capacity|demand|deadline|due date|constraint|losing|cost|profit|waste|budget|comply|compliance)\b/i.test(lower)) {
     score += 15;
   }
   // Has action language
-  if (/\b(optimize|reduce|improve|increase|balance|schedule|plan|analyze|simulate|calculate|track|monitor)\b/i.test(lower)) {
+  if (/\b(optimize|reduce|improve|increase|balance|schedule|plan|analyze|simulate|calculate|track|monitor|create|build|set up|figure out|find|model|map|level|sequence|run|launch|generate|design)\b/i.test(lower)) {
     score += 15;
   }
 
   // ── Domain detection → tool mapping ──
   // Capacity / throughput
-  if (/\b(capacity|throughput|utilization|shift|overtime|bottleneck|demand vs)\b/i.test(lower)) {
+  if (/\b(capacity|throughput|utilization|shift pattern|overtime|bottleneck|demand vs|can we handle|production rate)\b/i.test(lower)) {
     score += 10;
     tools.push('capacity_planning');
     webApps.push('/capacity');
   }
   // Scheduling / sequencing
-  if (/\b(schedul|sequenc|makespan|dispatch|gantt|job.?shop|due date|lateness)\b/i.test(lower)) {
+  if (/\b(schedul|sequenc|makespan|dispatch|gantt|job.?shop|due date|lateness|work order|job order|priority order)\b/i.test(lower)) {
     score += 10;
     tools.push('job_sequencer');
     webApps.push('/sequence');
   }
   // Value stream / lean / waste
-  if (/\b(value stream|vsm|lead time|cycle time|takt|pce|waste|timwoods|kaizen|nva|non.?value)\b/i.test(lower)) {
+  if (/\b(value stream|vsm|lead time|cycle time|takt|pce|waste|timwoods|kaizen|nva|non.?value|lean|map.*process|process.*map)\b/i.test(lower)) {
     score += 10;
     tools.push('value_stream_map');
     webApps.push('/vsm');
   }
   // TOC / constraints
-  if (/\b(constraint|drum.?buffer|dbr|throughput accounting|toc|goldratt|ccr|wip track)\b/i.test(lower)) {
+  if (/\b(constraint|drum.?buffer|dbr|throughput accounting|toc|goldratt|ccr|wip track|money.*(losing|lost)|losing.*money)\b/i.test(lower)) {
     score += 10;
     tools.push('toc_analysis');
     webApps.push('/toc');
   }
   // Quality / SPC / sigma
-  if (/\b(cpk?|ppk?|control chart|spc|six sigma|defect|dpmo|capability|specification limit)\b/i.test(lower)) {
+  if (/\b(cpk?|ppk?|control (chart|plan)|spc|six sigma|defect|dpmo|capabl|specification|spec limit|\bspec\b|iatf|iso.?\d{4}|as.?9100|process capable|statistical)\b/i.test(lower)) {
     score += 10;
     tools.push('sigma_analysis');
   }
   // DOE
-  if (/\b(experiment|factorial|taguchi|anova|factor.?level|response surface|doe)\b/i.test(lower)) {
+  if (/\b(experiment|factorial|taguchi|anova|factor.?level|\bfactors?\b.*\blevel|response surface|doe|optimize.*process|process.*optim)\b/i.test(lower)) {
     score += 10;
     tools.push('design_of_experiments');
     webApps.push('/doe');
   }
   // FMEA
-  if (/\b(fmea|failure mode|rpn|risk priority|severity.*occurrence)\b/i.test(lower)) {
+  if (/\b(fmea|failure mode|rpn|risk priority|severity.*occurrence|risk analysis|potential failure)\b/i.test(lower)) {
     score += 10;
     tools.push('fmea_manage');
   }
   // RCA
-  if (/\b(root cause|5.?why|fishbone|ishikawa|pdca|fault tree|a3 report)\b/i.test(lower)) {
+  if (/\b(root cause|5.?why|fishbone|ishikawa|pdca|fault tree|a3 report|why did.*fail|why.*defect)\b/i.test(lower)) {
     score += 10;
     tools.push('rca_manage');
   }
   // Simulation
-  if (/\b(simulat|monte carlo|des|discrete.?event|wip limit|breakdown|mtbf|mttr)\b/i.test(lower)) {
+  if (/\b(simulat|monte carlo|des\b|discrete.?event|wip limit|breakdown rate|mtbf|mttr|how many.*produce|production.*capacity)\b/i.test(lower)) {
     score += 10;
     tools.push('production_simulation');
     webApps.push('/sim');
   }
   // Line balance
-  if (/\b(line balanc|yamazumi|rpw|ranked positional|station assignment)\b/i.test(lower)) {
+  if (/\b(line balanc|yamazumi|rpw|ranked positional|station assignment|balance.*line|assembly.*balance|workstation.*assign)\b/i.test(lower)) {
     score += 10;
     tools.push('line_balance');
   }
   // Inventory
-  if (/\b(eoq|safety stock|reorder point|abc.?analy|inventory plan)\b/i.test(lower)) {
+  if (/\b(eoq|safety stock|reorder point|abc.?analy|inventory plan|inventory optim|stock.*level|reorder|warehouse)\b/i.test(lower)) {
     score += 10;
     tools.push('inventory_plan');
   }
   // CONWIP / Heijunka
-  if (/\b(conwip|heijunka|production level|token board|pitch.*takt|kanban.?card)\b/i.test(lower)) {
+  if (/\b(conwip|heijunka|production level|token board|pitch.*takt|kanban.?card|level.*production|mix.*product|changeover.*reduc)\b/i.test(lower)) {
     score += 10;
     tools.push('conwip_heijunka');
     webApps.push('/conwip');
   }
   // FSM / state machine
-  if (/\b(state machine|fsm|plc|structured text|machine state|idle.*processing|transition)\b/i.test(lower)) {
+  if (/\b(state machine|fsm|plc|structured text|machine state|idle.*processing|transition|states?\s+(of|for)\b|time\s+in\s+(each\s+)?state|running.*broken.*waiting|model.*states)\b/i.test(lower)) {
     score += 10;
     tools.push('state_machine_simulator');
     webApps.push('/fsm');
+  }
+  // SPC / Control Plan (distinct from sigma for control plan workflow)
+  if (/\b(control plan|voc|ctq|voice of customer|critical to quality|iatf|sampling plan|reaction plan)\b/i.test(lower)) {
+    score += 10;
+    tools.push('spc_setup');
+  }
+  // Document generation
+  if (/\b(report|document|spreadsheet|xlsx|docx|pdf|pptx|presentation|chart.*show|create.*file|generate.*report|monthly report|production report)\b/i.test(lower)) {
+    score += 10;
+    tools.push('generate_document');
   }
 
   // Clamp score
