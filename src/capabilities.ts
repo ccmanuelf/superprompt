@@ -118,11 +118,26 @@ These tools work together — suggest combinations when relevant:
 - Simulation metrics → FSM (DES results → state residence analysis)
 
 ## When to Suggest Tools vs Answer Directly
-- If the user asks a QUESTION (what is, explain, define) → answer from your knowledge
+- If the user asks a QUESTION (what is, explain, define) → answer from your knowledge first
 - If the user describes a PROBLEM with data (numbers, constraints, goals) → suggest the appropriate tool
 - If the problem needs VISUAL interaction (drag-and-drop, charts, grids) → suggest the web dashboard
 - If you're about to CALCULATE something that a tool already does → use the tool instead
 - NEVER recreate functionality that exists in your tools — the tools are tested and validated
+
+## Recognizing Non-Manufacturing Opportunities
+Not every opportunity is about tools. Watch for these patterns:
+
+**Learning desire**: "I wonder how hard...", "how would I calculate...", "I want to understand..." → Offer to create a structured learning plan (/learn). Break the topic into sessions. Don't just dump information — offer guided learning with practice.
+
+**Voice/pronunciation practice**: "practice speaking", "improve my pronunciation", "conversation practice" → Suggest the web voice chat (/) for real-time spoken conversation. Offer to focus on specific areas (vocabulary, fluency, accent, technical terms).
+
+**Document needs**: "I need a report", "create a spreadsheet", "build a presentation" → You can generate real XLSX, DOCX, PDF, PPTX files with embedded charts. Don't just describe what the document would contain — actually create it.
+
+**Research needs**: "I read that...", "is there evidence for...", "find papers about..." → Use search_papers to find real academic sources. Save citations for export.
+
+**Task tracking**: "I should...", "don't let me forget...", "we need to..." → Proactively suggest adding to the kanban board (/board) or setting a reminder.
+
+**Memory patterns**: "Remember that...", "last time we talked about..." → Use query_memory to recall, save_memory to store. You have persistent memory across conversations.
 
 ## Helping Users Provide Data
 When the user wants to use a tool but their data is incomplete or in the wrong format, GUIDE them:
@@ -166,13 +181,13 @@ For ALL tools: data can be provided conversationally (tell me the values), as CS
 // ── Conversational Manufacturing Awareness ───────────────────
 
 /**
- * Detect whether a message is a manufacturing PROBLEM (with data/constraints)
- * vs a QUESTION (seeking knowledge/definitions).
+ * Detect whether a message maps to an existing clauded capability —
+ * manufacturing tools, learning, voice, documents, research, or task management.
  *
  * Returns a score 0-100:
  * - 0-30: Knowledge question — just answer it
- * - 31-60: Problem emerging — educate and mention tools are available
- * - 61-100: Active problem with data — suggest specific tool
+ * - 31-60: Problem emerging — educate and mention capabilities available
+ * - 61-100: Active problem with data — suggest specific tool/feature
  */
 export function scoreMfgIntent(message: string): {
   score: number;
@@ -217,8 +232,12 @@ export function scoreMfgIntent(message: string): {
     score += 15;
   }
   // Has action language
-  if (/\b(optimize|reduce|improve|increase|balance|schedule|plan|analyze|simulate|calculate|track|monitor|create|build|set up|figure out|find|model|map|level|sequence|run|launch|generate|design)\b/i.test(lower)) {
+  if (/\b(optimize|reduce|improve|increase|balance|schedule|plan|analyze|simulate|calculate|track|monitor|create|build|set up|figure out|find|model|map|level|sequence|run|launch|generate|design|evaluate|assess|practice|estimate|measure|compare|test|check|verify)\b/i.test(lower)) {
     score += 15;
+  }
+  // Desire/intent language ("I would like", "I want to", "I'd like to", "is there a way")
+  if (/\b(i would like|i want to|i'd like|is there a way|can you help|help me|could we|how can i)\b/i.test(lower)) {
+    score += 10;
   }
 
   // ── Domain detection → tool mapping ──
@@ -306,6 +325,47 @@ export function scoreMfgIntent(message: string): {
     tools.push('generate_document');
   }
 
+  // ── Non-Manufacturing Capability Domains ──
+
+  // Voice / pronunciation / conversation practice
+  if (/\b(pronunciat|speak|spoken|conversation practice|voice.*chat|talk.*practice|accent|fluency|verbal|oral|listen.*speak|speak.*english|speak.*spanish|practice.*language|language practice)\b/i.test(lower)) {
+    score += 10;
+    webApps.push('/');  // Voice chat at root URL
+    tools.push('voice_chat');
+  }
+
+  // Learning / teaching / study / skill building
+  if (/\b(learn|teach|study|course|lesson|tutorial|how (hard|difficult)|how.*calculate|how.*estimate|want to understand|quiz|practice|training|curriculum|session|master|improve my)\b/i.test(lower)) {
+    score += 10;
+    webApps.push('/learn');
+    tools.push('learning_coach');
+  }
+
+  // Research / academic / papers
+  if (/\b(research|paper|academic|journal|literature|citation|reference|bibliography|bibtex|apa|chicago|peer.?review|study.*find|find.*stud)\b/i.test(lower)) {
+    score += 10;
+    tools.push('search_papers');
+  }
+
+  // Task management / tracking / kanban
+  if (/\b(task|to.?do|kanban|board|track.*progress|assign|priorit|backlog|sprint|card|deadline)\b/i.test(lower)) {
+    score += 10;
+    tools.push('kanban_manage');
+    webApps.push('/board');
+  }
+
+  // Scheduling / reminders
+  if (/\b(remind|reminder|schedule.*task|recurring|every (day|week|hour|monday|morning)|cron|automat.*run)\b/i.test(lower)) {
+    score += 10;
+    tools.push('create_reminder');
+  }
+
+  // Memory / remember / recall
+  if (/\b(remember|recall|you told me|last time|we discussed|don't forget|keep in mind)\b/i.test(lower)) {
+    score += 10;
+    tools.push('query_memory');
+  }
+
   // Clamp score
   score = Math.max(0, Math.min(100, score));
 
@@ -328,8 +388,9 @@ export function scoreMfgIntent(message: string): {
 }
 
 /**
- * Generate a contextual hint for the system prompt based on manufacturing intent.
+ * Generate a contextual hint for the system prompt based on detected capability intent.
  * Only produces a hint when there's a genuine problem to solve (suggest/activate phase).
+ * Covers all domains: manufacturing, voice, learning, documents, research, tasks.
  */
 export function generateMfgContextHint(message: string): string | null {
   const intent = scoreMfgIntent(message);
