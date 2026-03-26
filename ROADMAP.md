@@ -639,7 +639,7 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Sprint S15: ClawMFG Web Apps — NOT STARTED
+## Sprint S15: ClawMFG Web Apps — COMPLETE ✅
 
 **Goal:** 7 manufacturing tools requiring interactive web UIs, implemented as dedicated dashboards served from clauded's web server (same pattern as board.html, learn.html). Each tool gets its own HTML page with WebSocket data flow.
 
@@ -715,7 +715,7 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Sprint S16: Manufacturing Simulations — NOT STARTED
+## Sprint S16: Manufacturing Simulations — COMPLETE ✅
 
 **Goal:** Discrete-event simulation (SimPy) and constraint optimization (MiniZinc) engines integrated into clauded for production modeling and optimal scheduling.
 

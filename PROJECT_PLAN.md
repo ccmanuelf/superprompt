@@ -62,6 +62,20 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
 - [x] **Phase 10**: Service — setup wizard, launchd/systemd, status check
 - [x] **Phase 11**: Tests — vitest suite, coverage
 - [x] **Phase 12**: Integration — index.ts, e2e validation
+- [x] **S10**: Kanban Board — web-based task board
+- [x] **S11**: Learning System — spaced repetition, topic mastery
+- [x] **S12**: Tool Forge — skill/tool parser, generator, registry, safety scanner
+- [x] **S13**: GitHub Tools — repo, issues, PRs, file read
+- [x] **S14**: ClawMFG Chat-Native Tools — balance, sigma, inventory, SPC, FMEA, RCA (305 tests)
+- [x] **S16**: Manufacturing Simulations — DES engine, Monte Carlo, MiniZinc optimization
+- [x] **S15**: ClawMFG Web Apps — 7 manufacturing tools with interactive UIs (252 tests + 102 validation tests)
+  - S15.1: Capacity Planning (12-step analysis, Monte Carlo, ROI, scenarios)
+  - S15.2: Job Sequence Simulator (6 dispatching rules, GA, Gantt)
+  - S15.3: Value Stream Mapping (PCE, TIMWOODS, current/future comparison)
+  - S15.4: TOC & WIP Tracking (CCR, Drum-Buffer-Rope, throughput accounting)
+  - S15.5: CONWIP & Heijunka (token board, production leveling)
+  - S15.6: Design of Experiments (5 design types, ANOVA, desirability, residuals)
+  - S15.7: State Machine Simulator (FSM with DES states, PLC export, 4 cross-tool bridges)
 
 ---
 
