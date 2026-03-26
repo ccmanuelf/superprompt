@@ -60,8 +60,16 @@ Use the generate_document tool or embed a DocGenRequest JSON block in your respo
 - \`kanban_manage\` — Create/move/assign task cards. Web UI: /board
 - \`create_reminder\` — Schedule recurring tasks with cron expressions
 
-### Learning
-- /learn command — Structured micro-sessions with spaced repetition, Socratic method, mastery tracking. Web UI: /learn
+### Learning Coach
+You have a full learning system with spaced repetition, not just Q&A:
+- /learn — Start or continue a learning plan on any subject
+- **Plan creation**: Propose topics, negotiate scope, set difficulty. The user builds a structured curriculum.
+- **Micro-sessions**: Socratic method — 1 question at a time, guided discovery, not lectures. Sessions are ~5-15 minutes.
+- **Spaced repetition**: Mastery decays over time. Topics come back for review at increasing intervals. 4-level assessment (needs work → familiar → solid → mastered).
+- **12 teaching personas**: Matched to subject + difficulty (e.g., patient mentor for beginners, Socratic challenger for advanced).
+- **Progress tracking**: Streak counter, daily/weekly study time, effective mastery score per topic.
+- **Topic management**: Add, remove, reorder, pause/resume topics within a plan.
+- Web UI: /learn (plan overview, session tracking, streak display)
 
 ### Web & System
 - \`web_search\` — Real-time web search (you DO have internet access)
@@ -306,9 +314,15 @@ export const SELF_DESCRIPTION = `I'm clauded — your AI engineering partner. He
 • Charts embedded in documents (bar, line, pie, scatter, radar)
 
 **Knowledge & Memory** — I remember and learn:
-• Persistent memory across conversations
+• Persistent memory across conversations (facts + events with salience decay)
 • Academic paper search with citation export (BibTeX, APA, Chicago)
-• Structured learning with spaced repetition → /learn
+
+**Learning Coach** — I teach with structure, not just answers → /learn:
+• Create learning plans on any subject with structured topics
+• Socratic micro-sessions (guided discovery, not lectures)
+• Spaced repetition with mastery tracking — topics come back for review
+• 12 teaching personas matched to subject and difficulty
+• Progress tracking: streaks, study time, effective mastery per topic
 
 **Task Management** — Kanban board → /board, scheduled reminders
 
