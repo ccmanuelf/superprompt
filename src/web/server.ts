@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { config } from '../config.js';
+import { config, PROJECT_ROOT } from '../config.js';
 import { logger } from '../logger.js';
 import { VoiceSession } from './voice-session.js';
 import { listAllCards, createCard, moveCard, assignCard, updateCard, deleteCard, parseDateHint, type CardStatus, type CardAssignee } from '../kanban.js';
@@ -95,6 +95,56 @@ function isOriginAllowed(origin: string | undefined): boolean {
   }
 }
 
+// ── Docs API ───────────────────────────────────────────────
+
+const DOCS_DIR = resolve(PROJECT_ROOT, 'docs');
+const DOCS_FILES: Record<string, string> = {
+  'user-guide': 'user-guide.md',
+  'architecture': 'architecture.md',
+  'commands': 'commands.md',
+  'customization-guide': 'customization-guide.md',
+};
+
+function handleDocsApi(
+  req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse,
+  urlPath: string,
+): void {
+  res.setHeader('Content-Type', 'application/json');
+
+  // /api/docs — list available docs
+  if (urlPath === '/api/docs' || urlPath === '/api/docs/') {
+    const docs = Object.entries(DOCS_FILES).map(([key, file]) => ({
+      id: key,
+      file,
+      exists: existsSync(resolve(DOCS_DIR, file)),
+    }));
+    res.writeHead(200);
+    res.end(JSON.stringify({ docs }));
+    return;
+  }
+
+  // /api/docs/<id> — get markdown content
+  const docId = urlPath.replace('/api/docs/', '').replace(/\/$/, '');
+  const docFile = DOCS_FILES[docId];
+  if (!docFile) {
+    res.writeHead(404);
+    res.end(JSON.stringify({ error: 'Document not found' }));
+    return;
+  }
+
+  const docPath = resolve(DOCS_DIR, docFile);
+  if (!existsSync(docPath)) {
+    res.writeHead(404);
+    res.end(JSON.stringify({ error: 'Document file not found' }));
+    return;
+  }
+
+  const content = readFileSync(docPath, 'utf-8');
+  res.writeHead(200);
+  res.end(JSON.stringify({ id: docId, file: docFile, content }));
+}
+
 /**
  * Start the voice web server (HTTP + WebSocket).
  * Only called when VOICE_WEB_PORT is set.
@@ -170,6 +220,9 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
           res.writeHead(500);
           res.end('Internal Server Error');
         });
+      } else if (urlPath.startsWith('/api/docs')) {
+        handleDocsApi(req, res, urlPath);
+        return;
       } else {
         handleSimApi(req, res, urlPath).catch((err) => {
           logger.error({ err }, 'Sim API unhandled error');
@@ -202,6 +255,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       filePath = resolve(PUBLIC_DIR, 'doe', 'index.html');
     } else if (urlPath === '/fsm' || urlPath === '/fsm/') {
       filePath = resolve(PUBLIC_DIR, 'fsm', 'index.html');
+    } else if (urlPath === '/docs' || urlPath === '/docs/') {
+      filePath = resolve(PUBLIC_DIR, 'docs', 'index.html');
     } else {
       filePath = resolve(PUBLIC_DIR, urlPath.slice(1));
     }
@@ -223,7 +278,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
     // Relax CSP for simulation page (needs CDN scripts for Vue, Vuetify, AG Grid)
-    const headers = urlPath.startsWith('/sim') || filePath.includes('simulation') || urlPath.startsWith('/capacity') || filePath.includes('capacity') || urlPath.startsWith('/sequence') || filePath.includes('sequencer') || urlPath.startsWith('/vsm') || filePath.includes('vsm') || urlPath.startsWith('/toc') || filePath.includes('/toc/') || urlPath.startsWith('/conwip') || filePath.includes('conwip') || urlPath.startsWith('/doe') || filePath.includes('/doe/') || urlPath.startsWith('/fsm') || filePath.includes('/fsm/')
+    const headers = urlPath.startsWith('/sim') || filePath.includes('simulation') || urlPath.startsWith('/capacity') || filePath.includes('capacity') || urlPath.startsWith('/sequence') || filePath.includes('sequencer') || urlPath.startsWith('/vsm') || filePath.includes('vsm') || urlPath.startsWith('/toc') || filePath.includes('/toc/') || urlPath.startsWith('/conwip') || filePath.includes('conwip') || urlPath.startsWith('/doe') || filePath.includes('/doe/') || urlPath.startsWith('/fsm') || filePath.includes('/fsm/') || urlPath.startsWith('/docs') || filePath.includes('/docs/')
       ? { ...SECURITY_HEADERS, 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com; font-src https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:;" }
       : SECURITY_HEADERS;
 

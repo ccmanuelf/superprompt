@@ -1,0 +1,15 @@
+Department,Category,Budgeted,Actual,Period
+Engineering,Salaries,500000,510000,Q1 2026
+Engineering,Software Licenses,50000,48000,Q1 2026
+Engineering,Hardware,30000,42000,Q1 2026
+Engineering,Training,15000,12000,Q1 2026
+Marketing,Advertising,200000,180000,Q1 2026
+Marketing,Events,75000,92000,Q1 2026
+Marketing,Content,40000,38000,Q1 2026
+Operations,Facilities,150000,155000,Q1 2026
+Operations,Utilities,25000,24000,Q1 2026
+Operations,Maintenance,35000,41000,Q1 2026
+HR,Recruiting,60000,72000,Q1 2026
+HR,Benefits,180000,178000,Q1 2026
+Finance,Audit,45000,45000,Q1 2026
+Finance,Insurance,30000,31000,Q1 2026

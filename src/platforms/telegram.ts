@@ -962,6 +962,75 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     );
   });
 
+  bot.command('help', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    await ctx.reply(
+      '<b>clauded — Command Reference</b>\n\n' +
+
+        '<b>💬 Chat &amp; AI</b>\n' +
+        '/newchat — Clear conversation history\n' +
+        '/memory — Show stored memories\n' +
+        '/claude — Switch to Claude provider\n' +
+        '/ollama — Switch to Ollama provider\n' +
+        '/auto — Toggle auto-routing\n' +
+        '/provider — Show current provider\n' +
+        '/models — List Ollama models\n' +
+        '/model &lt;name&gt; — Switch Ollama model\n\n' +
+
+        '<b>🎤 Voice</b>\n' +
+        '/voice — Toggle always-voice replies\n' +
+        'Send a voice message for auto-transcription + voice reply\n\n' +
+
+        '<b>🧠 Skills &amp; Tools</b>\n' +
+        '/skill list|use|create|fix|off — Manage AI skills\n' +
+        '/tool list|show|upload|generate|fix — Manage tools\n' +
+        '/careful — Safety guardrails mode\n' +
+        '/reload — Reload user tools\n\n' +
+
+        '<b>📋 Productivity</b>\n' +
+        '/board — Kanban board (view|move|assign|priority|due)\n' +
+        '/schedule — Tasks (create|list|pause|resume|delete)\n' +
+        '/digest — Digests (daily|weekly|now|off)\n' +
+        '/learn — Learning coach (plan|session|status)\n' +
+        '/research — Search academic papers\n' +
+        '/cite — Manage citations (export bibtex|apa|chicago)\n\n' +
+
+        '<b>🏭 Manufacturing — Web Dashboards</b>\n' +
+        '/sim — Production simulation (DES + Monte Carlo)\n' +
+        '/capacity — Capacity planning (12-step + ROI)\n' +
+        '/sequence — Job sequencing (6 rules + GA)\n' +
+        '/vsm — Value Stream Mapping\n' +
+        '/toc — Theory of Constraints (DBR)\n' +
+        '/conwip — CONWIP / Heijunka leveling\n' +
+        '/doe — Design of Experiments\n' +
+        '/fsm — State Machine simulator\n\n' +
+
+        '<b>🏭 Manufacturing — Chat Tools</b>\n' +
+        '/sigma &lt;USL&gt; &lt;LSL&gt; &lt;project&gt; — Six Sigma analysis\n' +
+        '/balance &lt;takt_sec&gt; &lt;project&gt; — Line balancing\n' +
+        '/inventory &lt;project&gt; — Inventory planning\n' +
+        '/spc — SPC / Control Plans\n' +
+        '/fmea — FMEA analysis\n' +
+        '/rca — Root Cause Analysis\n\n' +
+
+        '<b>🌐 Web Interfaces</b> (port 3030)\n' +
+        '/ — Voice chat  •  /board — Kanban  •  /learn — Coach\n' +
+        '/sim • /capacity • /sequence • /vsm • /toc\n' +
+        '/conwip • /doe • /fsm\n\n' +
+
+        '<b>📦 Domain Packs</b>\n' +
+        '/pack list — Installed packs\n' +
+        '/pack info &lt;name&gt; — Pack details\n' +
+        '/pack create &lt;name&gt; "desc" — Scaffold new pack\n' +
+        '/pack templates &lt;name&gt; — Get template files\n\n' +
+
+        '<b>🔧 System</b>\n' +
+        '/chatid — Show your chat ID\n' +
+        '/start — Welcome message',
+      { parse_mode: 'HTML' },
+    );
+  });
+
   bot.command('chatid', async (ctx) => {
     await ctx.reply(`Your chat ID: <code>${ctx.chat.id}</code>`, {
       parse_mode: 'HTML',
@@ -3076,6 +3145,147 @@ export function createTelegramBot(router: ProviderRouter): Bot {
     } catch (err) {
       logger.error({ err }, 'Photo handler failed');
       await handleMessage(ctx, `[Photo received] ${caption}`, router);
+    }
+  });
+
+  // ── Domain Pack Command ───────────────────────────────────
+
+  bot.command('pack', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/pack(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const sub = parts[0]?.toLowerCase() || 'help';
+
+    // Lazy import to avoid loading packs module at bot init time
+    const { getLoadedPacks, getPackByName, scaffoldPack } = await import('../packs.js');
+
+    switch (sub) {
+      case 'list': {
+        const packs = getLoadedPacks();
+        if (packs.length === 0) {
+          await ctx.reply(
+            'No domain packs installed.\n\n' +
+              'Create one with: <code>/pack create name "description"</code>\n' +
+              'See <code>docs/customization-guide.md</code> for the full guide.',
+            { parse_mode: 'HTML' },
+          );
+          return;
+        }
+        const lines = packs.map(
+          (p) =>
+            `<b>${p.displayName}</b> (${p.name} v${p.version})\n` +
+            `  ${p.description}\n` +
+            `  Tools: ${p.toolCount} | Skills: ${p.skillCount} | Templates: ${p.templateFiles.length}`,
+        );
+        await ctx.reply(`<b>Domain Packs (${packs.length})</b>\n\n${lines.join('\n\n')}`, {
+          parse_mode: 'HTML',
+        });
+        return;
+      }
+
+      case 'info': {
+        const name = parts[1];
+        if (!name) {
+          await ctx.reply('Usage: /pack info &lt;name&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const pack = getPackByName(name);
+        if (!pack) {
+          await ctx.reply(`Pack not found: <code>${name}</code>`, { parse_mode: 'HTML' });
+          return;
+        }
+        const lines = [
+          `<b>${pack.displayName}</b> (v${pack.version})`,
+          pack.author ? `Author: ${pack.author}` : '',
+          `Description: ${pack.description}`,
+          '',
+          `<b>Tools (${pack.toolCount}):</b>`,
+          pack.toolCount > 0 ? '(registered in tool registry)' : '(none)',
+          '',
+          `<b>Skills (${pack.skillCount}):</b>`,
+          pack.skillCount > 0 ? '(registered in skill list)' : '(none)',
+          '',
+          `<b>Templates (${pack.templateFiles.length}):</b>`,
+          pack.templateFiles.length > 0 ? pack.templateFiles.map((f) => `  • ${f}`).join('\n') : '(none)',
+          '',
+          `<b>Intent Patterns:</b> ${pack.intentPatterns.length}`,
+          `<b>Pack Commands:</b> ${pack.commands.length > 0 ? pack.commands.map((c) => `/${c.name}`).join(', ') : '(none)'}`,
+        ].filter(Boolean);
+        await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+        return;
+      }
+
+      case 'create': {
+        const name = parts[1];
+        if (!name) {
+          await ctx.reply('Usage: /pack create &lt;name&gt; "description"', { parse_mode: 'HTML' });
+          return;
+        }
+        // Extract description from quotes
+        const descMatch = args.match(/"([^"]+)"|'([^']+)'/);
+        const description = descMatch ? (descMatch[1] || descMatch[2]) : `${name} domain tools`;
+        try {
+          const path = scaffoldPack(name, description);
+          await ctx.reply(
+            `Pack scaffolded: <code>packs/${name}/</code>\n\n` +
+              'Next steps:\n' +
+              '1. Edit <code>pack.yaml</code> — describe capabilities &amp; intent patterns\n' +
+              '2. Add tools in <code>tools/*.md</code>\n' +
+              '3. Add skills in <code>skills/*.md</code>\n' +
+              '4. Restart clauded or use /reload\n' +
+              '5. Verify with <code>/pack info ' + name + '</code>\n\n' +
+              'See <code>docs/customization-guide.md</code> for the full guide.',
+            { parse_mode: 'HTML' },
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          await ctx.reply(`Failed to create pack: ${msg}`);
+        }
+        return;
+      }
+
+      case 'templates': {
+        const name = parts[1];
+        if (!name) {
+          await ctx.reply('Usage: /pack templates &lt;name&gt;', { parse_mode: 'HTML' });
+          return;
+        }
+        const pack = getPackByName(name);
+        if (!pack) {
+          await ctx.reply(`Pack not found: <code>${name}</code>`, { parse_mode: 'HTML' });
+          return;
+        }
+        if (pack.templateFiles.length === 0) {
+          await ctx.reply(`Pack <b>${pack.displayName}</b> has no templates.`, { parse_mode: 'HTML' });
+          return;
+        }
+        // Send each template as a file
+        for (const file of pack.templateFiles) {
+          try {
+            const filePath = resolve(pack.path, 'templates', file);
+            await ctx.replyWithDocument(new InputFile(filePath, file));
+          } catch (err) {
+            logger.warn({ err, file, pack: name }, 'Failed to send template file');
+          }
+        }
+        return;
+      }
+
+      default:
+        await ctx.reply(
+          '<b>/pack — Domain Pack Management</b>\n\n' +
+            '/pack list — Show installed packs\n' +
+            '/pack info &lt;name&gt; — Pack details (tools, skills, templates)\n' +
+            '/pack create &lt;name&gt; "description" — Scaffold a new pack\n' +
+            '/pack templates &lt;name&gt; — Send template files\n\n' +
+            '<b>Customization Levels:</b>\n' +
+            '1. <b>Simple</b> — /tool generate "description" (any user, no code)\n' +
+            '2. <b>Medium</b> — Domain Pack (tools + skills + templates in packs/)\n' +
+            '3. <b>Full</b> — TypeScript module (web dashboards, DB, charts)\n\n' +
+            'See <code>docs/customization-guide.md</code> for the full guide.',
+          { parse_mode: 'HTML' },
+        );
     }
   });
 

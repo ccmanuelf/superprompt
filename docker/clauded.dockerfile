@@ -60,6 +60,12 @@ COPY package.json ./
 COPY banner.txt CLAUDED.md ./
 # Copy static web assets for voice chat (served from dist/web/public/)
 COPY src/web/public/ ./dist/web/public/
+# Copy documentation (served via /docs web UI and /api/docs endpoint)
+COPY docs/ ./docs/
+# Copy domain packs (tools, skills, templates for department customization)
+COPY packs/ ./packs/
+# Copy forge directory (user tools and skills for auto-import)
+COPY forge/ ./forge/
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

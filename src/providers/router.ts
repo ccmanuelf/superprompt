@@ -14,6 +14,7 @@ import {
 } from '../db.js';
 import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAutoTrigger } from '../skills.js';
 import { CAPABILITIES_PROMPT, generateMfgContextHint } from '../capabilities.js';
+import { getAggregatedCapabilities } from '../packs.js';
 
 const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
 
@@ -53,6 +54,8 @@ The user can type these commands in the chat:
 - /research <query> — Search academic papers (Semantic Scholar + arXiv)
 - /cite — Manage citations (list, export bibtex/apa/chicago, clear)
 - /reload — Reload user tools from database
+- /pack — Domain packs (list, info, create) — customize for your department
+- /help — Show categorized command reference
 
 When relevant, you can mention these commands to help the user. For example, if the user asks "can you remember this?", you might mention /memory. If they seem to want a different AI behavior, mention /skill. If they say "remind me about X", use the create_reminder tool instead of suggesting /schedule.
 
@@ -339,10 +342,13 @@ export class ProviderRouter {
     // Inject capabilities, document generation, quality rules, command list, and kanban prompt
     // Manufacturing context hint is generated per-message based on conversational intent
     const mfgHint = generateMfgContextHint(params.message);
+    // Compose full capabilities: base (manufacturing) + domain packs
+    const packCaps = getAggregatedCapabilities();
+    const fullCapabilities = packCaps ? CAPABILITIES_PROMPT + '\n\n' + packCaps : CAPABILITIES_PROMPT;
     // Language hint is Claude-only (Ollama has its own in the model system prompt)
     const systemPrompt = provider.name === 'claude'
-      ? [voiceHint, params.systemPrompt, skillPrompt, CAPABILITIES_PROMPT, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : [voiceHint, params.systemPrompt, skillPrompt, CAPABILITIES_PROMPT, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
+      ? [voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
+      : [voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)

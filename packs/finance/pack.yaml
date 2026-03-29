@@ -1,0 +1,47 @@
+# Finance & Accounting Domain Pack
+# Example pack demonstrating Level 2 customization.
+# See docs/customization-guide.md for the full guide.
+
+name: finance
+display_name: "Finance & Accounting"
+description: "Financial analysis tools — NPV, budget variance, revenue forecasting"
+version: "1.0.0"
+author: "Finance Department"
+enabled: true
+
+capabilities: |
+  ### Finance & Accounting
+  You have domain-specific tools for financial analysis:
+  - `calculate_npv` tool — Net Present Value with IRR and payback period. Parameters: discount_rate (number), initial_investment (negative number), cash_flows (comma-separated)
+  - `budget_variance` tool — Compare actual vs. budgeted spend, flag overruns. Parameter: data (JSON array of {department, category, budgeted, actual, period}), threshold (number, default 10). If the user sends CSV data, parse it into JSON first before calling this tool.
+
+  **Key Financial Terminology:**
+  - NPV = Net Present Value — sum of discounted future cash flows minus initial investment
+  - IRR = Internal Rate of Return — discount rate that makes NPV = 0
+  - WACC = Weighted Average Cost of Capital — blended cost of debt + equity financing
+  - CapEx = Capital Expenditure — long-term asset purchases
+  - OpEx = Operating Expenditure — day-to-day costs
+  - Variance = Actual - Budgeted (positive = over budget)
+
+  When users discuss financial topics, use these terms naturally and offer to run calculations with the tools.
+
+self_description: |
+  **Finance & Accounting** — 2 domain tools:
+  - NPV/IRR calculator with payback period analysis
+  - Budget variance analysis with overrun detection
+
+intent_patterns:
+  - pattern: "\\b(npv|net present value|irr|internal rate|dcf|discounted cash flow|payback period|investment analysis)\\b"
+    score_boost: 10
+    tools: [calculate_npv]
+    web_apps: []
+  - pattern: "\\b(budget|variance|actual vs|over.?budget|under.?budget|spending|cost center|department spend)\\b"
+    score_boost: 10
+    tools: [budget_variance]
+    web_apps: []
+  - pattern: "\\b(capex|opex|wacc|ebitda|capital expenditure|operating expense)\\b"
+    score_boost: 10
+    tools: [calculate_npv, budget_variance]
+    web_apps: []
+
+commands: []

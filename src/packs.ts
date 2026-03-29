@@ -1,0 +1,590 @@
+/**
+ * Domain Pack System — Extensible capability modules for department-specific AI tools.
+ *
+ * Packs live in packs/<name>/ and contain:
+ *   pack.yaml     — metadata, capabilities prompt, intent patterns
+ *   tools/*.md    — tool definitions (reuses forge tool-parser format)
+ *   skills/*.md   — skill definitions (reuses forge skill-parser format)
+ *   templates/*   — example data files (CSV, XLSX)
+ *
+ * Loaded at startup after forge auto-import. Pack tools and skills are registered
+ * via the same DB + registry infrastructure as forge.
+ */
+
+import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { resolve, basename } from 'node:path';
+import { logger } from './logger.js';
+import { PROJECT_ROOT } from './config.js';
+import { parseToolMarkdown } from './forge/tool-parser.js';
+import { parseSkillMarkdown } from './forge/skill-parser.js';
+import { scanToolCode } from './forge/safety-scanner.js';
+import {
+  getSkillByName,
+  createSkill,
+  insertSkillRevision,
+  getUserToolByName,
+  createUserTool,
+  insertToolRevision,
+} from './db.js';
+
+// ── Types ──────────────────────────────────────────────────
+
+export interface IntentPattern {
+  pattern: RegExp;
+  scoreBoost: number;
+  tools: string[];
+  webApps: string[];
+}
+
+export interface PackCommand {
+  name: string;
+  description: string;
+}
+
+export interface PackMetadata {
+  name: string;
+  displayName: string;
+  description: string;
+  version: string;
+  author: string;
+  enabled: boolean;
+  capabilities: string;
+  selfDescription: string;
+  intentPatterns: IntentPattern[];
+  commands: PackCommand[];
+  toolCount: number;
+  skillCount: number;
+  templateFiles: string[];
+  path: string;
+}
+
+// ── Registry ───────────────────────────────────────────────
+
+const PACKS_DIR = resolve(PROJECT_ROOT, 'packs');
+const loadedPacks: PackMetadata[] = [];
+
+export function getLoadedPacks(): PackMetadata[] {
+  return loadedPacks;
+}
+
+export function getPackByName(name: string): PackMetadata | undefined {
+  return loadedPacks.find((p) => p.name === name);
+}
+
+// ── Aggregation (for system prompt injection) ──────────────
+
+export function getAggregatedCapabilities(): string {
+  const parts = loadedPacks
+    .filter((p) => p.enabled && p.capabilities)
+    .map((p) => p.capabilities);
+  return parts.length > 0 ? parts.join('\n\n') : '';
+}
+
+export function getAggregatedSelfDescription(): string {
+  const parts = loadedPacks
+    .filter((p) => p.enabled && p.selfDescription)
+    .map((p) => p.selfDescription);
+  return parts.length > 0 ? '\n\n' + parts.join('\n\n') : '';
+}
+
+export function getAggregatedCommands(): PackCommand[] {
+  return loadedPacks
+    .filter((p) => p.enabled)
+    .flatMap((p) => p.commands);
+}
+
+// ── Intent Scoring ─────────────────────────────────────────
+
+export function scorePackIntent(message: string): {
+  score: number;
+  tools: string[];
+  webApps: string[];
+} {
+  const lower = message.toLowerCase();
+  let score = 0;
+  const tools: string[] = [];
+  const webApps: string[] = [];
+
+  for (const pack of loadedPacks) {
+    if (!pack.enabled) continue;
+    for (const ip of pack.intentPatterns) {
+      if (ip.pattern.test(lower)) {
+        score += ip.scoreBoost;
+        tools.push(...ip.tools);
+        webApps.push(...ip.webApps);
+      }
+    }
+  }
+
+  return { score, tools: [...new Set(tools)], webApps: [...new Set(webApps)] };
+}
+
+// ── YAML Parser (zero-dep, handles pack.yaml format) ───────
+
+export interface RawPackYaml {
+  name?: string;
+  display_name?: string;
+  description?: string;
+  version?: string;
+  author?: string;
+  enabled?: string;
+  capabilities?: string;
+  self_description?: string;
+  intent_patterns?: Array<{
+    pattern?: string;
+    score_boost?: string;
+    tools?: string[];
+    web_apps?: string[];
+  }>;
+  commands?: Array<{
+    name?: string;
+    description?: string;
+  }>;
+}
+
+/** @internal Exported for testing */
+export function parsePackYaml(content: string): RawPackYaml {
+  const result: RawPackYaml = {};
+  const lines = content.split('\n');
+  let i = 0;
+
+  // Skip YAML document markers
+  while (i < lines.length && (lines[i].trim() === '---' || lines[i].trim() === '')) i++;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === '---' || line.trim() === '...') break;
+
+    // Top-level key detection (no leading whitespace)
+    const keyMatch = line.match(/^(\w[\w_]*):\s*(.*)/);
+    if (!keyMatch) { i++; continue; }
+
+    const key = keyMatch[1];
+    const inlineValue = keyMatch[2].trim();
+
+    // Multiline block scalar (key: |)
+    if (inlineValue === '|' || inlineValue === '|+' || inlineValue === '|-') {
+      i++;
+      const blockLines: string[] = [];
+      while (i < lines.length) {
+        const bl = lines[i];
+        if (bl.length === 0) {
+          blockLines.push('');
+          i++;
+          continue;
+        }
+        if (/^\S/.test(bl)) break; // un-indented = end of block
+        // Remove common indent (minimum 2 spaces)
+        blockLines.push(bl.replace(/^ {1,2}/, ''));
+        i++;
+      }
+      // Trim trailing empty lines
+      while (blockLines.length > 0 && blockLines[blockLines.length - 1] === '') blockLines.pop();
+      (result as Record<string, unknown>)[key] = blockLines.join('\n');
+      continue;
+    }
+
+    // Array section (intent_patterns: or commands:)
+    if ((key === 'intent_patterns' || key === 'commands') && inlineValue === '') {
+      i++;
+      const items: Array<Record<string, unknown>> = [];
+      while (i < lines.length && /^\s/.test(lines[i])) {
+        const itemLine = lines[i].trim();
+        // New array item
+        if (itemLine.startsWith('- ')) {
+          const item: Record<string, unknown> = {};
+          // Parse first key on the same line as dash
+          const firstKv = itemLine.slice(2).match(/^(\w[\w_]*):\s*(.*)/);
+          if (firstKv) {
+            item[firstKv[1]] = parseYamlValue(firstKv[2]);
+          }
+          i++;
+          // Continuation keys (indented deeper than the dash)
+          while (i < lines.length) {
+            const contLine = lines[i];
+            if (!contLine || /^\S/.test(contLine)) break;
+            const contTrimmed = contLine.trim();
+            if (contTrimmed.startsWith('- ')) break; // next array item
+            const kvMatch = contTrimmed.match(/^(\w[\w_]*):\s*(.*)/);
+            if (kvMatch) {
+              item[kvMatch[1]] = parseYamlValue(kvMatch[2]);
+            }
+            i++;
+          }
+          items.push(item);
+        } else {
+          i++;
+        }
+      }
+      (result as Record<string, unknown>)[key] = items;
+      continue;
+    }
+
+    // Simple key: value
+    (result as Record<string, unknown>)[key] = parseYamlValue(inlineValue);
+    i++;
+  }
+
+  return result;
+}
+
+function parseYamlValue(raw: string): unknown {
+  if (!raw) return '';
+  // Inline array: [a, b, c]
+  if (raw.startsWith('[') && raw.endsWith(']')) {
+    return raw
+      .slice(1, -1)
+      .split(',')
+      .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean);
+  }
+  // Unquote and process YAML double-quote escape sequences
+  const isDoubleQuoted = raw.startsWith('"') && raw.endsWith('"');
+  const isSingleQuoted = raw.startsWith("'") && raw.endsWith("'");
+  let unquoted = raw;
+  if (isDoubleQuoted) {
+    unquoted = raw.slice(1, -1);
+    // YAML double-quoted strings: \\ → \, \n → newline, \t → tab, etc.
+    unquoted = unquoted
+      .replace(/\\\\/g, '\x00BSLASH\x00')  // protect \\
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\x00BSLASH\x00/g, '\\');    // restore \\ as single \
+  } else if (isSingleQuoted) {
+    unquoted = raw.slice(1, -1);
+    // YAML single-quoted strings: '' → ' (only escape)
+    unquoted = unquoted.replace(/''/g, "'");
+  }
+  // Boolean
+  if (unquoted === 'true') return 'true';
+  if (unquoted === 'false') return 'false';
+  return unquoted;
+}
+
+// ── Pack Loading ───────────────────────────────────────────
+
+export function loadAllPacks(): PackMetadata[] {
+  loadedPacks.length = 0;
+
+  if (!existsSync(PACKS_DIR)) {
+    mkdirSync(PACKS_DIR, { recursive: true });
+    return [];
+  }
+
+  const entries = readdirSync(PACKS_DIR, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
+
+    const packDir = resolve(PACKS_DIR, entry.name);
+    const yamlPath = resolve(packDir, 'pack.yaml');
+
+    if (!existsSync(yamlPath)) {
+      logger.debug({ pack: entry.name }, 'Skipping pack directory (no pack.yaml)');
+      continue;
+    }
+
+    try {
+      const pack = loadSinglePack(packDir, entry.name);
+      if (pack) {
+        loadedPacks.push(pack);
+      }
+    } catch (err) {
+      logger.warn({ err, pack: entry.name }, 'Failed to load domain pack');
+    }
+  }
+
+  return [...loadedPacks];
+}
+
+function loadSinglePack(packDir: string, dirName: string): PackMetadata | null {
+  const yamlContent = readFileSync(resolve(packDir, 'pack.yaml'), 'utf-8');
+  const raw = parsePackYaml(yamlContent);
+
+  const name = (raw.name as string) || dirName;
+  const enabled = raw.enabled !== 'false';
+
+  if (!enabled) {
+    logger.info({ pack: name }, 'Pack disabled, skipping');
+    return null;
+  }
+
+  // Import tools
+  const toolsDir = resolve(packDir, 'tools');
+  let toolCount = 0;
+  if (existsSync(toolsDir)) {
+    toolCount = importPackTools(toolsDir, name);
+  }
+
+  // Import skills
+  const skillsDir = resolve(packDir, 'skills');
+  let skillCount = 0;
+  if (existsSync(skillsDir)) {
+    skillCount = importPackSkills(skillsDir, name);
+  }
+
+  // Discover templates
+  const templatesDir = resolve(packDir, 'templates');
+  const templateFiles: string[] = [];
+  if (existsSync(templatesDir)) {
+    const tFiles = readdirSync(templatesDir).filter((f) => !f.startsWith('.'));
+    templateFiles.push(...tFiles);
+  }
+
+  // Parse intent patterns
+  const intentPatterns: IntentPattern[] = [];
+  if (Array.isArray(raw.intent_patterns)) {
+    for (const ip of raw.intent_patterns) {
+      if (!ip.pattern) continue;
+      try {
+        intentPatterns.push({
+          pattern: new RegExp(ip.pattern as string, 'i'),
+          scoreBoost: Number(ip.score_boost) || 10,
+          tools: Array.isArray(ip.tools) ? ip.tools as string[] : [],
+          webApps: Array.isArray(ip.web_apps) ? ip.web_apps as string[] : [],
+        });
+      } catch (err) {
+        logger.warn({ pack: name, pattern: ip.pattern }, 'Invalid intent pattern regex');
+      }
+    }
+  }
+
+  // Parse commands
+  const commands: PackCommand[] = [];
+  if (Array.isArray(raw.commands)) {
+    for (const cmd of raw.commands) {
+      if (cmd.name && cmd.description) {
+        commands.push({
+          name: cmd.name as string,
+          description: cmd.description as string,
+        });
+      }
+    }
+  }
+
+  const metadata: PackMetadata = {
+    name,
+    displayName: (raw.display_name as string) || name,
+    description: (raw.description as string) || '',
+    version: (raw.version as string) || '0.1.0',
+    author: (raw.author as string) || '',
+    enabled,
+    capabilities: (raw.capabilities as string) || '',
+    selfDescription: (raw.self_description as string) || '',
+    intentPatterns,
+    commands,
+    toolCount,
+    skillCount,
+    templateFiles,
+    path: packDir,
+  };
+
+  logger.info(
+    { pack: name, tools: toolCount, skills: skillCount, templates: templateFiles.length },
+    'Loaded domain pack',
+  );
+
+  return metadata;
+}
+
+// ── Tool/Skill Import (mirrors forge/auto-import.ts) ───────
+
+function importPackTools(toolsDir: string, packName: string): number {
+  const files = readdirSync(toolsDir).filter((f) => f.endsWith('.md'));
+  let imported = 0;
+
+  for (const file of files) {
+    try {
+      const content = readFileSync(resolve(toolsDir, file), 'utf-8');
+      const parsed = parseToolMarkdown(content);
+
+      if ('error' in parsed) {
+        logger.warn({ file, pack: packName, error: parsed.error }, 'Skipping invalid pack tool');
+        continue;
+      }
+
+      const existing = getUserToolByName(parsed.name);
+      if (existing) {
+        logger.debug({ tool: parsed.name, pack: packName }, 'Tool already exists, skipping');
+        continue;
+      }
+
+      if (parsed.type === 'generated_code' && parsed.code) {
+        const scan = scanToolCode(parsed.code);
+        if (!scan.safe) {
+          logger.warn({ tool: parsed.name, pack: packName, issues: scan.issues }, 'Skipping unsafe pack tool');
+          continue;
+        }
+      }
+
+      const id = `pack-${packName}-${parsed.name}`;
+      const config = JSON.stringify({
+        parameters: parsed.parameters,
+        endpoint: parsed.endpoint,
+        code: parsed.code,
+      });
+
+      createUserTool(id, parsed.name, parsed.description, parsed.type, config, `packs/${packName}/tools/${file}`);
+      insertToolRevision(id, config, `Auto-imported from pack: ${packName}`);
+      imported++;
+      logger.info({ tool: parsed.name, pack: packName }, 'Imported pack tool');
+    } catch (err) {
+      logger.warn({ err, file, pack: packName }, 'Failed to import pack tool');
+    }
+  }
+
+  return imported;
+}
+
+function importPackSkills(skillsDir: string, packName: string): number {
+  const files = readdirSync(skillsDir).filter((f) => f.endsWith('.md'));
+  let imported = 0;
+
+  for (const file of files) {
+    try {
+      const content = readFileSync(resolve(skillsDir, file), 'utf-8');
+      const parsed = parseSkillMarkdown(content);
+
+      if ('error' in parsed) {
+        logger.warn({ file, pack: packName, error: parsed.error }, 'Skipping invalid pack skill');
+        continue;
+      }
+
+      const existing = getSkillByName(parsed.name);
+      if (existing) {
+        logger.debug({ skill: parsed.name, pack: packName }, 'Skill already exists, skipping');
+        continue;
+      }
+
+      const id = `pack-${packName}-${parsed.name}`;
+      createSkill(id, parsed.name, parsed.description, parsed.systemPrompt, parsed.tools, false, `packs/${packName}/skills/${file}`);
+      insertSkillRevision(id, parsed.systemPrompt, `Auto-imported from pack: ${packName}`);
+      imported++;
+      logger.info({ skill: parsed.name, pack: packName }, 'Imported pack skill');
+    } catch (err) {
+      logger.warn({ err, file, pack: packName }, 'Failed to import pack skill');
+    }
+  }
+
+  return imported;
+}
+
+// ── Pack Scaffold ──────────────────────────────────────────
+
+export function scaffoldPack(name: string, description: string): string {
+  const packDir = resolve(PACKS_DIR, name);
+
+  if (existsSync(packDir)) {
+    throw new Error(`Pack directory already exists: packs/${name}/`);
+  }
+
+  mkdirSync(resolve(packDir, 'tools'), { recursive: true });
+  mkdirSync(resolve(packDir, 'skills'), { recursive: true });
+  mkdirSync(resolve(packDir, 'templates'), { recursive: true });
+
+  const yamlContent = `# Domain Pack: ${name}
+# Documentation: docs/customization-guide.md
+
+name: ${name}
+display_name: "${name.charAt(0).toUpperCase() + name.slice(1)}"
+description: "${description}"
+version: "0.1.0"
+author: ""
+enabled: true
+
+# Capabilities prompt — injected into the AI's system prompt.
+# Describe what your tools do so the AI knows when to use them.
+capabilities: |
+  ### ${name.charAt(0).toUpperCase() + name.slice(1)}
+  You have domain-specific tools for ${description.toLowerCase()}:
+  - (Add your tool descriptions here after creating tools in tools/*.md)
+
+# Self-description — shown when user asks "what can you do?"
+self_description: |
+  **${name.charAt(0).toUpperCase() + name.slice(1)}** — Domain tools:
+  - (Add your tool summaries here)
+
+# Intent patterns — when should the AI suggest your tools?
+# Each pattern is a regex tested against the user's message (case-insensitive).
+# score_boost: how much to boost the intent score (10 = moderate, 20 = strong)
+# tools: which pack tools to suggest
+# web_apps: which web dashboard URLs to suggest (if any)
+intent_patterns:
+  - pattern: "\\\\b(${name}|example keyword)\\\\b"
+    score_boost: 10
+    tools: []
+    web_apps: []
+
+# Commands — listed in /help output
+commands: []
+`;
+
+  writeFileSync(resolve(packDir, 'pack.yaml'), yamlContent);
+
+  // Starter tool template
+  const toolTemplate = `---
+name: example_${name}_tool
+description: Example tool for ${name} — replace with your own
+type: generated_code
+parameters:
+  - name: input
+    type: string
+    description: Input value
+    required: true
+---
+\`\`\`javascript
+// Your tool code here. Available variables:
+//   args.input — the input parameter value
+//   fetch() — HTTP client for external APIs
+// Return a JSON object with your results.
+return { result: args.input, message: "Replace this with your logic" };
+\`\`\`
+`;
+
+  writeFileSync(resolve(packDir, 'tools', `example-${name}-tool.md`), toolTemplate);
+
+  // Starter skill template
+  const skillTemplate = `---
+name: ${name}_advisor
+description: Domain expert for ${name}
+---
+You are a ${name} domain expert. When users ask about ${description.toLowerCase()}, provide accurate, practical guidance.
+
+Key behaviors:
+- Use domain-specific terminology correctly
+- Reference available tools when they can help
+- Ask clarifying questions before making assumptions
+- Provide actionable recommendations, not just explanations
+`;
+
+  writeFileSync(resolve(packDir, 'skills', `${name}-advisor.md`), skillTemplate);
+
+  // README
+  const readme = `# ${name.charAt(0).toUpperCase() + name.slice(1)} Domain Pack
+
+${description}
+
+## Tools
+- \`example_${name}_tool\` — Example tool (replace with your own)
+
+## Skills
+- \`${name}_advisor\` — Domain expert persona
+
+## Templates
+(Add example data files here: CSV, XLSX)
+
+## Getting Started
+1. Edit \`pack.yaml\` to describe your capabilities and intent patterns
+2. Replace the example tool with your own tools in \`tools/\`
+3. Customize the skill in \`skills/\`
+4. Restart clauded or use \`/reload\`
+5. Test with \`/pack info ${name}\`
+
+See \`docs/customization-guide.md\` for the full guide.
+`;
+
+  writeFileSync(resolve(packDir, 'README.md'), readme);
+
+  return packDir;
+}

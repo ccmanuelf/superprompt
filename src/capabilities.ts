@@ -10,6 +10,8 @@
  * This is injected into the system prompt for both providers.
  */
 
+import { scorePackIntent } from './packs.js';
+
 // ── Capability Map (injected into system prompts) ────────────
 
 export const CAPABILITIES_PROMPT = `## Your Capabilities — What You Can Do
@@ -365,6 +367,12 @@ export function scoreMfgIntent(message: string): {
     score += 10;
     tools.push('query_memory');
   }
+
+  // ── Domain Pack patterns (dynamically loaded) ──
+  const packResult = scorePackIntent(message);
+  score += packResult.score;
+  tools.push(...packResult.tools);
+  webApps.push(...packResult.webApps);
 
   // Clamp score
   score = Math.max(0, Math.min(100, score));

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>clauded — Documentation</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7/css/materialdesignicons.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3/dist/vuetify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    .doc-content { max-width: 900px; margin: 0 auto; padding: 16px; }
+    .doc-content h1 { font-size: 2rem; font-weight: 700; margin: 1.5em 0 0.5em; border-bottom: 2px solid #1976d2; padding-bottom: 0.3em; }
+    .doc-content h2 { font-size: 1.5rem; font-weight: 600; margin: 1.5em 0 0.5em; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.3em; }
+    .doc-content h3 { font-size: 1.25rem; font-weight: 600; margin: 1.2em 0 0.4em; }
+    .doc-content h4 { font-size: 1.1rem; font-weight: 600; margin: 1em 0 0.3em; }
+    .doc-content pre { background: #263238; color: #eeffff; padding: 16px; border-radius: 8px; overflow-x: auto; margin: 1em 0; font-size: 0.85em; }
+    .doc-content code { background: #f5f5f5; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    .doc-content pre code { background: none; padding: 0; }
+    .doc-content table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+    .doc-content th, .doc-content td { border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; }
+    .doc-content th { background: #f5f5f5; font-weight: 600; }
+    .doc-content blockquote { border-left: 4px solid #1976d2; margin: 1em 0; padding: 0.5em 1em; background: #e3f2fd; border-radius: 0 4px 4px 0; }
+    .doc-content a { color: #1976d2; }
+    .doc-content ul, .doc-content ol { padding-left: 24px; }
+    .doc-content li { margin: 4px 0; }
+    .doc-content .mermaid { background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #e0e0e0; margin: 1em 0; text-align: center; }
+    .loading-container { display: flex; justify-content: center; align-items: center; min-height: 300px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <v-app>
+      <v-app-bar color="primary" density="compact">
+        <v-app-bar-title>
+          <v-icon class="mr-2">mdi-book-open-page-variant</v-icon>
+          clauded Documentation
+        </v-app-bar-title>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid>
+          <v-tabs v-model="activeTab" color="primary" class="mb-4">
+            <v-tab v-for="doc in docs" :key="doc.id" :value="doc.id">
+              <v-icon start>{{ doc.icon }}</v-icon>
+              {{ doc.label }}
+            </v-tab>
+          </v-tabs>
+
+          <div v-if="loading" class="loading-container">
+            <v-progress-circular indeterminate color="primary" size="48"></v-progress-circular>
+          </div>
+
+          <div v-else-if="error" class="text-center pa-8">
+            <v-icon size="48" color="error">mdi-alert-circle</v-icon>
+            <p class="mt-4">{{ error }}</p>
+            <v-btn color="primary" @click="loadDoc(activeTab)">Retry</v-btn>
+          </div>
+
+          <div v-else class="doc-content" v-html="renderedContent"></div>
+        </v-container>
+      </v-main>
+    </v-app>
+  </div>
+
+  <script>
+    const { createApp, ref, watch, onMounted, nextTick } = Vue;
+    const { createVuetify } = Vuetify;
+
+    const app = createApp({
+      setup() {
+        const docs = [
+          { id: 'user-guide', label: 'User Guide', icon: 'mdi-account-circle' },
+          { id: 'architecture', label: 'Architecture', icon: 'mdi-sitemap' },
+          { id: 'commands', label: 'Commands', icon: 'mdi-console' },
+          { id: 'customization-guide', label: 'Customization', icon: 'mdi-puzzle' },
+        ];
+
+        const activeTab = ref('user-guide');
+        const loading = ref(false);
+        const error = ref('');
+        const renderedContent = ref('');
+        const cache = {};
+
+        // Configure marked
+        marked.setOptions({
+          breaks: false,
+          gfm: true,
+        });
+
+        async function loadDoc(docId) {
+          if (cache[docId]) {
+            renderedContent.value = cache[docId];
+            await nextTick();
+            renderMermaid();
+            return;
+          }
+
+          loading.value = true;
+          error.value = '';
+
+          try {
+            const res = await fetch(`/api/docs/${docId}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+
+            // Render markdown, but protect mermaid blocks
+            let md = data.content;
+
+            // Extract mermaid blocks before marked processes them
+            const mermaidBlocks = [];
+            md = md.replace(/```mermaid\n([\s\S]*?)```/g, (match, code) => {
+              const idx = mermaidBlocks.length;
+              mermaidBlocks.push(code.trim());
+              return `<div class="mermaid" id="mermaid-${idx}">${code.trim()}</div>`;
+            });
+
+            let html = marked.parse(md);
+
+            // Restore mermaid divs (marked may have wrapped them in <pre>)
+            for (let i = 0; i < mermaidBlocks.length; i++) {
+              // If marked wrapped it in pre/code, unwrap
+              const wrappedPattern = new RegExp(
+                `<pre><code[^>]*>\\s*<div class="mermaid"[^>]*>[\\s\\S]*?</div>\\s*</code></pre>`,
+                'g'
+              );
+              html = html.replace(wrappedPattern, `<div class="mermaid">${mermaidBlocks[i]}</div>`);
+            }
+
+            cache[docId] = html;
+            renderedContent.value = html;
+
+            await nextTick();
+            renderMermaid();
+          } catch (err) {
+            error.value = `Failed to load documentation: ${err.message}`;
+          } finally {
+            loading.value = false;
+          }
+        }
+
+        function renderMermaid() {
+          try {
+            mermaid.initialize({
+              startOnLoad: false,
+              theme: 'default',
+              securityLevel: 'loose',
+              flowchart: { useMaxWidth: true, htmlLabels: true },
+            });
+            mermaid.run({ querySelector: '.mermaid' });
+          } catch (e) {
+            console.warn('Mermaid render error:', e);
+          }
+        }
+
+        watch(activeTab, (newTab) => {
+          loadDoc(newTab);
+        });
+
+        onMounted(() => {
+          loadDoc(activeTab.value);
+        });
+
+        return { docs, activeTab, loading, error, renderedContent, loadDoc };
+      },
+    });
+
+    app.use(createVuetify({ theme: { defaultTheme: 'light' } }));
+    app.mount('#app');
+  </script>
+</body>
+</html>

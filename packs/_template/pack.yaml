@@ -1,0 +1,73 @@
+# ============================================================
+# Domain Pack Template
+# ============================================================
+# Copy this directory to packs/<your-name>/ and customize.
+# See docs/customization-guide.md for the full guide.
+#
+# After editing, restart clauded or use /reload for tool/skill changes.
+# pack.yaml changes (capabilities, intent_patterns) require a restart.
+# ============================================================
+
+# Unique identifier (lowercase, no spaces, used in tool IDs)
+name: template
+
+# Human-readable name shown in /pack list
+display_name: "My Department"
+
+# One-line description
+description: "Description of what this pack does"
+
+# Semver version (informational)
+version: "0.1.0"
+
+# Who created this pack
+author: ""
+
+# Set to false to disable without deleting
+# NOTE: Template packs (_prefix) are auto-skipped. Change to true when you copy this.
+enabled: false
+
+# ── Capabilities Prompt ──────────────────────────────────────
+# This text is injected into the AI's system prompt.
+# Write it as if briefing an analyst on their first day:
+#   - What tools are available?
+#   - What domain terminology should they know?
+#   - When should they suggest using the tools?
+#
+# Use the pipe (|) for multiline YAML blocks.
+capabilities: |
+  ### My Department
+  You have domain-specific tools for [describe your domain]:
+  - `tool_name` tool — what it does
+  - `another_tool` tool — what it does
+
+  **Key Terminology:**
+  - Term1 = definition
+  - Term2 = definition
+
+# ── Self-Description ─────────────────────────────────────────
+# Appended when users ask "what can you do?"
+self_description: |
+  **My Department** — domain tools:
+  - Tool summary 1
+  - Tool summary 2
+
+# ── Intent Patterns ──────────────────────────────────────────
+# Regex patterns tested against user messages (case-insensitive).
+# When matched, the AI suggests the listed tools.
+#
+# Tips:
+#   - Use \\b for word boundaries (double-escaped in YAML)
+#   - Use | for alternatives: (keyword1|keyword2)
+#   - score_boost: 10 = moderate, 20 = strong match
+#   - Test patterns at regex101.com before deploying
+intent_patterns:
+  - pattern: "\\b(keyword1|keyword2)\\b"
+    score_boost: 10
+    tools: [tool_name]
+    web_apps: []
+
+# ── Commands ─────────────────────────────────────────────────
+# Listed in /help output. Only add if your pack registers
+# custom bot commands (Level 3 only).
+commands: []

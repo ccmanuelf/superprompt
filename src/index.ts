@@ -115,6 +115,15 @@ async function main(): Promise<void> {
   // Reload user tools after auto-import so newly imported tools are registered
   loadUserTools();
 
+  // 4f. Load domain packs from packs/ directory
+  const { loadAllPacks } = await import('./packs.js');
+  const packList = loadAllPacks();
+  if (packList.length > 0) {
+    logger.info({ packs: packList.map((p) => p.name) }, 'Domain packs loaded');
+    // Reload user tools after pack import so pack tools are registered
+    loadUserTools();
+  }
+
   // 4c. Check for unembedded memories
   const unembedded = getUnembeddedMemoryCount();
   if (unembedded > 0) {

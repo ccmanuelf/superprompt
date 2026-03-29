@@ -24,6 +24,12 @@ services:
       - ./store:/app/store
       # Temp media uploads
       - ./workspace:/app/workspace
+      # Domain packs (customizable per department)
+      - ./packs:/app/packs
+      # Forge tools & skills (user-created)
+      - ./forge:/app/forge
+      # Documentation (served via /docs web UI)
+      - ./docs:/app/docs:ro
     # Web UI: Voice Chat, Board, Learning Coach
     ports:
       - "127.0.0.1:3030:3030"

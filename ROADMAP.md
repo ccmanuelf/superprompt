@@ -7,7 +7,7 @@
 
 clauded is evolving from personal AI assistant into a **full AI partner platform ("Jarvis")**. Core autonomy sprints S1-S8 complete. Platform expansion sprints S10-S13 planned.
 
-**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 ✅ → S13 ✅ → S14 ✅ → S16 ✅ → S15 (ClawMFG Web ×7) → S9 (Docs) → S4 (E2E) → S3 (Cloud)**
+**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 ✅ → S13 ✅ → S14 ✅ → S16 ✅ → S15 ✅ (ClawMFG Web ×7) → S9 ✅ (Docs) → S4 (E2E) → S3 (Cloud)**
 
 ---
 
@@ -741,9 +741,16 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Sprint S9: User Documentation — NOT STARTED (after S16)
+## Sprint S9: User Documentation — COMPLETED (2026-03-29)
 
 **Goal:** Comprehensive user documentation for all clauded features.
+
+### Deliverables
+- `docs/user-guide.md` — Complete user guide (getting started with Docker, all features, configuration, tips)
+- `docs/architecture.md` — Internal architecture (provider routing, memory lifecycle, episode compression, context budgeting, Docker deployment, security model)
+- `docs/commands.md` — Quick reference card (all 35 Telegram/Matrix commands, web UIs, tools)
+- `README.md` — Project overview, Docker setup, feature list, tech stack, doc links
+- In-bot `/help` command — Categorized command display (Telegram + Matrix), grouped by function
 
 ---
 

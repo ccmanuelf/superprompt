@@ -290,22 +290,59 @@ async function handleCommand(
       await sendNotice(
         client,
         roomId,
-        'Hello! I\'m clauded, your AI assistant.\n\n' +
-          'Commands:\n' +
-          '!newchat — Start a fresh session\n' +
+        'clauded — Command Reference\n\n' +
+
+          '💬 Chat & AI\n' +
+          '!newchat — Clear conversation history\n' +
           '!memory — Show stored memories\n' +
-          '!voice — Toggle voice replies\n' +
-          '!claude — Switch to Claude\n' +
-          '!ollama — Switch to Ollama\n' +
-          '!auto — Toggle automatic provider routing\n' +
-          '!provider — Show current provider & routing mode\n' +
-          '!schedule — Manage scheduled tasks\n' +
-          '!skill — Manage AI skills\n' +
-          '!tool — Manage tools (list, fix, etc.)\n' +
-          '!careful — Toggle safety guardrails mode\n' +
-          '!digest — Activity digests (daily/weekly/now)\n' +
-          '!board — Kanban board (list, add, move, assign)\n' +
-          '!reload — Reload user tools from DB',
+          '!claude / !ollama / !auto — Switch provider\n' +
+          '!provider — Show current provider\n' +
+          '!models — List Ollama models\n' +
+          '!model <name> — Switch Ollama model\n\n' +
+
+          '🎤 Voice\n' +
+          '!voice — Toggle always-voice replies\n\n' +
+
+          '🧠 Skills & Tools\n' +
+          '!skill list|use|create|fix|off — Manage skills\n' +
+          '!tool list|show|upload|generate|fix — Manage tools\n' +
+          '!careful — Safety guardrails mode\n' +
+          '!reload — Reload user tools\n\n' +
+
+          '📋 Productivity\n' +
+          '!board — Kanban board (view|move|assign|priority|due)\n' +
+          '!schedule — Tasks (create|list|pause|resume|delete)\n' +
+          '!digest — Digests (daily|weekly|now|off)\n' +
+          '!learn — Learning coach (plan|session|status)\n' +
+          '!research — Search academic papers\n' +
+          '!cite — Manage citations\n\n' +
+
+          '🏭 Manufacturing — Web Dashboards\n' +
+          '!sim — Production simulation\n' +
+          '!capacity — Capacity planning\n' +
+          '!sequence — Job sequencing\n' +
+          '!vsm — Value Stream Mapping\n' +
+          '!toc — Theory of Constraints\n' +
+          '!conwip — CONWIP / Heijunka\n' +
+          '!doe — Design of Experiments\n' +
+          '!fsm — State Machine simulator\n\n' +
+
+          '🏭 Manufacturing — Chat Tools\n' +
+          '!sigma <USL> <LSL> <project> — Six Sigma\n' +
+          '!balance <takt_sec> <project> — Line balancing\n' +
+          '!inventory <project> — Inventory planning\n' +
+          '!spc — SPC / Control Plans\n' +
+          '!fmea — FMEA analysis\n' +
+          '!rca — Root Cause Analysis\n\n' +
+
+          '📦 Domain Packs\n' +
+          '!pack list — Installed packs\n' +
+          '!pack info <name> — Pack details\n' +
+          '!pack create <name> "desc" — Scaffold new pack\n\n' +
+
+          '🔧 System\n' +
+          '!chatid — Show chat ID\n' +
+          '!start — Welcome message',
       );
       return true;
 
@@ -941,6 +978,51 @@ async function handleCommand(
     case '!reload': {
       const count = loadUserTools();
       await sendNotice(client, roomId, `Reloaded. ${count} user tools active.`);
+      return true;
+    }
+
+    case '!pack': {
+      const packParts = parts.slice(1);
+      const packSub = packParts[0]?.toLowerCase() || 'help';
+      const { getLoadedPacks, getPackByName, scaffoldPack } = await import('../packs.js');
+
+      if (packSub === 'list') {
+        const packs = getLoadedPacks();
+        if (packs.length === 0) {
+          await sendNotice(client, roomId, 'No domain packs installed.\n\nCreate one with: !pack create name "description"\nSee docs/customization-guide.md for the full guide.');
+          return true;
+        }
+        const lines = packs.map(
+          (p) => `${p.displayName} (${p.name} v${p.version})\n  ${p.description}\n  Tools: ${p.toolCount} | Skills: ${p.skillCount} | Templates: ${p.templateFiles.length}`,
+        );
+        await sendNotice(client, roomId, `Domain Packs (${packs.length})\n\n${lines.join('\n\n')}`);
+      } else if (packSub === 'info') {
+        const name = packParts[1];
+        if (!name) { await sendNotice(client, roomId, 'Usage: !pack info <name>'); return true; }
+        const pack = getPackByName(name);
+        if (!pack) { await sendNotice(client, roomId, `Pack not found: ${name}`); return true; }
+        await sendNotice(client, roomId,
+          `${pack.displayName} (v${pack.version})\n${pack.description}\n\nTools: ${pack.toolCount} | Skills: ${pack.skillCount} | Templates: ${pack.templateFiles.length}\nIntent patterns: ${pack.intentPatterns.length}\nCommands: ${pack.commands.map((c) => `!${c.name}`).join(', ') || '(none)'}`,
+        );
+      } else if (packSub === 'create') {
+        const name = packParts[1];
+        if (!name) { await sendNotice(client, roomId, 'Usage: !pack create <name> "description"'); return true; }
+        const descMatch = command.match(/"([^"]+)"|'([^']+)'/);
+        const description = descMatch ? (descMatch[1] || descMatch[2]) : `${name} domain tools`;
+        try {
+          scaffoldPack(name, description);
+          await sendNotice(client, roomId,
+            `Pack scaffolded: packs/${name}/\n\nNext: edit pack.yaml, add tools, restart clauded, verify with !pack info ${name}`,
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          await sendNotice(client, roomId, `Failed: ${msg}`);
+        }
+      } else {
+        await sendNotice(client, roomId,
+          '!pack — Domain Pack Management\n\n!pack list — Show installed packs\n!pack info <name> — Pack details\n!pack create <name> "description" — Scaffold new pack\n!pack templates <name> — List templates\n\nSee docs/customization-guide.md for the full guide.',
+        );
+      }
       return true;
     }
 
