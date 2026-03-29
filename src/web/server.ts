@@ -166,9 +166,11 @@ function authenticateApiRequest(
 const DOCS_DIR = resolve(PROJECT_ROOT, 'docs');
 const DOCS_FILES: Record<string, string> = {
   'user-guide': 'user-guide.md',
-  'architecture': 'architecture.md',
+  'deployment-runbook': 'deployment-runbook.md',
   'commands': 'commands.md',
   'customization-guide': 'customization-guide.md',
+  'architecture': 'architecture.md',
+  'deployment-guide': 'deployment-guide.md',
   'security': 'security.md',
 };
 

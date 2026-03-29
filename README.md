@@ -152,6 +152,8 @@ Host Machine
 | [Command Reference](docs/commands.md) | All Telegram/Matrix commands and web UIs |
 | [Customization Guide](docs/customization-guide.md) | 3-level guide for extending clauded per department |
 | [Security Model](docs/security.md) | Threat assessment, mitigations, configuration checklist |
+| [Deployment Guide](docs/deployment-guide.md) | Workstation, local server, VPS, InMotion, Oracle Cloud |
+| [Department Runbook](docs/deployment-runbook.md) | 30-minute onboarding checklist for new instances |
 | [Decisions](reference/decisions.md) | Confirmed architectural decisions |
 | [Voice Setup](reference/voice-local.md) | Speaches/Kokoro/Faster-whisper details |
 | [Ollama Tools](reference/ollama-tools.md) | Tool definitions and agentic loop |
