@@ -294,6 +294,60 @@ docker compose up -d --build
 
 ---
 
+## Additional Threat Vectors (Advanced)
+
+Assessed against 10 additional OpenClaw deployment vulnerabilities:
+
+### 11. Cross-Agent Contamination
+
+**Status**: PROTECTED. All data is scoped per `chat_id`:
+- Memories: `WHERE chat_id = ?` on every query
+- Ollama history: Separate `Map<chatId, Message[]>` per chat
+- Embeddings: Stored per-memory, queried via memory's chat_id
+- Sessions, skills, board cards: All keyed by chat_id
+- No shared caches, embedding pools, or global state between users
+
+### 12. Implicit Trust in System Messages
+
+**Status**: PROTECTED. Default system prompts are hardcoded in TypeScript source (`router.ts`, `ollama.ts`) — not read from external files. They cannot be modified without code changes + rebuild. User-created skill prompts live in the database but are explicitly activated and wrapped in protective framing.
+
+### 13. Over-Broad Tool Permissions
+
+**Status**: PROTECTED. Skills can restrict tool access via `allowed_tools` whitelist. When a skill is active, only its whitelisted tools are available. Default (no skill) gives access to all tools — this is intentional for the assistant use case. The `careful` skill auto-triggers on destructive patterns and requires confirmation.
+
+### 14. Silent Failure Modes
+
+**Status**: PROTECTED. All tool errors are caught and returned to the user as visible messages. Provider failures (Ollama timeout, Claude CLI crash) return error text. Quality self-check (`self-monitor.ts`) detects and logs response issues. No errors are silently suppressed.
+
+### 15. Unvalidated Output Routing
+
+**Status**: PROTECTED. clauded has no email, webhook, or external messaging tools. All output goes through authorized channels only:
+- Telegram: `isAuthorised(chatId)` whitelist enforced
+- Matrix: `MATRIX_ALLOWED_USERS` whitelist enforced
+- Proactive messages: Routed via `notifyFn(chat_id)` — same chat scope
+
+### 16. Model Supply Chain Risk
+
+**Status**: INHERITED RISK. Ollama models are pulled from the Ollama registry. clauded does not verify model integrity — it trusts the local Ollama instance. Operators should verify model hashes against the official Ollama model library. The Claude provider uses Anthropic's API via the official CLI — supply chain managed by Anthropic.
+
+### 17. Replay Attacks
+
+**Status**: PROTECTED. Claude CLI sessions are per-chat and tied to chat_id. Telegram API prevents message ID reuse. Ollama conversation history is in-memory (cleared on restart or `/newchat`). No persistent session tokens are exposed to users.
+
+### 18. Weak Human-in-the-Loop Controls
+
+**Status**: PROTECTED. The `careful` skill auto-triggers on destructive patterns (DELETE, DROP, RM, FORMAT, etc.) and forces the AI to: (1) warn explicitly, (2) list consequences, (3) ask for confirmation. Users can also manually activate `/careful`. Anti-rationalization rules in the system prompt prevent the AI from claiming actions succeeded without verification.
+
+### 19. Configuration Drift
+
+**Status**: PROTECTED. Single `.env` file with optional `docker/.env.docker` override (merge, not replace). Config loaded once at startup, exported as immutable `const`. No dynamic config reloading. Docker override only changes network paths (Ollama host, Speaches URL, Matrix URL, container paths) — never security-sensitive values.
+
+### 20. Insecure Observability Pipelines
+
+**Status**: MITIGATED. Log sanitization applied to the ring buffer — sensitive keys (tokens, API keys, passwords) are redacted before storage. Pattern-based redaction catches GitHub PATs, Telegram tokens, and other credential formats in string values. Raw pino output to stdout/file is not sanitized (standard pino behavior) — operators should use log rotation and restrict file access.
+
+---
+
 ## Known Limitations and Accepted Risks
 
 ### 1. Claude CLI Has Full Container Access
