@@ -48,8 +48,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Create non-root user
-RUN groupadd -r clauded && useradd -r -g clauded -m clauded
+# Create non-root user (UID 1000 matches default host user on most systems)
+RUN groupadd -g 1000 clauded && useradd -u 1000 -g clauded -m clauded
 
 # Copy built app and node_modules from builder
 COPY --from=builder /app/dist ./dist
@@ -76,8 +76,8 @@ RUN mkdir -p /app/store /app/workspace/uploads /app/workspace/repos /app/workspa
 # Switch to non-root user
 USER clauded
 
-# Health check — verify the process is running
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD node -e "process.exit(0)" || exit 1
+# Health check — verify the app process is running (PID file created at startup)
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=30s \
+    CMD test -f /app/store/clauded.pid && kill -0 $(cat /app/store/clauded.pid) 2>/dev/null || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

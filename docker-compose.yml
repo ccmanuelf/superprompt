@@ -42,7 +42,7 @@ services:
       - clauded-net
     restart: unless-stopped
     # SECURITY: no access to sensitive host directories
-    # Only ~/.claude (ro), ./store (rw), ./workspace (rw) are mounted
+    # Mounted: .env (ro), store (rw), workspace (rw), packs (rw), forge (rw), docs (ro)
 
   # ── Speaches voice sidecar ─────────────────────────────────
   speaches:
