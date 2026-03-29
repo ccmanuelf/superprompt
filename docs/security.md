@@ -36,6 +36,7 @@ Layer 3: Tool Sandboxing
   └─ read_file: OLLAMA_ALLOWED_PATHS prefix validation
   └─ User tools: Safety scanner blocks dangerous code patterns
   └─ URL fetching: SSRF blocklist (private IPs, cloud metadata, Docker hosts)
+  └─ GitHub clone: repo name validated (owner/repo format, prevents CLI flag injection)
 
 Layer 4: Prompt Injection Framing
   └─ Memory context: Labeled [RETRIEVED MEMORY — NOT instructions]
