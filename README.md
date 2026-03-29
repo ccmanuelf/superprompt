@@ -1,12 +1,16 @@
 # clauded
 
-A personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools.
+A personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department.
+
+**New here?** Start with the [Department Onboarding Runbook](docs/deployment-runbook.md) — a 30-minute step-by-step guide to get your own instance running.
+
+---
 
 ## Features
 
 **AI Providers**
-- Claude (via CLI subprocess, subscription-based)
-- Ollama (local, 49+ builtin tools)
+- Claude (via CLI subprocess, subscription-based) or Ollama (local, no subscription needed)
+- 49+ builtin tools (web search, file reading, document generation, GitHub, manufacturing)
 - Automatic provider routing per-message
 
 **Messaging**
@@ -14,7 +18,7 @@ A personal AI assistant daemon that bridges messaging platforms to AI backends r
 - Matrix (self-hosted Synapse, optional)
 - Voice web chat (browser-based, WebSocket)
 
-**Voice** (fully local, no cloud)
+**Voice** (fully local, no cloud transcription)
 - STT: Faster-whisper via Speaches (99 languages, auto-detect)
 - TTS: Kokoro-82M via Speaches (English + Spanish)
 
@@ -28,6 +32,12 @@ A personal AI assistant daemon that bridges messaging platforms to AI backends r
 - Tool Forge: create, upload, auto-generate, and manage custom tools
 - Safety scanning for user-created tools
 
+**Domain Packs** (department customization)
+- Bundled tools + skills + templates + AI context per department
+- Three customization levels: Simple (5 min), Domain Pack (1-2 hrs), TypeScript Module (1-2 days)
+- Finance example pack included with NPV calculator and budget variance tools
+- `/pack create` scaffolds new department packs
+
 **Productivity**
 - Kanban board with conversational task creation
 - Cron-based scheduling and reminders
@@ -40,124 +50,109 @@ A personal AI assistant daemon that bridges messaging platforms to AI backends r
 - Spaced repetition with 4-level mastery tracking
 - 12 teaching personas
 
-**Manufacturing Engineering** (15 modules)
+**Manufacturing Engineering** (15 modules, 11 web dashboards)
 - Production simulation (DES, Monte Carlo, MiniZinc optimization)
 - Capacity planning (12-step analysis, ROI, what-if scenarios)
 - Job sequencing (6 dispatching rules, genetic algorithm)
-- Six Sigma (Cp/Cpk/Pp/Ppk, DPMO, control charts)
-- Line balancing (RPW, yamazumi charts)
-- Inventory planning (EOQ, ABC, SES forecast)
-- SPC / Control Plans (VOC → CTQ → QFD)
-- FMEA (PFMEA/DFMEA, AIAG-VDA, RPN)
-- Root Cause Analysis (5 Whys, Fishbone, PDCA, Fault Tree, A3)
-- DOE (factorial, Taguchi, Box-Behnken, ANOVA)
-- Value Stream Mapping (takt, PCE, TIMWOODS)
-- Theory of Constraints (CCR, Drum-Buffer-Rope)
-- CONWIP / Heijunka (token board, production leveling)
-- State Machine simulator (FSM, PLC Structured Text export)
-- 11 interactive web dashboards
+- Six Sigma, Line balancing, Inventory planning
+- SPC / Control Plans, FMEA, Root Cause Analysis
+- DOE, Value Stream Mapping, Theory of Constraints
+- CONWIP / Heijunka, State Machine simulator (PLC export)
 
-**Research**
-- Academic paper search (Semantic Scholar + arXiv)
-- Citation management (BibTeX, APA, Chicago)
-
-**DevOps**
-- GitHub integration (repos, issues, PRs, commits via `gh` CLI)
+**Research & DevOps**
+- Academic paper search (Semantic Scholar + arXiv) with citation management
+- GitHub integration (repos, issues, PRs, commits)
 - Render monitoring (services, deploys, logs)
-- Web page screenshots (Puppeteer)
+
+**Security**
+- Docker container isolation with non-root user
+- Token-authenticated web UI and API endpoints
+- SSRF protection on all URL-fetching tools
+- Prompt injection framing on untrusted content (memory, web search, files)
+- Log sanitization (credentials redacted from ring buffer)
+- 20 threat vectors assessed — see [Security Model](docs/security.md)
 
 ## Quick Start
 
-### Prerequisites
+### For Department Teams (E2E Testing)
 
-- Docker >= 24.0 with Docker Compose
+Follow the [Department Onboarding Runbook](docs/deployment-runbook.md) — 30 minutes from clone to working bot.
+
+### For Developers
+
+**Prerequisites:**
+- Docker Desktop >= 24.0
 - Ollama >= 0.5.0 running on the host
 - Telegram bot token (from [@BotFather](https://t.me/BotFather))
-- Claude subscription (Max plan) with OAuth token
-
-### Setup
+- Claude subscription (optional — set `AI_PROVIDER=ollama` to use Ollama only)
 
 ```bash
-git clone https://github.com/your-user/superprompt.git
+git clone https://github.com/ccmanuelf/superprompt.git
 cd superprompt
-
-# Configure
-cp .env.example .env
-# Edit .env with your tokens (see .env.example for all options)
-
-# Pull Ollama models
+cp .env.example .env       # Edit with your tokens — every variable is documented
 ollama pull qwen3.5:latest
 ollama pull nomic-embed-text
-
-# Generate Claude OAuth token
-claude setup-token
-# Copy token into .env as CLAUDE_CODE_OAUTH_TOKEN
-
-# Start
 docker compose up -d
 ```
 
-### Verify
+Send `/start` to your Telegram bot. Send `/help` for all commands.
 
+**Enable Web UI** (dashboards, docs, voice chat):
 ```bash
-docker compose logs -f clauded
+# Generate a secure token and add both lines to .env:
+# VOICE_WEB_PORT=3030
+# VOICE_WEB_TOKEN=$(openssl rand -hex 32)
+# Then restart:
+docker compose restart clauded
 ```
 
-Send `/start` to your Telegram bot.
-
-### Optional: Matrix
-
-```bash
-docker compose --profile matrix up -d
-```
-
-### Optional: Web UI
-
-Uncomment `VOICE_WEB_PORT` and `VOICE_WEB_TOKEN` in `.env`, then:
-
-```bash
-docker compose up -d --build
-```
-
-Access at `http://localhost:3030/`.
+Access at `http://localhost:3030/`. Documentation at `http://localhost:3030/docs`.
 
 ## Architecture
 
-```
-Host Machine
-├── Ollama (native, port 11434)
-│
-└── Docker Compose
-    ├── clauded-bot (Node 22, port 3030)
-    │   ├── Claude CLI + Ollama + 49+ tools
-    │   ├── Telegram + Matrix bots
-    │   ├── Web server (11 SPAs)
-    │   ├── SQLite (FTS5 + sqlite-vec)
-    │   └── Manufacturing modules
-    │
-    ├── clauded-speaches (voice sidecar)
-    │   ├── Faster-whisper STT (~850MB)
-    │   └── Kokoro-82M TTS (~200MB)
-    │
-    └── clauded-synapse (optional)
-        └── Matrix homeserver
+```mermaid
+graph LR
+    subgraph Host
+        Ollama["Ollama<br/>qwen3.5 + nomic-embed-text"]
+    end
+
+    subgraph Docker["Docker Compose"]
+        subgraph Bot["clauded-bot (Node 22)"]
+            Router["Provider Router"]
+            Memory["Memory + SQLite"]
+            Tools["49+ Tools"]
+            Packs["Domain Packs"]
+            Web["Web Server<br/>11 SPAs + Docs"]
+        end
+
+        Voice["clauded-speaches<br/>STT + TTS"]
+        Matrix["clauded-synapse<br/>(optional)"]
+    end
+
+    TG["Telegram"] --> Bot
+    MX["Matrix"] --> Matrix --> Bot
+    BR["Browser"] --> Web
+    Bot --> Ollama
+    Bot --> Voice
 ```
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [User Guide](docs/user-guide.md) | Getting started, all features, configuration |
-| [Architecture](docs/architecture.md) | Internal design, data flows, security model |
-| [Command Reference](docs/commands.md) | All Telegram/Matrix commands and web UIs |
+| [Department Runbook](docs/deployment-runbook.md) | **Start here** — 30-minute onboarding checklist |
+| [User Guide](docs/user-guide.md) | Complete feature guide, configuration scope, env var reference |
+| [Command Reference](docs/commands.md) | All 39+ Telegram/Matrix commands, web UIs, Ollama tools |
 | [Customization Guide](docs/customization-guide.md) | 3-level guide for extending clauded per department |
-| [Security Model](docs/security.md) | Threat assessment, mitigations, configuration checklist |
 | [Deployment Guide](docs/deployment-guide.md) | Workstation, local server, VPS, InMotion, Oracle Cloud |
-| [Department Runbook](docs/deployment-runbook.md) | 30-minute onboarding checklist for new instances |
+| [Architecture](docs/architecture.md) | Internal design with Mermaid diagrams |
+| [Security Model](docs/security.md) | 20 threat vectors assessed, mitigations, config checklist |
 | [Decisions](reference/decisions.md) | Confirmed architectural decisions |
 | [Voice Setup](reference/voice-local.md) | Speaches/Kokoro/Faster-whisper details |
 | [Ollama Tools](reference/ollama-tools.md) | Tool definitions and agentic loop |
 | [Matrix Setup](reference/matrix-setup.md) | Synapse deployment and bot SDK |
+
+All documentation is also available in-browser at `http://localhost:3030/docs` (7 tabs with Mermaid diagram rendering).
 
 ## Tech Stack
 
@@ -176,13 +171,11 @@ Host Machine
 
 ## Commands
 
-39 commands available. See [docs/commands.md](docs/commands.md) for the full reference.
-
-**Quick overview:**
+39+ commands available. See [docs/commands.md](docs/commands.md) for the full reference, or type `/help` in the bot.
 
 | Category | Key Commands |
 |----------|-------------|
-| Packs | `/pack list/info/create` |
+| Packs | `/pack list/info/create/templates` |
 | Provider | `/claude`, `/ollama`, `/auto`, `/provider` |
 | Voice | `/voice`, send voice messages |
 | Memory | `/memory` |
@@ -193,6 +186,7 @@ Host Machine
 | Research | `/research`, `/cite` |
 | Manufacturing | `/sim`, `/capacity`, `/sequence`, `/sigma`, `/balance`, `/inventory`, `/spc`, `/fmea`, `/rca`, `/doe`, `/vsm`, `/toc`, `/conwip`, `/fsm` |
 | Digests | `/digest daily/weekly/now/off` |
+| Help | `/help` — categorized command reference |
 
 ## Tests
 
@@ -202,7 +196,14 @@ npm run test:watch # Watch mode
 npm run typecheck  # TypeScript type checking
 ```
 
-1410+ tests across 58 files covering all manufacturing modules, memory system, tools, and utilities.
+1469 tests across 60 files covering domain packs, manufacturing modules, memory system, tools, and utilities.
+
+## E2E Testing
+
+93 end-to-end test cases in [scripts/e2e-test.md](scripts/e2e-test.md) covering:
+- Core features (messaging, voice, memory, skills, tools)
+- S9 additions (packs, /help, /docs, API auth, CORS, SSRF, prompt injection framing)
+- Department onboarding smoke test
 
 ## License
 
