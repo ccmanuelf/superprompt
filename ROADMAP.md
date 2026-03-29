@@ -746,11 +746,17 @@ Both providers get GitHub/Render access, each using their native mechanism:
 **Goal:** Comprehensive user documentation for all clauded features.
 
 ### Deliverables
-- `docs/user-guide.md` — Complete user guide (getting started with Docker, all features, configuration, tips)
-- `docs/architecture.md` — Internal architecture (provider routing, memory lifecycle, episode compression, context budgeting, Docker deployment, security model)
-- `docs/commands.md` — Quick reference card (all 35 Telegram/Matrix commands, web UIs, tools)
-- `README.md` — Project overview, Docker setup, feature list, tech stack, doc links
-- In-bot `/help` command — Categorized command display (Telegram + Matrix), grouped by function
+- `docs/user-guide.md` — Complete user guide (9-step Docker setup, all features, config scope, env var reference)
+- `docs/architecture.md` — Internal architecture with 6 Mermaid diagrams
+- `docs/commands.md` — Quick reference (39 commands + /pack + /help + /docs, all web UIs)
+- `docs/customization-guide.md` — 3-level customization guide (Simple/Pack/TypeScript) with 4 department examples
+- `docs/security.md` — 20 OpenClaw threat vectors assessed, 5 defense layers, config checklist
+- `README.md` — Project overview, Docker quick start, feature list, tech stack, doc links
+- `.env.example` — Full rewrite, every variable documented with consequences and security notes
+- In-bot `/help` command — Categorized command display (Telegram + Matrix)
+- Domain Pack system — `src/packs.ts`, `/pack` command, finance example, template pack
+- Web docs SPA at `/docs` — 5 tabs with Mermaid rendering
+- Security hardening — API auth, CORS, SSRF blocklist, prompt injection framing, log sanitization
 
 ---
 
