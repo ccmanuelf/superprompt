@@ -888,6 +888,78 @@ docker compose restart clauded
 
 ---
 
+## Configuration Scope — What You Can Change and How
+
+Not all settings work the same way. Some you change by talking to clauded, some require editing files on the server, and some clauded can advise you on even though it can't change them directly.
+
+### Conversational — Change from inside a chat session
+
+These settings take effect immediately. No restart needed.
+
+| Setting | Command | What It Does |
+|---------|---------|-------------|
+| AI Provider | `/claude`, `/ollama` | Switch between Claude and Ollama |
+| Auto-routing | `/auto` | Toggle automatic provider selection |
+| Ollama model | `/model <name>` | Switch to a different Ollama model |
+| Voice replies | `/voice` | Toggle audio responses on text messages |
+| Active skill | `/skill use <name>`, `/skill off` | Activate or deactivate an AI persona |
+| Safety mode | `/careful` | Enable safety guardrails skill |
+| Digest frequency | `/digest daily/weekly/off` | Change proactive digest schedule |
+| Conversation | `/newchat` | Clear conversation history (memory persists) |
+| Learning | `/learn plan/session/pause/resume` | Manage learning plans and sessions |
+| Board | `/board move/assign/priority/due` | Manage kanban cards |
+| Schedules | `/schedule create/pause/resume/delete` | Manage recurring tasks |
+| Tools | `/tool enable/disable/delete` | Enable or disable individual tools |
+| Pack scaffold | `/pack create <name> "desc"` | Create a new pack directory structure |
+
+### Manual — Requires editing `.env` and restarting
+
+These settings are read once at startup. After changing them in `.env`, restart with `docker compose restart clauded`.
+
+| Setting | Variable | Why It Can't Be Conversational |
+|---------|----------|-------------------------------|
+| Telegram bot token | `TELEGRAM_BOT_TOKEN` | Authenticates the bot with Telegram's API at startup |
+| Authorized users | `ALLOWED_CHAT_ID` | Security boundary — must be set before any user access |
+| Claude token | `CLAUDE_CODE_OAUTH_TOKEN` | CLI authentication credential loaded at process start |
+| Default AI provider | `AI_PROVIDER` | Initial provider before any user interaction |
+| Ollama host URL | `OLLAMA_HOST` | Connection established at startup |
+| Ollama model defaults | `OLLAMA_CHAT_MODEL`, `OLLAMA_TOOL_MODEL` | Model loaded at first inference |
+| Web UI port | `VOICE_WEB_PORT` | Server binds to port at startup |
+| Web UI token | `VOICE_WEB_TOKEN` | Authentication secret loaded at startup |
+| TLS certificates | `VOICE_WEB_TLS_CERT/KEY` | Read and bound to HTTPS server at startup |
+| File access paths | `OLLAMA_ALLOWED_PATHS` | Security boundary — evaluated per tool call |
+| Search backend | `SEARXNG_URL`, `BRAVE_API_KEY` | Service URL/key used by search tool |
+| GitHub token | `GH_TOKEN` | Credential for gh CLI authentication |
+| Render API key | `RENDER_API_KEY` | Credential for Render API |
+| Matrix config | `MATRIX_HOMESERVER`, etc. | Connection established at startup |
+| Log level | `LOG_LEVEL` | Logging framework initialized at startup |
+
+### Guided — clauded can help you decide, even though it can't change the setting
+
+For any manual configuration, you can ask clauded for guidance. Examples:
+
+| Question you can ask clauded | What it can help with |
+|------------------------------|----------------------|
+| "Should I use Claude or Ollama as my default?" | Explains trade-offs: Claude for reasoning, Ollama for tools and privacy |
+| "How do I get a GitHub token?" | Walks you through github.com/settings/tokens step by step |
+| "Do I need TLS for the web UI?" | Explains when HTTPS is required (remote access, microphone) |
+| "What Ollama model should I use?" | Compares available models for your use case |
+| "How do I set up SearXNG?" | Explains Docker setup for private search |
+| "What should OLLAMA_ALLOWED_PATHS include?" | Helps you decide which directories to expose |
+| "How do I create a Matrix bot account?" | Walks through the Synapse registration process |
+| "What's a good VOICE_WEB_TOKEN?" | Suggests `openssl rand -hex 32` and explains why |
+| "How do I set up a domain pack for my department?" | Full guided walkthrough of Level 2 customization |
+
+clauded knows its own configuration because its capabilities prompt includes this information. It cannot edit `.env` or restart itself, but it can explain every setting, recommend values, and troubleshoot issues.
+
+**To ask for setup help**, just message clauded naturally:
+
+> "Help me configure the web UI"
+> "I want to enable GitHub integration"
+> "What do I need to set up for Matrix?"
+
+---
+
 ## Tips & Tricks
 
 ### First-Time Setup
