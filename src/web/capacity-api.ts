@@ -47,7 +47,6 @@ export async function handleCapacityApi(
   if (!urlPath.startsWith('/api/capacity')) return false;
 
   // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 

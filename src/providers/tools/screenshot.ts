@@ -61,6 +61,12 @@ export async function takeScreenshot(args: {
     return { error: `Invalid URL: ${args.url}` };
   }
 
+  // Block internal/private URLs (SSRF protection)
+  const { isInternalUrl } = await import('./summarize-url.js');
+  if (isInternalUrl(args.url)) {
+    return { error: 'Cannot screenshot internal or private network URLs for security reasons.' };
+  }
+
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
   const filename = `screenshot-${randomBytes(4).toString('hex')}.png`;

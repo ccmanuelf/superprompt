@@ -95,6 +95,72 @@ function isOriginAllowed(origin: string | undefined): boolean {
   }
 }
 
+// ── API Authentication ─────────────────────────────────────
+
+/** CORS headers for authenticated API responses */
+function apiCorsHeaders(): Record<string, string> {
+  const origin = config.VOICE_WEB_ORIGIN || 'http://localhost:' + config.VOICE_WEB_PORT;
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+}
+
+/**
+ * Authenticate HTTP API requests. Returns true if authenticated, false otherwise.
+ * Checks: Authorization: Bearer <token> header, or ?token=<token> query param.
+ * Also handles CORS preflight (OPTIONS) requests.
+ */
+function authenticateApiRequest(
+  req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse,
+): boolean {
+  const cors = apiCorsHeaders();
+
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, cors);
+    res.end();
+    return false; // Handled, but not authenticated — caller should return
+  }
+
+  // Set CORS headers on all responses
+  for (const [k, v] of Object.entries(cors)) {
+    res.setHeader(k, v);
+  }
+
+  // If no token configured, web server shouldn't be running (but allow for safety)
+  if (!config.VOICE_WEB_TOKEN) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Web server token not configured' }));
+    return false;
+  }
+
+  // Check Authorization header
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    if (token.length === config.VOICE_WEB_TOKEN.length && validateToken(token, config.VOICE_WEB_TOKEN)) {
+      return true;
+    }
+  }
+
+  // Check query parameter
+  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  const queryToken = url.searchParams.get('token');
+  if (queryToken && queryToken.length === config.VOICE_WEB_TOKEN.length && validateToken(queryToken, config.VOICE_WEB_TOKEN)) {
+    return true;
+  }
+
+  // Unauthorized
+  const ip = req.socket.remoteAddress || 'unknown';
+  recordAuthFailure(ip);
+  res.writeHead(401, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Unauthorized — provide token via Authorization: Bearer <token> header or ?token=<token> query parameter' }));
+  return false;
+}
+
 // ── Docs API ───────────────────────────────────────────────
 
 const DOCS_DIR = resolve(PROJECT_ROOT, 'docs');
@@ -103,6 +169,7 @@ const DOCS_FILES: Record<string, string> = {
   'architecture': 'architecture.md',
   'commands': 'commands.md',
   'customization-guide': 'customization-guide.md',
+  'security': 'security.md',
 };
 
 function handleDocsApi(
@@ -186,6 +253,11 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
 
     // ── API routes (handle before static files) ──
     if (urlPath.startsWith('/api/')) {
+      // Authenticate all API requests (except docs — public read-only)
+      if (!urlPath.startsWith('/api/docs') && !authenticateApiRequest(req, res)) {
+        return;
+      }
+
       if (urlPath.startsWith('/api/capacity')) {
         handleCapacityApi(req, res, urlPath).catch((err) => {
           logger.error({ err }, 'Capacity API unhandled error');

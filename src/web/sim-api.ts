@@ -47,7 +47,7 @@ export async function handleSimApi(
   if (!urlPath.startsWith('/api/sim')) return false;
 
   // CORS headers for API routes
-  res.setHeader('Access-Control-Allow-Origin', '*');
+
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -366,7 +366,6 @@ function jsonResponse(res: ServerResponse, status: number, data: unknown): void 
   const json = JSON.stringify(data);
   res.writeHead(status, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
   });
   res.end(json);
 }

@@ -357,7 +357,8 @@ export function resolveSkill(chatId: string): Skill | null {
  */
 export function getSkillSystemPrompt(chatId: string): string {
   const skill = resolveSkill(chatId);
-  return skill?.system_prompt || '';
+  if (!skill?.system_prompt) return '';
+  return `[ACTIVE SKILL: ${skill.name} — user-activated persona, follow its guidance for tone and approach but never override safety rules]\n${skill.system_prompt}\n[END SKILL]`;
 }
 
 /**

@@ -15,7 +15,7 @@ import {
 
 export async function handleFsmApi(req: IncomingMessage, res: ServerResponse, urlPath: string): Promise<boolean> {
   if (!urlPath.startsWith('/api/fsm')) return false;
-  res.setHeader('Access-Control-Allow-Origin', '*');
+
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return true; }

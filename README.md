@@ -151,6 +151,7 @@ Host Machine
 | [Architecture](docs/architecture.md) | Internal design, data flows, security model |
 | [Command Reference](docs/commands.md) | All Telegram/Matrix commands and web UIs |
 | [Customization Guide](docs/customization-guide.md) | 3-level guide for extending clauded per department |
+| [Security Model](docs/security.md) | Threat assessment, mitigations, configuration checklist |
 | [Decisions](reference/decisions.md) | Confirmed architectural decisions |
 | [Voice Setup](reference/voice-local.md) | Speaches/Kokoro/Faster-whisper details |
 | [Ollama Tools](reference/ollama-tools.md) | Tool definitions and agentic loop |

@@ -325,6 +325,11 @@ export function githubListPrs(args: { repo: string; state?: string; limit?: numb
 export function githubCloneRepo(args: { repo: string; branch?: string }): Record<string, unknown> {
   if (!isGhAvailable()) return { error: 'gh CLI is not installed.' };
 
+  // Validate repo format: must be owner/repo (prevents CLI flag injection)
+  if (!/^[\w.-]+\/[\w.-]+$/.test(args.repo)) {
+    return { error: `Invalid repository format: "${args.repo}". Expected: owner/repo (e.g., "octocat/hello-world")` };
+  }
+
   try {
     // Ensure workspace dir exists
     execSync(`mkdir -p ${shellEscape(REPOS_DIR)}`, { encoding: 'utf-8' });

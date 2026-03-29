@@ -56,6 +56,12 @@ export async function executeDeclarativeHttp(
       }
     }
 
+    // Block internal/private URLs (SSRF protection)
+    const { isInternalUrl } = await import('../providers/tools/summarize-url.js');
+    if (isInternalUrl(url)) {
+      return { error: 'Cannot make HTTP requests to internal or private network URLs for security reasons.' };
+    }
+
     logger.debug({ url, method: endpoint.method }, 'Declarative HTTP request');
 
     const response = await fetch(url, {
