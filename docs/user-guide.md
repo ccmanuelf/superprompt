@@ -30,11 +30,11 @@ clauded is a personal AI assistant daemon that bridges messaging platforms to AI
 ### Prerequisites
 
 - **Docker** >= 24.0 and Docker Compose
-- **Ollama** >= 0.5.0 running on the host machine
+- **Ollama** >= 0.5.0 installed and running on the host machine
 - A **Telegram bot token** (from [@BotFather](https://t.me/BotFather))
-- A **Claude subscription** (Max plan) with an OAuth token
+- A **Claude subscription** (Max plan) — for Claude provider
 
-### Step 1: Clone and Configure
+### Step 1: Clone and Create Your Configuration
 
 ```bash
 git clone https://github.com/your-user/superprompt.git
@@ -42,40 +42,56 @@ cd superprompt
 cp .env.example .env
 ```
 
-Edit `.env` with your credentials:
+Open `.env` in your editor. The file is heavily commented — every variable explains its purpose, how to get the value, and what happens if it's missing. Below is the minimum you need to set.
+
+### Step 2: Set Your Telegram Bot Token
+
+1. Open Telegram and message [@BotFather](https://t.me/BotFather)
+2. Send `/newbot` and follow the prompts to create your bot
+3. Copy the token (format: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
+4. Paste it into `.env`:
 
 ```bash
-# Required
-TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-ALLOWED_CHAT_ID=your-chat-id          # Get this with /chatid after first run
-CLAUDE_CODE_OAUTH_TOKEN=your-token    # Generate with: claude setup-token
-
-# Ollama (runs on host, accessed from Docker via host.docker.internal)
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_CHAT_MODEL=qwen3.5:latest
-OLLAMA_TOOL_MODEL=qwen3.5:latest
-OLLAMA_EMBED_MODEL=nomic-embed-text
-
-# Voice (Speaches sidecar, auto-configured in Docker)
-SPEACHES_URL=http://localhost:8000/v1
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
 ```
 
-### Step 2: Pull Ollama Models
+**Leave `ALLOWED_CHAT_ID` empty for now** — you'll set it in Step 7.
+
+### Step 3: Install and Configure Ollama
 
 ```bash
-ollama pull qwen3.5:latest
-ollama pull nomic-embed-text
+# Install Ollama (if not already installed): https://ollama.ai
+# Pull the required models:
+ollama pull qwen3.5:latest      # Chat and tool-calling model
+ollama pull nomic-embed-text    # Memory embedding model
 ```
 
-### Step 3: Generate Claude OAuth Token
+Verify Ollama is running:
+```bash
+curl http://localhost:11434/api/tags
+```
+
+If you see a JSON response listing models, Ollama is ready. If connection is refused, start Ollama first.
+
+### Step 4: Generate Claude OAuth Token
 
 ```bash
+# Install Claude CLI if needed:
+npm install -g @anthropic-ai/claude-code
+
+# Generate the token:
 claude setup-token
 ```
 
-This generates a long-lived OAuth token (valid 1 year) for headless Docker usage. Copy the token into your `.env` file.
+This opens a browser for authentication. After completing the flow, a long-lived token is displayed (valid ~1 year). Copy it into `.env`:
 
-### Step 4: Start with Docker Compose
+```bash
+CLAUDE_CODE_OAUTH_TOKEN=your-token-from-setup-token
+```
+
+**If you don't have a Claude subscription**: Set `AI_PROVIDER=ollama` in `.env` and skip this step. clauded works with Ollama alone — Claude is optional.
+
+### Step 5: Start with Docker Compose
 
 ```bash
 docker compose up -d
@@ -83,23 +99,23 @@ docker compose up -d
 
 This starts two containers:
 
-| Container | Purpose |
-|-----------|---------|
-| `clauded-bot` | Main bot — AI, messaging, memory, tools, web UI |
-| `clauded-speaches` | Voice sidecar — STT (Faster-whisper) + TTS (Kokoro-82M) |
+| Container | Purpose | Status |
+|-----------|---------|--------|
+| `clauded-bot` | Main bot — AI, messaging, memory, tools | Required |
+| `clauded-speaches` | Voice sidecar — STT + TTS | Required (starts automatically) |
 
 On first start, the entrypoint script automatically:
 - Sets up Claude CLI onboarding flags
-- Pre-loads Speaches STT/TTS models (background, ~30s)
-- Pulls the `nomic-embed-text` embedding model from Ollama (background)
+- Pre-loads Speaches STT/TTS models in the background (~30 seconds)
+- Pulls the `nomic-embed-text` embedding model from Ollama
 
-### Step 5: Verify
+### Step 6: Verify Startup
 
 ```bash
 docker compose logs -f clauded
 ```
 
-Look for:
+Look for these messages (in order):
 ```
 [clauded] Database initialized
 [clauded] Telegram bot started
@@ -107,30 +123,64 @@ Look for:
 [entrypoint] TTS model (Kokoro-82M) loaded
 ```
 
-Send `/start` to your Telegram bot. You're live.
+If you see errors:
+- `"ECONNREFUSED"` → Ollama is not running on the host
+- `"401 Unauthorized"` → Invalid Telegram bot token
+- `"No messaging platform configured"` → `TELEGRAM_BOT_TOKEN` is empty
 
-### Optional: Enable Matrix
+### Step 7: Secure Your Bot
+
+Send `/chatid` to your bot on Telegram. It replies with your numeric chat ID. Add it to `.env`:
+
+```bash
+ALLOWED_CHAT_ID=123456789
+```
+
+Restart to apply:
+```bash
+docker compose restart clauded
+```
+
+**Why this matters**: Without `ALLOWED_CHAT_ID`, your bot accepts messages from ANY Telegram user who finds it. Setting this restricts access to only your chat ID. For multiple users, comma-separate: `ALLOWED_CHAT_ID=123456789,987654321`.
+
+Send `/start` to verify everything works.
+
+### Step 8 (Optional): Enable Web UI
+
+The web UI provides voice chat, manufacturing dashboards, kanban board, learning coach, and documentation. It is **disabled by default** and requires explicit configuration.
+
+1. Generate a secure token:
+```bash
+openssl rand -hex 32
+```
+
+2. Add both lines to `.env` (both are required — the server refuses to start if the port is set but the token is empty):
+```bash
+VOICE_WEB_PORT=3030
+VOICE_WEB_TOKEN=paste-your-generated-token-here
+```
+
+3. Restart:
+```bash
+docker compose restart clauded
+```
+
+4. Open `http://localhost:3030/` in your browser. You'll need the token to connect.
+
+**Security notes**:
+- The token protects all web UI connections. Choose a strong random string (32+ characters).
+- Failed authentication attempts are rate-limited (5 per minute per IP).
+- If accessing from a remote machine (not localhost), you MUST also configure TLS — browsers require HTTPS for microphone access on non-localhost domains. See the TLS section in `.env.example`.
+
+### Step 9 (Optional): Enable Matrix
 
 ```bash
 docker compose --profile matrix up -d
 ```
 
-This adds the `clauded-synapse` container (self-hosted Matrix homeserver). See `reference/matrix-setup.md` for bot account setup.
+This adds the `clauded-synapse` container (self-hosted Matrix homeserver). See `reference/matrix-setup.md` for the full setup guide including bot account creation.
 
-### Optional: Enable Web UI
-
-Uncomment in `.env`:
-```bash
-VOICE_WEB_PORT=3030
-VOICE_WEB_TOKEN=your-secret-token-here
-```
-
-Rebuild and restart:
-```bash
-docker compose up -d --build
-```
-
-Access at `http://localhost:3030/`.
+**Security note**: Set `MATRIX_ALLOWED_USERS` in `.env` after setup — same principle as `ALLOWED_CHAT_ID`. If empty, any Matrix user can message the bot.
 
 ### Docker Architecture
 
@@ -890,18 +940,36 @@ docker compose down                     # Stop all services
 
 ### Environment Variable Reference
 
-See `.env.example` for the complete list with descriptions. Key groups:
+Every variable is documented in detail in `.env.example` with purpose, format, how to obtain values, and what happens when missing. Below is a summary:
 
-| Group | Variables |
-|-------|-----------|
-| AI Provider | `AI_PROVIDER`, `AUTO_ROUTE`, `CLAUDE_CODE_OAUTH_TOKEN` |
-| Ollama | `OLLAMA_HOST`, `OLLAMA_CHAT_MODEL`, `OLLAMA_TOOL_MODEL`, `OLLAMA_EMBED_MODEL` |
-| Telegram | `TELEGRAM_BOT_TOKEN`, `ALLOWED_CHAT_ID` |
-| Matrix | `MATRIX_HOMESERVER`, `MATRIX_ACCESS_TOKEN`, `MATRIX_ALLOWED_USERS` |
-| Voice | `SPEACHES_URL` |
-| Web UI | `VOICE_WEB_PORT`, `VOICE_WEB_TOKEN`, `VOICE_WEB_TLS_CERT`, `VOICE_WEB_TLS_KEY` |
-| Tools | `OLLAMA_ALLOWED_PATHS`, `SEARXNG_URL`, `BRAVE_API_KEY`, `GH_TOKEN`, `RENDER_API_KEY` |
-| Logging | `LOG_LEVEL` |
+| Variable | Required? | What Happens If Missing |
+|----------|-----------|------------------------|
+| `TELEGRAM_BOT_TOKEN` | Yes* | Telegram bot doesn't start. If Matrix also missing, clauded refuses to start. |
+| `ALLOWED_CHAT_ID` | **Strongly recommended** | Bot accepts messages from ANY Telegram user (first-run mode). |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Only if using Claude | Claude provider unavailable. Set `AI_PROVIDER=ollama` to use Ollama only. |
+| `AI_PROVIDER` | No | Defaults to `claude`. Set to `ollama` if no Claude subscription. |
+| `AUTO_ROUTE` | No | Defaults to `false` (manual provider selection). |
+| `OLLAMA_HOST` | No | Defaults to `http://localhost:11434`. |
+| `OLLAMA_CHAT_MODEL` | No | Defaults to `qwen3.5:latest`. |
+| `OLLAMA_TOOL_MODEL` | No | Defaults to `qwen3.5:latest`. |
+| `OLLAMA_EMBED_MODEL` | No | Defaults to `nomic-embed-text`. |
+| `SPEACHES_URL` | No | Defaults to `http://localhost:8000/v1`. Auto-overridden in Docker. |
+| `VOICE_WEB_PORT` | No | Web UI disabled. Dashboards and docs not available. |
+| `VOICE_WEB_TOKEN` | If port is set | **Web server refuses to start** if port is set but token is empty. |
+| `VOICE_WEB_TLS_CERT` | If remote access | Web server disabled with error log if file not found. |
+| `VOICE_WEB_TLS_KEY` | If remote access | Same — web server disabled if file not found. |
+| `VOICE_WEB_ORIGIN` | If remote access | Only localhost allowed (secure default). |
+| `OLLAMA_ALLOWED_PATHS` | No | File reading completely blocked (secure default). |
+| `SEARXNG_URL` | No | Web search tool shows "No search backend available". |
+| `BRAVE_API_KEY` | No | Fallback if SearXNG not set. Both missing = search unavailable. |
+| `GH_TOKEN` | No | GitHub tools show "gh CLI not authenticated" error. |
+| `RENDER_API_KEY` | No | Render tools show "RENDER_API_KEY not set" error. |
+| `MATRIX_HOMESERVER` | No | Matrix bot doesn't start. |
+| `MATRIX_ACCESS_TOKEN` | If Matrix used | Matrix bot doesn't start. |
+| `MATRIX_ALLOWED_USERS` | **Strongly recommended** | Any Matrix user can message the bot. |
+| `LOG_LEVEL` | No | Defaults to `info`. Valid: `debug`, `info`, `warn`, `error`. |
+
+*At least one of `TELEGRAM_BOT_TOKEN` or `MATRIX_HOMESERVER` must be set.
 
 ### Docker-Internal Overrides
 

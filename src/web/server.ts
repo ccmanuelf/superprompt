@@ -161,6 +161,14 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
   // Create HTTP or HTTPS server
   let server: HttpServer;
   if (config.VOICE_WEB_TLS_CERT && config.VOICE_WEB_TLS_KEY) {
+    if (!existsSync(config.VOICE_WEB_TLS_CERT)) {
+      logger.error({ path: config.VOICE_WEB_TLS_CERT }, 'VOICE_WEB_TLS_CERT file not found — web server disabled. Check the path in .env');
+      return { close: () => {} };
+    }
+    if (!existsSync(config.VOICE_WEB_TLS_KEY)) {
+      logger.error({ path: config.VOICE_WEB_TLS_KEY }, 'VOICE_WEB_TLS_KEY file not found — web server disabled. Check the path in .env');
+      return { close: () => {} };
+    }
     const cert = readFileSync(config.VOICE_WEB_TLS_CERT);
     const key = readFileSync(config.VOICE_WEB_TLS_KEY);
     server = createHttpsServer({ cert, key }, handleRequest);
