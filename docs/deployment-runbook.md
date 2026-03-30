@@ -118,7 +118,11 @@ Try:
 - Send a voice message: Ask anything — it should transcribe and respond
 - Type `/help` for the full command list
 
-## Step 6: Secure Your Bot (2 minutes)
+## Step 6: Add Your Team (5 minutes)
+
+clauded supports multiple users on one instance. Each user gets their own private conversation — they cannot see each other's messages, memories, or learning progress.
+
+### Single user
 
 1. Send `/chatid` to your bot — it replies with a number like `123456789`
 2. Open `.env` and set:
@@ -130,12 +134,39 @@ ALLOWED_CHAT_ID=123456789
 docker compose restart clauded
 ```
 
-**Why:** Without this, anyone who finds your bot on Telegram can use it. After setting the ID, only you can send messages.
+### Multiple users (recommended for E2E testing)
 
-For multiple team members sharing one bot, comma-separate their IDs:
+Have each team member message the bot and send `/chatid`. Collect all IDs, then set them comma-separated:
+
 ```bash
-ALLOWED_CHAT_ID=123456789,987654321
+ALLOWED_CHAT_ID=123456789,987654321,555555555
 ```
+
+Restart once:
+```bash
+docker compose restart clauded
+```
+
+All users can now message the bot independently.
+
+### What's shared vs. isolated
+
+| Feature | Per-user (isolated) | Shared |
+|---------|:---:|:---:|
+| Telegram conversations | Yes | — |
+| Memories (semantic + episodic) | Yes | — |
+| Active skills | Yes | — |
+| Learning plans and sessions | Yes | — |
+| Voice transcription/replies | Yes | — |
+| Scheduled tasks | Yes | — |
+| Kanban board | — | Yes (all users see the same board) |
+| Web dashboards (sim, capacity, etc.) | — | Yes (shared scenarios and data) |
+| Web voice chat | Yes (separate WebSocket sessions) | — |
+| Domain packs and tools | — | Yes (same tools available to all users) |
+
+**In practice for E2E:** 3 users per department can test different features simultaneously. User A tests voice, User B tests manufacturing tools, User C tests learning — they won't interfere with each other.
+
+**Security:** Without `ALLOWED_CHAT_ID`, the bot accepts messages from ANY Telegram user. Always set this in production.
 
 ## Step 7: Verify Everything Works (5 minutes)
 

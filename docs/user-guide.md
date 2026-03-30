@@ -303,6 +303,31 @@ Browser-based voice interface at `http://localhost:3030/`:
 - Requires `VOICE_WEB_TOKEN` for authentication
 - Supports TLS for non-localhost deployment
 
+### Multi-User Support
+
+A single clauded instance supports multiple concurrent users. Each user has a private, isolated experience:
+
+**How to add users:** Set comma-separated Telegram chat IDs in `.env`:
+```bash
+ALLOWED_CHAT_ID=123456789,987654321,555555555
+```
+Each user sends `/chatid` to get their ID. Restart after updating `.env`.
+
+**What each user gets (isolated):**
+- Their own conversation history — other users can't see it
+- Their own memories — personal facts and preferences stay private
+- Their own active skill, learning plans, scheduled tasks
+- Their own voice transcription and replies
+
+**What's shared across all users:**
+- Kanban board (all users see the same board)
+- Manufacturing dashboard data (simulation scenarios, capacity plans, etc.)
+- Domain packs and tools (same tools available to everyone)
+
+**Practical example:** Three engineers share one bot. Engineer A asks about capacity planning, Engineer B discusses a FMEA, Engineer C practices Spanish with the learning coach — all simultaneously, without any cross-talk.
+
+**Web UI users** share a single `VOICE_WEB_TOKEN`. Anyone with the token can access all dashboards. Voice web chat sessions are isolated per WebSocket connection.
+
 ---
 
 ## Voice Features
