@@ -48,22 +48,42 @@ cd superprompt
 cp .env.example .env
 ```
 
-Open `.env` in your editor and set these values (everything else can stay as defaults):
+Open `.env` in your editor. You need to set two or three values — everything else can stay as defaults.
 
+**Value 1 — Telegram bot token** (from Step 1):
 ```bash
-# REQUIRED — paste your BotFather token
 TELEGRAM_BOT_TOKEN=7123456789:AAFxxx...
-
-# LEAVE EMPTY FOR NOW — you'll fill this in Step 6
-ALLOWED_CHAT_ID=
-
-# REQUIRED IF USING CLAUDE — generate with: claude setup-token
-# If you don't have a Claude subscription, change AI_PROVIDER to ollama
-CLAUDE_CODE_OAUTH_TOKEN=your-token-here
-
-# OR, if using Ollama only:
-# AI_PROVIDER=ollama
 ```
+
+**Value 2 — Leave ALLOWED_CHAT_ID empty for now** (you'll fill it in Step 6):
+```bash
+ALLOWED_CHAT_ID=
+```
+
+**Value 3 — AI provider** (choose ONE of the two options below):
+
+**Option A: Use Ollama only (recommended for E2E testing — no subscription needed)**
+```bash
+AI_PROVIDER=ollama
+# Leave CLAUDE_CODE_OAUTH_TOKEN empty or commented out
+```
+Ollama runs locally on your machine. It's already installed (Step 2). No account, subscription, or API key required. This is the simplest path.
+
+**Option B: Use Claude (requires a Claude subscription)**
+```bash
+AI_PROVIDER=claude
+CLAUDE_CODE_OAUTH_TOKEN=your-token-here
+```
+
+Claude is a cloud AI from Anthropic. It works differently from platforms that use API keys:
+- It requires a **Claude Max subscription** ($100/month from anthropic.com)
+- The token is NOT an API key — it's a long-lived OAuth token generated on YOUR machine
+- **You generate it yourself** by running `claude setup-token` in your terminal
+- This opens a browser, you log in to your Anthropic account, and the token is printed in the terminal
+- Copy that token into `.env`
+- The token is valid for approximately 1 year
+
+**If you're unsure, use Option A (Ollama).** You can switch to Claude later by generating a token and changing `AI_PROVIDER=claude`. Both providers can be used on the same instance — users can switch between them with `/claude`, `/ollama`, or `/auto` in the chat.
 
 **Optional — enable the web UI** (dashboards, docs, voice chat):
 
@@ -108,10 +128,17 @@ Press `Ctrl+C` to stop following logs (the bot keeps running in the background).
 
 ## Step 5: Send Your First Message (1 minute)
 
-1. Open Telegram
-2. Search for your bot's username (e.g., `@eng_clauded_bot`)
-3. Send `/start`
+> **IMPORTANT — First-run mode:** Because `ALLOWED_CHAT_ID` is empty right now, the bot accepts messages from anyone. This is intentional — you need to message it first to get your chat ID. You'll lock it down in Step 6.
+
+1. Open Telegram on your phone
+2. Search for your bot's username (e.g., `@eng_clauded_bot`) — it works like any Telegram contact
+3. Tap **Start** (or send `/start`)
 4. You should see a welcome message with all available commands
+
+**If the bot doesn't respond:**
+- Check that `ALLOWED_CHAT_ID` is empty in `.env` (not set to someone else's ID)
+- Check logs: `docker compose logs -f clauded`
+- Make sure you're messaging the right bot (check the username matches)
 
 Try:
 - Send a text message: "What can you do?"
@@ -265,3 +292,83 @@ For setup questions the bot can't answer (because they require file edits), see:
 | Schedule a reminder | `/schedule create <cron> <message>` |
 | Web dashboards | `http://localhost:3030/` |
 | Documentation | `http://localhost:3030/docs` |
+
+---
+
+## Frequently Asked Questions
+
+### "I messaged the bot but it doesn't respond"
+
+**Most common cause:** `ALLOWED_CHAT_ID` in `.env` is set to someone else's ID, or is set incorrectly.
+
+**Fix:**
+1. If this is first-time setup: make sure `ALLOWED_CHAT_ID=` is **empty** (not set to any value). The bot accepts all users when this is empty.
+2. Send `/chatid` to the bot. If you get a response, the bot is working — proceed to Step 6.
+3. If you get NO response at all, check the logs: `docker compose logs -f clauded`
+4. After getting your chat ID, add it to `.env` and restart.
+
+If **multiple people** are already configured and a **new person** can't get in: add their chat ID to the comma-separated list, then restart.
+
+### "How do users join the bot? Do they need BotFather?"
+
+**No.** Only one person (the department admin) creates the bot via BotFather. Everyone else just searches for the bot's username in Telegram and taps Start — exactly like adding a regular contact.
+
+The process:
+1. **Admin** creates bot once → gets username like `@eng_clauded_bot`
+2. **Admin** shares the username with the team (text message, email, Slack — any way)
+3. **Each team member** opens Telegram → searches `@eng_clauded_bot` → taps Start → sends `/chatid`
+4. **Each team member** sends their chat ID number back to the admin
+5. **Admin** adds all IDs to `.env`: `ALLOWED_CHAT_ID=111,222,333` → restarts once
+
+After restart, all team members can use the bot independently.
+
+### "Where do I get the Claude token? Who provides it?"
+
+**You generate it yourself** — it's not provided by anyone else.
+
+clauded uses two AI providers. You only need one:
+
+| Provider | What It Is | Cost | How to Get |
+|----------|-----------|------|-----------|
+| **Ollama** (recommended for E2E) | AI that runs locally on your machine | Free | Already installed if you followed Step 2 |
+| **Claude** (optional) | Cloud AI from Anthropic | $100/month subscription | You sign up, then generate a token yourself |
+
+**If you just want to get started:** Set `AI_PROVIDER=ollama` in `.env` and skip the Claude token entirely. Ollama handles everything locally — no account, no subscription, no API key.
+
+**If you want Claude:** You need a Claude Max subscription from [anthropic.com](https://anthropic.com). After subscribing:
+1. Install Claude CLI: `npm install -g @anthropic-ai/claude-code`
+2. Run: `claude setup-token`
+3. A browser opens — log in to your Anthropic account
+4. The token prints in your terminal — copy it into `.env`
+
+This is different from platforms that use API keys. Claude uses a subscription + OAuth token model, not a pay-per-request API key.
+
+### "Can multiple people use the bot at the same time?"
+
+**Yes.** Each person gets their own private conversation. They can't see each other's messages, memories, or learning progress. See the shared-vs-isolated table in Step 6.
+
+### "Do we need one bot per person, or one bot per department?"
+
+**One bot per department.** All team members share the same bot but have isolated conversations. You do NOT need to create a separate bot for each person.
+
+### "The bot responded at first but stopped working after someone edited .env"
+
+After any `.env` change, you must restart:
+```bash
+docker compose restart clauded
+```
+If `ALLOWED_CHAT_ID` was changed to only include some IDs, users whose IDs were removed will no longer get responses.
+
+### "What's the difference between this and ChatGPT / other AI chatbots?"
+
+clauded runs **on your own machine** — your conversations, data, and files never leave your workstation. It also has specialized capabilities that general-purpose chatbots don't:
+
+| Feature | General Chatbots | clauded |
+|---------|:---:|:---:|
+| Manufacturing engineering tools | No | 15 modules with web dashboards |
+| Persistent memory across conversations | Limited | Full dual-layer with AI compression |
+| Voice processing | Cloud-based | Fully local (99 languages) |
+| Custom department tools (Domain Packs) | No | Yes — any department can add their own |
+| File generation (Excel, PDF, PPTX) | Limited | Full document generation with charts |
+| Your data stays on your machine | No | Yes — Docker on your workstation |
+| Works without internet | No | Yes (with Ollama) |
