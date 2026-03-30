@@ -251,6 +251,19 @@ export function scoreMfgIntent(message: string): {
   if (/\b(hacer |correr |ejecutar |crear |armar )?(simulaci[oó]n|balance de l[ií]nea|an[aá]lisis de capacidad|fmea|amef|rca|causa ra[ií]z|doe|experimento|vsm|mapeo de valor|plan de control|spc|seis sigma|conwip|heijunka|fsm|m[aá]quina de estados)\b/i.test(lower)) {
     score += 20;
   }
+  // Spanish natural problem descriptions (conversational, not technical jargon)
+  if (/\b(no cumpl|no alcanz|no lleg|no estamos cumpliendo|no damos abasto|no tenemos capacidad|no produce lo suficiente)\b/i.test(lower)) {
+    score += 15; // "we can't keep up" = capacity/throughput problem
+  }
+  if (/\b(defectos?|rechazos?|scrap|retrabajo|rework|fallas?|fall[oó]|no conformidad(es)?|fuera de especificaci[oó]n|mala calidad)\b/i.test(lower)) {
+    score += 15; // quality problem signals
+  }
+  if (/\b(l[ií]neas? de (producci[oó]n|ensamble|manufactura)|planta|piso de producci[oó]n|[aá]rea de trabajo|estaci[oó]n(es)? de trabajo)\b/i.test(lower)) {
+    score += 10; // manufacturing context signals
+  }
+  if (/\b(eficiencia|productividad|rendimiento|oee|disponibilidad|aprovechamiento)\b/i.test(lower)) {
+    score += 10; // performance signals
+  }
   // User says they have data
   if (/\bi have\s+(a\s+)?(list|data|table|csv|file|spreadsheet|\d+|the|my|our)\b/i.test(lower)) {
     score += 15;
@@ -320,7 +333,7 @@ export function scoreMfgIntent(message: string): {
     webApps.push('/toc');
   }
   // Quality / SPC / sigma
-  if (/\b(cpk?|ppk?|control (chart|plan)|spc|six sigma|defect|dpmo|capabl|specification|spec limit|\bspec\b|iatf|iso.?\d{4}|as.?9100|process capable|statistical|carta de control|seis sigma|defecto|capaz|especificaci[oó]n|estad[ií]stic[oa]|calidad)\b/i.test(lower)) {
+  if (/\b(cpk?|ppk?|control (chart|plan)|spc|six sigma|defects?|dpmo|capabl|specification|spec limit|\bspec\b|iatf|iso.?\d{4}|as.?9100|process capable|statistical|carta de control|seis sigma|defectos?|capaz|especificaci[oó]n|estad[ií]stic[oa]|calidad|rechazos?|scrap|retrabajo|no conformidad(es)?|mala calidad)\b/i.test(lower)) {
     score += 10;
     tools.push('sigma_analysis');
   }
@@ -336,7 +349,8 @@ export function scoreMfgIntent(message: string): {
     tools.push('fmea_manage');
   }
   // RCA
-  if (/\b(root cause|5.?why|fishbone|ishikawa|pdca|fault tree|a3 report|why did.*fail|why.*defect|causa ra[ií]z|5.?por ?qu[eé]|espina de pescado|[aá]rbol de fallas|por qu[eé].*fall[oó]|por qu[eé].*defecto)\b/i.test(lower)) {
+  if (/\b(root cause|5.?why|fishbone|ishikawa|pdca|fault tree|a3 report|why did.*fail|why.*defect)\b/i.test(lower) ||
+      /causa ra[ií]z|5.?por ?qu[eé]|espina de pescado|[aá]rbol de fallas|por qu[eé].*fall|por qu[eé].*defecto|entender por qu[eé]|saber por qu[eé]|investigar.*falla/i.test(lower)) {
     score += 10;
     tools.push('rca_manage');
   }
@@ -352,7 +366,7 @@ export function scoreMfgIntent(message: string): {
     tools.push('line_balance');
   }
   // Inventory
-  if (/\b(eoq|safety stock|reorder point|abc.?analy|inventory plan|inventory optim|stock.*level|reorder|warehouse|inventario|stock de seguridad|punto de reorden|almac[eé]n|nivel de stock|planificaci[oó]n de inventario)\b/i.test(lower)) {
+  if (/\b(eoq|safety stock|reorder point|abc.?analy|inventory plan|inventory optim|stock.*level|reorder|warehouse|inventario|stock de seguridad|punto de reorden|almac[eé]n|nivel de stock|planificaci[oó]n de inventario|controlar (el )?inventario|sin material|falta(n)? de material|desabasto)\b/i.test(lower)) {
     score += 10;
     tools.push('inventory_plan');
   }
@@ -374,7 +388,7 @@ export function scoreMfgIntent(message: string): {
     tools.push('spc_setup');
   }
   // Document generation
-  if (/\b(report|document|spreadsheet|xlsx|docx|pdf|pptx|presentation|chart.*show|create.*file|generate.*report|monthly report|production report|reporte|documento|hoja de c[aá]lculo|presentaci[oó]n|gr[aá]fico|crear.*archivo|generar.*reporte|reporte mensual|reporte de producci[oó]n|informe)\b/i.test(lower)) {
+  if (/\b(report|document|spreadsheet|xlsx|docx|pdf|pptx|presentation|chart.*show|create.*file|generate.*report|monthly report|production report|reporte|documento|hoja de c[aá]lculo|presentaci[oó]n|gr[aá]ficas?|crear.*archivo|generar.*reporte|reporte (mensual|semanal|diario)|reporte de producci[oó]n|informe|me pide.*reporte|necesito.*reporte|hacer.*reporte)\b/i.test(lower)) {
     score += 10;
     tools.push('generate_document');
   }
