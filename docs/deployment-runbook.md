@@ -6,13 +6,91 @@ Get your own clauded instance running in 30 minutes. This guide is for team memb
 
 ---
 
+## Hardware Requirements
+
+**Check your machine BEFORE starting setup.** clauded runs AI models locally — this requires significant RAM and a modern processor. Running on under-spec hardware will cause the machine to hang or responses to take minutes instead of seconds.
+
+### Minimum (functional but slow)
+
+| Resource | Minimum | How to Check (macOS) |
+|----------|---------|---------------------|
+| **RAM** | **16 GB** | Apple menu → About This Mac |
+| **CPU** | Apple M1 or Intel i7 (8th gen+) | Apple menu → About This Mac |
+| **Free disk** | 20 GB | Finder → About This Mac → Storage |
+| **macOS** | 12 Monterey+ | Apple menu → About This Mac |
+
+### Recommended (responsive, comfortable)
+
+| Resource | Recommended |
+|----------|-------------|
+| **RAM** | **32 GB** |
+| **CPU** | Apple M1 Pro/Max/Ultra or M2+ |
+| **Free disk** | 50 GB SSD |
+
+### What Uses the RAM
+
+| Process | RAM Usage | Notes |
+|---------|-----------|-------|
+| Ollama (qwen3.5 model loaded) | 6-8 GB | Largest consumer — loads the AI model into memory |
+| Ollama (nomic-embed-text) | 0.5 GB | Memory search embeddings |
+| Speaches (voice STT + TTS) | 1.0-1.5 GB | Loads on first voice message |
+| Docker + clauded Node.js | 0.5-1.0 GB | Application + container overhead |
+| macOS + other apps | 4-6 GB | Operating system baseline |
+| **Total active** | **12-17 GB** | |
+
+### What Happens on Under-Spec Hardware
+
+| Symptom | Likely Cause | Fix |
+|---------|-------------|-----|
+| **Machine hangs/freezes during `docker compose up`** | Not enough RAM for Docker build + Ollama | Close ALL other apps. If 8GB machine: not viable — need 16GB minimum. |
+| **Telegram responses take 1-2+ minutes** | Ollama is swapping to disk (RAM exhausted) | Close Chrome, Slack, and other memory-heavy apps. Check `docker stats` for memory usage. |
+| **Voice messages never get a reply** | Speaches can't load models (RAM) | Disable voice: don't send voice messages. Text still works. |
+| **"Killed" in Docker logs** | Linux OOM killer terminated a process | Increase Docker Desktop memory limit: Settings → Resources → Memory → set to 8GB+ |
+
+### Docker Desktop Memory Settings
+
+Docker Desktop has its OWN memory limit separate from system RAM. By default it may be set too low.
+
+1. Open Docker Desktop
+2. Go to **Settings** (gear icon) → **Resources**
+3. Set **Memory** to at least **8 GB** (10 GB recommended)
+4. Set **Disk image size** to at least **30 GB**
+5. Click **Apply & restart**
+
+### "My machine only has 16GB — will it work?"
+
+Yes, but close memory-heavy applications before starting clauded:
+- Close Chrome/Firefox (can use 2-4 GB)
+- Close Slack/Teams (500 MB-1 GB each)
+- Close VS Code/IDEs (500 MB-1 GB)
+- Don't run multiple Docker projects simultaneously
+
+With 16 GB and other apps closed, response times should be 5-15 seconds. With 32 GB, you can keep your normal apps open and clauded responds in 3-8 seconds.
+
+### "My machine only has 8GB — can I use it?"
+
+**Not recommended.** The AI model alone needs 6-8 GB. With 8 GB total RAM, the system will constantly swap to disk, causing:
+- 1-5 minute response times
+- Machine freezes during inference
+- Docker build failures
+
+If 8 GB is your only option: use a smaller Ollama model. In `.env`:
+```bash
+OLLAMA_CHAT_MODEL=qwen3:1.7b
+OLLAMA_TOOL_MODEL=qwen3:1.7b
+```
+Then pull it: `ollama pull qwen3:1.7b` (uses ~2 GB RAM instead of 6-8 GB). Responses will be faster but less capable.
+
+---
+
 ## Before You Start
 
 Verify you have:
 
-- [ ] macOS with Docker Desktop installed and running (check: `docker --version`)
+- [ ] Machine meets hardware requirements above (16 GB RAM minimum, 32 GB recommended)
+- [ ] Docker Desktop installed, running, and memory set to 8 GB+ (see above)
 - [ ] Ollama installed and running (check: `ollama list`)
-- [ ] The superprompt repository cloned: `git clone https://github.com/your-org/superprompt.git`
+- [ ] The superprompt repository cloned: `git clone https://github.com/ccmanuelf/superprompt.git`
 - [ ] A Telegram account on your phone
 
 **Time estimate:** 30 minutes for first setup (most of it is waiting for Docker to build and models to download).

@@ -29,10 +29,16 @@ clauded is a personal AI assistant daemon that bridges messaging platforms to AI
 
 ### Prerequisites
 
-- **Docker** >= 24.0 and Docker Compose
+**Hardware (check first — under-spec machines will hang or respond very slowly):**
+- **RAM**: 32 GB recommended, 16 GB minimum. See [Deployment Runbook — Hardware Requirements](deployment-runbook.md#hardware-requirements) for detailed breakdown.
+- **CPU**: Apple Silicon (M1+) or Intel i7 8th gen+
+- **Disk**: 20 GB free minimum
+
+**Software:**
+- **Docker Desktop** >= 24.0 with memory set to 8 GB+ (Settings → Resources)
 - **Ollama** >= 0.5.0 installed and running on the host machine
 - A **Telegram bot token** (from [@BotFather](https://t.me/BotFather))
-- A **Claude subscription** (Max plan) — for Claude provider
+- A **Claude subscription** (Max plan) — optional, for Claude provider. Ollama works without any subscription.
 
 ### Step 1: Clone and Create Your Configuration
 
