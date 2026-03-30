@@ -2,8 +2,8 @@
 # Entrypoint for clauded Docker container.
 # Ensures Claude CLI has the required onboarding flag and config.
 
-CLAUDE_JSON=/home/clauded/.claude.json
-CLAUDE_DIR=/home/clauded/.claude
+CLAUDE_JSON=/home/node/.claude.json
+CLAUDE_DIR=/home/node/.claude
 
 # Ensure .claude directory exists
 mkdir -p "$CLAUDE_DIR"

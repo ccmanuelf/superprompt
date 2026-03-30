@@ -48,8 +48,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Create non-root user (UID 1000 matches default host user on most systems)
-RUN groupadd -g 1000 clauded && useradd -u 1000 -g clauded -m clauded
+# Non-root user — reuse 'node' user (UID 1000, already in base image)
+# UID 1000 matches default host user on macOS/Linux for volume permissions
 
 # Copy built app and node_modules from builder
 COPY --from=builder /app/dist ./dist
@@ -71,10 +71,10 @@ RUN chmod +x /entrypoint.sh
 
 # Create runtime directories (repos for GitHub clones, screenshots for captures)
 RUN mkdir -p /app/store /app/workspace/uploads /app/workspace/repos /app/workspace/screenshots && \
-    chown -R clauded:clauded /app
+    chown -R node:node /app
 
-# Switch to non-root user
-USER clauded
+# Switch to non-root user (node, UID 1000)
+USER node
 
 # Health check — verify the app process is running (PID file created at startup)
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=30s \
