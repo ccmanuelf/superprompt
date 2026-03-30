@@ -18,6 +18,8 @@ export const CAPABILITIES_PROMPT = `## Your Capabilities — What You Can Do
 
 You are clauded, a full-featured AI assistant with specialized manufacturing engineering tools, knowledge management, document generation, voice processing, and web dashboards. You have real capabilities — use them instead of trying to solve things from scratch.
 
+IMPORTANT — Language: Your tools and capabilities work identically in ALL languages. When a user speaks Spanish (or any other language), suggest and use your tools exactly as you would in English. Do not hold back capabilities because the conversation is in a different language. For example, if a user says "necesito analizar la capacidad de producción", suggest the capacity_planning tool and /capacity dashboard just as you would for "I need to analyze production capacity".
+
 ### Manufacturing & Industrial Engineering
 You have purpose-built tools for manufacturing operations. Use these instead of manual calculations:
 
@@ -226,168 +228,194 @@ export function scoreMfgIntent(message: string): {
   const tools: string[] = [];
   const webApps: string[] = [];
 
-  // ── Knowledge signals (reduce score) ──
+  // ── Knowledge signals (reduce score) — EN + ES ──
   const knowledgePatterns = [
     /\bwhat is\b/i, /\bwhat are\b/i, /\bdefine\b/i, /\bexplain\b/i,
     /\bwhat does .+ mean/i, /\bhow does .+ work/i, /\btell me about\b/i,
     /\bwhat'?s the difference\b/i, /\bcan you explain\b/i,
+    // Spanish
+    /\bqué es\b/i, /\bqué son\b/i, /\bdefin[ei]\b/i, /\bexplic[ao]\b/i,
+    /\bqué significa\b/i, /\bcómo funciona\b/i, /\bcuéntame sobre\b/i,
+    /\bcuál es la diferencia\b/i, /\bpuedes explicar\b/i, /\bdime qué\b/i,
   ];
   if (knowledgePatterns.some((p) => p.test(message))) {
     score -= 20;
   }
 
-  // ── Problem signals (increase score) ──
-  // Direct tool/methodology request (user explicitly asks for a specific tool by name)
+  // ── Problem signals (increase score) — EN + ES ──
+  // Direct tool/methodology request
   if (/\b(run a |do an? |set up |perform |build |create an? )?(simulation|line balance|capacity analysis|fmea|rca|root cause|doe|experiment|vsm|value stream|control plan|spc|six sigma|conwip|heijunka|fsm|state machine)\b/i.test(lower)) {
     score += 20;
   }
-  // User says they have data ("I have 15 tasks", "I have measurements", "I have a list of")
+  // Spanish direct requests
+  if (/\b(hacer |correr |ejecutar |crear |armar )?(simulaci[oó]n|balance de l[ií]nea|an[aá]lisis de capacidad|fmea|amef|rca|causa ra[ií]z|doe|experimento|vsm|mapeo de valor|plan de control|spc|seis sigma|conwip|heijunka|fsm|m[aá]quina de estados)\b/i.test(lower)) {
+    score += 20;
+  }
+  // User says they have data
   if (/\bi have\s+(a\s+)?(list|data|table|csv|file|spreadsheet|\d+|the|my|our)\b/i.test(lower)) {
     score += 15;
   }
-  // Has numbers/data (supports comma-separated: 10,000)
+  // Spanish: "tengo datos", "tengo una lista", "tengo 15 tareas"
+  if (/\btengo\s+(una?\s+)?(lista|datos|tabla|csv|archivo|hoja|\d+|los|mis|nuestros)\b/i.test(lower)) {
+    score += 15;
+  }
+  // Has numbers/data with units (EN + ES)
   if (/[\d,]+\s*(units?|pieces?|pcs|hours?|min(utes)?|operators?|shifts?|lines?|stations?|machines?|%|ppm|defects?|tasks?|items?|parts?|products?|variants?|orders?|skus?|measurements?|samples?|boards?|runs?|cycles?|lots?|batches?|mm|cm|kg|lbs?)/.test(lower)) {
     score += 25;
   }
+  // Spanish units
+  if (/[\d,]+\s*(unidades?|piezas?|horas?|minutos?|operador(es)?|turnos?|l[ií]neas?|estaciones?|m[aá]quinas?|defectos?|tareas?|productos?|pedidos?|lotes?|muestras?)/.test(lower)) {
+    score += 25;
+  }
   // Has spec/tolerance notation (±, +/-, USL/LSL)
-  if (/[±]|[+]\s*\/\s*[-]|\busl\b|\blsl\b|\bspec\b|\btolerance\b/i.test(lower)) {
+  if (/[±]|[+]\s*\/\s*[-]|\busl\b|\blsl\b|\bspec\b|\btolerance\b|\btolerancia\b|\bespecificaci[oó]n\b|\bl[ií]mite superior\b|\bl[ií]mite inferior\b/i.test(lower)) {
     score += 20;
   }
-  // Has constraints/goals
+  // Has constraints/goals (EN + ES)
   if (/\b(need to|must|target|goal|required?|capacity|demand|deadline|due date|constraint|losing|cost|profit|waste|budget|comply|compliance)\b/i.test(lower)) {
     score += 15;
   }
-  // Has action language
+  if (/\b(necesito|debo|meta|objetivo|requerid[oa]|capacidad|demanda|fecha l[ií]mite|restricci[oó]n|perdiendo|costo|ganancia|desperdicio|presupuesto|cumplir|cumplimiento)\b/i.test(lower)) {
+    score += 15;
+  }
+  // Has action language (EN + ES)
   if (/\b(optimize|reduce|improve|increase|balance|schedule|plan|analyze|simulate|calculate|track|monitor|create|build|set up|figure out|find|model|map|level|sequence|run|launch|generate|design|evaluate|assess|practice|estimate|measure|compare|test|check|verify)\b/i.test(lower)) {
     score += 15;
   }
-  // Desire/intent language ("I would like", "I want to", "I'd like to", "is there a way")
+  if (/\b(optimizar|reducir|mejorar|aumentar|balancear|programar|planificar|analizar|simular|calcular|rastrear|monitorear|crear|construir|configurar|encontrar|modelar|mapear|nivelar|secuenciar|ejecutar|lanzar|generar|dise[ñn]ar|evaluar|estimar|medir|comparar|probar|verificar)\b/i.test(lower)) {
+    score += 15;
+  }
+  // Desire/intent language (EN + ES)
   if (/\b(i would like|i want to|i'd like|is there a way|can you help|help me|could we|how can i)\b/i.test(lower)) {
     score += 10;
   }
+  if (/\b(me gustar[ií]a|quiero|quisiera|hay alguna forma|puedes ayudar|ay[uú]dame|podr[ií]amos|c[oó]mo puedo)\b/i.test(lower)) {
+    score += 10;
+  }
 
-  // ── Domain detection → tool mapping ──
+  // ── Domain detection → tool mapping (EN + ES) ──
+
   // Capacity / throughput
-  if (/\b(capacity|throughput|utilization|shift pattern|overtime|bottleneck|demand vs|can we handle|production rate)\b/i.test(lower)) {
+  if (/\b(capacity|throughput|utilization|shift pattern|overtime|bottleneck|demand vs|can we handle|production rate|capacidad|rendimiento|utilizaci[oó]n|patr[oó]n de turnos|tiempo extra|cuello de botella|demanda vs|tasa de producci[oó]n)\b/i.test(lower)) {
     score += 10;
     tools.push('capacity_planning');
     webApps.push('/capacity');
   }
   // Scheduling / sequencing
-  if (/\b(schedul|sequenc|makespan|dispatch|gantt|job.?shop|due date|lateness|work order|job order|priority order)\b/i.test(lower)) {
+  if (/\b(schedul|sequenc|makespan|dispatch|gantt|job.?shop|due date|lateness|work order|job order|priority order|programaci[oó]n|secuencia|despacho|fecha de entrega|tardanza|orden de trabajo|orden de prioridad)\b/i.test(lower)) {
     score += 10;
     tools.push('job_sequencer');
     webApps.push('/sequence');
   }
   // Value stream / lean / waste
-  if (/\b(value stream|vsm|lead time|cycle time|takt|pce|waste|timwoods|kaizen|nva|non.?value|lean|map.*process|process.*map)\b/i.test(lower)) {
+  if (/\b(value stream|vsm|lead time|cycle time|takt|pce|waste|timwoods|kaizen|nva|non.?value|lean|map.*process|process.*map|mapeo de valor|tiempo de entrega|tiempo de ciclo|desperdicio|valor agregado|no.?valor)\b/i.test(lower)) {
     score += 10;
     tools.push('value_stream_map');
     webApps.push('/vsm');
   }
   // TOC / constraints
-  if (/\b(constraint|drum.?buffer|dbr|throughput accounting|toc|goldratt|ccr|wip track|money.*(losing|lost)|losing.*money)\b/i.test(lower)) {
+  if (/\b(constraint|drum.?buffer|dbr|throughput accounting|toc|goldratt|ccr|wip track|money.*(losing|lost)|losing.*money|restricci[oó]n|tambor.?buffer|contabilidad de throughput|perdiendo.*dinero|dinero.*perdiendo)\b/i.test(lower)) {
     score += 10;
     tools.push('toc_analysis');
     webApps.push('/toc');
   }
   // Quality / SPC / sigma
-  if (/\b(cpk?|ppk?|control (chart|plan)|spc|six sigma|defect|dpmo|capabl|specification|spec limit|\bspec\b|iatf|iso.?\d{4}|as.?9100|process capable|statistical)\b/i.test(lower)) {
+  if (/\b(cpk?|ppk?|control (chart|plan)|spc|six sigma|defect|dpmo|capabl|specification|spec limit|\bspec\b|iatf|iso.?\d{4}|as.?9100|process capable|statistical|carta de control|seis sigma|defecto|capaz|especificaci[oó]n|estad[ií]stic[oa]|calidad)\b/i.test(lower)) {
     score += 10;
     tools.push('sigma_analysis');
   }
   // DOE
-  if (/\b(experiment|factorial|taguchi|anova|factor.?level|\bfactors?\b.*\blevel|response surface|doe|optimize.*process|process.*optim)\b/i.test(lower)) {
+  if (/\b(experiment|factorial|taguchi|anova|factor.?level|\bfactors?\b.*\blevel|response surface|doe|optimize.*process|process.*optim|experimento|superficie de respuesta|optimizar.*proceso|proceso.*optim|dise[ñn]o de experimentos)\b/i.test(lower)) {
     score += 10;
     tools.push('design_of_experiments');
     webApps.push('/doe');
   }
   // FMEA
-  if (/\b(fmea|failure mode|rpn|risk priority|severity.*occurrence|risk analysis|potential failure)\b/i.test(lower)) {
+  if (/\b(fmea|amef|failure mode|rpn|risk priority|severity.*occurrence|risk analysis|potential failure|modo de falla|prioridad de riesgo|severidad.*ocurrencia|an[aá]lisis de riesgo|falla potencial)\b/i.test(lower)) {
     score += 10;
     tools.push('fmea_manage');
   }
   // RCA
-  if (/\b(root cause|5.?why|fishbone|ishikawa|pdca|fault tree|a3 report|why did.*fail|why.*defect)\b/i.test(lower)) {
+  if (/\b(root cause|5.?why|fishbone|ishikawa|pdca|fault tree|a3 report|why did.*fail|why.*defect|causa ra[ií]z|5.?por ?qu[eé]|espina de pescado|[aá]rbol de fallas|por qu[eé].*fall[oó]|por qu[eé].*defecto)\b/i.test(lower)) {
     score += 10;
     tools.push('rca_manage');
   }
   // Simulation
-  if (/\b(simulat|monte carlo|des\b|discrete.?event|wip limit|breakdown rate|mtbf|mttr|how many.*produce|production.*capacity)\b/i.test(lower)) {
+  if (/\b(simulat(e|ion|or)?|monte carlo|discrete.?event|wip limit|breakdown rate|mtbf|mttr|how many.*produce|production.*capacity|simulaci[oó]n|evento discreto|l[ií]mite de wip|tasa de fallas|cu[aá]nto.*producir|capacidad de producci[oó]n)\b/i.test(lower)) {
     score += 10;
     tools.push('production_simulation');
     webApps.push('/sim');
   }
   // Line balance
-  if (/\b(line balanc|yamazumi|rpw|ranked positional|station assignment|balance.*line|assembly.*balance|workstation.*assign)\b/i.test(lower)) {
+  if (/\b(line balanc|yamazumi|rpw|ranked positional|station assignment|balance.*line|assembly.*balance|workstation.*assign|balance(o|ar)?\s*(de\s+)?l[ií]nea|asignaci[oó]n de estaciones?|l[ií]nea.*balance|ensamble.*balance|balancear.*l[ií]nea)\b/i.test(lower)) {
     score += 10;
     tools.push('line_balance');
   }
   // Inventory
-  if (/\b(eoq|safety stock|reorder point|abc.?analy|inventory plan|inventory optim|stock.*level|reorder|warehouse)\b/i.test(lower)) {
+  if (/\b(eoq|safety stock|reorder point|abc.?analy|inventory plan|inventory optim|stock.*level|reorder|warehouse|inventario|stock de seguridad|punto de reorden|almac[eé]n|nivel de stock|planificaci[oó]n de inventario)\b/i.test(lower)) {
     score += 10;
     tools.push('inventory_plan');
   }
   // CONWIP / Heijunka
-  if (/\b(conwip|heijunka|production level|token board|pitch.*takt|kanban.?card|level.*production|mix.*product|changeover.*reduc)\b/i.test(lower)) {
+  if (/\b(conwip|heijunka|production level|token board|pitch.*takt|kanban.?card|level.*production|mix.*product|changeover.*reduc|nivelaci[oó]n.*producci[oó]n|mezcla.*producto|reducci[oó]n.*cambio|tarjeta.*kanban)\b/i.test(lower)) {
     score += 10;
     tools.push('conwip_heijunka');
     webApps.push('/conwip');
   }
   // FSM / state machine
-  if (/\b(state machine|fsm|plc|structured text|machine state|idle.*processing|transition|states?\s+(of|for)\b|time\s+in\s+(each\s+)?state|running.*broken.*waiting|model.*states)\b/i.test(lower)) {
+  if (/\b(state machine|fsm|plc|structured text|machine state|idle.*processing|transition|states?\s+(of|for)\b|time\s+in\s+(each\s+)?state|running.*broken.*waiting|model.*states|m[aá]quina de estados|texto estructurado|estado.*m[aá]quina|transici[oó]n|estados?\s+(de|para)\b|tiempo\s+en\s+(cada\s+)?estado)\b/i.test(lower)) {
     score += 10;
     tools.push('state_machine_simulator');
     webApps.push('/fsm');
   }
-  // SPC / Control Plan (distinct from sigma for control plan workflow)
-  if (/\b(control plan|voc|ctq|voice of customer|critical to quality|iatf|sampling plan|reaction plan)\b/i.test(lower)) {
+  // SPC / Control Plan
+  if (/\b(control plan|voc|ctq|voice of customer|critical to quality|iatf|sampling plan|reaction plan|plan de control|voz del cliente|cr[ií]tico para la calidad|plan de muestreo|plan de reacci[oó]n)\b/i.test(lower)) {
     score += 10;
     tools.push('spc_setup');
   }
   // Document generation
-  if (/\b(report|document|spreadsheet|xlsx|docx|pdf|pptx|presentation|chart.*show|create.*file|generate.*report|monthly report|production report)\b/i.test(lower)) {
+  if (/\b(report|document|spreadsheet|xlsx|docx|pdf|pptx|presentation|chart.*show|create.*file|generate.*report|monthly report|production report|reporte|documento|hoja de c[aá]lculo|presentaci[oó]n|gr[aá]fico|crear.*archivo|generar.*reporte|reporte mensual|reporte de producci[oó]n|informe)\b/i.test(lower)) {
     score += 10;
     tools.push('generate_document');
   }
 
-  // ── Non-Manufacturing Capability Domains ──
+  // ── Non-Manufacturing Capability Domains (EN + ES) ──
 
   // Voice / pronunciation / conversation practice
-  if (/\b(pronunciat|speak|spoken|conversation practice|voice.*chat|talk.*practice|accent|fluency|verbal|oral|listen.*speak|speak.*english|speak.*spanish|practice.*language|language practice)\b/i.test(lower)) {
+  if (/\b(pronunciat|speak|spoken|conversation practice|voice.*chat|talk.*practice|accent|fluency|verbal|oral|listen.*speak|speak.*english|speak.*spanish|practice.*language|language practice|pronunciaci[oó]n|hablar|pr[aá]ctica de conversaci[oó]n|chat de voz|acento|fluidez|practicar.*idioma)\b/i.test(lower)) {
     score += 10;
-    webApps.push('/');  // Voice chat at root URL
+    webApps.push('/');
     tools.push('voice_chat');
   }
 
   // Learning / teaching / study / skill building
-  if (/\b(learn|teach|study|course|lesson|tutorial|how (hard|difficult)|how.*calculate|how.*estimate|want to understand|quiz|practice|training|curriculum|session|master|improve my)\b/i.test(lower)) {
+  if (/\b(learn|teach|study|course|lesson|tutorial|how (hard|difficult)|how.*calculate|how.*estimate|want to understand|quiz|practice|training|curriculum|session|master|improve my|aprender|ense[ñn]ar|estudiar|curso|lecci[oó]n|tutorial|qu[eé] tan dif[ií]cil|c[oó]mo calcular|c[oó]mo estimar|quiero entender|entrenamiento|sesi[oó]n|mejorar mi)\b/i.test(lower)) {
     score += 10;
     webApps.push('/learn');
     tools.push('learning_coach');
   }
 
   // Research / academic / papers
-  if (/\b(research|paper|academic|journal|literature|citation|reference|bibliography|bibtex|apa|chicago|peer.?review|study.*find|find.*stud)\b/i.test(lower)) {
+  if (/\b(research|paper|academic|journal|literature|citation|reference|bibliography|bibtex|apa|chicago|peer.?review|study.*find|find.*stud|investigaci[oó]n|art[ií]culo|acad[eé]mic[oa]|revista|literatura|cita|referencia|bibliograf[ií]a|buscar.*estudio)\b/i.test(lower)) {
     score += 10;
     tools.push('search_papers');
   }
 
   // Task management / tracking / kanban
-  if (/\b(task|to.?do|kanban|board|track.*progress|assign|priorit|backlog|sprint|card|deadline)\b/i.test(lower)) {
+  if (/\b(task|to.?do|kanban|board|track.*progress|assign|priorit|backlog|sprint|card|deadline|tarea|pendiente|tablero|seguimiento|asignar|prioridad|fecha l[ií]mite|tarjeta)\b/i.test(lower)) {
     score += 10;
     tools.push('kanban_manage');
     webApps.push('/board');
   }
 
   // Scheduling / reminders
-  if (/\b(remind|reminder|schedule.*task|recurring|every (day|week|hour|monday|morning)|cron|automat.*run)\b/i.test(lower)) {
+  if (/\b(remind|reminder|schedule.*task|recurring|every (day|week|hour|monday|morning)|cron|automat.*run|recordar|recordatorio|programar.*tarea|recurrente|cada (d[ií]a|semana|hora|lunes|ma[ñn]ana)|autom[aá]t.*ejecutar)\b/i.test(lower)) {
     score += 10;
     tools.push('create_reminder');
   }
 
   // Memory / remember / recall
-  if (/\b(remember|recall|you told me|last time|we discussed|don't forget|keep in mind)\b/i.test(lower)) {
+  if (/\b(remember|recall|you told me|last time|we discussed|don't forget|keep in mind|recuerda|recuerdas|me dijiste|la [uú]ltima vez|hablamos de|no olvides|ten en cuenta)\b/i.test(lower)) {
     score += 10;
     tools.push('query_memory');
   }
