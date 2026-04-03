@@ -88,8 +88,8 @@ describe('anti-rationalization rules (real exports)', () => {
   });
 
   it('contains advanced response techniques', () => {
-    // Output format anchor (Pattern 1)
-    expect(QUALITY_RULES).toContain('output format');
+    // Audience + format anchor (Patterns 1+5 merged)
+    expect(QUALITY_RULES).toContain('Audience + format anchor');
     // Ask → Constraints → Context ordering (Pattern 2)
     expect(QUALITY_RULES).toContain('Constraints');
     // Confidence gate (Pattern 5)
