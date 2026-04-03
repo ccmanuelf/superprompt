@@ -1,13 +1,17 @@
 # clauded — Enhancement Roadmap
 
-> Last updated: 2026-03-21
-> Previous roadmap versions: `memory/roadmap.md` (2026-03-13), ROADMAP.md (2026-03-18)
+> Last updated: 2026-04-03
+> Previous roadmap versions: `memory/roadmap.md` (2026-03-13), ROADMAP.md (2026-03-18, 2026-03-21, 2026-03-29)
 
 ## Summary
 
-clauded is evolving from personal AI assistant into a **full AI partner platform ("Jarvis")**. Core autonomy sprints S1-S8 complete. Platform expansion sprints S10-S13 planned.
+clauded is evolving from personal AI assistant into a **company-wide AI operations platform** serving 9 departments. Core sprints S1-S16 + S9 complete (1514 tests, 61 files). Currently in multi-department E2E validation (v1.0.0-rc.11).
 
-**Execution order: S1-S8 ✅ → S10 ✅ → S11 ✅ → S12 ✅ → S13 ✅ → S14 ✅ → S16 ✅ → S15 ✅ (ClawMFG Web ×7) → S9 ✅ (Docs) → S4 (E2E) → S3 (Cloud)**
+**Completed:** S1-S8 ✅ → S10-S14 ✅ → S16 ✅ → S15 ✅ → S9 ✅
+
+**In progress:** S4 (E2E across 4 workstations)
+
+**Forward roadmap:** SA1-SA5 (Architecture Hardening) → S17-S18 (Production Hub) → S19 (Auto-Skills) → S3 (Production Deployment)
 
 ---
 
@@ -760,24 +764,312 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Sprint S4: Full E2E Validation — NOT STARTED (after S9)
+## Forward Roadmap (2026-04-03)
 
-**Goal:** End-to-end testing of all features across all sprints in production environment.
+> Updated based on CTO architecture review, department E2E feedback, and strategic direction.
+> clauded is evolving from an engineering tool into a **company-wide AI operations platform**.
+>
+> **Target departments (9):** Manufacturing, Engineering, Customer Service, Supply Chain/Procurement,
+> HR, Finance, Business Development, Warehousing, Trade Compliance.
+>
+> **Deployment decision:** Approach A (single instance, multi-user). Hosting platform TBD
+> (InMotion dedicated server, VMware VM, or Render). DB migration to MariaDB or PostgreSQL
+> when deployment is approved.
+
+### Execution Order
+
+```
+Current:  S4 (E2E) ← in progress across 4 workstations
+
+Phase 1 — Architecture Hardening (CTO concerns):
+          SA1 (Worker Thread Sandbox)
+          SA2 (Formal Application Core)
+          SA3 (Process Separation)
+          SA4 (Policy-Based Tool Permissions)
+          SA5 (Modules as Capability Packs)
+
+Phase 2 — Feature Expansion:
+          S17 (Production Hub — Order Management)
+          S18 (BOM & Shortage Intelligence)
+          S19 (Auto-Generated Skills from Experience)
+
+Phase 3 — Deployment:
+          S3  (Production Deployment — hosting + DB migration)
+```
+
+### Dependencies
+
+```
+S4 (E2E) ─────────────────────────────────────────► E2E complete
+    │
+    ▼
+SA1 (Worker Sandbox) ──► SA2 (Formal Core) ──► SA3 (Process Separation)
+                              │
+                              ▼
+                         SA4 (Policy Engine)
+                              │
+                              ▼
+                         SA5 (Modules as Packs)
+                              │
+    ┌─────────────────────────┤
+    ▼                         ▼
+S17 (Production Hub)    Department base packs
+    │                   (Finance, HR, Supply Chain,
+    ▼                    Engineering, BD, CS,
+S18 (BOM/Shortage)       Warehousing, Compliance)
+    │
+    ▼
+S19 (Auto-Skills) ────► S3 (Production Deployment)
+```
 
 ---
 
-## Sprint S3: Cloud Deployment — NOT STARTED (after S4)
+## Sprint S4: Full E2E Validation — IN PROGRESS
 
-**Goal:** Deploy clauded to cloud infrastructure (Render or Oracle Cloud).
+**Goal:** Concurrent end-to-end testing across 4 department workstations.
+**Status:** Active. 93 test cases in `scripts/e2e-test.md`. Currently v1.0.0-rc.11.
+**Participants:** Engineering, Manufacturing (+ other departments joining).
+**Completion criteria:** All 93 tests pass across all participating workstations.
 
 ---
 
-## Deferred Enhancements
+## Sprint SA1: Worker Thread Sandbox — NOT STARTED
 
-| Enhancement | Source | Rationale for Deferral |
-|-------------|--------|----------------------|
+**Goal:** Replace `new Function()` tool execution with Node.js Worker threads for true V8 isolation.
+
+**CTO concern addressed:** "The JavaScript tool sandbox is not fully isolated. `new Function()` is not a real sandbox and can be vulnerable to global-scope or prototype-based escape patterns."
+
+### Why This Matters
+User-created tools (via `/tool generate`, `/tool upload`, or Domain Packs) currently execute JavaScript in the main process via `new Function()`. While the safety scanner blocks known dangerous patterns (process.env, fs, eval, etc.), a sophisticated payload could potentially escape via prototype manipulation. Worker threads provide a separate V8 isolate with no shared memory and no access to the parent's global scope.
+
+### Scope
+- Replace `executeSandboxedCode()` in `src/forge/tool-registry.ts` with Worker thread execution
+- Each tool invocation runs in a fresh Worker with:
+  - No access to `process`, `require`, `import`, `fs`, `net`
+  - Only `args` (parameters) and `fetch` (HTTP client with SSRF blocklist) available
+  - Timeout enforcement (10 seconds, same as current)
+  - Memory limit per Worker
+- Safety scanner remains as first-pass static analysis (defense in depth)
+- All existing tool tests must pass unchanged
+
+### Estimated effort: 3-5 days
+
+---
+
+## Sprint SA2: Formal Application Core — NOT STARTED
+
+**Goal:** Extract a narrow orchestration core with typed interfaces. Providers, tools, memory, packs, and platform adapters become plug-ins with stable contracts, not peers in the same runtime surface.
+
+**CTO concern addressed:** "Breadth in one runtime. The same service hosts messaging, orchestration, memory, voice, dashboards, tools, research, and manufacturing solvers — raises coupling and makes failures harder to isolate."
+
+### Why This Matters
+Currently, `src/index.ts` imports and initializes everything directly. Adding S17/S18/S19 will deepen this coupling. A formal core establishes boundaries that make the codebase navigable and testable as it grows to support 9 departments.
+
+### Scope
+- Define TypeScript interfaces for each subsystem:
+  - `AIProvider` (already exists) — Claude, Ollama
+  - `Platform` (new) — Telegram, Matrix, Web
+  - `ToolProvider` (new) — builtin tools, user tools, pack tools
+  - `MemoryProvider` (new) — semantic, episodic, episode compression
+  - `PackProvider` (new) — pack loading, capability injection, intent scoring
+  - `StorageProvider` (new) — database abstraction (prepares for SA3 + future DB migration)
+- Refactor `src/index.ts` to compose the core from interfaces, not direct imports
+- Each subsystem registers with the core, not with each other
+- No functional changes — same behavior, cleaner boundaries
+
+### Estimated effort: 2-3 weeks
+
+---
+
+## Sprint SA3: Process Separation — NOT STARTED (after SA2)
+
+**Goal:** Split clauded into multiple processes with minimal shared state. Reduces blast radius if any subsystem is compromised or crashes.
+
+**CTO concern addressed:** "Promote from well-defended monolith to layered multi-process system."
+
+### Target Architecture
+
+```
+Process 1: clauded-core
+  - Router, memory, skills, packs, scheduler, proactive messaging
+  - Telegram + Matrix + Web platform adapters
+  - Communicates with Process 2 via IPC or HTTP
+
+Process 2: clauded-tools
+  - Tool execution (Worker thread sandbox from SA1)
+  - Claude CLI subprocess
+  - File parsing (PDF, XLSX, DOCX — untrusted input)
+  - No direct database access — requests via Process 1
+
+Process 3: Database
+  - SQLite (current) or MariaDB/PostgreSQL (when deployment approved)
+  - Only Process 1 connects
+```
+
+### Scope
+- Depends on SA2 (formal core provides the interface boundaries)
+- Extract tool execution + file parsing into separate Node.js process
+- IPC channel (or local HTTP) between core and tools
+- Process 2 runs with restricted filesystem access (no .env, no store/)
+- Process 1 manages lifecycle of Process 2 (start, health check, restart)
+- Docker Compose updated: `clauded-core` + `clauded-tools` + `clauded-speaches`
+
+### Estimated effort: 2-3 weeks
+
+---
+
+## Sprint SA4: Policy-Based Tool Permissions — NOT STARTED (after SA2)
+
+**Goal:** Tag each tool with risk metadata and enforce permissions centrally rather than through scattered checks and prompt behavior.
+
+**CTO concern addressed:** "The security model says no skill exposes all tools intentionally; flipping to least-privilege defaults would reduce accidental overexposure."
+
+### Scope
+- Define tool risk metadata schema:
+  ```typescript
+  interface ToolPolicy {
+    riskLevel: 'low' | 'medium' | 'high' | 'critical';
+    requiresConfirmation: boolean;
+    networkAccess: boolean;
+    filesystemAccess: 'none' | 'read' | 'write';
+    allowedPaths?: string[];
+    maxExecutionTime: number;
+  }
+  ```
+- Tag all 49+ builtin tools with policies
+- Central policy engine evaluates permissions before tool execution
+- Default: least-privilege (no network, no filesystem, confirmation required for high/critical)
+- Skills override defaults by whitelisting specific tools (existing mechanism, now enforced)
+- Dashboard shows tool risk profile for transparency
+
+### Estimated effort: 1 week
+
+---
+
+## Sprint SA5: Modules as Capability Packs — NOT STARTED (after SA2)
+
+**Goal:** Repackage the 15 manufacturing modules as versioned capability packs. Establish the pattern for all department base packs.
+
+**CTO concern addressed:** "Manufacturing modules should be packaged as versioned capabilities rather than remaining deeply intertwined in the main app runtime."
+
+### Why This Matters
+Currently, manufacturing modules live in `src/` as first-class code — same level as memory, router, and platforms. This means:
+- Every manufacturing change rebuilds the entire application
+- Testing manufacturing modules requires the full app context
+- Other departments can't follow the same "build a module" pattern without touching `src/`
+
+After SA5, the manufacturing tools become a pack that happens to be built at Level 3 — the same pattern HR, Finance, and every other department would follow.
+
+### Scope
+- Extract manufacturing modules (`src/simulation/`, `src/capacity/`, `src/sequencer/`, `src/sigma.ts`, `src/balance.ts`, `src/inventory.ts`, `src/fmea.ts`, `src/rca.ts`, `src/doe/`, `src/vsm/`, `src/toc/`, `src/conwip/`, `src/fsm/`, `src/control-plan.ts`, `src/minizinc.ts`) into a structured capability pack
+- Define Level 3 pack format: TypeScript source + web dashboard + API routes + tool definitions + tests
+- Manufacturing pack versioned independently (v1.0, v1.1, etc.)
+- Create starter base packs for all 9 departments:
+
+| Pack | Status | Level | Initial Tools |
+|------|--------|:---:|---------------|
+| `manufacturing` | Repackage existing 15 modules | 3 | All existing tools + dashboards |
+| `finance` | Expand existing example | 2→3 | NPV, budget variance, reporting templates, dashboard |
+| `supply-chain` | New | 2 | Vendor scorecard, RFQ tracking, PO management |
+| `hr` | New | 2 | Turnover analysis, headcount forecast, compensation |
+| `engineering` | New | 2 | Code review, deployment monitoring, project tracking |
+| `business-dev` | New | 2 | Lead pipeline, proposal tracking, client follow-up |
+| `customer-service` | New | 2 | Ticket tracking, response templates, SLA monitoring |
+| `warehousing` | New (ties to S18) | 2 | Pick list management, location tracking, cycle count |
+| `trade-compliance` | New | 2 | HTS classification, origin tracking, documentation |
+
+### Estimated effort: 2-3 weeks (manufacturing repackage + 8 starter packs)
+
+---
+
+## Sprint S17: Production Hub — Order Management — NOT STARTED
+
+**Goal:** Conversational operations hub — multi-source order ingestion, role-based notifications, live dashboard.
+
+**Status:** Spec complete at `reference/production-hub/SPEC.md`. Prototype at `reference/production-hub/prototype.html`.
+
+**Blocked on:** Sample documents from team (order Excel template, real order PDFs, WO numbering convention, FG part number samples).
+
+**Depends on:** SA2 (formal core) for clean integration, SA4 (policy engine) for tool permissions.
+
+**Full spec:** See `reference/production-hub/SPEC.md` for detailed requirements, DB schema, intent classification, notification design, and dashboard specification.
+
+---
+
+## Sprint S18: BOM & Shortage Intelligence — NOT STARTED (after S17)
+
+**Goal:** API-driven shortage detection, alternative component suggestions, FIFO split-orders, WO-scoped BOM overrides with auto-revert.
+
+**Status:** Spec complete at `reference/production-hub/SPEC.md` (combined with S17).
+
+**Blocked on:** BOM API sample response, Inventory API sample response, API authentication details.
+
+**Depends on:** S17 (order management DB and dashboard).
+
+**Key design principle:** AI does NOT decide. It detects, computes, presents, waits for human approval, then executes. All overrides are WO-scoped — master BOM is never modified.
+
+**Full spec:** See `reference/production-hub/SPEC.md` for three hard rules, shortage detection workflow, approval chain, and BOM override schema.
+
+---
+
+## Sprint S19: Auto-Generated Skills from Experience — NOT STARTED (after SA2)
+
+**Goal:** When a user completes a complex multi-step task successfully, clauded offers to save the workflow as a reusable skill.
+
+**Source:** Hermes Agent evaluation — auto-skill-generation identified as the single highest-value concept to adopt.
+
+### How It Works
+1. **Detect** the task was complex (multi-tool, multi-step, or orchestrated)
+2. **Extract** the workflow pattern (tools called, order, parameters, decision points)
+3. **Draft** a skill definition capturing the pattern
+4. **Ask** the user: "That worked well. Want me to save this as a reusable skill?"
+5. **If approved:** Store as a user skill with auto-trigger patterns derived from the original request
+
+### Why It Matters for All Departments
+- Manufacturing engineer solves a complex capacity problem → skill auto-created for next time
+- Finance analyst builds a budget workflow → skill auto-created
+- Supply chain manager runs an RFQ comparison → skill auto-created
+- Each department's clauded instance gets smarter with use, without developer intervention
+
+### Depends on: SA2 (formal core — needs clean tool execution tracking)
+### Estimated effort: 1-2 weeks
+
+---
+
+## Sprint S3: Production Deployment — NOT STARTED (after architecture hardening)
+
+**Goal:** Deploy clauded to production infrastructure for company-wide use.
+
+**Status:** Pending deployment approval. Hosting options evaluated: InMotion dedicated server (most likely), VMware VM, or Render.
+
+**Depends on:** SA1-SA5 (architecture hardening), S4 (E2E validation), deployment approval.
+
+### Scope (when approved)
+- Database migration: SQLite → MariaDB (InMotion) or PostgreSQL (VMware/Render)
+- Reverse proxy configuration (Nginx or Apache)
+- TLS certificates for web UI
+- Telegram bot: hybrid approach (one bot + department notification groups)
+- Dedicated Anthropic Max account + Qwen3.6 in Ollama
+- Backup strategy (automated daily DB backup)
+- Monitoring and alerting
+- Core development team onboarding
+
+### Deployment guide: `docs/deployment-guide.md` (platform recipes for InMotion, VPS, VMware, Oracle Cloud)
+
+---
+
+## Deferred / Future Enhancements
+
+| Enhancement | Source | Status |
+|-------------|--------|--------|
+| agentskills.io standard | Hermes Agent evaluation | Nice-to-have. Evaluate after S19 (auto-skills). |
+| Odoo integration | CTO strategic direction | Evaluate when Odoo migration progresses. API connectors possible. |
+| Client self-service portal | S17/S18 spec | Web portal for clients to submit orders directly. Post-S17. |
+| ERP write-back | S18 spec | Currently read-only from external APIs. Write-back is future. |
+| Multi-instance federation | CTO question #4 | Only if single instance can't scale. Approach B/C from architecture response. |
+| Real-time machine integration | CTO MES question | SCADA/OPC-UA for live machine data. Requires hardware integration. |
 | Multi-agent routing | openclaw tutorial | Telegram Forum Topics (S11) solves this differently |
-| Execution sandbox | open-terminal | Persistent workspace (S10) addresses this need |
+| Execution sandbox | open-terminal | Persistent workspace (S10) addresses this need. SA1 replaces this with Worker threads. |
 | Telegram Forum Topics | OpenClaw architecture | Evaluate after S11 Kanban — may combine or sequence |
 
 ---
