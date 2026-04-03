@@ -78,13 +78,33 @@ describe('anti-rationalization rules (real exports)', () => {
     expect(QUALITY_RULES).toContain('probably');
     expect(QUALITY_RULES).toContain('verify');
     expect(QUALITY_RULES).toContain('evidence');
-    expect(QUALITY_RULES).toContain('3+');
+    expect(QUALITY_RULES).toContain('uncertainty');
   });
 
   it('forbids specific bad behaviors', () => {
     // The rules should explicitly tell the AI what NOT to do
-    expect(QUALITY_RULES).toMatch(/[Nn]ever/);
-    expect(QUALITY_RULES).toMatch(/don't|do not/i);
+    expect(QUALITY_RULES).toMatch(/NEVER/);
+    expect(QUALITY_RULES).toContain('What NOT to do');
+  });
+
+  it('contains advanced response techniques', () => {
+    // Role + Goal + Format guidance
+    expect(QUALITY_RULES).toContain('Role');
+    expect(QUALITY_RULES).toContain('Goal');
+    expect(QUALITY_RULES).toContain('Format');
+    // Think-before-answering
+    expect(QUALITY_RULES).toContain('key variables');
+    expect(QUALITY_RULES).toContain('competing considerations');
+    // Staged prompting
+    expect(QUALITY_RULES).toContain('stages');
+    // Stress-test both sides
+    expect(QUALITY_RULES).toContain('counter');
+    // Self-critique
+    expect(QUALITY_RULES).toContain('weakest');
+    // Audience awareness
+    expect(QUALITY_RULES).toContain('audience');
+    // Proportional application
+    expect(QUALITY_RULES).toContain('Proportionally');
   });
 });
 
@@ -283,7 +303,7 @@ describe('prompt injection integration', () => {
     expect(claudePrompt).toContain('Response Quality Rules');
     expect(claudePrompt).toContain('Available User Commands');
     expect(claudePrompt).toContain('/careful');
-    expect(claudePrompt).toContain('Never say');
+    expect(claudePrompt).toContain('NEVER say');
     expect(claudePrompt).toContain('same language'); // Claude-only language hint
   });
 
