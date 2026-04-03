@@ -88,21 +88,26 @@ describe('anti-rationalization rules (real exports)', () => {
   });
 
   it('contains advanced response techniques', () => {
-    // Role + Goal + Format guidance
-    expect(QUALITY_RULES).toContain('Role');
-    expect(QUALITY_RULES).toContain('Goal');
-    expect(QUALITY_RULES).toContain('Format');
-    // Think-before-answering
-    expect(QUALITY_RULES).toContain('key variables');
-    expect(QUALITY_RULES).toContain('competing considerations');
-    // Staged prompting
-    expect(QUALITY_RULES).toContain('stages');
-    // Stress-test both sides
-    expect(QUALITY_RULES).toContain('counter');
+    // Output format anchor (Pattern 1)
+    expect(QUALITY_RULES).toContain('output format');
+    // Ask → Constraints → Context ordering (Pattern 2)
+    expect(QUALITY_RULES).toContain('Constraints');
+    // Confidence gate (Pattern 5)
+    expect(QUALITY_RULES).toContain('claim you cannot support');
+    // Step separator (Pattern 6)
+    expect(QUALITY_RULES).toContain('hard stops');
+    // Assumption audit (Pattern 8)
+    expect(QUALITY_RULES).toContain('assumption');
+    // Reframe test / counter-argument (Pattern 9)
+    expect(QUALITY_RULES).toContain('argue the opposite');
+    // Specificity ladder (Pattern 10)
+    expect(QUALITY_RULES).toContain('3x more specific');
     // Self-critique
     expect(QUALITY_RULES).toContain('weakest');
     // Audience awareness
     expect(QUALITY_RULES).toContain('audience');
+    // Persona boundaries (Pattern 3)
+    expect(QUALITY_RULES).toContain('Persona Boundaries');
     // Proportional application
     expect(QUALITY_RULES).toContain('Proportionally');
   });

@@ -985,6 +985,7 @@ export function createTelegramBot(router: ProviderRouter): Bot {
         '/skill list|use|create|fix|off — Manage AI skills\n' +
         '/tool list|show|upload|generate|fix — Manage tools\n' +
         '/careful — Safety guardrails mode\n' +
+        '/compress — Compress last response to 5 key sentences\n' +
         '/reload — Reload user tools\n\n' +
 
         '<b>📋 Productivity</b>\n' +
@@ -2745,6 +2746,24 @@ export function createTelegramBot(router: ProviderRouter): Bot {
           { parse_mode: 'HTML' },
         );
     }
+  });
+
+  // ── Compress Command ─────────────────────────────────────
+
+  bot.command('compress', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+
+    // Get the message being replied to, or ask the AI to compress its last response
+    const replyText = ctx.message?.reply_to_message && 'text' in ctx.message.reply_to_message
+      ? ctx.message.reply_to_message.text
+      : null;
+
+    const compressPrompt = replyText
+      ? `Compress the following into the 5 sentences that contain the most decision-relevant information. No filler, no hedging — just the signal:\n\n${replyText}`
+      : 'Compress your last response into the 5 sentences that contain the most decision-relevant information. No filler, no hedging — just the signal.';
+
+    await handleMessage(ctx, compressPrompt, router);
   });
 
   // ── Digest Command ──────────────────────────────────────

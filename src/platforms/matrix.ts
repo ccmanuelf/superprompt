@@ -479,6 +479,11 @@ async function handleCommand(
       return true;
     }
 
+    case '!compress': {
+      // Compress last response into 5 decision-relevant sentences
+      return false; // Let handleMessage process it with the compress prompt
+    }
+
     case '!digest': {
       const digestArgs = command.replace(/^!digest\s*/, '').trim().toLowerCase();
       if (digestArgs === 'daily' || digestArgs === 'weekly' || digestArgs === 'off') {
