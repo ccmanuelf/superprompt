@@ -5,12 +5,16 @@ import { executeDeclarativeHttp } from './declarative-http.js';
 import { executeInWorker } from './worker-sandbox.js';
 import type { DeclarativeHttpEndpoint, ToolParameter } from './tool-parser.js';
 
+import type { ToolPolicy } from '../core/interfaces.js';
+
 export interface ToolEntry {
   definition: Tool;
   execute: (args: Record<string, unknown>, chatId: string) => Promise<Record<string, unknown>>;
   source: 'builtin' | 'user';
   /** Which process executes this tool: 'core' (default), 'tools' (P2), 'parsers' (P3) */
   process?: 'core' | 'tools' | 'parsers';
+  /** Risk metadata — drives policy engine enforcement (SA4) */
+  policy?: ToolPolicy;
 }
 
 const registry = new Map<string, ToolEntry>();

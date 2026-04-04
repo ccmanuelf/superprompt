@@ -64,8 +64,48 @@ export interface MemoryProvider {
 
 // ── Tools ───────────────────────────────────────────────────
 
+// ── Tool Policy (SA4) ───────────────────────────────────────
+
 /**
- * Tool entry — definition + execution handler.
+ * Capabilities a tool requires. Used by the policy engine to evaluate
+ * whether execution should be allowed in the current context.
+ */
+export type ToolScope =
+  | 'network'           // makes HTTP requests to external services
+  | 'filesystem:read'   // reads files from disk
+  | 'filesystem:write'  // writes files to disk
+  | 'command'           // executes shell commands
+  | 'database:read'     // reads from database
+  | 'database:write'    // modifies database
+  | 'browser'           // uses headless browser (Chromium)
+  | 'stateless';        // no I/O, pure computation
+
+/**
+ * Risk metadata for a tool. Drives the policy engine's enforcement decisions.
+ */
+export interface ToolPolicy {
+  /** Risk classification */
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  /** What capabilities this tool needs */
+  scopes: ToolScope[];
+  /** Whether user must confirm before execution (checked against trust memory) */
+  requiresConfirmation: boolean;
+  /** Override default execution timeout (seconds) */
+  maxExecutionTime?: number;
+}
+
+/**
+ * Result of the policy engine's evaluation before tool execution.
+ */
+export interface PolicyDecision {
+  allowed: boolean;
+  reason?: string;
+  requiresConfirmation: boolean;
+  confirmationPrompt?: string;
+}
+
+/**
+ * Tool entry — definition + execution handler + risk metadata.
  * Matches the existing ToolEntry in forge/tool-registry.ts.
  */
 export interface ToolEntry {
@@ -79,6 +119,8 @@ export interface ToolEntry {
    * - 'parsers': File parsing tools — execute in Process 3 (tightest sandbox)
    */
   process?: 'core' | 'tools' | 'parsers';
+  /** Risk metadata — drives policy engine enforcement (SA4) */
+  policy?: ToolPolicy;
 }
 
 /**

@@ -10,7 +10,8 @@ import {
   loadUserTools,
   type ToolEntry,
 } from '../../forge/tool-registry.js';
-import type { ToolProvider } from '../../core/interfaces.js';
+import type { ToolProvider, ToolPolicy } from '../../core/interfaces.js';
+import { registerToolPolicy } from '../../policy-engine.js';
 
 import { webSearchDefinition, webSearch } from './web-search.js';
 import { readFileDefinition, readFileTool } from './read-file.js';
@@ -74,108 +75,126 @@ export function registerBuiltinTools(): void {
       execute: async (args) => webSearch(args as { query: string }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: readFileDefinition,
       execute: async (args) => readFileTool(args as { path: string }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['filesystem:read'], requiresConfirmation: false },
     },
     {
       definition: runCommandDefinition,
       execute: async (args) => runCommand(args as { command: string }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'critical', scopes: ['command'], requiresConfirmation: true },
     },
     {
       definition: getTimeDefinition,
       execute: async () => getTime(),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'low', scopes: ['stateless'], requiresConfirmation: false },
     },
     {
       definition: systemInfoDefinition,
       execute: async () => systemInfo(),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'low', scopes: ['stateless'], requiresConfirmation: false },
     },
     {
       definition: summarizeUrlDefinition,
       execute: async (args) => summarizeUrl(args as { url: string }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: githubListReposDefinition,
       execute: async (args) => githubListRepos(args as { limit?: number }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: githubReadFileDefinition,
       execute: async (args) => githubReadFile(args as { repo: string; path: string; ref?: string }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: githubListIssuesDefinition,
       execute: async (args) => githubListIssues(args as { repo: string; state?: string; limit?: number }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: githubListPrsDefinition,
       execute: async (args) => githubListPrs(args as { repo: string; state?: string; limit?: number }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: githubCloneRepoDefinition,
       execute: async (args) => githubCloneRepo(args as { repo: string; branch?: string }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'critical', scopes: ['network', 'filesystem:write'], requiresConfirmation: true },
     },
     {
       definition: githubDiffDefinition,
       execute: async (args) => githubDiff(args as { repo: string }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network', 'command'], requiresConfirmation: false },
     },
     {
       definition: githubCommitPushDefinition,
       execute: async (args) => githubCommitPush(args as { repo: string; message: string; branch?: string }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'critical', scopes: ['network', 'command'], requiresConfirmation: true },
     },
     {
       definition: githubCreatePrDefinition,
       execute: async (args) => githubCreatePr(args as { repo: string; title: string; body?: string; head: string; base?: string }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: renderListServicesDefinition,
       execute: async (args) => renderListServices(args as { limit?: number }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: renderDeployStatusDefinition,
       execute: async (args) => renderDeployStatus(args as { serviceId: string }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: renderGetLogsDefinition,
       execute: async (args) => renderGetLogs(args as { serviceId: string; limit?: number }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: takeScreenshotDefinition,
       execute: async (args) => takeScreenshot(args as { url: string; selector?: string; fullPage?: boolean }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['browser', 'network'], requiresConfirmation: false },
     },
     // ── Process 3 (parsers): File I/O only, no network, no DB ──
     {
@@ -183,12 +202,14 @@ export function registerBuiltinTools(): void {
       execute: async (args) => parseFileTool(args as { path: string }),
       source: 'builtin',
       process: 'parsers',
+      policy: { riskLevel: 'high', scopes: ['filesystem:read'], requiresConfirmation: false },
     },
     {
       definition: generateDocumentDefinition,
       execute: async (args) => generateDocumentTool(args),
       source: 'builtin',
       process: 'parsers',
+      policy: { riskLevel: 'high', scopes: ['filesystem:write'], requiresConfirmation: false },
     },
     // ── Process 1 (core): DB-dependent tools ──
     {
@@ -196,47 +217,55 @@ export function registerBuiltinTools(): void {
       execute: async (args, chatId) =>
         queryMemory(args as { query: string; limit?: number }, chatId),
       source: 'builtin',
+      policy: { riskLevel: 'low', scopes: ['database:read'], requiresConfirmation: false },
     },
     {
       definition: saveMemoryDefinition,
       execute: async (args, chatId) =>
         saveMemory(args as { content: string; sector?: string }, chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: readBotLogsDefinition,
       execute: async (args) => readBotLogs(args as { count?: number; level?: string }),
       source: 'builtin',
+      policy: { riskLevel: 'low', scopes: ['filesystem:read'], requiresConfirmation: false },
     },
     {
       definition: createReminderDefinition,
       execute: async (args, chatId) =>
         createReminder(args as { message: string; cron: string; description: string }, chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: kanbanManageDefinition,
       execute: async (args, chatId) =>
         kanbanManage(args as Parameters<typeof kanbanManage>[0], chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: searchPapersDefinition,
       execute: async (args, chatId) =>
         searchPapers(args as Parameters<typeof searchPapers>[0], chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['network', 'database:write'], requiresConfirmation: false },
     },
     {
       definition: manageCitationsDefinition,
       execute: async (args, chatId) =>
         manageCitations(args as Parameters<typeof manageCitations>[0], chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: reviewReportDefinition,
       execute: async (args) =>
         reviewReport(args as Parameters<typeof reviewReport>[0]),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:read'], requiresConfirmation: false },
     },
     // ── Manufacturing domain tools (core — all need DB) ──
     {
@@ -244,95 +273,113 @@ export function registerBuiltinTools(): void {
       execute: async (args, chatId) =>
         lineBalance(args as Parameters<typeof lineBalance>[0], chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: sigmaAnalysisDefinition,
       execute: async (args, chatId) =>
         sigmaAnalysis(args as Parameters<typeof sigmaAnalysis>[0], chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: inventoryPlanDefinition,
       execute: async (args, chatId) =>
         inventoryPlan(args as Parameters<typeof inventoryPlan>[0], chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: spcSetupDefinition,
       execute: async (args, chatId) =>
         spcSetup(args as Record<string, unknown>, chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: fmeaManageDefinition,
       execute: async (args, chatId) =>
         fmeaManage(args as Record<string, unknown>, chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: rcaManageDefinition,
       execute: async (args, chatId) =>
         rcaManage(args as Record<string, unknown>, chatId),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: simulationDefinition,
       execute: async (args) =>
         productionSimulation(args as Record<string, unknown>),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: minizincOptimizeDefinition,
       execute: async (args) =>
         minizincOptimize(args as Record<string, unknown>),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['command', 'database:write'], requiresConfirmation: false },
     },
     {
       definition: capacityDefinition,
       execute: async (args) =>
         capacityPlanning(args as Record<string, unknown>),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: sequencerDefinition,
       execute: async (args) =>
         jobSequencer(args as Record<string, unknown>),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: vsmDefinition,
       execute: async (args) =>
         valueStreamMap(args as Record<string, unknown>),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: tocDefinition,
       execute: async (args) =>
         tocAnalysis(args as Record<string, unknown>),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: conwipDefinition,
       execute: async (args) =>
         conwipHeijunka(args as Record<string, unknown>),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: doeDefinition,
       execute: async (args) =>
         designOfExperiments(args as Record<string, unknown>),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
     {
       definition: fsmDefinition,
       execute: async (args) =>
         stateMachineSimulator(args as Record<string, unknown>),
       source: 'builtin',
+      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
   ];
 
   for (const entry of builtins) {
     registerTool(entry);
+    if (entry.policy) {
+      registerToolPolicy(entry.definition.function.name!, entry.policy);
+    }
   }
 
   logger.info({ count: builtins.length }, 'Built-in tools registered');
@@ -373,12 +420,29 @@ export function setProcessClients(
  * Falls back to local execution if the target process is unavailable.
  * Never throws — returns { error: ... } on failure.
  */
+import { evaluatePolicy } from '../../policy-engine.js';
+
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   chatId: string,
 ): Promise<Record<string, unknown>> {
   logger.debug({ tool: name, args }, 'Executing tool');
+
+  // SA4: Policy enforcement — check before execution
+  const policyDecision = evaluatePolicy(name, chatId);
+  if (!policyDecision.allowed) {
+    return { error: policyDecision.reason || 'Tool execution blocked by policy' };
+  }
+  if (policyDecision.requiresConfirmation) {
+    return {
+      _confirmation_required: true,
+      _confirmation_prompt: policyDecision.confirmationPrompt,
+      _tool: name,
+      _args: args,
+      _chatId: chatId,
+    } as Record<string, unknown>;
+  }
 
   const entry = getToolEntry(name);
   const targetProcess = entry?.process;

@@ -128,6 +128,10 @@ async function main(): Promise<void> {
   const { autoSkillsTableInit } = await import('./auto-skills.js');
   storage.registerTables(autoSkillsTableInit);
 
+  // Policy engine tables (tool_trust)
+  const { policyTableInit } = await import('./policy-engine.js');
+  storage.registerTables(policyTableInit);
+
   // ── Subsystems ───────────────────────────────────────────
 
   // Skills subsystem — creates builtin skills on init

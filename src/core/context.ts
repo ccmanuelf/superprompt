@@ -57,6 +57,13 @@ import type {
   shouldHealSkill, healSkill, detectSkillCorrection,
 } from '../auto-skills.js';
 
+// Policy engine
+import type {
+  evaluatePolicy, getToolPolicy, detectConfirmationResponse,
+  listTrustEntries, setTrustDecision, revokeTrust, clearAllTrust,
+  formatTrustList,
+} from '../policy-engine.js';
+
 // ── PlatformContext Type ────────────────────────────────────
 
 export interface PlatformContext {
@@ -197,6 +204,17 @@ export interface PlatformContext {
     detectCorrection: typeof detectSkillCorrection;
   };
 
+  policyEngine: {
+    evaluate: typeof evaluatePolicy;
+    getPolicy: typeof getToolPolicy;
+    detectConfirmation: typeof detectConfirmationResponse;
+    listTrust: typeof listTrustEntries;
+    setTrust: typeof setTrustDecision;
+    revokeTrust: typeof revokeTrust;
+    clearTrust: typeof clearAllTrust;
+    formatTrust: typeof formatTrustList;
+  };
+
   learning: {
     getActivePlansByChat: typeof LearningModule.getActivePlansByChat;
     getPlansByChat: typeof LearningModule.getPlansByChat;
@@ -256,7 +274,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     skillParserMod, skillFixerMod, toolParserMod, scannerMod,
     toolRegistryMod, toolGenMod, toolFixerMod, exporterMod,
     proactiveMod, orchestratorMod, kanbanMod, citationsMod,
-    selfMonitorMod, researchMod, learningMod, autoSkillsMod,
+    selfMonitorMod, researchMod, learningMod, autoSkillsMod, policyMod,
   ] = await Promise.all([
     import('../memory.js'),
     import('../db.js'),
@@ -280,6 +298,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     import('../providers/tools/research.js'),
     import('../learning/index.js'),
     import('../auto-skills.js'),
+    import('../policy-engine.js'),
   ]);
 
   return {
@@ -403,6 +422,16 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
       shouldHeal: autoSkillsMod.shouldHealSkill,
       heal: autoSkillsMod.healSkill,
       detectCorrection: autoSkillsMod.detectSkillCorrection,
+    },
+    policyEngine: {
+      evaluate: policyMod.evaluatePolicy,
+      getPolicy: policyMod.getToolPolicy,
+      detectConfirmation: policyMod.detectConfirmationResponse,
+      listTrust: policyMod.listTrustEntries,
+      setTrust: policyMod.setTrustDecision,
+      revokeTrust: policyMod.revokeTrust,
+      clearTrust: policyMod.clearAllTrust,
+      formatTrust: policyMod.formatTrustList,
     },
     learning: {
       getActivePlansByChat: learningMod.getActivePlansByChat,

@@ -327,6 +327,20 @@ export class OllamaProvider implements AIProvider {
         if (toolName === 'kanban_manage') kanbanToolCalled = true;
         const result = await executeTool(toolName, toolArgs, chatId);
 
+        // SA4: Handle policy confirmation — tool was blocked pending user confirmation
+        if (result && (result as Record<string, unknown>)._confirmation_required) {
+          const prompt = (result as Record<string, unknown>)._confirmation_prompt as string;
+          messages.push({
+            role: 'tool',
+            content: JSON.stringify({
+              status: 'confirmation_required',
+              message: prompt,
+              tool: toolName,
+            }),
+          });
+          continue; // Skip further processing for this tool call
+        }
+
         // Capture generated files for the platform layer to send
         if (result && typeof result === 'object') {
           if ('__docgen' in result) {
