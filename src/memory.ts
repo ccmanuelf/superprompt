@@ -496,3 +496,20 @@ function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return text.slice(0, maxLen - 3) + '...';
 }
+
+// ── Provider Factory ────────────────────────────────────────
+
+import type { MemoryProvider } from './core/interfaces.js';
+
+/**
+ * Create a MemoryProvider backed by the existing memory subsystem.
+ * Wraps buildMemoryContext, saveConversationTurn, and runDecaySweep
+ * behind the MemoryProvider interface.
+ */
+export function createMemoryProvider(): MemoryProvider {
+  return {
+    buildContext: buildMemoryContext,
+    saveConversationTurn,
+    runDecaySweep,
+  };
+}

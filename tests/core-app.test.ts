@@ -350,5 +350,40 @@ describe('Application core', () => {
       app.router = mockRouter;
       expect(app.router).toBe(mockRouter);
     });
+
+    it('provider slots are accessible in subsystem setup phase', async () => {
+      app.registerStorage(storage);
+
+      const mockTools = { list: vi.fn(() => []) } as any;
+      const mockMemory = { buildContext: vi.fn() } as any;
+      const mockPacks = { getAggregatedCapabilities: vi.fn(() => '') } as any;
+
+      app.registerSubsystem({
+        name: 'providers',
+        init: () => {
+          app.tools = mockTools;
+          app.memory = mockMemory;
+          app.packs = mockPacks;
+        },
+      });
+
+      let toolsAvailable = false;
+      let memoryAvailable = false;
+      let packsAvailable = false;
+
+      app.registerSubsystem({
+        name: 'consumer',
+        setup: (appRef) => {
+          toolsAvailable = appRef.tools !== null;
+          memoryAvailable = appRef.memory !== null;
+          packsAvailable = appRef.packs !== null;
+        },
+      });
+
+      await app.startup();
+      expect(toolsAvailable).toBe(true);
+      expect(memoryAvailable).toBe(true);
+      expect(packsAvailable).toBe(true);
+    });
   });
 });

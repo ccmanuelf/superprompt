@@ -134,10 +134,10 @@ async function main(): Promise<void> {
   });
 
   // Tool registry — registers builtin tools, loads user tools, auto-imports forge, loads packs
-  const { registerBuiltinTools } = await import('./providers/tools/index.js');
+  const { registerBuiltinTools, createToolProvider } = await import('./providers/tools/index.js');
   const { loadUserTools } = await import('./forge/tool-registry.js');
   const { autoImportForge } = await import('./forge/auto-import.js');
-  const { loadAllPacks } = await import('./packs.js');
+  const { loadAllPacks, createPackProvider } = await import('./packs.js');
 
   app.registerSubsystem({
     name: 'tools',
@@ -155,11 +155,15 @@ async function main(): Promise<void> {
         logger.info({ packs: packList.map((p) => p.name) }, 'Domain packs loaded');
         loadUserTools(); // reload after pack import
       }
+
+      // Register typed providers on the application
+      app.tools = createToolProvider();
+      app.packs = createPackProvider();
     },
   });
 
   // Memory subsystem — decay sweep + recurring interval
-  const { runDecaySweep } = await import('./memory.js');
+  const { runDecaySweep, createMemoryProvider } = await import('./memory.js');
   let decayInterval: ReturnType<typeof setInterval>;
 
   app.registerSubsystem({
@@ -181,6 +185,9 @@ async function main(): Promise<void> {
       decayInterval = setInterval(() => {
         runDecaySweep().catch((err) => logger.warn({ err }, 'Decay sweep failed'));
       }, DAY_MS);
+
+      // Register typed provider on the application
+      app.memory = createMemoryProvider();
     },
     shutdown: () => {
       clearInterval(decayInterval);

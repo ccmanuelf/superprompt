@@ -588,3 +588,21 @@ See \`docs/customization-guide.md\` for the full guide.
 
   return packDir;
 }
+
+// ── Provider Factory ────────────────────────────────────────
+
+import type { PackProvider } from './core/interfaces.js';
+
+/**
+ * Create a PackProvider backed by the existing pack subsystem.
+ * Wraps loadAllPacks, getPackByName, getAggregatedCapabilities,
+ * and scorePackIntent behind the PackProvider interface.
+ */
+export function createPackProvider(): PackProvider {
+  return {
+    loadAll: loadAllPacks,
+    getByName: getPackByName,
+    getAggregatedCapabilities,
+    scoreIntent: scorePackIntent,
+  };
+}

@@ -2,10 +2,15 @@ import type { Tool } from 'ollama';
 import { logger } from '../../logger.js';
 import {
   registerTool,
+  unregisterTool,
+  getToolEntry,
   executeRegisteredTool,
   getToolDefinitions as getRegistryDefinitions,
+  listRegisteredTools,
+  loadUserTools,
   type ToolEntry,
 } from '../../forge/tool-registry.js';
+import type { ToolProvider } from '../../core/interfaces.js';
 
 import { webSearchDefinition, webSearch } from './web-search.js';
 import { readFileDefinition, readFileTool } from './read-file.js';
@@ -333,5 +338,21 @@ export async function executeTool(
 ): Promise<Record<string, unknown>> {
   logger.debug({ tool: name, args }, 'Executing tool');
   return executeRegisteredTool(name, args, chatId);
+}
+
+/**
+ * Create a ToolProvider backed by the in-memory tool registry.
+ * Wraps existing registry functions behind the ToolProvider interface.
+ */
+export function createToolProvider(): ToolProvider {
+  return {
+    register: registerTool,
+    unregister: unregisterTool,
+    get: getToolEntry,
+    execute: executeRegisteredTool,
+    getDefinitions: getRegistryDefinitions,
+    list: listRegisteredTools,
+    loadUserTools,
+  };
 }
 
