@@ -241,12 +241,17 @@ async function main(): Promise<void> {
     },
   });
 
+  // ── Platform Context ──────────────────────────────────────
+  // Build the context facade that platforms use to access all subsystems
+  const { buildPlatformContext } = await import('./core/context.js');
+  const ctx = await buildPlatformContext(router);
+
   // ── Platforms ────────────────────────────────────────────
 
   // Telegram
   if (config.TELEGRAM_BOT_TOKEN) {
     const { createTelegramBot, formatForTelegram, splitMessage } = await import('./platforms/telegram.js');
-    const bot = createTelegramBot(router);
+    const bot = createTelegramBot(ctx);
 
     app.registerPlatform({
       name: 'telegram',
@@ -275,7 +280,7 @@ async function main(): Promise<void> {
   // Matrix
   if (config.MATRIX_HOMESERVER && config.MATRIX_ACCESS_TOKEN) {
     const { createMatrixBot, formatForMatrix } = await import('./platforms/matrix.js');
-    const matrixClient = await createMatrixBot(router);
+    const matrixClient = await createMatrixBot(ctx);
 
     app.registerPlatform({
       name: 'matrix',
