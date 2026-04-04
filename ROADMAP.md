@@ -11,7 +11,12 @@ clauded is evolving from personal AI assistant into a **company-wide AI operatio
 
 **In progress:** S4 (E2E across 4 workstations)
 
-**Forward roadmap:** SA1-SA5 (Architecture Hardening) → S17-S18 (Production Hub) → S19 (Auto-Skills) → S3 (Production Deployment)
+**Forward roadmap:**
+- Phase 1: SA1-SA5 (Architecture Hardening) — CTO security + modularity concerns
+- Phase 2: S17-S18 (Production Hub + BOM Intelligence) — as capability packs
+- Phase 3: S3 (Production Deployment) — hosting + DB migration + multi-instance
+- Phase 4: Client Integration Platform (SaaS) — Board of Directors revenue vision
+- Core subsystems: Auto-Skills (absorbed S19) + Quality Techniques (rc.9/rc.10)
 
 ---
 
@@ -1012,9 +1017,11 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 ---
 
-## Sprint S19: Auto-Generated Skills from Experience — NOT STARTED (after SA2)
+## Auto-Generated Skills — CORE SUBSYSTEM (absorbed from S19 into SA2)
 
-**Goal:** When a user completes a complex multi-step task successfully, clauded offers to save the workflow as a reusable skill.
+> Note: Originally planned as Sprint S19. Reclassified as a core subsystem per CTO direction (2026-04-03). Auto-skills are as fundamental as memory — they're how clauded learns, regardless of department or role.
+
+**Goal:** When a user completes a complex multi-step task successfully, clauded offers to save the workflow as a reusable skill. This applies to every department, every user, every task.
 
 **Source:** Hermes Agent evaluation — auto-skill-generation identified as the single highest-value concept to adopt.
 
@@ -1025,36 +1032,172 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 4. **Ask** the user: "That worked well. Want me to save this as a reusable skill?"
 5. **If approved:** Store as a user skill with auto-trigger patterns derived from the original request
 
-### Why It Matters for All Departments
-- Manufacturing engineer solves a complex capacity problem → skill auto-created for next time
-- Finance analyst builds a budget workflow → skill auto-created
-- Supply chain manager runs an RFQ comparison → skill auto-created
-- Each department's clauded instance gets smarter with use, without developer intervention
+### Why It's Core (Not a Feature Sprint)
+- Every department benefits: manufacturing, finance, supply chain, HR, engineering
+- Each user's clauded experience gets smarter over time without developer intervention
+- Client integrations (SaaS phase) auto-learn client-specific patterns
+- Combined with the quality techniques (rc.9/rc.10), clauded doesn't just answer — it learns and improves
 
-### Depends on: SA2 (formal core — needs clean tool execution tracking)
-### Estimated effort: 1-2 weeks
+### Implemented as part of: SA2 (Formal Application Core)
+### Estimated effort: 1-2 weeks within SA2 scope
 
 ---
 
 ## Sprint S3: Production Deployment — NOT STARTED (after architecture hardening)
 
-**Goal:** Deploy clauded to production infrastructure for company-wide use.
+**Goal:** Deploy clauded to production infrastructure for company-wide use across 9 departments.
 
 **Status:** Pending deployment approval. Hosting options evaluated: InMotion dedicated server (most likely), VMware VM, or Render.
 
 **Depends on:** SA1-SA5 (architecture hardening), S4 (E2E validation), deployment approval.
+
+### Core Deployment Components (all required)
+- Docker (sandbox and process isolation)
+- Claude CLI (Anthropic Max dedicated account, Qwen 3.6 in Ollama)
+- Ollama (local AI inference — Qwen 3.6 target model)
+- Telegram (primary interface — hybrid: one bot + department notification groups)
+- Speaches (voice STT/TTS — required for production floor workers)
+- SQLite extensions or network DB (sqlite-vec for embeddings, or pgvector/MariaDB equivalent)
+- Web UI with VOICE_WEB_TOKEN/PORT (dashboards are core, not optional)
+- Quality techniques (rc.9/rc.10 patterns — core behavior for all users)
+- Auto-generated skills (core subsystem — clauded learns from every user)
+
+### Database Architecture
+- **Development/E2E:** SQLite with WAL mode (current)
+- **Production:** MariaDB (InMotion) or PostgreSQL (VMware/Render)
+- **Multi-instance requirement:** If a single Anthropic Max $200/month account is insufficient for company-wide usage, multiple clauded instances with separate Anthropic accounts connect to the SAME shared database
+- **SA2 StorageProvider** abstracts the database — switch from SQLite to MariaDB/PostgreSQL is configuration, not code
+
+### Anthropic Max Capacity Assessment
+
+| Scale | Est. Messages/Day | Single $200 Account? | Architecture |
+|-------|:---:|:---:|---|
+| E2E testing (12 users) | 100-200 | Yes | Single instance |
+| One department (15-20 users) | 300-500 | Likely yes | Single instance |
+| Company-wide (80-150 users) | 2,000-5,000 | Almost certainly no | Multiple instances, shared DB |
+
+If multiple accounts are needed, each department (or group of departments) gets its own clauded instance with its own Anthropic Max account, all connected to one shared database — single source of truth company-wide.
 
 ### Scope (when approved)
 - Database migration: SQLite → MariaDB (InMotion) or PostgreSQL (VMware/Render)
 - Reverse proxy configuration (Nginx or Apache)
 - TLS certificates for web UI
 - Telegram bot: hybrid approach (one bot + department notification groups)
-- Dedicated Anthropic Max account + Qwen3.6 in Ollama
-- Backup strategy (automated daily DB backup)
+- Dedicated Anthropic Max account(s) + Qwen 3.6 in Ollama
+- Backup strategy (automated daily DB backup with point-in-time recovery)
 - Monitoring and alerting
 - Core development team onboarding
+- Department champion training (Level 1/2 pack creation)
 
 ### Deployment guide: `docs/deployment-guide.md` (platform recipes for InMotion, VPS, VMware, Oracle Cloud)
+
+---
+
+## Phase 4: Client Integration Platform (SaaS Trajectory)
+
+> Board of Directors strategic direction (2026-04-03). Post-production deployment.
+> Full analysis: `reference/saas-trajectory.md`
+
+**Vision:** clauded becomes a managed integration platform that generates recurring revenue. Novalink operates the AI middleware connecting client systems to Novalink's production floor. Clients connect their Shopify, ERP, or EDI endpoints — clauded handles the translation, order flow, status updates, and notifications.
+
+### Service Tiers
+
+| Tier | What Client Gets | Revenue Model |
+|------|-----------------|---------------|
+| **Basic** | Submit orders via Telegram, receive production status updates | Included in manufacturing contract |
+| **Standard** | API integration — orders auto-ingested from client's Shopify/ERP, shipments auto-posted back | Monthly integration fee |
+| **Premium** | Full EDI integration + BOM visibility + shortage alerts + approval workflows | Higher monthly fee |
+| **Custom** | Dedicated clauded pack with client-specific tools, skills, and automation | Professional services engagement |
+
+### How It Works (Architecture)
+
+Each client gets a Domain Pack containing their API connections:
+
+```
+packs/
+├── client-acme/
+│   ├── pack.yaml              (ACME API endpoints, field mappings)
+│   ├── tools/
+│   │   ├── shopify-orders.md  (declarative HTTP: pull orders)
+│   │   ├── shopify-shipment.md(declarative HTTP: post shipments)
+│   │   └── erp-forecast.md   (declarative HTTP: query forecasts)
+│   ├── skills/
+│   │   └── acme-coordinator.md(knows ACME terminology, contacts)
+│   └── templates/
+│       └── acme-order-format.csv
+├── client-betacorp/
+│   ├── pack.yaml
+│   ├── tools/
+│   │   ├── edi-850-parser.md  (parse EDI purchase orders)
+│   │   └── edi-856-generator.md(generate EDI ship notices)
+│   └── skills/
+│       └── betacorp-coordinator.md
+```
+
+**Declarative HTTP tools** (already existing in clauded) enable API integrations in markdown — no TypeScript required for standard REST APIs. Example Shopify order pull:
+
+```markdown
+---
+name: shopify_get_orders
+type: declarative_http
+endpoint:
+  method: GET
+  url: "https://client-store.myshopify.com/admin/api/2024-01/orders.json"
+  headers:
+    X-Shopify-Access-Token: "{{ env.CLIENT_ACME_SHOPIFY_TOKEN }}"
+  response_path: "orders"
+---
+```
+
+**Auto-generated skills** learn client-specific patterns: the first ACME order takes manual processing; by the tenth, clauded offers to automate the entire workflow.
+
+### What's Needed Beyond Current Architecture
+
+| Capability | Purpose | Effort | When |
+|---|---|---|---|
+| **Webhook ingestion** | Receive POST requests from client systems (Shopify order webhooks, ERP pushes) | 1-2 weeks | Post-S3 |
+| **EDI support** | Parse/generate X12 documents (850 Purchase Order, 856 Ship Notice, 810 Invoice) | 2-3 weeks | Post-S3 |
+| **Credential vault** | Per-client API key storage (encrypted, separate from .env) | 1 week | Post-S3 |
+| **Multi-tenant data isolation** | Client A's orders invisible to Client B (row-level or schema-level) | Part of SA2 StorageProvider | SA2 |
+| **Outbound notifications** | Post to client's Shopify/ERP/webhook when status changes | 1 week | Post-S17 |
+| **Client audit trail** | Per-client data exchange log (what, when, direction, success/failure) | Part of S17 activity log | S17 |
+| **SLA monitoring** | Integration uptime, failed syncs, retry logic, alerting | 1-2 weeks | Post-S3 |
+| **White-label web portal** | Client-facing dashboard showing their orders, status, documents | 2-3 weeks | Post-S3 |
+
+### Rollout Sequence
+
+1. **Quarter 1 post-deployment:** Internal production validated, ROI data collected
+2. **Quarter 2:** Pilot one trusted client with simple Shopify integration (1 pack, declarative HTTP)
+3. **Quarter 3:** Formalize as a service offering, add EDI support for clients that need it
+4. **Quarter 4+:** Scale to multiple clients, each with their own pack, auto-learning patterns
+
+### ROI Projection
+
+**Internal savings (immediate upon deployment):**
+
+| Source | Conservative Estimate |
+|--------|----------------------|
+| Data entry labor reallocation (20 roles × 1 hr/day × $20/hr) | $8,000-10,000/month |
+| Report generation automation | $2,000-3,000/month |
+| Quality escape prevention | $5,000-15,000/month (depends on defect cost) |
+| Communication delay reduction | $3,000-5,000/month |
+| Knowledge preservation (reduced training cost for new hires) | $2,000-4,000/month |
+| **Total internal savings** | **$20,000-37,000/month** |
+
+**Against costs:**
+- Anthropic Max: $200-1,000/month (1-5 accounts)
+- Hosting: $0-200/month (InMotion existing, or VM allocation)
+- Development team: Internal resource allocation
+
+**SaaS revenue (post-pilot):**
+
+| Service | Per-Client Revenue | At 10 Clients |
+|---------|:---:|:---:|
+| Standard API integration | $500-1,500/month | $5,000-15,000/month |
+| Premium EDI integration | $2,000-5,000/month | $20,000-50,000/month |
+| Custom automation | Project-based ($5K-25K) | Variable |
+
+### Full analysis: `reference/saas-trajectory.md`
 
 ---
 
@@ -1062,14 +1205,12 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 | Enhancement | Source | Status |
 |-------------|--------|--------|
-| agentskills.io standard | Hermes Agent evaluation | Nice-to-have. Evaluate after S19 (auto-skills). |
-| Odoo integration | CTO strategic direction | Evaluate when Odoo migration progresses. API connectors possible. |
-| Client self-service portal | S17/S18 spec | Web portal for clients to submit orders directly. Post-S17. |
-| ERP write-back | S18 spec | Currently read-only from external APIs. Write-back is future. |
-| Multi-instance federation | CTO question #4 | Only if single instance can't scale. Approach B/C from architecture response. |
+| agentskills.io standard | Hermes Agent evaluation | Nice-to-have. Evaluate after auto-skills are core. |
+| Odoo integration | CTO strategic direction | Evaluate when Odoo migration progresses. API connectors via declarative HTTP tools. |
+| Multi-instance federation | CTO architecture review | Required if single Anthropic account insufficient. Shared DB architecture in SA2. |
 | Real-time machine integration | CTO MES question | SCADA/OPC-UA for live machine data. Requires hardware integration. |
 | Multi-agent routing | openclaw tutorial | Telegram Forum Topics (S11) solves this differently |
-| Execution sandbox | open-terminal | Persistent workspace (S10) addresses this need. SA1 replaces this with Worker threads. |
+| Execution sandbox | open-terminal | Persistent workspace (S10) addresses this need. SA1 replaces with Worker threads. |
 | Telegram Forum Topics | OpenClaw architecture | Evaluate after S11 Kanban — may combine or sequence |
 
 ---
