@@ -4,27 +4,16 @@ import { resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { STORE_DIR } from './config.js';
 import { logger } from './logger.js';
-import { initLearningTables } from './learning/db.js';
-import { initCitationTable } from './citations.js';
-import { initBalanceTables } from './balance.js';
-import { initSigmaTables } from './sigma.js';
-import { initInventoryTables } from './inventory.js';
-import { initControlPlanTables } from './control-plan.js';
-import { initFmeaTables } from './fmea.js';
-import { initRcaTables } from './rca.js';
-import { initSimulationTables } from './simulation/index.js';
-import { initCapacityTables } from './capacity/index.js';
-import { initSequencerTables } from './sequencer/index.js';
-import { initVsmTables } from './vsm/index.js';
-import { initTocTables } from './toc/index.js';
-import { initConwipTables } from './conwip/index.js';
-import { initDoeTables } from './doe/index.js';
-import { initFsmTables } from './fsm/index.js';
+import type { StorageProvider, TableInitializer } from './core/interfaces.js';
 
 let db: Database.Database;
 
 // ── Initialization ──────────────────────────────────────────
 
+/**
+ * Initialize the database: open file, enable WAL mode, load extensions, create core tables.
+ * Domain subsystem tables are no longer created here — they register via StorageProvider.
+ */
 export function initDatabase(): Database.Database {
   mkdirSync(STORE_DIR, { recursive: true });
 
@@ -36,23 +25,37 @@ export function initDatabase(): Database.Database {
   sqliteVec.load(db);
 
   createTables();
-  initLearningTables();
-  initCitationTable();
-  initBalanceTables();
-  initSigmaTables();
-  initInventoryTables();
-  initControlPlanTables();
-  initFmeaTables();
-  initRcaTables();
-  initSimulationTables();
-  initCapacityTables();
-  initSequencerTables();
-  initVsmTables();
-  initTocTables();
-  initConwipTables();
-  initDoeTables();
-  initFsmTables();
   return db;
+}
+
+/**
+ * Create a StorageProvider that wraps the database singleton.
+ * Used by the Application core for lifecycle management.
+ */
+export function createStorageProvider(): StorageProvider {
+  const tableInitializers: TableInitializer[] = [];
+
+  return {
+    init(): void {
+      initDatabase();
+    },
+    getDb(): Database.Database {
+      return getDatabase();
+    },
+    registerTables(initializer: TableInitializer): void {
+      tableInitializers.push(initializer);
+    },
+    initAllTables(): void {
+      for (const init of tableInitializers) {
+        init.initTables();
+        logger.debug({ table: init.name }, 'Table initializer executed');
+      }
+      logger.info({ count: tableInitializers.length }, 'All table initializers executed');
+    },
+    close(): void {
+      closeDatabase();
+    },
+  };
 }
 
 export function getDatabase(): Database.Database {

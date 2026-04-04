@@ -20,6 +20,8 @@ import type {
 export * from './models.js';
 export { analyzeVSM, compareStates, classifyTimwoods } from './analysis.js';
 
+import type { TableInitializer } from '../core/interfaces.js';
+
 // ── Database ─────────────────────────────────────────────────
 
 export function initVsmTables(): void {
@@ -36,6 +38,8 @@ export function initVsmTables(): void {
     CREATE INDEX IF NOT EXISTS idx_vsm_maps_name ON vsm_maps(name);
   `);
 }
+
+export const vsmTableInit: TableInitializer = { name: 'vsm', initTables: initVsmTables };
 
 // ── CRUD ─────────────────────────────────────────────────────
 

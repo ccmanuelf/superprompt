@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from './db.js';
 import { logger } from './logger.js';
+import type { TableInitializer } from './core/interfaces.js';
 
 // ── Response-Format Kanban Action Detection ─────────────────
 // Same pattern as docgen: AI outputs a JSON block, platform handler detects and executes it.
@@ -225,6 +226,8 @@ export function initKanbanTable(): void {
     db.exec('ALTER TABLE kanban_cards ADD COLUMN scheduled_for INTEGER');
   }
 }
+
+export const kanbanTableInit: TableInitializer = { name: 'kanban', initTables: initKanbanTable };
 
 // ── CRUD Operations ─────────────────────────────────────────
 

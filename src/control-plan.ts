@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from './db.js';
 import { logger } from './logger.js';
+import type { TableInitializer } from './core/interfaces.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -107,6 +108,8 @@ export function initControlPlanTables(): void {
     CREATE INDEX IF NOT EXISTS idx_ctq_plan ON ctq_items(plan_id);
   `);
 }
+
+export const controlPlanTableInit: TableInitializer = { name: 'control-plan', initTables: initControlPlanTables };
 
 function genId(): string {
   return randomBytes(16).toString('hex');

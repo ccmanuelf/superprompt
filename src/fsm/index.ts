@@ -14,6 +14,8 @@ export { getTemplate, listTemplates, FSM_TEMPLATES } from './templates.js';
 export { bridgeFromSimulation, bridgeFromVSM, bridgeFromTOC, bridgeFromSequencer, createFSMFromBridge, normalizeMachineName } from './bridge.js';
 export { generateStructuredText } from './codegen.js';
 
+import type { TableInitializer } from '../core/interfaces.js';
+
 // ── Database ─────────────────────────────────────────────────
 
 export function initFsmTables(): void {
@@ -30,6 +32,8 @@ export function initFsmTables(): void {
     CREATE INDEX IF NOT EXISTS idx_fsm_configs_name ON fsm_configs(name);
   `);
 }
+
+export const fsmTableInit: TableInitializer = { name: 'fsm', initTables: initFsmTables };
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 

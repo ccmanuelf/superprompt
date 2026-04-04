@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { getDatabase } from './db.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
+import type { TableInitializer } from './core/interfaces.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -83,6 +84,8 @@ export function initRcaTables(): void {
     CREATE INDEX IF NOT EXISTS idx_rca_nodes_parent ON rca_nodes(parent_id);
   `);
 }
+
+export const rcaTableInit: TableInitializer = { name: 'rca', initTables: initRcaTables };
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 

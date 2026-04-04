@@ -6,6 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from './db.js';
 import { logger } from './logger.js';
+import type { TableInitializer } from './core/interfaces.js';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -58,6 +59,8 @@ export function initCitationTable(): void {
 
   logger.info('Citation table initialized');
 }
+
+export const citationTableInit: TableInitializer = { name: 'citations', initTables: initCitationTable };
 
 // ── CRUD ────────────────────────────────────────────────────
 

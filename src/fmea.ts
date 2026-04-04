@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { getDatabase } from './db.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
+import type { TableInitializer } from './core/interfaces.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -121,6 +122,8 @@ export function initFmeaTables(): void {
     CREATE INDEX IF NOT EXISTS idx_fmea_actions_fm ON fmea_action_items(failure_mode_id);
   `);
 }
+
+export const fmeaTableInit: TableInitializer = { name: 'fmea', initTables: initFmeaTables };
 
 function genId(): string {
   return randomBytes(16).toString('hex');

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { getDatabase } from './db.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
+import type { TableInitializer } from './core/interfaces.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -109,6 +110,8 @@ export function initBalanceTables(): void {
       ON balance_results(project_id);
   `);
 }
+
+export const balanceTableInit: TableInitializer = { name: 'balance', initTables: initBalanceTables };
 
 function genId(): string {
   return randomBytes(16).toString('hex');

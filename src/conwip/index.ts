@@ -9,6 +9,8 @@ import type { SavedConwip, StageUtilization, HeijunkaAnalysis, ProductMix } from
 export * from './models.js';
 export { analyzeCONWIP, analyzeHeijunka, simulateTokenFlow } from './analysis.js';
 
+import type { TableInitializer } from '../core/interfaces.js';
+
 // ── Database ─────────────────────────────────────────────────
 
 export function initConwipTables(): void {
@@ -25,6 +27,8 @@ export function initConwipTables(): void {
     CREATE INDEX IF NOT EXISTS idx_conwip_configs_name ON conwip_configs(name);
   `);
 }
+
+export const conwipTableInit: TableInitializer = { name: 'conwip', initTables: initConwipTables };
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 

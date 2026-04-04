@@ -5,6 +5,7 @@ import { getDatabase } from './db.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import { inverseNormal } from './sigma.js';
+import type { TableInitializer } from './core/interfaces.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -115,6 +116,8 @@ export function initInventoryTables(): void {
       ON inventory_results(project_id);
   `);
 }
+
+export const inventoryTableInit: TableInitializer = { name: 'inventory', initTables: initInventoryTables };
 
 function genId(): string {
   return randomBytes(16).toString('hex');

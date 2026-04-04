@@ -31,6 +31,8 @@ export {
   getSetupTime,
 } from './evaluation.js';
 
+import type { TableInitializer } from '../core/interfaces.js';
+
 // ── Database ─────────────────────────────────────────────────
 
 export function initSequencerTables(): void {
@@ -50,6 +52,8 @@ export function initSequencerTables(): void {
       ON seq_schedules(name);
   `);
 }
+
+export const sequencerTableInit: TableInitializer = { name: 'sequencer', initTables: initSequencerTables };
 
 // ── CRUD ─────────────────────────────────────────────────────
 

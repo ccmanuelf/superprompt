@@ -6,6 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../db.js';
 import { logger } from '../logger.js';
+import type { TableInitializer } from '../core/interfaces.js';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -139,6 +140,8 @@ export function initLearningTables(): void {
 
   logger.info('Learning tables initialized');
 }
+
+export const learningTableInit: TableInitializer = { name: 'learning', initTables: initLearningTables };
 
 // ── ID Generation ───────────────────────────────────────────
 

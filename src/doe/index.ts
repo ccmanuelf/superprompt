@@ -15,6 +15,8 @@ import type {
 export * from './models.js';
 export { generateMatrix, analyzeDOE, createConfirmationRun } from './analysis.js';
 
+import type { TableInitializer } from '../core/interfaces.js';
+
 // ── Database ─────────────────────────────────────────────────
 
 export function initDoeTables(): void {
@@ -31,6 +33,8 @@ export function initDoeTables(): void {
     CREATE INDEX IF NOT EXISTS idx_doe_experiments_name ON doe_experiments(name);
   `);
 }
+
+export const doeTableInit: TableInitializer = { name: 'doe', initTables: initDoeTables };
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 

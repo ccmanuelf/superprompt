@@ -26,6 +26,8 @@ export { runScenario, compareScenarios, getScenarioDefaults } from './scenarios.
 export { runCapacityMonteCarlo, computeStats } from './monte-carlo.js';
 export { calculateROI, compareROIs } from './roi.js';
 
+import type { TableInitializer } from '../core/interfaces.js';
+
 // ── Database ─────────────────────────────────────────────────
 
 export function initCapacityTables(): void {
@@ -57,6 +59,8 @@ export function initCapacityTables(): void {
       ON capacity_results(plan_id);
   `);
 }
+
+export const capacityTableInit: TableInitializer = { name: 'capacity', initTables: initCapacityTables };
 
 // ── CRUD ─────────────────────────────────────────────────────
 

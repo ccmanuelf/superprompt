@@ -30,6 +30,8 @@ export { validateSimulationConfig } from './validation.js';
 export { calculateAllBlocks } from './calculations.js';
 export { runMonteCarlo, computeStats } from './monte-carlo.js';
 
+import type { TableInitializer } from '../core/interfaces.js';
+
 // ── Database ─────────────────────────────────────────────────
 
 export function initSimulationTables(): void {
@@ -56,6 +58,8 @@ export function initSimulationTables(): void {
     CREATE INDEX IF NOT EXISTS idx_sim_results_scenario ON sim_results(scenario_id);
   `);
 }
+
+export const simulationTableInit: TableInitializer = { name: 'simulation', initTables: initSimulationTables };
 
 function genId(): string {
   return randomBytes(16).toString('hex');

@@ -19,6 +19,8 @@ import type {
 export * from './models.js';
 export { analyzeTOC, identifyConstraint, calculateThroughputAccounting, buildDBRSchedule, computeBufferStatus, computeWIPGauges } from './analysis.js';
 
+import type { TableInitializer } from '../core/interfaces.js';
+
 // ── Database ─────────────────────────────────────────────────
 
 export function initTocTables(): void {
@@ -47,6 +49,8 @@ export function initTocTables(): void {
     CREATE INDEX IF NOT EXISTS idx_toc_history_config ON toc_throughput_history(config_name, period);
   `);
 }
+
+export const tocTableInit: TableInitializer = { name: 'toc', initTables: initTocTables };
 
 // ── CRUD ─────────────────────────────────────────────────────
 
