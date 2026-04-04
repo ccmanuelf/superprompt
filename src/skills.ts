@@ -451,6 +451,10 @@ export function detectSkillTrigger(
     }
   }
 
+  // Check dynamic triggers from DB (auto-generated skills)
+  const dynamicResult = checkDynamicTriggers(message, chatId, currentSkill);
+  if (dynamicResult) return dynamicResult;
+
   // No trigger matched — if current skill was auto-triggered, decrement turns
   if (currentSkill && isSkillAutoTriggered(chatId)) {
     const shouldDeactivate = decrementSkillTurns(chatId);
@@ -495,4 +499,68 @@ export function applyAutoTrigger(
   }
   // 'suggest' mode — we still activate but tell the user they can turn it off
   return `💡 Switched to **${trigger.skill.name}** mode — seems relevant for this request. Use /skill off if you prefer the default.`;
+}
+
+// ── Dynamic Trigger Detection (auto-generated skills) ────────
+
+/**
+ * Check dynamic skill triggers stored in the DB (from auto-generated skills).
+ * Called by detectSkillTrigger() after checking hardcoded SKILL_TRIGGERS.
+ */
+function checkDynamicTriggers(
+  message: string,
+  chatId: string,
+  currentSkill: Skill | null,
+): TriggerResult | null {
+  try {
+    // Lazy import to avoid circular dependency — auto-skills.ts imports from db.ts
+    // which skills.ts also imports. Using dynamic require-style import.
+    const db = getDatabase();
+
+    const triggers = db.prepare(
+      'SELECT skill_id, pattern, mode FROM skill_triggers',
+    ).all() as Array<{ skill_id: string; pattern: string; mode: string }>;
+
+    for (const trigger of triggers) {
+      try {
+        const regex = new RegExp(trigger.pattern, 'i');
+        if (regex.test(message)) {
+          const skill = getSkillById(trigger.skill_id);
+          if (!skill) continue;
+
+          // Same skill already active — refresh turns
+          if (currentSkill?.id === trigger.skill_id) {
+            refreshAutoTriggerTurns(chatId);
+            return null;
+          }
+
+          logger.debug(
+            { chatId, skill: skill.name, mode: trigger.mode, pattern: trigger.pattern },
+            'Dynamic skill trigger matched',
+          );
+
+          return {
+            skill,
+            mode: trigger.mode as TriggerMode,
+            matchedPattern: trigger.pattern,
+          };
+        }
+      } catch {
+        // Invalid regex pattern — skip silently
+      }
+    }
+  } catch {
+    // DB not ready or table doesn't exist yet — skip dynamic triggers
+  }
+
+  return null;
+}
+
+function getSkillById(id: string): Skill | null {
+  try {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM skills WHERE id = ?').get(id) as Skill | null;
+  } catch {
+    return null;
+  }
 }

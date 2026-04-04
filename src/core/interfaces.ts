@@ -72,6 +72,13 @@ export interface ToolEntry {
   definition: Tool;
   execute: (args: Record<string, unknown>, chatId: string) => Promise<Record<string, unknown>>;
   source: 'builtin' | 'user';
+  /**
+   * Which process executes this tool.
+   * - 'core': DB-dependent tools — execute in Process 1 (default)
+   * - 'tools': DB-free compute/network tools — execute in Process 2
+   * - 'parsers': File parsing tools — execute in Process 3 (tightest sandbox)
+   */
+  process?: 'core' | 'tools' | 'parsers';
 }
 
 /**

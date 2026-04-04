@@ -68,21 +68,129 @@ import { fsmDefinition, stateMachineSimulator } from './fsm.js';
  */
 export function registerBuiltinTools(): void {
   const builtins: ToolEntry[] = [
+    // ── Process 2 (tools): Network + compute, no DB ──
     {
       definition: webSearchDefinition,
       execute: async (args) => webSearch(args as { query: string }),
       source: 'builtin',
+      process: 'tools',
     },
     {
       definition: readFileDefinition,
       execute: async (args) => readFileTool(args as { path: string }),
       source: 'builtin',
+      process: 'tools',
     },
     {
       definition: runCommandDefinition,
       execute: async (args) => runCommand(args as { command: string }),
       source: 'builtin',
+      process: 'tools',
     },
+    {
+      definition: getTimeDefinition,
+      execute: async () => getTime(),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: systemInfoDefinition,
+      execute: async () => systemInfo(),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: summarizeUrlDefinition,
+      execute: async (args) => summarizeUrl(args as { url: string }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: githubListReposDefinition,
+      execute: async (args) => githubListRepos(args as { limit?: number }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: githubReadFileDefinition,
+      execute: async (args) => githubReadFile(args as { repo: string; path: string; ref?: string }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: githubListIssuesDefinition,
+      execute: async (args) => githubListIssues(args as { repo: string; state?: string; limit?: number }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: githubListPrsDefinition,
+      execute: async (args) => githubListPrs(args as { repo: string; state?: string; limit?: number }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: githubCloneRepoDefinition,
+      execute: async (args) => githubCloneRepo(args as { repo: string; branch?: string }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: githubDiffDefinition,
+      execute: async (args) => githubDiff(args as { repo: string }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: githubCommitPushDefinition,
+      execute: async (args) => githubCommitPush(args as { repo: string; message: string; branch?: string }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: githubCreatePrDefinition,
+      execute: async (args) => githubCreatePr(args as { repo: string; title: string; body?: string; head: string; base?: string }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: renderListServicesDefinition,
+      execute: async (args) => renderListServices(args as { limit?: number }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: renderDeployStatusDefinition,
+      execute: async (args) => renderDeployStatus(args as { serviceId: string }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: renderGetLogsDefinition,
+      execute: async (args) => renderGetLogs(args as { serviceId: string; limit?: number }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    {
+      definition: takeScreenshotDefinition,
+      execute: async (args) => takeScreenshot(args as { url: string; selector?: string; fullPage?: boolean }),
+      source: 'builtin',
+      process: 'tools',
+    },
+    // ── Process 3 (parsers): File I/O only, no network, no DB ──
+    {
+      definition: parseFileDefinition,
+      execute: async (args) => parseFileTool(args as { path: string }),
+      source: 'builtin',
+      process: 'parsers',
+    },
+    {
+      definition: generateDocumentDefinition,
+      execute: async (args) => generateDocumentTool(args),
+      source: 'builtin',
+      process: 'parsers',
+    },
+    // ── Process 1 (core): DB-dependent tools ──
     {
       definition: queryMemoryDefinition,
       execute: async (args, chatId) =>
@@ -96,31 +204,6 @@ export function registerBuiltinTools(): void {
       source: 'builtin',
     },
     {
-      definition: getTimeDefinition,
-      execute: async () => getTime(),
-      source: 'builtin',
-    },
-    {
-      definition: systemInfoDefinition,
-      execute: async () => systemInfo(),
-      source: 'builtin',
-    },
-    {
-      definition: summarizeUrlDefinition,
-      execute: async (args) => summarizeUrl(args as { url: string }),
-      source: 'builtin',
-    },
-    {
-      definition: parseFileDefinition,
-      execute: async (args) => parseFileTool(args as { path: string }),
-      source: 'builtin',
-    },
-    {
-      definition: generateDocumentDefinition,
-      execute: async (args) => generateDocumentTool(args),
-      source: 'builtin',
-    },
-    {
       definition: readBotLogsDefinition,
       execute: async (args) => readBotLogs(args as { count?: number; level?: string }),
       source: 'builtin',
@@ -131,77 +214,12 @@ export function registerBuiltinTools(): void {
         createReminder(args as { message: string; cron: string; description: string }, chatId),
       source: 'builtin',
     },
-    // ── GitHub tools ──
-    {
-      definition: githubListReposDefinition,
-      execute: async (args) => githubListRepos(args as { limit?: number }),
-      source: 'builtin',
-    },
-    {
-      definition: githubReadFileDefinition,
-      execute: async (args) => githubReadFile(args as { repo: string; path: string; ref?: string }),
-      source: 'builtin',
-    },
-    {
-      definition: githubListIssuesDefinition,
-      execute: async (args) => githubListIssues(args as { repo: string; state?: string; limit?: number }),
-      source: 'builtin',
-    },
-    {
-      definition: githubListPrsDefinition,
-      execute: async (args) => githubListPrs(args as { repo: string; state?: string; limit?: number }),
-      source: 'builtin',
-    },
-    {
-      definition: githubCloneRepoDefinition,
-      execute: async (args) => githubCloneRepo(args as { repo: string; branch?: string }),
-      source: 'builtin',
-    },
-    {
-      definition: githubDiffDefinition,
-      execute: async (args) => githubDiff(args as { repo: string }),
-      source: 'builtin',
-    },
-    {
-      definition: githubCommitPushDefinition,
-      execute: async (args) => githubCommitPush(args as { repo: string; message: string; branch?: string }),
-      source: 'builtin',
-    },
-    {
-      definition: githubCreatePrDefinition,
-      execute: async (args) => githubCreatePr(args as { repo: string; title: string; body?: string; head: string; base?: string }),
-      source: 'builtin',
-    },
-    // ── Render tools ──
-    {
-      definition: renderListServicesDefinition,
-      execute: async (args) => renderListServices(args as { limit?: number }),
-      source: 'builtin',
-    },
-    {
-      definition: renderDeployStatusDefinition,
-      execute: async (args) => renderDeployStatus(args as { serviceId: string }),
-      source: 'builtin',
-    },
-    {
-      definition: renderGetLogsDefinition,
-      execute: async (args) => renderGetLogs(args as { serviceId: string; limit?: number }),
-      source: 'builtin',
-    },
-    // ── Screenshot tool ──
-    {
-      definition: takeScreenshotDefinition,
-      execute: async (args) => takeScreenshot(args as { url: string; selector?: string; fullPage?: boolean }),
-      source: 'builtin',
-    },
-    // ── Kanban board ──
     {
       definition: kanbanManageDefinition,
       execute: async (args, chatId) =>
         kanbanManage(args as Parameters<typeof kanbanManage>[0], chatId),
       source: 'builtin',
     },
-    // ── Research tools ──
     {
       definition: searchPapersDefinition,
       execute: async (args, chatId) =>
@@ -220,7 +238,7 @@ export function registerBuiltinTools(): void {
         reviewReport(args as Parameters<typeof reviewReport>[0]),
       source: 'builtin',
     },
-    // ── Manufacturing tools ──
+    // ── Manufacturing domain tools (core — all need DB) ──
     {
       definition: lineBalanceDefinition,
       execute: async (args, chatId) =>
@@ -257,7 +275,6 @@ export function registerBuiltinTools(): void {
         rcaManage(args as Record<string, unknown>, chatId),
       source: 'builtin',
     },
-    // ── Simulation tools ──
     {
       definition: simulationDefinition,
       execute: async (args) =>
@@ -326,9 +343,34 @@ export function getToolDefinitions(allowedTools?: string[]): Tool[] {
   return getRegistryDefinitions(allowedTools);
 }
 
+// ── IPC routing for multi-process architecture (SA3) ────────
+
+import type { ProcessClient } from '../../ipc/client.js';
+
+let toolsProcessClient: ProcessClient | null = null;
+let parsersProcessClient: ProcessClient | null = null;
+
+/**
+ * Set the IPC clients for Process 2 (tools) and Process 3 (parsers).
+ * Called from index.ts after spawning child processes.
+ */
+export function setProcessClients(
+  tools: ProcessClient | null,
+  parsers: ProcessClient | null,
+): void {
+  toolsProcessClient = tools;
+  parsersProcessClient = parsers;
+}
+
 /**
  * Execute a tool by name with the given arguments.
- * Delegates to the dynamic registry.
+ *
+ * Routes to the appropriate process based on the tool's `process` classification:
+ * - 'tools' → Process 2 via IPC (DB-free compute/network tools)
+ * - 'parsers' → Process 3 via IPC (file parsing, tightest sandbox)
+ * - 'core' or undefined → local execution in Process 1 (DB-dependent tools)
+ *
+ * Falls back to local execution if the target process is unavailable.
  * Never throws — returns { error: ... } on failure.
  */
 export async function executeTool(
@@ -337,6 +379,26 @@ export async function executeTool(
   chatId: string,
 ): Promise<Record<string, unknown>> {
   logger.debug({ tool: name, args }, 'Executing tool');
+
+  const entry = getToolEntry(name);
+  const targetProcess = entry?.process;
+
+  // Route to Process 2 (tools) if classified and client ready
+  if (targetProcess === 'tools' && toolsProcessClient?.isReady) {
+    return toolsProcessClient.execute(name, args, chatId);
+  }
+
+  // Route to Process 3 (parsers) if classified and client ready
+  if (targetProcess === 'parsers' && parsersProcessClient?.isReady) {
+    return parsersProcessClient.execute(name, args, chatId);
+  }
+
+  // Fallback: execute locally in Process 1
+  // This handles: core tools, unclassified tools, or when child process is unavailable
+  if (targetProcess && targetProcess !== 'core') {
+    logger.debug({ tool: name, targetProcess }, 'Child process unavailable — executing locally');
+  }
+
   return executeRegisteredTool(name, args, chatId);
 }
 
@@ -349,7 +411,7 @@ export function createToolProvider(): ToolProvider {
     register: registerTool,
     unregister: unregisterTool,
     get: getToolEntry,
-    execute: executeRegisteredTool,
+    execute: executeTool, // Uses IPC routing, not direct registry
     getDefinitions: getRegistryDefinitions,
     list: listRegisteredTools,
     loadUserTools,

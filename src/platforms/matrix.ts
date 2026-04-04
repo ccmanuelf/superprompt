@@ -116,6 +116,48 @@ async function handleMessage(
   isVoice: boolean = false,
 ): Promise<void> {
   const router = ctx.router;
+
+  // 0. Check for pending auto-skill proposal response
+  const pendingProposal = ctx.autoSkills.getPending(roomId);
+  if (pendingProposal) {
+    const proposalAction = ctx.autoSkills.detectResponse(body);
+    if (proposalAction) {
+      const confirmation = ctx.autoSkills.handleResponse(roomId, proposalAction === 'approve');
+      await client.sendMessage(roomId, {
+        msgtype: 'm.notice',
+        body: confirmation,
+        format: 'org.matrix.custom.html',
+        formatted_body: formatForMatrix(confirmation),
+      });
+      return;
+    }
+    ctx.autoSkills.expirePending(roomId);
+  }
+
+  // 0b. Skill self-healing: detect user corrections when a skill is active
+  const activeSkillForHealing = ctx.skills.getActive(roomId);
+  if (activeSkillForHealing && ctx.autoSkills.detectCorrection(body)) {
+    try {
+      const healResult = await ctx.autoSkills.heal(
+        activeSkillForHealing,
+        `User corrected the approach: "${body}"`,
+        body,
+        router,
+        roomId,
+      );
+      if (healResult.patched) {
+        await client.sendMessage(roomId, {
+          msgtype: 'm.notice',
+          body: healResult.summary,
+          format: 'org.matrix.custom.html',
+          formatted_body: formatForMatrix(healResult.summary),
+        });
+      }
+    } catch {
+      // Non-blocking
+    }
+  }
+
   // 1. Build memory context (hybrid: FTS5 + vector)
   const memoryContext = await ctx.memory.buildContext(roomId, body);
   const fullMessage = memoryContext
@@ -169,6 +211,57 @@ async function handleMessage(
     const quality = ctx.selfMonitor.checkQuality(response, body);
     if (!quality.passed) {
       ctx.selfMonitor.logCheck(roomId, response.provider, quality.score, quality.issues);
+    }
+
+    // 2b. Skill self-healing: if a skill was active and quality was low, patch it
+    const currentSkillForHealing = ctx.skills.getActive(roomId);
+    if (currentSkillForHealing && ctx.autoSkills.shouldHeal(currentSkillForHealing, quality.score ?? (quality.passed ? 80 : 40))) {
+      try {
+        const healResult = await ctx.autoSkills.heal(
+          currentSkillForHealing,
+          `Low quality response (score: ${quality.score ?? 'unknown'})`,
+          `User asked: "${body}"\nAI responded: "${response.text?.slice(0, 500) || '(empty)'}"`,
+          router,
+          roomId,
+        );
+        if (healResult.patched) {
+          await client.sendMessage(roomId, {
+            msgtype: 'm.notice',
+            body: healResult.summary,
+            format: 'org.matrix.custom.html',
+            formatted_body: formatForMatrix(healResult.summary),
+          });
+        }
+      } catch {
+        // Non-blocking
+      }
+    }
+
+    // 2c. Auto-skill detection for single-turn tool chains (3+ distinct tools)
+    if (response.toolsUsed && response.toolsUsed.length >= 3) {
+      try {
+        const candidate = ctx.autoSkills.detectCandidate({
+          toolsUsed: response.toolsUsed,
+          qualityScore: quality.passed ? 80 : quality.score ?? 0,
+          chatId: roomId,
+          originalRequest: body,
+        });
+        if (candidate) {
+          const proposal = await ctx.autoSkills.draftDefinition(candidate, router, roomId);
+          if (proposal) {
+            ctx.autoSkills.insertProposal(proposal);
+            const proposalMsg = ctx.autoSkills.proposeToUser(proposal);
+            await client.sendMessage(roomId, {
+              msgtype: 'm.notice',
+              body: proposalMsg,
+              format: 'org.matrix.custom.html',
+              formatted_body: formatForMatrix(proposalMsg),
+            });
+          }
+        }
+      } catch (err) {
+        logger.debug({ err }, 'Auto-skill detection skipped (non-blocking)');
+      }
     }
 
     // 3. Save conversation memory (with embedding, fire-and-forget)

@@ -124,6 +124,10 @@ async function main(): Promise<void> {
   storage.registerTables(doeTableInit);
   storage.registerTables(fsmTableInit);
 
+  // Auto-skills tables (skill_triggers, skill_proposals)
+  const { autoSkillsTableInit } = await import('./auto-skills.js');
+  storage.registerTables(autoSkillsTableInit);
+
   // ── Subsystems ───────────────────────────────────────────
 
   // Skills subsystem — creates builtin skills on init
@@ -211,6 +215,60 @@ async function main(): Promise<void> {
   const router = new ProviderRouter();
   app.router = router;
   logger.info({ defaultProvider: config.AI_PROVIDER }, 'Provider router initialized');
+
+  // ── Child Processes (SA3: Process Separation) ─────────────
+  const { ProcessClient } = await import('./ipc/client.js');
+  const { TOOLS_PROCESS_ENV, PARSERS_PROCESS_ENV } = await import('./ipc/env-whitelist.js');
+  const { setProcessClients } = await import('./providers/tools/index.js');
+
+  app.registerSubsystem({
+    name: 'tools-process',
+    setup: async () => {
+      const toolsClient = new ProcessClient('tools', 'dist/tools-process.js', TOOLS_PROCESS_ENV);
+      const parsersClient = new ProcessClient('parsers', 'dist/parsers-process.js', PARSERS_PROCESS_ENV);
+
+      try {
+        await toolsClient.spawn();
+        logger.info('Tools process (P2) spawned');
+      } catch (err) {
+        logger.warn({ err }, 'Tools process (P2) failed to start — tools will execute locally');
+      }
+
+      try {
+        await parsersClient.spawn();
+        logger.info('Parsers process (P3) spawned');
+      } catch (err) {
+        logger.warn({ err }, 'Parsers process (P3) failed to start — parsers will execute locally');
+      }
+
+      // Wire IPC clients into tool execution routing
+      setProcessClients(
+        toolsClient.isReady ? toolsClient : null,
+        parsersClient.isReady ? parsersClient : null,
+      );
+
+      // Sync user tools to Process 2
+      if (toolsClient.isReady) {
+        const userTools = (await import('./db.js')).listUserTools();
+        for (const tool of userTools) {
+          if (!tool.enabled) continue;
+          const config = JSON.parse(tool.config);
+          toolsClient.registerUserTool(
+            tool.name,
+            tool.description,
+            { type: 'function', function: { name: tool.name, description: tool.description, parameters: { type: 'object', properties: {}, required: [] } } },
+            tool.tool_type as 'declarative_http' | 'generated_code',
+            tool.config,
+          );
+        }
+      }
+
+      app.addCleanup(async () => {
+        await toolsClient.shutdown();
+        await parsersClient.shutdown();
+      });
+    },
+  });
 
   // Scheduler — active subsystem, needs app.notify() for autonomous task execution
   const { initScheduler } = await import('./scheduler.js');

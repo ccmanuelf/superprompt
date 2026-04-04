@@ -35,6 +35,7 @@ export interface StepResult {
   instruction: string;
   output: string;
   success: boolean;
+  toolsUsed?: string[];
 }
 
 /** Threshold above which previous step output is compressed via Filtration Analysis */
@@ -358,6 +359,7 @@ export async function orchestrateTask(
         instruction: step.instruction,
         output,
         success: true,
+        toolsUsed: response.toolsUsed,
       });
 
       logger.debug(
@@ -413,9 +415,13 @@ export async function orchestrateTask(
     'Multi-step orchestration completed',
   );
 
+  // Aggregate all tools used across steps
+  const allToolsUsed = [...new Set(results.flatMap((r) => r.toolsUsed ?? []))];
+
   return {
     text: finalOutput,
     provider: 'ollama',
+    toolsUsed: allToolsUsed.length > 0 ? allToolsUsed : undefined,
   };
 }
 

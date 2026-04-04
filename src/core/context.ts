@@ -49,6 +49,14 @@ import type { searchPapers } from '../providers/tools/research.js';
 // Learning module has many exports — import the module type itself
 import type * as LearningModule from '../learning/index.js';
 
+// Auto-skills
+import type {
+  detectSkillCandidate, draftSkillDefinition, proposeSkillToUser,
+  handleProposalResponse, getPendingProposal, expirePendingProposals,
+  detectProposalResponse, insertSkillProposal, createAutoSkill,
+  shouldHealSkill, healSkill, detectSkillCorrection,
+} from '../auto-skills.js';
+
 // ── PlatformContext Type ────────────────────────────────────
 
 export interface PlatformContext {
@@ -174,6 +182,21 @@ export interface PlatformContext {
     searchPapers: typeof searchPapers;
   };
 
+  autoSkills: {
+    detectCandidate: typeof detectSkillCandidate;
+    draftDefinition: typeof draftSkillDefinition;
+    proposeToUser: typeof proposeSkillToUser;
+    handleResponse: typeof handleProposalResponse;
+    getPending: typeof getPendingProposal;
+    expirePending: typeof expirePendingProposals;
+    detectResponse: typeof detectProposalResponse;
+    insertProposal: typeof insertSkillProposal;
+    createSkill: typeof createAutoSkill;
+    shouldHeal: typeof shouldHealSkill;
+    heal: typeof healSkill;
+    detectCorrection: typeof detectSkillCorrection;
+  };
+
   learning: {
     getActivePlansByChat: typeof LearningModule.getActivePlansByChat;
     getPlansByChat: typeof LearningModule.getPlansByChat;
@@ -233,7 +256,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     skillParserMod, skillFixerMod, toolParserMod, scannerMod,
     toolRegistryMod, toolGenMod, toolFixerMod, exporterMod,
     proactiveMod, orchestratorMod, kanbanMod, citationsMod,
-    selfMonitorMod, researchMod, learningMod,
+    selfMonitorMod, researchMod, learningMod, autoSkillsMod,
   ] = await Promise.all([
     import('../memory.js'),
     import('../db.js'),
@@ -256,6 +279,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     import('../self-monitor.js'),
     import('../providers/tools/research.js'),
     import('../learning/index.js'),
+    import('../auto-skills.js'),
   ]);
 
   return {
@@ -365,6 +389,20 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     },
     research: {
       searchPapers: researchMod.searchPapers,
+    },
+    autoSkills: {
+      detectCandidate: autoSkillsMod.detectSkillCandidate,
+      draftDefinition: autoSkillsMod.draftSkillDefinition,
+      proposeToUser: autoSkillsMod.proposeSkillToUser,
+      handleResponse: autoSkillsMod.handleProposalResponse,
+      getPending: autoSkillsMod.getPendingProposal,
+      expirePending: autoSkillsMod.expirePendingProposals,
+      detectResponse: autoSkillsMod.detectProposalResponse,
+      insertProposal: autoSkillsMod.insertSkillProposal,
+      createSkill: autoSkillsMod.createAutoSkill,
+      shouldHeal: autoSkillsMod.shouldHealSkill,
+      heal: autoSkillsMod.healSkill,
+      detectCorrection: autoSkillsMod.detectSkillCorrection,
     },
     learning: {
       getActivePlansByChat: learningMod.getActivePlansByChat,

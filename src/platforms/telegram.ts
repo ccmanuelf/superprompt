@@ -150,6 +150,38 @@ async function handleMessage(
 ): Promise<void> {
   const chatId = String(ctx.chat!.id);
 
+  // 0. Check for pending auto-skill proposal response
+  const pendingProposal = pc.autoSkills.getPending(chatId);
+  if (pendingProposal) {
+    const proposalAction = pc.autoSkills.detectResponse(rawText);
+    if (proposalAction) {
+      const confirmation = pc.autoSkills.handleResponse(chatId, proposalAction === 'approve');
+      await ctx.reply(formatForTelegram(confirmation), { parse_mode: 'HTML' });
+      return;
+    }
+    // User sent a normal message — expire the proposal
+    pc.autoSkills.expirePending(chatId);
+  }
+
+  // 0b. Skill self-healing: detect user corrections when a skill is active
+  const activeSkillForHealing = pc.skills.getActive(chatId);
+  if (activeSkillForHealing && pc.autoSkills.detectCorrection(rawText)) {
+    try {
+      const healResult = await pc.autoSkills.heal(
+        activeSkillForHealing,
+        `User corrected the approach: "${rawText}"`,
+        rawText,
+        pc.router,
+        chatId,
+      );
+      if (healResult.patched) {
+        await ctx.reply(formatForTelegram(healResult.summary), { parse_mode: 'HTML' });
+      }
+    } catch (err) {
+      logger.debug({ err }, 'Skill self-healing skipped (non-blocking)');
+    }
+  }
+
   // 1. Build memory context (hybrid: FTS5 + vector)
   const memoryContext = await pc.memory.buildContext(chatId, rawText);
   const fullMessage = memoryContext
@@ -320,6 +352,28 @@ async function handleMessage(
             await ctx.reply(chunk);
           }
         }
+
+        // Auto-skill detection for orchestrated tasks
+        try {
+          const quality = pc.selfMonitor.checkQuality(response, rawText);
+          const candidate = pc.autoSkills.detectCandidate({
+            toolsUsed: response.toolsUsed || [],
+            stepResults: undefined, // orchestrator doesn't expose step results here, but toolsUsed is tracked
+            qualityScore: quality.passed ? 80 : quality.score ?? 0,
+            chatId,
+            originalRequest: rawText,
+          });
+          if (candidate) {
+            const proposal = await pc.autoSkills.draftDefinition(candidate, pc.router, chatId);
+            if (proposal) {
+              pc.autoSkills.insertProposal(proposal);
+              const proposalMsg = pc.autoSkills.proposeToUser(proposal);
+              await ctx.reply(formatForTelegram(proposalMsg), { parse_mode: 'HTML' });
+            }
+          }
+        } catch (err) {
+          logger.debug({ err }, 'Auto-skill detection skipped (non-blocking)');
+        }
       }
       return;
     }
@@ -351,6 +405,47 @@ async function handleMessage(
     const quality = pc.selfMonitor.checkQuality(response, rawText);
     if (!quality.passed) {
       pc.selfMonitor.logCheck(chatId, response.provider, quality.score, quality.issues);
+    }
+
+    // 4b. Skill self-healing: if a skill was active and quality was low, patch it
+    const currentSkillForHealing = pc.skills.getActive(chatId);
+    if (currentSkillForHealing && pc.autoSkills.shouldHeal(currentSkillForHealing, quality.score ?? (quality.passed ? 80 : 40))) {
+      try {
+        const healResult = await pc.autoSkills.heal(
+          currentSkillForHealing,
+          `Low quality response (score: ${quality.score ?? 'unknown'}). Issues: ${quality.issues?.map((i: any) => i.message).join(', ') || 'none detected'}`,
+          `User asked: "${rawText}"\nAI responded: "${response.text?.slice(0, 500) || '(empty)'}"`,
+          pc.router,
+          chatId,
+        );
+        if (healResult.patched) {
+          await ctx.reply(formatForTelegram(healResult.summary), { parse_mode: 'HTML' });
+        }
+      } catch (err) {
+        logger.debug({ err }, 'Skill self-healing skipped (non-blocking)');
+      }
+    }
+
+    // 4c. Auto-skill detection for single-turn tool chains (3+ distinct tools)
+    if (response.toolsUsed && response.toolsUsed.length >= 3) {
+      try {
+        const candidate = pc.autoSkills.detectCandidate({
+          toolsUsed: response.toolsUsed,
+          qualityScore: quality.passed ? 80 : quality.score ?? 0,
+          chatId,
+          originalRequest: rawText,
+        });
+        if (candidate) {
+          const proposal = await pc.autoSkills.draftDefinition(candidate, pc.router, chatId);
+          if (proposal) {
+            pc.autoSkills.insertProposal(proposal);
+            const proposalMsg = pc.autoSkills.proposeToUser(proposal);
+            await ctx.reply(formatForTelegram(proposalMsg), { parse_mode: 'HTML' });
+          }
+        }
+      } catch (err) {
+        logger.debug({ err }, 'Auto-skill detection skipped (non-blocking)');
+      }
     }
 
     // 5. Save conversation memory (with embedding, fire-and-forget)

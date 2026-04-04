@@ -9,6 +9,8 @@ export interface ToolEntry {
   definition: Tool;
   execute: (args: Record<string, unknown>, chatId: string) => Promise<Record<string, unknown>>;
   source: 'builtin' | 'user';
+  /** Which process executes this tool: 'core' (default), 'tools' (P2), 'parsers' (P3) */
+  process?: 'core' | 'tools' | 'parsers';
 }
 
 const registry = new Map<string, ToolEntry>();

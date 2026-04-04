@@ -250,6 +250,7 @@ export class OllamaProvider implements AIProvider {
     ];
 
     let iterations = 0;
+    const toolsUsedSet = new Set<string>();
     let thinkingContent: string | undefined;
     const generatedFiles: { path: string; filename: string; mimeType: string }[] = [];
     let kanbanToolCalled = false;
@@ -308,12 +309,14 @@ export class OllamaProvider implements AIProvider {
           model,
           thinkingContent,
           generatedFiles: generatedFiles.length ? generatedFiles : undefined,
+          toolsUsed: toolsUsedSet.size > 0 ? [...toolsUsedSet] : undefined,
         };
       }
 
       // Execute each tool call
       for (const toolCall of msg.tool_calls) {
         const toolName = toolCall.function.name;
+        toolsUsedSet.add(toolName);
         const toolArgs = (toolCall.function.arguments ?? {}) as Record<string, unknown>;
 
         logger.debug(
@@ -372,6 +375,7 @@ export class OllamaProvider implements AIProvider {
       model,
       thinkingContent,
       generatedFiles: generatedFiles.length ? generatedFiles : undefined,
+      toolsUsed: toolsUsedSet.size > 0 ? [...toolsUsedSet] : undefined,
     };
   }
 }

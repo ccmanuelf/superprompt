@@ -33,6 +33,8 @@ export interface AIResponse {
   generatedFiles?: GeneratedFile[];
   /** Notification message when a skill was auto-triggered for this message */
   autoTriggerNotice?: string;
+  /** Tool names used during this response (tracked in Ollama agentic loop) */
+  toolsUsed?: string[];
 }
 
 export interface AIProvider {
