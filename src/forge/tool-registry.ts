@@ -2,6 +2,7 @@ import type { Tool } from 'ollama';
 import { logger } from '../logger.js';
 import { listUserTools, type UserTool } from '../db.js';
 import { executeDeclarativeHttp } from './declarative-http.js';
+import { executeInWorker } from './worker-sandbox.js';
 import type { DeclarativeHttpEndpoint, ToolParameter } from './tool-parser.js';
 
 export interface ToolEntry {
@@ -170,7 +171,7 @@ function createUserToolEntry(
 
     return {
       definition,
-      execute: async (args) => executeSandboxedCode(code, args),
+      execute: async (args) => executeInWorker(code, args),
       source: 'user',
     };
   }
@@ -178,30 +179,3 @@ function createUserToolEntry(
   return null;
 }
 
-/**
- * Execute user-generated code in a sandboxed context.
- * Only allows access to args, fetch, JSON, Math, and String operations.
- */
-async function executeSandboxedCode(
-  code: string,
-  args: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  try {
-    // Build an async function from the code
-    const fn = new Function('args', 'fetch', `
-      'use strict';
-      return (async () => {
-        ${code}
-      })();
-    `);
-
-    const result = await fn(args, fetch);
-    return typeof result === 'object' && result !== null
-      ? (result as Record<string, unknown>)
-      : { result };
-  } catch (err) {
-    return {
-      error: `Code execution failed: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-}
