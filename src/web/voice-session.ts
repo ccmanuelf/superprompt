@@ -5,6 +5,10 @@ import { logger } from '../logger.js';
 import { transcribeAudio, synthesizeSpeech } from '../voice.js';
 import { buildMemoryContext, saveConversationTurn } from '../memory.js';
 import type { ProviderRouter } from '../providers/router.js';
+import {
+  getPendingConfirmation, clearPendingConfirmation,
+  detectConfirmationResponse, handleToolConfirmation,
+} from '../policy-engine.js';
 
 export interface VoiceResult {
   transcript: string;
@@ -65,6 +69,23 @@ export class VoiceSession {
 
       if (!transcript.trim()) {
         return { transcript: '', text: '(No speech detected)', audio: null, provider: '' };
+      }
+
+      // 2b. Check for pending tool confirmation (SA4)
+      const pendingConfirm = getPendingConfirmation(this.chatId);
+      if (pendingConfirm) {
+        const confirmAction = detectConfirmationResponse(transcript);
+        if (confirmAction) {
+          const { executeTool } = await import('../providers/tools/index.js');
+          const result = await handleToolConfirmation(this.chatId, confirmAction, executeTool);
+          const responseText = result.message
+            + (result.executed && result.result ? `\n\nResult: ${JSON.stringify(result.result)}` : '');
+          let audio: Buffer | null = null;
+          try { audio = await synthesizeSpeech(responseText); } catch { /* TTS optional */ }
+          return { transcript, text: responseText, audio, provider: 'system' };
+        }
+        // Not a confirmation response — clear pending and proceed normally
+        clearPendingConfirmation(this.chatId);
       }
 
       // 3. Build memory context

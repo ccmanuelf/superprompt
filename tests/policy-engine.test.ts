@@ -291,4 +291,78 @@ describe('policy-engine — real execution', () => {
       expect(getToolPolicy('nonexistent')).toBeUndefined();
     });
   });
+
+  // ── Pending confirmation state machine ─────────────────────
+
+  describe('pending confirmation state machine', () => {
+    it('stores and retrieves pending confirmation', async () => {
+      const { setPendingConfirmation, getPendingConfirmation } = await import('../src/policy-engine.js');
+      setPendingConfirmation('state-chat', 'run_command', { command: 'ls -la' });
+      const pending = getPendingConfirmation('state-chat');
+      expect(pending).not.toBeNull();
+      expect(pending!.toolName).toBe('run_command');
+      expect(pending!.args).toEqual({ command: 'ls -la' });
+    });
+
+    it('clears pending confirmation', async () => {
+      const { setPendingConfirmation, getPendingConfirmation, clearPendingConfirmation } = await import('../src/policy-engine.js');
+      setPendingConfirmation('clear-chat', 'run_command', { command: 'ls' });
+      clearPendingConfirmation('clear-chat');
+      expect(getPendingConfirmation('clear-chat')).toBeNull();
+    });
+
+    it('handleToolConfirmation with "once" executes without storing trust', async () => {
+      const { setPendingConfirmation, handleToolConfirmation } = await import('../src/policy-engine.js');
+      setPendingConfirmation('once-chat', 'get_time', {});
+
+      const mockExecute = async () => ({ time: '12:00' });
+      const result = await handleToolConfirmation('once-chat', 'once', mockExecute);
+
+      expect(result.executed).toBe(true);
+      expect(result.result).toEqual({ time: '12:00' });
+      // No trust stored
+      expect(getTrustDecision('once-chat', 'get_time')).toBeNull();
+    });
+
+    it('handleToolConfirmation with "always" executes AND stores trust', async () => {
+      const { setPendingConfirmation, handleToolConfirmation } = await import('../src/policy-engine.js');
+      setPendingConfirmation('always-chat', 'run_command', { command: 'ls' });
+
+      const mockExecute = async () => ({ output: 'file1.txt' });
+      const result = await handleToolConfirmation('always-chat', 'always', mockExecute);
+
+      expect(result.executed).toBe(true);
+      expect(result.result).toEqual({ output: 'file1.txt' });
+      expect(result.message).toContain('Trust remembered');
+      expect(result.message).toContain('[EN]');
+      expect(result.message).toContain('[ES]');
+      // Trust IS stored
+      expect(getTrustDecision('always-chat', 'run_command')).toBe('allow');
+    });
+
+    it('handleToolConfirmation with "never" blocks without executing', async () => {
+      const { setPendingConfirmation, handleToolConfirmation } = await import('../src/policy-engine.js');
+      setPendingConfirmation('never-chat', 'github_commit_push', { repo: 'test' });
+
+      const mockExecute = async () => ({ should: 'not be called' });
+      const result = await handleToolConfirmation('never-chat', 'never', mockExecute);
+
+      expect(result.executed).toBe(false);
+      expect(result.result).toBeNull();
+      expect(result.message).toContain('blocked');
+      expect(result.message).toContain('[EN]');
+      expect(result.message).toContain('[ES]');
+      // Block IS stored
+      expect(getTrustDecision('never-chat', 'github_commit_push')).toBe('block');
+    });
+
+    it('returns error when no pending confirmation exists', async () => {
+      const { handleToolConfirmation } = await import('../src/policy-engine.js');
+      const mockExecute = async () => ({});
+      const result = await handleToolConfirmation('empty-chat', 'once', mockExecute);
+
+      expect(result.executed).toBe(false);
+      expect(result.message).toContain('No pending');
+    });
+  });
 });

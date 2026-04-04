@@ -134,6 +134,37 @@ async function handleMessage(
     ctx.autoSkills.expirePending(roomId);
   }
 
+  // 0a. Check for pending tool confirmation (SA4 policy engine)
+  const pendingToolConfirm = ctx.policyEngine.getPendingConfirmation(roomId);
+  if (pendingToolConfirm) {
+    const confirmAction = ctx.policyEngine.detectConfirmation(body);
+    if (confirmAction) {
+      const { executeTool } = await import('../providers/tools/index.js');
+      const confirmResult = await ctx.policyEngine.handleConfirmation(roomId, confirmAction, executeTool);
+      if (confirmResult.message) {
+        await client.sendMessage(roomId, {
+          msgtype: 'm.notice', body: confirmResult.message,
+          format: 'org.matrix.custom.html', formatted_body: formatForMatrix(confirmResult.message),
+        });
+      }
+      if (confirmResult.executed && confirmResult.result) {
+        const aiResponse = await router.sendMessage({
+          chatId: roomId,
+          message: `Tool "${pendingToolConfirm.toolName}" executed. Result: ${JSON.stringify(confirmResult.result)}`,
+          skipTools: true,
+        });
+        if (aiResponse.text) {
+          await client.sendMessage(roomId, {
+            msgtype: 'm.notice', body: aiResponse.text,
+            format: 'org.matrix.custom.html', formatted_body: formatForMatrix(aiResponse.text),
+          });
+        }
+      }
+      return;
+    }
+    ctx.policyEngine.clearPendingConfirmation(roomId);
+  }
+
   // 0b. Skill self-healing: detect user corrections when a skill is active
   const activeSkillForHealing = ctx.skills.getActive(roomId);
   if (activeSkillForHealing && ctx.autoSkills.detectCorrection(body)) {

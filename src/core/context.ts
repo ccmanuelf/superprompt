@@ -62,6 +62,8 @@ import type {
   evaluatePolicy, getToolPolicy, detectConfirmationResponse,
   listTrustEntries, setTrustDecision, revokeTrust, clearAllTrust,
   formatTrustList,
+  setPendingConfirmation, getPendingConfirmation, clearPendingConfirmation,
+  handleToolConfirmation,
 } from '../policy-engine.js';
 
 // ── PlatformContext Type ────────────────────────────────────
@@ -213,6 +215,10 @@ export interface PlatformContext {
     revokeTrust: typeof revokeTrust;
     clearTrust: typeof clearAllTrust;
     formatTrust: typeof formatTrustList;
+    setPendingConfirmation: typeof setPendingConfirmation;
+    getPendingConfirmation: typeof getPendingConfirmation;
+    clearPendingConfirmation: typeof clearPendingConfirmation;
+    handleConfirmation: typeof handleToolConfirmation;
   };
 
   learning: {
@@ -432,6 +438,10 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
       revokeTrust: policyMod.revokeTrust,
       clearTrust: policyMod.clearAllTrust,
       formatTrust: policyMod.formatTrustList,
+      setPendingConfirmation: policyMod.setPendingConfirmation,
+      getPendingConfirmation: policyMod.getPendingConfirmation,
+      clearPendingConfirmation: policyMod.clearPendingConfirmation,
+      handleConfirmation: policyMod.handleToolConfirmation,
     },
     learning: {
       getActivePlansByChat: learningMod.getActivePlansByChat,

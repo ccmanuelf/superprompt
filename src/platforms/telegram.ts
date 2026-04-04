@@ -163,6 +163,37 @@ async function handleMessage(
     pc.autoSkills.expirePending(chatId);
   }
 
+  // 0a. Check for pending tool confirmation (SA4 policy engine)
+  const pendingToolConfirm = pc.policyEngine.getPendingConfirmation(chatId);
+  if (pendingToolConfirm) {
+    const confirmAction = pc.policyEngine.detectConfirmation(rawText);
+    if (confirmAction) {
+      const { executeTool } = await import('../providers/tools/index.js');
+      const confirmResult = await pc.policyEngine.handleConfirmation(chatId, confirmAction, executeTool);
+      if (confirmResult.message) {
+        await ctx.reply(formatForTelegram(confirmResult.message), { parse_mode: 'HTML' });
+      }
+      if (confirmResult.executed && confirmResult.result) {
+        // Send the tool result through the AI for a natural response
+        const aiResponse = await pc.router.sendMessage({
+          chatId,
+          message: `Tool "${pendingToolConfirm.toolName}" executed. Result: ${JSON.stringify(confirmResult.result)}`,
+          skipTools: true,
+        });
+        if (aiResponse.text) {
+          const formatted = formatForTelegram(aiResponse.text);
+          const chunks = splitMessage(formatted);
+          for (const chunk of chunks) {
+            try { await ctx.reply(chunk, { parse_mode: 'HTML' }); } catch { await ctx.reply(chunk); }
+          }
+        }
+      }
+      return;
+    }
+    // User sent a normal message — clear pending confirmation
+    pc.policyEngine.clearPendingConfirmation(chatId);
+  }
+
   // 0b. Skill self-healing: detect user corrections when a skill is active
   const activeSkillForHealing = pc.skills.getActive(chatId);
   if (activeSkillForHealing && pc.autoSkills.detectCorrection(rawText)) {

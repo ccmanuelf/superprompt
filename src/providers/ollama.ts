@@ -330,6 +330,11 @@ export class OllamaProvider implements AIProvider {
         // SA4: Handle policy confirmation — tool was blocked pending user confirmation
         if (result && (result as Record<string, unknown>)._confirmation_required) {
           const prompt = (result as Record<string, unknown>)._confirmation_prompt as string;
+
+          // Store pending confirmation so platform handler can intercept user response
+          const { setPendingConfirmation } = await import('../policy-engine.js');
+          setPendingConfirmation(chatId, toolName, toolArgs);
+
           messages.push({
             role: 'tool',
             content: JSON.stringify({

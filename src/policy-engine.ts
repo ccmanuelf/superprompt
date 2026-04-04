@@ -218,6 +218,117 @@ export function detectConfirmationResponse(message: string): 'once' | 'always' |
   return null;
 }
 
+// ── Pending Confirmation State Machine ────────────────────────
+// When a critical tool requires confirmation, we store the pending
+// state so the next user message can be intercepted. Works across
+// all interfaces: Telegram, Matrix, and voice web.
+
+export interface PendingConfirmation {
+  toolName: string;
+  args: Record<string, unknown>;
+  chatId: string;
+  createdAt: number;
+}
+
+const pendingConfirmations = new Map<string, PendingConfirmation>();
+
+/** TTL for pending confirmations — expire after 5 minutes of no response */
+const CONFIRMATION_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Store a pending tool confirmation for a chat.
+ * Called when executeTool() returns _confirmation_required.
+ */
+export function setPendingConfirmation(
+  chatId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): void {
+  pendingConfirmations.set(chatId, {
+    toolName,
+    args,
+    chatId,
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * Get a pending confirmation for a chat (if exists and not expired).
+ */
+export function getPendingConfirmation(chatId: string): PendingConfirmation | null {
+  const pending = pendingConfirmations.get(chatId);
+  if (!pending) return null;
+
+  if (Date.now() - pending.createdAt > CONFIRMATION_TTL_MS) {
+    pendingConfirmations.delete(chatId);
+    return null;
+  }
+
+  return pending;
+}
+
+/**
+ * Clear a pending confirmation for a chat.
+ */
+export function clearPendingConfirmation(chatId: string): void {
+  pendingConfirmations.delete(chatId);
+}
+
+/**
+ * Handle a user's response to a tool confirmation prompt.
+ * This is the core state machine:
+ * - "once"/"confirm" → execute tool, don't store trust
+ * - "always"/"siempre" → store trust + execute tool
+ * - "never"/"nunca" → store block, don't execute
+ *
+ * Returns the tool execution result or a bilingual status message.
+ */
+export async function handleToolConfirmation(
+  chatId: string,
+  response: 'once' | 'always' | 'never',
+  executeToolFn: (name: string, args: Record<string, unknown>, chatId: string) => Promise<Record<string, unknown>>,
+): Promise<{ executed: boolean; result: Record<string, unknown> | null; message: string }> {
+  const pending = getPendingConfirmation(chatId);
+  if (!pending) {
+    return {
+      executed: false,
+      result: null,
+      message: '[EN] No pending tool confirmation found. [ES] No se encontro confirmacion de herramienta pendiente.',
+    };
+  }
+
+  clearPendingConfirmation(chatId);
+
+  if (response === 'never') {
+    setTrustDecision(chatId, pending.toolName, 'block');
+    return {
+      executed: false,
+      result: null,
+      message: `[EN] Tool "${pending.toolName}" blocked for your account. Use /trust revoke ${pending.toolName} to unblock.\n`
+        + `[ES] Herramienta "${pending.toolName}" bloqueada para tu cuenta. Usa /trust revoke ${pending.toolName} para desbloquear.`,
+    };
+  }
+
+  if (response === 'always') {
+    setTrustDecision(chatId, pending.toolName, 'allow');
+    logger.info({ chatId, tool: pending.toolName }, 'User granted permanent trust');
+  }
+
+  // Execute the tool (for 'once' and 'always')
+  const result = await executeToolFn(pending.toolName, pending.args, chatId);
+
+  const trustMsg = response === 'always'
+    ? `[EN] Trust remembered — "${pending.toolName}" will execute without confirmation next time.\n`
+      + `[ES] Confianza recordada — "${pending.toolName}" se ejecutara sin confirmacion la proxima vez.`
+    : '';
+
+  return {
+    executed: true,
+    result,
+    message: trustMsg,
+  };
+}
+
 /**
  * Format trust list for display (bilingual).
  */
