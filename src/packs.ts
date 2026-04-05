@@ -176,7 +176,7 @@ export function getEnabledPackNames(chatId: string): string[] {
 
 // ── Intent Scoring ─────────────────────────────────────────
 
-export function scorePackIntent(message: string): {
+export function scorePackIntent(message: string, chatId?: string): {
   score: number;
   tools: string[];
   webApps: string[];
@@ -188,16 +188,45 @@ export function scorePackIntent(message: string): {
 
   for (const pack of loadedPacks) {
     if (!pack.enabled) continue;
+
+    let packScore = 0;
     for (const ip of pack.intentPatterns) {
       if (ip.pattern.test(lower)) {
-        score += ip.scoreBoost;
+        packScore += ip.scoreBoost;
         tools.push(...ip.tools);
         webApps.push(...ip.webApps);
       }
     }
+
+    // Apply self-tuning weight (rc.28) — packs that succeed get boosted
+    if (packScore > 0 && chatId) {
+      packScore = applyPackTuning(packScore, pack.name, chatId);
+    }
+
+    score += packScore;
   }
 
   return { score, tools: [...new Set(tools)], webApps: [...new Set(webApps)] };
+}
+
+/** Apply self-tuning weight from pack-tuner */
+function applyPackTuning(baseScore: number, packName: string, chatId: string): number {
+  try {
+    const { applyTunedWeight } = packTunerModule;
+    return applyTunedWeight(baseScore, packName, chatId);
+  } catch {
+    return baseScore;
+  }
+}
+
+// Lazy-loaded pack-tuner module reference
+let packTunerModule: { applyTunedWeight: (b: number, p: string, c: string) => number } = {
+  applyTunedWeight: (b) => b,
+};
+
+/** Set the pack tuner module reference (called from index.ts after initialization) */
+export function setPackTunerModule(mod: { applyTunedWeight: (b: number, p: string, c: string) => number }): void {
+  packTunerModule = mod;
 }
 
 // ── YAML Parser (zero-dep, handles pack.yaml format) ───────

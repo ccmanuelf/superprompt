@@ -387,16 +387,7 @@ export class OllamaProvider implements AIProvider {
 
         // Circuit breaker: record result for pattern detection
         breaker.recordResult(toolName, toolArgs, result);
-
-        // Pack tuner: record tool outcome for weight adjustment
-        try {
-          const { getToolPackName, recordPackToolOutcome } = await import('../pack-tuner.js');
-          const packName = getToolPackName(toolName);
-          if (packName) {
-            const isSuccess = !('error' in result);
-            recordPackToolOutcome(packName, chatId, isSuccess);
-          }
-        } catch { /* pack tuner not loaded */ }
+        // Pack tuner recording moved to executeTool() — covers both providers
       }
 
       // Circuit breaker: record iteration end for stagnation detection

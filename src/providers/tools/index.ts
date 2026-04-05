@@ -326,23 +326,32 @@ export async function executeTool(
   const entry = getToolEntry(name);
   const targetProcess = entry?.process;
 
+  let result: Record<string, unknown>;
+
   // Route to Process 2 (tools) if classified and client ready
   if (targetProcess === 'tools' && toolsProcessClient?.isReady) {
-    return toolsProcessClient.execute(name, args, chatId);
+    result = await toolsProcessClient.execute(name, args, chatId);
+  } else if (targetProcess === 'parsers' && parsersProcessClient?.isReady) {
+    // Route to Process 3 (parsers) if classified and client ready
+    result = await parsersProcessClient.execute(name, args, chatId);
+  } else {
+    // Fallback: execute locally in Process 1
+    if (targetProcess && targetProcess !== 'core') {
+      logger.debug({ tool: name, targetProcess }, 'Child process unavailable — executing locally');
+    }
+    result = await executeRegisteredTool(name, args, chatId);
   }
 
-  // Route to Process 3 (parsers) if classified and client ready
-  if (targetProcess === 'parsers' && parsersProcessClient?.isReady) {
-    return parsersProcessClient.execute(name, args, chatId);
-  }
+  // Pack tuner: record outcome for BOTH providers (Claude + Ollama)
+  try {
+    const { getToolPackName, recordPackToolOutcome } = await import('../../pack-tuner.js');
+    const packName = getToolPackName(name);
+    if (packName) {
+      recordPackToolOutcome(packName, chatId, !('error' in result));
+    }
+  } catch { /* pack tuner not loaded */ }
 
-  // Fallback: execute locally in Process 1
-  // This handles: core tools, unclassified tools, or when child process is unavailable
-  if (targetProcess && targetProcess !== 'core') {
-    logger.debug({ tool: name, targetProcess }, 'Child process unavailable — executing locally');
-  }
-
-  return executeRegisteredTool(name, args, chatId);
+  return result;
 }
 
 /**

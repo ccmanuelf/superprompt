@@ -117,8 +117,12 @@ async function main(): Promise<void> {
   storage.registerTables(guardrailsTableInit);
 
   // Pack tuner tables (self-tuning pack weights)
-  const { packTunerTableInit } = await import('./pack-tuner.js');
-  storage.registerTables(packTunerTableInit);
+  const packTunerMod = await import('./pack-tuner.js');
+  storage.registerTables(packTunerMod.packTunerTableInit);
+
+  // Wire pack tuner into pack intent scoring
+  const { setPackTunerModule } = await import('./packs.js');
+  setPackTunerModule({ applyTunedWeight: packTunerMod.applyTunedWeight });
 
   // ── Subsystems ───────────────────────────────────────────
 
