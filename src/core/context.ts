@@ -44,6 +44,7 @@ import type {
 } from '../kanban.js';
 import type { getCitations, exportCitations, clearCitations, formatCitationList, addCitation } from '../citations.js';
 import type { checkResponseQuality, logQualityCheck } from '../self-monitor.js';
+import type { enablePack, disablePack, getPackSubscriptions, isPackEnabled } from '../packs.js';
 import type { searchPapers } from '../providers/tools/research.js';
 
 // Learning module has many exports — import the module type itself
@@ -191,6 +192,13 @@ export interface PlatformContext {
     searchPapers: typeof searchPapers;
   };
 
+  packSubscriptions: {
+    enable: typeof enablePack;
+    disable: typeof disablePack;
+    getAll: typeof getPackSubscriptions;
+    isEnabled: typeof isPackEnabled;
+  };
+
   autoSkills: {
     detectCandidate: typeof detectSkillCandidate;
     draftDefinition: typeof draftSkillDefinition;
@@ -280,7 +288,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     skillParserMod, skillFixerMod, toolParserMod, scannerMod,
     toolRegistryMod, toolGenMod, toolFixerMod, exporterMod,
     proactiveMod, orchestratorMod, kanbanMod, citationsMod,
-    selfMonitorMod, researchMod, learningMod, autoSkillsMod, policyMod,
+    selfMonitorMod, researchMod, learningMod, autoSkillsMod, policyMod, packsMod,
   ] = await Promise.all([
     import('../memory.js'),
     import('../db.js'),
@@ -305,6 +313,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     import('../learning/index.js'),
     import('../auto-skills.js'),
     import('../policy-engine.js'),
+    import('../packs.js'),
   ]);
 
   return {
@@ -414,6 +423,12 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     },
     research: {
       searchPapers: researchMod.searchPapers,
+    },
+    packSubscriptions: {
+      enable: packsMod.enablePack,
+      disable: packsMod.disablePack,
+      getAll: packsMod.getPackSubscriptions,
+      isEnabled: packsMod.isPackEnabled,
     },
     autoSkills: {
       detectCandidate: autoSkillsMod.detectSkillCandidate,

@@ -93,6 +93,87 @@ export function getAggregatedCommands(): PackCommand[] {
     .flatMap((p) => p.commands);
 }
 
+// ── Pack Subscriptions (SA5) ──────────────────────────────
+
+import type { TableInitializer } from './core/interfaces.js';
+import { getDatabase } from './db.js';
+
+export function initPackSubscriptionTable(): void {
+  const db = getDatabase();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pack_subscriptions (
+      chat_id TEXT NOT NULL,
+      pack_name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      enabled_at INTEGER NOT NULL,
+      PRIMARY KEY (chat_id, pack_name)
+    );
+  `);
+}
+
+export const packSubscriptionTableInit: TableInitializer = {
+  name: 'pack-subscriptions',
+  initTables: initPackSubscriptionTable,
+};
+
+/**
+ * Check if a pack is enabled for a specific chat.
+ * Default: all packs are enabled (backward compatible).
+ * Only returns false if explicitly disabled.
+ */
+export function isPackEnabled(chatId: string, packName: string): boolean {
+  try {
+    const db = getDatabase();
+    const row = db.prepare(
+      'SELECT enabled FROM pack_subscriptions WHERE chat_id = ? AND pack_name = ?',
+    ).get(chatId, packName) as { enabled: number } | undefined;
+    if (!row) return true; // Default: enabled
+    return row.enabled === 1;
+  } catch {
+    return true; // DB not ready — default enabled
+  }
+}
+
+/**
+ * Enable a pack for a chat.
+ */
+export function enablePack(chatId: string, packName: string): void {
+  const db = getDatabase();
+  db.prepare(
+    'INSERT OR REPLACE INTO pack_subscriptions (chat_id, pack_name, enabled, enabled_at) VALUES (?, ?, 1, ?)',
+  ).run(chatId, packName, Date.now());
+}
+
+/**
+ * Disable a pack for a chat.
+ */
+export function disablePack(chatId: string, packName: string): void {
+  const db = getDatabase();
+  db.prepare(
+    'INSERT OR REPLACE INTO pack_subscriptions (chat_id, pack_name, enabled, enabled_at) VALUES (?, ?, 0, ?)',
+  ).run(chatId, packName, Date.now());
+}
+
+/**
+ * Get all pack subscription statuses for a chat.
+ */
+export function getPackSubscriptions(chatId: string): Array<{ packName: string; enabled: boolean }> {
+  const allPacks = loadedPacks.map((p) => p.name);
+  return allPacks.map((name) => ({
+    packName: name,
+    enabled: isPackEnabled(chatId, name),
+  }));
+}
+
+/**
+ * Get enabled packs for a chat — used to filter tools and intent scoring.
+ */
+export function getEnabledPackNames(chatId: string): string[] {
+  return loadedPacks
+    .filter((p) => p.enabled && isPackEnabled(chatId, p.name))
+    .map((p) => p.name);
+}
+
 // ── Intent Scoring ─────────────────────────────────────────
 
 export function scorePackIntent(message: string): {
@@ -363,6 +444,18 @@ function loadSinglePack(packDir: string, dirName: string): PackMetadata | null {
     }
   }
 
+  // Level 3: If pack has src/ directory, import compiled TypeScript module
+  const srcDir = resolve(packDir, 'src');
+  let level: 1 | 2 | 3 = toolCount > 0 || skillCount > 0 ? 2 : 1;
+
+  if (existsSync(resolve(srcDir, 'index.ts')) || existsSync(resolve(srcDir, 'index.js'))) {
+    level = 3;
+    // Level 3 source will be loaded asynchronously via loadLevel3Pack()
+    // The compiled output is at dist/packs/<name>/src/index.js (after tsc)
+    // OR the source imports are resolved by the pack loader at startup
+    logger.info({ pack: name }, 'Level 3 pack detected (has src/)');
+  }
+
   const metadata: PackMetadata = {
     name,
     displayName: (raw.display_name as string) || name,
@@ -381,11 +474,66 @@ function loadSinglePack(packDir: string, dirName: string): PackMetadata | null {
   };
 
   logger.info(
-    { pack: name, tools: toolCount, skills: skillCount, templates: templateFiles.length },
+    { pack: name, level, tools: toolCount, skills: skillCount, templates: templateFiles.length },
     'Loaded domain pack',
   );
 
   return metadata;
+}
+
+/**
+ * Load a Level 3 pack's compiled TypeScript source.
+ * Called after the pack system initializes, during the Application setup phase.
+ *
+ * The pack's src/index.ts (compiled to dist/) should export:
+ * - tableInit: TableInitializer (for DB schema)
+ * - registerTools?: () => void (for tool registration)
+ * - getApiHandler?: () => (req, res, path) => Promise<void> (for API routes)
+ *
+ * @param packName Name of the pack
+ * @param packDir Absolute path to the pack directory
+ */
+export async function loadLevel3Pack(
+  packName: string,
+  packDir: string,
+): Promise<{ tableInit?: TableInitializer; registerTools?: () => void }> {
+  // In development: source is at packs/<name>/src/index.ts
+  // In production (after tsc): compiled output at dist/packs/<name>/src/index.js
+  // We try the compiled path first, then fall back to source via dynamic import
+
+  const compiledPath = resolve(packDir, '..', '..', 'dist', 'packs', packName, 'src', 'index.js');
+  const sourcePath = resolve(packDir, 'src', 'index.ts');
+
+  let mod: Record<string, unknown>;
+
+  try {
+    if (existsSync(compiledPath)) {
+      mod = await import(compiledPath);
+    } else if (existsSync(sourcePath)) {
+      // Development mode — TypeScript may be transpiled on-the-fly
+      mod = await import(sourcePath);
+    } else {
+      logger.warn({ pack: packName }, 'Level 3 pack has src/ but no index.ts/index.js found');
+      return {};
+    }
+  } catch (err) {
+    logger.warn({ err, pack: packName }, 'Failed to load Level 3 pack source');
+    return {};
+  }
+
+  const result: { tableInit?: TableInitializer; registerTools?: () => void } = {};
+
+  if (mod.tableInit && typeof (mod.tableInit as TableInitializer).initTables === 'function') {
+    result.tableInit = mod.tableInit as TableInitializer;
+    logger.debug({ pack: packName }, 'Level 3 pack provides TableInitializer');
+  }
+
+  if (typeof mod.registerTools === 'function') {
+    result.registerTools = mod.registerTools as () => void;
+    logger.debug({ pack: packName }, 'Level 3 pack provides registerTools');
+  }
+
+  return result;
 }
 
 // ── Tool/Skill Import (mirrors forge/auto-import.ts) ───────

@@ -132,6 +132,10 @@ async function main(): Promise<void> {
   const { policyTableInit } = await import('./policy-engine.js');
   storage.registerTables(policyTableInit);
 
+  // Pack subscription tables
+  const { packSubscriptionTableInit } = await import('./packs.js');
+  storage.registerTables(packSubscriptionTableInit);
+
   // ── Subsystems ───────────────────────────────────────────
 
   // Skills subsystem — creates builtin skills on init
