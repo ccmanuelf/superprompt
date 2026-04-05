@@ -24,7 +24,12 @@ Internal architecture reference for developers and contributors.
 16. [Manufacturing Modules](#manufacturing-modules)
 17. [Web Server](#web-server)
 18. [Database Schema](#database-schema)
-19. [Security Model](#security-model)
+19. [Domain Pack System](#domain-pack-system)
+20. [Security Model](#security-model)
+21. [3-Process Architecture](#3-process-architecture)
+22. [Tool Execution Pipeline](#tool-execution-pipeline)
+23. [Auto-Skills Lifecycle](#auto-skills-lifecycle)
+24. [Pack System Architecture](#pack-system-architecture)
 
 ---
 
@@ -919,3 +924,192 @@ See `docs/customization-guide.md` for complete procedures at each level.
 - WebSocket origin validation
 - CSP headers enforced
 - Matrix federation disabled (no metadata leakage)
+
+---
+
+## 3-Process Architecture
+
+clauded uses OS-level process separation (SA3) to limit the blast radius of any single component compromise.
+
+```mermaid
+graph LR
+    User[User] --> Platform[Telegram / Matrix / Voice]
+    Platform --> P1[Process 1: clauded-core]
+    P1 --> DB[(SQLite/PostgreSQL)]
+    P1 -->|IPC fork| P2[Process 2: clauded-tools]
+    P1 -->|IPC fork| P3[Process 3: clauded-parsers]
+    P2 --> Worker[Worker Threads V8 Isolate]
+    P1 --> Speaches[Speaches STT/TTS]
+```
+
+### Process Responsibilities
+
+| Process | Role | Has DB? | Has Credentials? | Has Network? |
+|---------|------|---------|-------------------|-------------|
+| **P1: clauded-core** | Router, memory, platforms, scheduler | Yes | Yes (all tokens) | Yes |
+| **P2: clauded-tools** | Network tools, compute tools, Worker sandbox | No | No | Yes (outbound only) |
+| **P3: clauded-parsers** | PDF, DOCX, XLSX, PPTX parsing | No | No | No |
+
+### IPC Protocol
+
+Processes communicate via `child_process.fork()` IPC channels. Each child receives an env whitelist — only the environment variables it needs. If a child process crashes, the parent auto-restarts it. If fork is unavailable (e.g., constrained environment), the system degrades gracefully to local in-process execution.
+
+---
+
+## Tool Execution Pipeline
+
+Every tool call flows through a multi-stage pipeline before execution:
+
+```
+User Message
+    │
+    ▼
+AI selects tool(s)
+    │
+    ▼
+┌─────────────────────────────┐
+│  Policy Engine (SA4)        │
+│  ─ Classify risk level      │
+│  ─ Check tool_trust table   │
+│  ─ Prompt user if critical  │
+│    (bilingual EN/ES)        │
+└──────────┬──────────────────┘
+           │ approved
+           ▼
+┌─────────────────────────────┐
+│  Process Routing (SA3)      │
+│  ─ Builtin tool → P1        │
+│  ─ Network/compute → P2     │
+│  ─ File parsing → P3        │
+└──────────┬──────────────────┘
+           │ IPC message
+           ▼
+┌─────────────────────────────┐
+│  Worker Sandbox (SA1)       │
+│  ─ User-generated tools     │
+│    run in fresh Worker      │
+│  ─ 64MB memory limit        │
+│  ─ Adaptive timeout (30s    │
+│    base, 6m ceiling)        │
+│  ─ safeFetch() for network  │
+└──────────┬──────────────────┘
+           │ result
+           ▼
+Return to AI → next iteration or final response
+```
+
+### Risk Classification
+
+| Level | Count | Behavior | Examples |
+|-------|-------|----------|----------|
+| Critical | 3 | User confirmation required | `run_command`, `github_commit_push`, `github_create_pr` |
+| High | 16 | Logged, rate-aware | `github_clone_repo`, `render_deploy_status`, file writes |
+| Medium | 19 | Standard execution | `web_search`, `summarize_url`, `save_memory` |
+| Low | 5 | Fast path | `get_time`, `system_info`, `query_memory` |
+
+### Trust Memory
+
+When a user responds to a confirmation prompt:
+- **"always" / "siempre"**: Decision persisted in `tool_trust` table — never ask again for this tool in this chat
+- **"never" / "nunca"**: Tool permanently blocked for this chat
+- Trust decisions are per-chat and per-tool, stored across sessions
+
+---
+
+## Auto-Skills Lifecycle
+
+Auto-skills (SA2) detect repetitive tool patterns and propose reusable skills automatically.
+
+```mermaid
+flowchart LR
+    A["Detection<br/>3+ similar tool sequences"] --> B["AI Drafting<br/>skill prompt + triggers"]
+    B --> C["User Approval<br/>bilingual confirmation"]
+    C --> D["Dynamic Triggers<br/>regex pattern matching"]
+    D --> E["Self-Healing<br/>patch on failure"]
+    E -->|"only auto-generated"| D
+```
+
+### Detection Phase
+
+The system monitors tool call patterns per chat. When a sequence of 3 or more tools is repeated across conversations, the AI proposes creating an auto-skill to streamline the workflow.
+
+### Drafting Phase
+
+The AI generates:
+- A natural language system prompt (not executable code)
+- Regex trigger patterns that activate the skill on matching messages
+- A description and allowed tool whitelist
+
+### User Approval
+
+Skills are never created silently. The user receives a bilingual confirmation prompt (EN/ES) showing the proposed skill name, description, and triggers. Only explicit approval proceeds.
+
+### Dynamic Triggers
+
+Once approved, the skill's regex patterns are compiled and checked against every incoming message. When matched, the skill activates for that conversation turn.
+
+### Self-Healing
+
+If an auto-generated skill causes errors or poor responses, the self-healing mechanism patches the skill prompt. This only applies to auto-generated skills — builtin and manually-created skills are never modified.
+
+---
+
+## Pack System Architecture
+
+Domain Packs extend clauded with department-specific capabilities without modifying core code.
+
+### Pack Format Levels
+
+| Level | Complexity | Author | Time | Contents |
+|-------|-----------|--------|------|----------|
+| **Level 1** | Single tool | Any user | 5 minutes | `/tool generate` — conversational tool creation |
+| **Level 2** | Domain Pack | Power user | 1-2 hours | `pack.yaml` + tools/*.md + skills/*.md + templates/ |
+| **Level 3** | TypeScript Module | Developer | 1-2 days | Full module with web dashboard, DB tables, API routes |
+
+### Pack Subscription Model
+
+Packs are enabled per-chat, not globally:
+
+- `/pack list` — show all available packs
+- `/pack enable <name>` — activate pack for current chat
+- `/pack disable <name>` — deactivate pack for current chat
+- Pack tools and skills only appear in chats where the pack is enabled
+- Multiple packs can be active simultaneously in a single chat
+
+### Level 2 Pack Structure
+
+```
+packs/<pack-name>/
+├── pack.yaml           — metadata, description, intent patterns
+├── tools/
+│   ├── tool-a.md       — Markdown tool definition (code + schema)
+│   └── tool-b.md
+├── skills/
+│   └── persona.md      — Markdown skill definition (system prompt)
+└── templates/
+    └── report.md       — Document generation templates
+```
+
+### Level 3 Reference: Manufacturing Pack (ClawMFG)
+
+The manufacturing pack is the reference Level 3 implementation, containing:
+
+- 15+ tools across capacity, simulation, sequencing, quality, and lean domains
+- Web dashboards at `/sim`, `/capacity`, `/sequence`, `/vsm`, `/toc`, `/conwip`, `/doe`, `/fsm`
+- DB tables per module with full CRUD
+- Monte Carlo and MiniZinc optimization integration
+- Cross-module bridges (Capacity to TOC, VSM to Simulation)
+
+### Conversational Pack Builder
+
+Users can create Level 2 packs through conversation:
+
+1. `/pack create` — starts guided builder
+2. AI asks about department, use cases, tool needs
+3. Generates `pack.yaml` scaffold with intent patterns
+4. User populates tools and skills via `/tool generate` and `/skill create`
+5. Pack is immediately available via `/pack enable`
+
+### Test Coverage
+
+1720 tests across 71 files validate all pack-loaded tools and core infrastructure.

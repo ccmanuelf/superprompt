@@ -838,7 +838,7 @@ S19 (Auto-Skills) ────► S3 (Production Deployment)
 
 ---
 
-## Sprint SA1: Worker Thread Sandbox — NOT STARTED
+## Sprint SA1: Worker Thread Sandbox — COMPLETE (rc.14)
 
 **Goal:** Replace `new Function()` tool execution with Node.js Worker threads for true V8 isolation.
 
@@ -861,7 +861,7 @@ User-created tools (via `/tool generate`, `/tool upload`, or Domain Packs) curre
 
 ---
 
-## Sprint SA2: Formal Application Core — NOT STARTED
+## Sprint SA2: Formal Application Core — COMPLETE (rc.15-17)
 
 **Goal:** Extract a narrow orchestration core with typed interfaces. Providers, tools, memory, packs, and platform adapters become plug-ins with stable contracts, not peers in the same runtime surface.
 
@@ -886,7 +886,7 @@ Currently, `src/index.ts` imports and initializes everything directly. Adding S1
 
 ---
 
-## Sprint SA3: Process Separation — NOT STARTED (after SA2)
+## Sprint SA3: Process Separation — COMPLETE (rc.18)
 
 **Goal:** Split clauded into multiple processes with minimal shared state. Reduces blast radius if any subsystem is compromised or crashes.
 
@@ -923,7 +923,7 @@ Process 3: Database
 
 ---
 
-## Sprint SA4: Policy-Based Tool Permissions — NOT STARTED (after SA2)
+## Sprint SA4: Policy-Based Tool Permissions — COMPLETE (rc.19)
 
 **Goal:** Tag each tool with risk metadata and enforce permissions centrally rather than through scattered checks and prompt behavior.
 
@@ -951,7 +951,7 @@ Process 3: Database
 
 ---
 
-## Sprint SA5: Modules as Capability Packs — NOT STARTED (after SA2)
+## Sprint SA5: Modules as Capability Packs — COMPLETE (rc.20-22)
 
 **Goal:** Repackage the 15 manufacturing modules as versioned capability packs. Establish the pattern for all department base packs.
 
@@ -1017,7 +1017,7 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 ---
 
-## Auto-Generated Skills — CORE SUBSYSTEM (absorbed from S19 into SA2)
+## Auto-Generated Skills — CORE SUBSYSTEM — COMPLETE (rc.18)
 
 > Note: Originally planned as Sprint S19. Reclassified as a core subsystem per CTO direction (2026-04-03). Auto-skills are as fundamental as memory — they're how clauded learns, regardless of department or role.
 

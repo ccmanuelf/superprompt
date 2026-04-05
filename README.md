@@ -1,6 +1,6 @@
 # clauded
 
-A personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department.
+A personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department. **v1.0.0-rc.22**
 
 **New here?** Start with the [Department Onboarding Runbook](docs/deployment-runbook.md) — a 30-minute step-by-step guide to get your own instance running.
 
@@ -9,7 +9,8 @@ A personal AI assistant daemon that bridges messaging platforms to AI backends r
 ## Features
 
 **AI Providers**
-- Claude (via CLI subprocess, subscription-based) or Ollama (local, no subscription needed)
+- Claude via `claude` CLI subprocess (Anthropic subscription — fixed monthly fee, no per-token API costs). Auth via `CLAUDE_CODE_OAUTH_TOKEN` env var (generated with `claude setup-token`). The deployed instance runs on the same subscription as the developer — no API consumption metering.
+- Ollama (local, no subscription needed) with qwen3.5 for chat+tools
 - 49+ builtin tools (web search, file reading, document generation, GitHub, manufacturing)
 - Automatic provider routing per-message
 
@@ -29,13 +30,16 @@ A personal AI assistant daemon that bridges messaging platforms to AI backends r
 
 **Skills & Tools**
 - 5 builtin skills with auto-triggering (debugger, careful, brainstormer, analyst, coder)
+- Auto-skills: clauded learns from complex tasks and proposes reusable skills (adapts from Hermes Agent concepts)
 - Tool Forge: create, upload, auto-generate, and manage custom tools
 - Safety scanning for user-created tools
 
 **Domain Packs** (department customization)
+- 9 bundled department packs: manufacturing, finance, supply-chain, hr, engineering, business-dev, customer-service, warehousing, trade-compliance
 - Bundled tools + skills + templates + AI context per department
 - Three customization levels: Simple (5 min), Domain Pack (1-2 hrs), TypeScript Module (1-2 days)
-- Finance example pack included with NPV calculator and budget variance tools
+- Conversational pack builder ("I need a pack for quality engineering" and AI builds it)
+- Pack subscription model: any department can enable any pack
 - `/pack create` scaffolds new department packs
 
 **Productivity**
@@ -71,6 +75,13 @@ A personal AI assistant daemon that bridges messaging platforms to AI backends r
 - Prompt injection framing on untrusted content (memory, web search, files)
 - Log sanitization (credentials redacted from ring buffer)
 - 20 threat vectors assessed — see [Security Model](docs/security.md)
+
+## Security Architecture
+
+- **4-layer defense-in-depth**: Policy gate --> Process boundary --> Worker V8 isolate --> SSRF-safe fetch
+- **Per-user trust memory**: works like "remember passwords" — once a user is trusted for a tool category, clauded never asks again
+- **43 tools classified by risk level**: 3 critical, 16 high, 19 medium, 5 low — each risk level gates differently through the policy engine
+- **Auto-generated skills with self-healing**: adapts from Hermes Agent concepts — clauded learns from failures and proposes corrected skill definitions
 
 ## Quick Start
 
@@ -110,6 +121,8 @@ Access at `http://localhost:3030/`. Documentation at `http://localhost:3030/docs
 
 ## Architecture
 
+3-process architecture with V8 isolation for untrusted code:
+
 ```mermaid
 graph LR
     subgraph Host
@@ -117,23 +130,41 @@ graph LR
     end
 
     subgraph Docker["Docker Compose"]
-        subgraph Bot["clauded-bot (Node 22)"]
+        subgraph Core["Process 1: clauded-core"]
             Router["Provider Router"]
             Memory["Memory + SQLite"]
-            Tools["49+ Tools"]
-            Packs["Domain Packs"]
-            Web["Web Server<br/>11 SPAs + Docs"]
+            Skills["Skills + Auto-Skills"]
+            Packs["Domain Packs (9)"]
+            Scheduler["Scheduler"]
+            Platforms["Telegram + Matrix"]
+            DB["SQLite (WAL + FTS5)"]
         end
 
-        Voice["clauded-speaches<br/>STT + TTS"]
+        subgraph Tools["Process 2: clauded-tools"]
+            Worker["Worker Sandbox<br/>(V8 isolate)"]
+            WebTools["Web tools"]
+            GitHub["GitHub integration"]
+            Screenshots["Screenshots"]
+        end
+
+        subgraph Parsers["Process 3: clauded-parsers"]
+            PDF["PDF parsing"]
+            XLSX["XLSX parsing"]
+            DOCX["DOCX parsing"]
+            NoNet["No network / No DB"]
+        end
+
+        Voice["Speaches sidecar<br/>STT + TTS"]
         Matrix["clauded-synapse<br/>(optional)"]
     end
 
-    TG["Telegram"] --> Bot
-    MX["Matrix"] --> Matrix --> Bot
-    BR["Browser"] --> Web
-    Bot --> Ollama
-    Bot --> Voice
+    TG["Telegram"] --> Core
+    MX["Matrix"] --> Matrix --> Core
+    BR["Browser"] --> Core
+    Core --> Tools
+    Core --> Parsers
+    Core --> Ollama
+    Core --> Voice
 ```
 
 ## Documentation
@@ -159,14 +190,17 @@ All documentation is also available in-browser at `http://localhost:3030/docs` (
 | Component | Technology |
 |-----------|-----------|
 | Runtime | Node.js 22 (ESM, TypeScript ES2022) |
-| AI | Claude CLI + Ollama (qwen3.5) |
+| AI | Claude CLI (subscription) + Ollama (qwen3.5) |
+| Process isolation | child_process.fork() (3-process architecture) |
+| Worker sandbox | Node.js Worker threads (V8 isolation for user-generated code) |
+| Policy engine | Risk classification (critical/high/medium/low) with trust memory |
 | Messaging | grammy (Telegram) + matrix-bot-sdk (Matrix) |
 | Voice | Speaches (Faster-whisper + Kokoro-82M) |
 | Database | SQLite (WAL) + FTS5 + sqlite-vec |
 | Web | Express + WebSocket + Vue 3/Vuetify (CDN) |
 | Charts | Chart.js + chartjs-node-canvas |
 | Documents | ExcelJS, docx, pdfkit, pptxgenjs |
-| Container | Docker Compose (3 services) |
+| Container | Docker Compose (4 services) |
 | Logging | pino + pino-pretty |
 
 ## Commands
@@ -196,7 +230,7 @@ npm run test:watch # Watch mode
 npm run typecheck  # TypeScript type checking
 ```
 
-1469 tests across 60 files covering domain packs, manufacturing modules, memory system, tools, and utilities.
+1720 tests across 71 files covering domain packs, manufacturing modules, memory system, tools, security architecture, and utilities.
 
 ## E2E Testing
 

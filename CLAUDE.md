@@ -20,15 +20,24 @@ Check `PROJECT_PLAN.md` for which phases are complete. Each phase has a checkbox
 
 All decisions are documented in `reference/decisions.md`. Do NOT re-discuss them. Summary:
 
-- **AI**: Claude via `claude -p` subprocess (subscription, no SDK) + Ollama (local, curated 8-tool set)
+- **AI**: Claude via `claude -p` subprocess (**subscription — fixed monthly fee, no per-token API cost**) + Ollama (local, curated tool set)
+- **Claude auth**: `CLAUDE_CODE_OAUTH_TOKEN` env var (generated via `claude setup-token`). The deployed version uses the same Anthropic subscription as the demo — no API consumption required.
 - **Ollama models**: `qwen3.5:latest` (chat + tools)
 - **Messaging**: Telegram (grammy) + Matrix (matrix-bot-sdk, self-hosted Synapse)
 - **Voice**: Fully local via Speaches Docker sidecar (Kokoro-82M TTS + Faster-whisper STT, auto language detection EN/ES)
-- **Claude auth**: `CLAUDE_CODE_OAUTH_TOKEN` env var (generated via `claude setup-token`)
-- **Database**: SQLite (better-sqlite3) in WAL mode with FTS5
+- **Database**: SQLite (better-sqlite3) in WAL mode with FTS5. StorageProvider abstraction ready for MariaDB/PostgreSQL migration.
 - **Memory**: Full dual-sector (semantic + episodic) with salience decay
 - **Infra**: Docker required (sandboxes `--dangerously-skip-permissions`)
 - **Dropped**: WhatsApp, Signal, Discord, iMessage, Agent SDK, ElevenLabs, Groq
+
+### Architecture Hardening (SA1-SA5)
+
+- **SA1 — Worker Sandbox**: User-generated code runs in Worker threads (V8 isolate, no shared memory, 64MB limit, adaptive timeout with heartbeat)
+- **SA2 — Formal Core**: Application class, typed interfaces (StorageProvider, ToolProvider, MemoryProvider, PackProvider, Platform, Subsystem), PlatformContext facade
+- **SA3 — Process Separation**: 3 processes via `child_process.fork()` — core (DB access), tools (network/compute, no DB), parsers (file I/O only, no network)
+- **Auto-Skills**: Detection (3+ tools), AI drafting (Hermes-adapted), bilingual proposals, dynamic triggers, skill self-healing
+- **SA4 — Policy Engine**: 43 tools classified by risk (3 critical, 16 high, 19 medium, 5 low). Per-user trust memory ("always"/"never"). Confirmation flow across Telegram, Matrix, and voice.
+- **SA5 — Everything as Packs**: Manufacturing extracted to Level 3 pack. 9 department starter packs. Subscription model (any department enables any pack). Conversational builder + guide.
 
 ## Code Conventions
 

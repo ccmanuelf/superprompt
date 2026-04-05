@@ -1,8 +1,19 @@
-# clauded — Department Onboarding Runbook
+# clauded v1.0.0-rc.22 — Department Onboarding Runbook
 
 Get your own clauded instance running in 30 minutes. This guide is for team members receiving the repository who need to set up their own independent instance.
 
-**What you'll have when done:** Your own AI assistant on Telegram with voice processing, manufacturing tools, document generation, and a web dashboard — all running locally on your workstation.
+**What you'll have when done:** Your own autonomous AI assistant on Telegram with:
+- Voice processing (EN/ES), 9 department packs (manufacturing, finance, HR, engineering, etc.)
+- 43+ tools with 4-layer security (policy engine → process isolation → Worker sandbox → SSRF protection)
+- Auto-skill learning (clauded gets smarter from complex tasks)
+- Web dashboards (/sim, /capacity, /sequence, /vsm, /toc, /conwip, /doe, /fsm, /board, /learn)
+- Document generation (Excel, PDF, Word, CSV, PowerPoint)
+
+**Architecture:** 3-process model (core + tools + parsers) with per-user trust memory.
+
+**Claude subscription:** Uses `claude` CLI with a fixed monthly Anthropic subscription — no per-token API costs. The deployed version runs on the same subscription as the demo.
+
+**After deployment:** Run the [E2E Test Guide](e2e-test-guide.md) to validate all 12 sections (65+ test cases).
 
 ---
 
