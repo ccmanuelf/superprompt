@@ -44,6 +44,10 @@ import type {
 } from '../kanban.js';
 import type { getCitations, exportCitations, clearCitations, formatCitationList, addCitation } from '../citations.js';
 import type { checkResponseQuality, logQualityCheck } from '../self-monitor.js';
+import type {
+  addGuardrail, getGuardrails, removeGuardrail, clearGuardrails,
+  formatGuardrailsList, detectToolFailureGuardrail, detectCorrectionGuardrail,
+} from '../guardrails.js';
 import type { enablePack, disablePack, getPackSubscriptions, isPackEnabled } from '../packs.js';
 import type {
   generatePackBlueprint, formatPackProposal, detectPackCreationResponse,
@@ -197,6 +201,16 @@ export interface PlatformContext {
     searchPapers: typeof searchPapers;
   };
 
+  guardrails: {
+    add: typeof addGuardrail;
+    get: typeof getGuardrails;
+    remove: typeof removeGuardrail;
+    clear: typeof clearGuardrails;
+    formatList: typeof formatGuardrailsList;
+    detectToolFailure: typeof detectToolFailureGuardrail;
+    detectCorrection: typeof detectCorrectionGuardrail;
+  };
+
   packSubscriptions: {
     enable: typeof enablePack;
     disable: typeof disablePack;
@@ -304,7 +318,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     skillParserMod, skillFixerMod, toolParserMod, scannerMod,
     toolRegistryMod, toolGenMod, toolFixerMod, exporterMod,
     proactiveMod, orchestratorMod, kanbanMod, citationsMod,
-    selfMonitorMod, researchMod, learningMod, autoSkillsMod, policyMod, packsMod, packBuilderMod,
+    selfMonitorMod, researchMod, guardrailsMod, learningMod, autoSkillsMod, policyMod, packsMod, packBuilderMod,
   ] = await Promise.all([
     import('../memory.js'),
     import('../db.js'),
@@ -326,6 +340,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     import('../citations.js'),
     import('../self-monitor.js'),
     import('../providers/tools/research.js'),
+    import('../guardrails.js'),
     import('../learning/index.js'),
     import('../auto-skills.js'),
     import('../policy-engine.js'),
@@ -440,6 +455,15 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     },
     research: {
       searchPapers: researchMod.searchPapers,
+    },
+    guardrails: {
+      add: guardrailsMod.addGuardrail,
+      get: guardrailsMod.getGuardrails,
+      remove: guardrailsMod.removeGuardrail,
+      clear: guardrailsMod.clearGuardrails,
+      formatList: guardrailsMod.formatGuardrailsList,
+      detectToolFailure: guardrailsMod.detectToolFailureGuardrail,
+      detectCorrection: guardrailsMod.detectCorrectionGuardrail,
     },
     packSubscriptions: {
       enable: packsMod.enablePack,

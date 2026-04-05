@@ -112,6 +112,10 @@ async function main(): Promise<void> {
   const { packSubscriptionTableInit } = await import('./packs.js');
   storage.registerTables(packSubscriptionTableInit);
 
+  // Guardrails tables (permanent learned constraints)
+  const { guardrailsTableInit } = await import('./guardrails.js');
+  storage.registerTables(guardrailsTableInit);
+
   // ── Subsystems ───────────────────────────────────────────
 
   // Skills subsystem — creates builtin skills on init
