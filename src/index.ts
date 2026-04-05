@@ -116,6 +116,10 @@ async function main(): Promise<void> {
   const { guardrailsTableInit } = await import('./guardrails.js');
   storage.registerTables(guardrailsTableInit);
 
+  // Pack tuner tables (self-tuning pack weights)
+  const { packTunerTableInit } = await import('./pack-tuner.js');
+  storage.registerTables(packTunerTableInit);
+
   // ── Subsystems ───────────────────────────────────────────
 
   // Skills subsystem — creates builtin skills on init
