@@ -25,6 +25,8 @@ Layer 1: Policy Engine (SA4)
   └─ Central risk evaluation BEFORE tool execution
   └─ 43 tools classified: 3 critical, 16 high, 19 medium, 5 low
   └─ Critical tools require user confirmation (bilingual EN/ES)
+  └─ High-risk tools optionally require confirmation via POLICY_CONFIRM_HIGH_RISK env var
+     (for stricter environments — CTO rc.30 feedback)
   └─ Per-user trust memory: "always"/"siempre" = never ask again,
      "never"/"nunca" = permanently blocked
   └─ tool_trust table: per-chat, per-tool decisions persist across sessions

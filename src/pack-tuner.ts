@@ -195,21 +195,20 @@ export function formatPackWeights(weights: PackWeight[]): string {
 
 /**
  * Determine which pack a tool belongs to.
- * Uses the tool registry source info to map tool → pack.
+ *
+ * Priority:
+ * 1. Explicit packName field on ToolEntry (set during registration)
+ * 2. DB lookup for user tools (source_file path contains pack name)
+ * 3. null (core builtin, not owned by a pack)
+ *
+ * CTO feedback (rc.29): replaced hardcoded manufacturing tool set with
+ * explicit packName field to prevent drift as packs evolve.
  */
-export function getToolPackName(toolName: string): string | null {
-  // Manufacturing tools have known prefixes/names
-  const mfgTools = new Set([
-    'line_balance', 'sigma_analysis', 'inventory_plan', 'spc_setup',
-    'fmea_manage', 'rca_manage', 'production_simulation', 'minizinc_optimize',
-    'capacity_planning', 'job_sequencer', 'value_stream_map', 'toc_analysis',
-    'conwip_heijunka', 'design_of_experiments', 'state_machine_simulator',
-  ]);
+export function getToolPackName(toolName: string, explicitPackName?: string): string | null {
+  // 1. Explicit packName from ToolEntry (set during pack registration)
+  if (explicitPackName) return explicitPackName;
 
-  if (mfgTools.has(toolName)) return 'manufacturing';
-
-  // User tools registered via packs have source_file in the DB
-  // For now, return null for non-pack tools (core builtins)
+  // 2. Check DB for user tools from packs (source_file path)
   try {
     const db = getDatabase();
     const tool = db.prepare(
@@ -217,7 +216,6 @@ export function getToolPackName(toolName: string): string | null {
     ).get(toolName) as { source_file: string | null } | undefined;
 
     if (tool?.source_file?.includes('packs/')) {
-      // Extract pack name from path: packs/<name>/tools/...
       const match = tool.source_file.match(/packs\/([^/]+)\//);
       if (match) return match[1];
     }

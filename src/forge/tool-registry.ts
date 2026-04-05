@@ -15,6 +15,8 @@ export interface ToolEntry {
   process?: 'core' | 'tools' | 'parsers';
   /** Risk metadata — drives policy engine enforcement (SA4) */
   policy?: ToolPolicy;
+  /** Which pack owns this tool — used by pack tuner for weight tracking */
+  packName?: string;
 }
 
 const registry = new Map<string, ToolEntry>();

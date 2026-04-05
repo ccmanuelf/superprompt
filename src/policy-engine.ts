@@ -171,8 +171,19 @@ export function evaluatePolicy(toolName: string, chatId: string): PolicyDecision
     return { allowed: true, requiresConfirmation: false };
   }
 
-  // High: allowed, logged, no confirmation by default
+  // High: allowed, logged. Optionally requires confirmation for specific tools
+  // via POLICY_CONFIRM_HIGH_RISK env var (comma-separated tool names).
+  // CTO feedback (rc.29): "for stricter environments you might want optional
+  // confirmation or narrower gating for some high-risk but non-critical tools."
   if (policy.riskLevel === 'high') {
+    const confirmHighRisk = getHighRiskConfirmationList();
+    if (confirmHighRisk.has(toolName)) {
+      return {
+        allowed: true,
+        requiresConfirmation: true,
+        confirmationPrompt: buildConfirmationPrompt(toolName),
+      };
+    }
     logger.debug({ tool: toolName, risk: 'high', chatId }, 'High-risk tool execution');
     return { allowed: true, requiresConfirmation: false };
   }
@@ -190,6 +201,18 @@ export function evaluatePolicy(toolName: string, chatId: string): PolicyDecision
 }
 
 // ── Confirmation Prompt ──────────────────────────────────────
+
+/** Cache for POLICY_CONFIRM_HIGH_RISK env var parsing */
+let _highRiskConfirmCache: Set<string> | null = null;
+
+function getHighRiskConfirmationList(): Set<string> {
+  if (_highRiskConfirmCache) return _highRiskConfirmCache;
+  const envVal = process.env.POLICY_CONFIRM_HIGH_RISK || '';
+  _highRiskConfirmCache = new Set(
+    envVal.split(',').map((s) => s.trim()).filter(Boolean),
+  );
+  return _highRiskConfirmCache;
+}
 
 function buildConfirmationPrompt(toolName: string): string {
   return [

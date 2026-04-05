@@ -150,14 +150,15 @@ describe('pack-tuner — real execution', () => {
   // ── Tool → Pack mapping ────────────────────────────────────
 
   describe('getToolPackName', () => {
-    it('maps manufacturing tools correctly', () => {
-      expect(getToolPackName('line_balance')).toBe('manufacturing');
-      expect(getToolPackName('sigma_analysis')).toBe('manufacturing');
-      expect(getToolPackName('capacity_planning')).toBe('manufacturing');
-      expect(getToolPackName('production_simulation')).toBe('manufacturing');
+    it('maps tools via explicit packName parameter', () => {
+      // rc.30: packName is now passed explicitly from ToolEntry, not hardcoded
+      expect(getToolPackName('line_balance', 'manufacturing')).toBe('manufacturing');
+      expect(getToolPackName('sigma_analysis', 'manufacturing')).toBe('manufacturing');
+      expect(getToolPackName('any_tool', 'finance')).toBe('finance');
+      expect(getToolPackName('custom_tool', 'hr')).toBe('hr');
     });
 
-    it('returns null for core tools', () => {
+    it('returns null for core tools without packName', () => {
       expect(getToolPackName('web_search')).toBeNull();
       expect(getToolPackName('get_time')).toBeNull();
       expect(getToolPackName('query_memory')).toBeNull();

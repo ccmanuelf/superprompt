@@ -345,7 +345,7 @@ export async function executeTool(
   // Pack tuner: record outcome for BOTH providers (Claude + Ollama)
   try {
     const { getToolPackName, recordPackToolOutcome } = await import('../../pack-tuner.js');
-    const packName = getToolPackName(name);
+    const packName = getToolPackName(name, entry?.packName);
     if (packName) {
       recordPackToolOutcome(packName, chatId, !('error' in result));
     }
