@@ -1205,6 +1205,8 @@ endpoint:
 
 | Enhancement | Source | Status |
 |-------------|--------|--------|
+| Fine-grained policy (per-argument scoping) | CTO rc.29 review | "Decisions are per tool and chat, not scoped by arguments (e.g., allowed but only for certain paths or hosts)." Re-evaluate after cloud deployment when multi-tenant use cases emerge. |
+| Per-tool/process concurrency control | CTO rc.29 review | "No explicit per-tool concurrency protections to guard against misuse or bugs." Circuit breaker handles loops; concurrency limits are a scaling concern for post-deployment. Re-evaluate after cloud deployment under production load. |
 | agentskills.io standard | Hermes Agent evaluation | Nice-to-have. Evaluate after auto-skills are core. |
 | Odoo integration | CTO strategic direction | Evaluate when Odoo migration progresses. API connectors via declarative HTTP tools. |
 | Multi-instance federation | CTO architecture review | Required if single Anthropic account insufficient. Shared DB architecture in SA2. |
