@@ -1,0 +1,6 @@
+order_id,customer_name,product,quantity,unit_price,total,status,created_at
+1001,Jane Smith,Premium Phone Case - Black,50,12.99,649.50,unfulfilled,2026-04-01
+1002,Bob Johnson,Screen Protector 3-Pack,100,8.99,899.00,unfulfilled,2026-04-01
+1003,Alice Chen,USB-C Charging Cable 6ft,200,6.99,1398.00,fulfilled,2026-03-28
+1004,Carlos Rodriguez,Wireless Charger Pad,75,19.99,1499.25,unfulfilled,2026-04-02
+1005,Sarah Kim,Phone Case - Rose Gold,30,14.99,449.70,partial,2026-04-02
