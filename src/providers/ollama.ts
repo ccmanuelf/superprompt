@@ -255,7 +255,11 @@ export class OllamaProvider implements AIProvider {
     const generatedFiles: { path: string; filename: string; mimeType: string }[] = [];
     let kanbanToolCalled = false;
 
-    while (iterations < MAX_ITERATIONS) {
+    // Circuit breaker — detects stagnation, repetition, and cascading errors
+    const { CircuitBreaker } = await import('../circuit-breaker.js');
+    const breaker = new CircuitBreaker();
+
+    while (iterations < MAX_ITERATIONS && breaker.state !== 'open') {
       iterations++;
 
       if (onTyping) onTyping();
@@ -324,6 +328,16 @@ export class OllamaProvider implements AIProvider {
           'Executing tool call',
         );
 
+        // Circuit breaker: check before execution
+        const breakerCheck = breaker.shouldAllowExecution(toolName, toolArgs);
+        if (!breakerCheck.allow) {
+          messages.push({
+            role: 'tool',
+            content: JSON.stringify({ status: 'circuit_breaker', message: breakerCheck.reason }),
+          });
+          continue;
+        }
+
         if (toolName === 'kanban_manage') kanbanToolCalled = true;
         const result = await executeTool(toolName, toolArgs, chatId);
 
@@ -370,7 +384,13 @@ export class OllamaProvider implements AIProvider {
           role: 'tool',
           content: JSON.stringify(result),
         });
+
+        // Circuit breaker: record result for pattern detection
+        breaker.recordResult(toolName, toolArgs, result);
       }
+
+      // Circuit breaker: record iteration end for stagnation detection
+      breaker.recordIterationEnd(msg.content?.length ?? 0);
     }
 
     // Max iterations reached

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import type { AIProvider, AIResponse, SendMessageParams } from './types.js';
 import { config, PROJECT_ROOT } from '../config.js';
 import { logger } from '../logger.js';
+import { getClaudeTimeoutMs, buildClaudeTimeoutError } from '../circuit-breaker.js';
 
 /**
  * Stream-json event types emitted by `claude --output-format stream-json`.
@@ -66,6 +67,15 @@ export class ClaudeProvider implements AIProvider {
       let resultText = '';
       let isStaleSession = false;
       let typingInterval: ReturnType<typeof setInterval> | undefined;
+      let killed = false;
+
+      // Claude subprocess timeout — prevents indefinite hangs
+      const timeoutMs = getClaudeTimeoutMs();
+      const timeoutTimer = setTimeout(() => {
+        killed = true;
+        proc.kill('SIGKILL');
+        logger.warn({ timeoutMs }, 'Claude subprocess killed (timeout)');
+      }, timeoutMs);
 
       // Refresh typing indicator every 4s
       if (onTyping) {
@@ -136,7 +146,18 @@ export class ClaudeProvider implements AIProvider {
       });
 
       proc.on('close', (code) => {
+        clearTimeout(timeoutTimer);
         if (typingInterval) clearInterval(typingInterval);
+
+        // Handle timeout kill
+        if (killed) {
+          resolve({
+            text: buildClaudeTimeoutError(timeoutMs),
+            provider: 'claude',
+            newSessionId,
+          });
+          return;
+        }
 
         // Process any remaining stdout
         if (stdout.trim()) {
