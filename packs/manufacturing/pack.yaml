@@ -1,0 +1,116 @@
+name: manufacturing
+display_name: Manufacturing Engineering
+description: >
+  Complete manufacturing operations toolkit — line balancing, Six Sigma SPC,
+  inventory planning, FMEA, RCA, discrete-event simulation, capacity planning,
+  job sequencing, value stream mapping, theory of constraints, CONWIP/Heijunka,
+  design of experiments, and finite state machine simulation.
+version: 1.0.0
+author: clauded
+enabled: true
+level: 3
+
+departments:
+  - manufacturing
+  - engineering
+  - quality
+
+capabilities: >
+  Manufacturing quality and operations tools:
+  - Line balance (RPW heuristic, yamazumi charts, Gantt)
+  - Six Sigma SPC (Cp/Cpk/Pp/Ppk, control charts, Pareto, DPMO)
+  - Inventory planning (EOQ, safety stock, ABC classification, SES forecast)
+  - SPC platform (p/np/c/u charts, CUSUM, EWMA, Control Plan)
+  - FMEA (PFMEA/DFMEA, RPN, AIAG-VDA Action Priority)
+  - Root cause analysis (5 Whys, Ishikawa, PDCA, FTA, A3 Report)
+  - Discrete-event simulation (DES engine, Monte Carlo, MiniZinc optimization)
+  - Capacity planning (12-step methodology, scenarios, ROI)
+  - Job sequencing (6 dispatching rules, genetic algorithm)
+  - Value stream mapping (VA/NVA/BNVA, TIMWOODS, PCE)
+  - Theory of constraints (CCR, throughput accounting, DBR)
+  - CONWIP/Heijunka (token boards, production leveling)
+  - Design of experiments (full factorial, fractional, Taguchi, Box-Behnken, CCD)
+  - State machine simulator (9 manufacturing states, 4 templates, DES bridge)
+  Web dashboards: /sim, /capacity, /sequence, /vsm, /toc, /conwip, /doe, /fsm
+
+self_description: >
+  I have deep manufacturing engineering capabilities including production
+  simulation, quality control (Six Sigma, SPC), lean tools (VSM, CONWIP),
+  planning (capacity, sequencing, inventory), and analysis (FMEA, RCA, DOE).
+  Each module has interactive web dashboards for visualization.
+
+intent_patterns:
+  - pattern: \b(line\s*balanc|takt\s*time|yamazumi|cycle\s*time|workstation)\b
+    score_boost: 15
+    tools: [line_balance]
+    web_apps: []
+  - pattern: \b(six\s*sigma|cpk|ppk|control\s*chart|spc|dpmo|pareto)\b
+    score_boost: 15
+    tools: [sigma_analysis, spc_setup]
+    web_apps: []
+  - pattern: \b(eoq|safety\s*stock|reorder\s*point|abc\s*class|inventory\s*plan)\b
+    score_boost: 15
+    tools: [inventory_plan]
+    web_apps: []
+  - pattern: \b(fmea|failure\s*mode|rpn|severity|detection|occurrence)\b
+    score_boost: 15
+    tools: [fmea_manage]
+    web_apps: []
+  - pattern: \b(root\s*cause|5\s*why|ishikawa|fishbone|pdca|fault\s*tree|a3\s*report)\b
+    score_boost: 15
+    tools: [rca_manage]
+    web_apps: []
+  - pattern: \b(simulat|des\s*engine|monte\s*carlo|production\s*line|discrete\s*event)\b
+    score_boost: 15
+    tools: [production_simulation]
+    web_apps: [/sim]
+  - pattern: \b(minizinc|optimi[sz]|schedul|rebalanc)\b
+    score_boost: 10
+    tools: [minizinc_optimize]
+    web_apps: [/sim]
+  - pattern: \b(capacity\s*plan|utilization|bottleneck|throughput|roi\s*calc)\b
+    score_boost: 15
+    tools: [capacity_planning]
+    web_apps: [/capacity]
+  - pattern: \b(job\s*sequenc|dispatch|gantt|makespan|genetic\s*algorithm)\b
+    score_boost: 15
+    tools: [job_sequencer]
+    web_apps: [/sequence]
+  - pattern: \b(value\s*stream|vsm|lead\s*time|process\s*cycle|timwoods|waste)\b
+    score_boost: 15
+    tools: [value_stream_map]
+    web_apps: [/vsm]
+  - pattern: \b(theory\s*of\s*constraints|toc|drum\s*buffer|bottleneck|throughput\s*account)\b
+    score_boost: 15
+    tools: [toc_analysis]
+    web_apps: [/toc]
+  - pattern: \b(conwip|heijunka|kanban\s*board|wip\s*limit|token)\b
+    score_boost: 15
+    tools: [conwip_heijunka]
+    web_apps: [/conwip]
+  - pattern: \b(doe|design\s*of\s*experiment|factorial|taguchi|anova|response\s*surface)\b
+    score_boost: 15
+    tools: [design_of_experiments]
+    web_apps: [/doe]
+  - pattern: \b(state\s*machine|fsm|transition|plc|structured\s*text)\b
+    score_boost: 15
+    tools: [state_machine_simulator]
+    web_apps: [/fsm]
+
+commands:
+  - name: sim
+    description: Production simulation — run, compare, optimize
+  - name: capacity
+    description: Capacity planning — analyze, scenario, Monte Carlo
+  - name: sequence
+    description: Job sequencing — dispatch, compare, GA optimize
+  - name: vsm
+    description: Value stream mapping — analyze, compare
+  - name: toc
+    description: Theory of constraints — analyze, review
+  - name: conwip
+    description: CONWIP/Heijunka — token boards, leveling
+  - name: doe
+    description: Design of experiments — create, analyze
+  - name: fsm
+    description: State machine simulator — create, simulate

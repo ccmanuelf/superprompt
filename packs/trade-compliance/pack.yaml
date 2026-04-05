@@ -1,0 +1,52 @@
+# Trade & Compliance Domain Pack
+
+name: trade-compliance
+display_name: "Trade & Compliance"
+description: "Trade compliance tools for import duty estimation and landed cost calculation. Helps import/export teams estimate duties, MPF, and total landed costs for customs declarations."
+version: "0.1.0"
+author: ""
+enabled: true
+level: 2
+
+departments:
+  - trade-compliance
+  - customs
+  - import-export
+  - procurement
+
+capabilities: |
+  ### Trade & Compliance
+  You have domain-specific tools for trade operations:
+  - `duty_estimator` tool — Estimates import duty from declared value, duty rate, and fees. Parameters: declared_value (number), duty_rate_percent (number), processing_fee (default 25), merchandise_processing_fee_percent (default 0.3464)
+
+  **Key Terminology:**
+  - Landed Cost = declared value + all duties + fees (total cost to get goods to warehouse)
+  - MPF = Merchandise Processing Fee (US CBP fee, currently 0.3464% with min/max caps)
+  - HTS = Harmonized Tariff Schedule (classification code determining duty rate)
+  - Duty Rate = percentage applied to declared/transaction value
+  - CBP = US Customs and Border Protection
+  - FOB = Free On Board (common valuation basis for customs)
+
+  When users discuss import duties, customs costs, tariffs, or landed cost calculations, offer to run the duty estimator.
+
+self_description: |
+  **Trade & Compliance** — 1 domain tool:
+  - Import duty estimator with MPF, processing fees, and landed cost calculation
+
+intent_patterns:
+  - pattern: "\\b(duty|tariff|customs|import tax|landed cost|hts code)\\b"
+    score_boost: 10
+    tools: [duty_estimator]
+    web_apps: []
+  - pattern: "\\b(trade compliance|cbp|merchandise processing|duty rate|import fee)\\b"
+    score_boost: 10
+    tools: [duty_estimator]
+    web_apps: []
+  - pattern: "\\b(declared value|customs declaration|import cost|border protection)\\b"
+    score_boost: 10
+    tools: [duty_estimator]
+    web_apps: []
+
+commands:
+  - name: /duty
+    description: "Estimate import duties and landed cost"

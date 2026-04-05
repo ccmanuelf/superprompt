@@ -1,0 +1,49 @@
+# Human Resources Domain Pack
+
+name: hr
+display_name: "Human Resources"
+description: "HR tools for PTO tracking, leave balance calculations, and workforce planning. Supports managers and HR staff with employee time-off administration."
+version: "0.1.0"
+author: ""
+enabled: true
+level: 2
+
+departments:
+  - human-resources
+  - people-ops
+  - management
+
+capabilities: |
+  ### Human Resources
+  You have domain-specific tools for HR administration:
+  - `pto_calculator` tool — Calculates PTO balance from annual accrual rate, tenure, and days taken. Parameters: annual_pto_days (number), months_employed (number), days_taken (number)
+
+  **Key Terminology:**
+  - PTO = Paid Time Off (accrued leave balance)
+  - Accrual = monthly PTO earning rate (annual_days / 12)
+  - Deficit = negative balance when days taken exceed accrued
+  - FTE = Full-Time Equivalent
+
+  When users ask about leave balances, vacation days, or PTO calculations, offer to run the calculator.
+
+self_description: |
+  **Human Resources** — 1 domain tool:
+  - PTO balance calculator with accrual tracking and status alerts
+
+intent_patterns:
+  - pattern: "\\b(pto|paid time off|vacation days|leave balance|time.?off)\\b"
+    score_boost: 10
+    tools: [pto_calculator]
+    web_apps: []
+  - pattern: "\\b(accrual|accrued days|days remaining|leave tracker)\\b"
+    score_boost: 10
+    tools: [pto_calculator]
+    web_apps: []
+  - pattern: "\\b(hr|human resources|employee leave|sick days|personal days)\\b"
+    score_boost: 10
+    tools: [pto_calculator]
+    web_apps: []
+
+commands:
+  - name: /pto
+    description: "Calculate PTO balance for an employee"

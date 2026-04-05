@@ -1,0 +1,47 @@
+# Customer Service Domain Pack
+
+name: customer-service
+display_name: "Customer Service"
+description: "Customer service tools for SLA compliance tracking and ticket response analysis. Helps support teams monitor service levels by priority and identify missed targets."
+version: "0.1.0"
+author: ""
+enabled: true
+level: 2
+
+departments:
+  - customer-service
+  - support
+  - helpdesk
+  - client-success
+
+capabilities: |
+  ### Customer Service
+  You have domain-specific tools for support operations:
+  - `sla_tracker` tool — Checks SLA compliance by comparing response times against priority-based targets. Parameter: tickets (array of {priority, response_hours}). Priority targets: critical=1h, high=4h, medium=8h, low=24h.
+
+  **Key Terminology:**
+  - SLA = Service Level Agreement (contractual response/resolution targets)
+  - CSAT = Customer Satisfaction score
+  - FRT = First Response Time
+  - MTTR = Mean Time To Resolution
+  - Ticket Priority = critical, high, medium, low
+
+  When users discuss support metrics, SLA compliance, or ticket performance, offer to run the SLA tracker.
+
+self_description: |
+  **Customer Service** — 1 domain tool:
+  - SLA compliance tracker with priority-based target evaluation
+
+intent_patterns:
+  - pattern: "\\b(sla|service level|response time|ticket compliance|support metrics)\\b"
+    score_boost: 10
+    tools: [sla_tracker]
+    web_apps: []
+  - pattern: "\\b(customer service|helpdesk|support tickets|missed sla|ticket priority)\\b"
+    score_boost: 10
+    tools: [sla_tracker]
+    web_apps: []
+
+commands:
+  - name: /sla
+    description: "Check SLA compliance for a set of tickets"

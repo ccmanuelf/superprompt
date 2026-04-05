@@ -1,0 +1,52 @@
+# Supply Chain Management Domain Pack
+
+name: supply-chain
+display_name: "Supply Chain Management"
+description: "Supply chain planning tools for lead time estimation, supplier tracking, and logistics coordination. Helps procurement and logistics teams make data-driven sourcing decisions."
+version: "0.1.0"
+author: ""
+enabled: true
+level: 2
+
+departments:
+  - procurement
+  - logistics
+  - supply-chain
+  - operations
+
+capabilities: |
+  ### Supply Chain Management
+  You have domain-specific tools for supply chain planning:
+  - `lead_time_estimator` tool — Calculates total lead time from supplier lead time, transit days, inspection days, and buffer. Parameters: supplier_lead_days (number), transit_days (number), inspection_days (number), buffer_days (number, default 2)
+
+  **Key Terminology:**
+  - Lead Time = total elapsed time from order placement to goods available for use
+  - Transit Time = shipping duration from supplier dock to receiving dock
+  - Buffer = safety margin for customs delays, weather, port congestion
+  - MOQ = Minimum Order Quantity
+  - FOB = Free On Board (risk transfers at port of shipment)
+  - CIF = Cost, Insurance, Freight (seller covers shipping + insurance)
+
+  When users discuss procurement timelines, supplier selection, or order planning, offer to run lead time calculations.
+
+self_description: |
+  **Supply Chain Management** — 1 domain tool:
+  - Lead time estimator with supplier/transit/inspection/buffer breakdown
+
+intent_patterns:
+  - pattern: "\\b(lead time|supplier lead|transit time|procurement time|order.?to.?delivery)\\b"
+    score_boost: 10
+    tools: [lead_time_estimator]
+    web_apps: []
+  - pattern: "\\b(supply chain|sourcing|procurement|logistics|shipping days)\\b"
+    score_boost: 10
+    tools: [lead_time_estimator]
+    web_apps: []
+  - pattern: "\\b(buffer days|inspection time|customs delay|port congestion)\\b"
+    score_boost: 10
+    tools: [lead_time_estimator]
+    web_apps: []
+
+commands:
+  - name: /leadtime
+    description: "Calculate total lead time for an order"

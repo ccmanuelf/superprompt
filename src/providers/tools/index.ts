@@ -47,21 +47,6 @@ import {
   manageCitationsDefinition, manageCitations,
   reviewReportDefinition, reviewReport,
 } from './research.js';
-import { lineBalanceDefinition, lineBalance } from './balance.js';
-import { sigmaAnalysisDefinition, sigmaAnalysis } from './sigma.js';
-import { inventoryPlanDefinition, inventoryPlan } from './inventory.js';
-import { spcSetupDefinition, spcSetup } from './spc-setup.js';
-import { fmeaManageDefinition, fmeaManage } from './fmea.js';
-import { rcaManageDefinition, rcaManage } from './rca.js';
-import { simulationDefinition, productionSimulation } from './simulation.js';
-import { minizincOptimizeDefinition, minizincOptimize } from './minizinc-tool.js';
-import { capacityDefinition, capacityPlanning } from './capacity.js';
-import { sequencerDefinition, jobSequencer } from './sequencer.js';
-import { vsmDefinition, valueStreamMap } from './vsm.js';
-import { tocDefinition, tocAnalysis } from './toc.js';
-import { conwipDefinition, conwipHeijunka } from './conwip.js';
-import { doeDefinition, designOfExperiments } from './doe.js';
-import { fsmDefinition, stateMachineSimulator } from './fsm.js';
 
 /**
  * Register all built-in tools in the dynamic registry.
@@ -266,112 +251,6 @@ export function registerBuiltinTools(): void {
         reviewReport(args as Parameters<typeof reviewReport>[0]),
       source: 'builtin',
       policy: { riskLevel: 'medium', scopes: ['database:read'], requiresConfirmation: false },
-    },
-    // ── Manufacturing domain tools (core — all need DB) ──
-    {
-      definition: lineBalanceDefinition,
-      execute: async (args, chatId) =>
-        lineBalance(args as Parameters<typeof lineBalance>[0], chatId),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: sigmaAnalysisDefinition,
-      execute: async (args, chatId) =>
-        sigmaAnalysis(args as Parameters<typeof sigmaAnalysis>[0], chatId),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: inventoryPlanDefinition,
-      execute: async (args, chatId) =>
-        inventoryPlan(args as Parameters<typeof inventoryPlan>[0], chatId),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: spcSetupDefinition,
-      execute: async (args, chatId) =>
-        spcSetup(args as Record<string, unknown>, chatId),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: fmeaManageDefinition,
-      execute: async (args, chatId) =>
-        fmeaManage(args as Record<string, unknown>, chatId),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: rcaManageDefinition,
-      execute: async (args, chatId) =>
-        rcaManage(args as Record<string, unknown>, chatId),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: simulationDefinition,
-      execute: async (args) =>
-        productionSimulation(args as Record<string, unknown>),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: minizincOptimizeDefinition,
-      execute: async (args) =>
-        minizincOptimize(args as Record<string, unknown>),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['command', 'database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: capacityDefinition,
-      execute: async (args) =>
-        capacityPlanning(args as Record<string, unknown>),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: sequencerDefinition,
-      execute: async (args) =>
-        jobSequencer(args as Record<string, unknown>),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: vsmDefinition,
-      execute: async (args) =>
-        valueStreamMap(args as Record<string, unknown>),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: tocDefinition,
-      execute: async (args) =>
-        tocAnalysis(args as Record<string, unknown>),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: conwipDefinition,
-      execute: async (args) =>
-        conwipHeijunka(args as Record<string, unknown>),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: doeDefinition,
-      execute: async (args) =>
-        designOfExperiments(args as Record<string, unknown>),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
-    },
-    {
-      definition: fsmDefinition,
-      execute: async (args) =>
-        stateMachineSimulator(args as Record<string, unknown>),
-      source: 'builtin',
-      policy: { riskLevel: 'medium', scopes: ['database:write'], requiresConfirmation: false },
     },
   ];
 

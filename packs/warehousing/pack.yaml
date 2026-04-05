@@ -1,0 +1,47 @@
+# Warehousing & Logistics Domain Pack
+
+name: warehousing
+display_name: "Warehousing & Logistics"
+description: "Warehouse management tools for cycle count planning based on ABC classification. Helps inventory teams schedule counting frequency and estimate daily workload."
+version: "0.1.0"
+author: ""
+enabled: true
+level: 2
+
+departments:
+  - warehousing
+  - logistics
+  - inventory
+  - distribution
+
+capabilities: |
+  ### Warehousing & Logistics
+  You have domain-specific tools for warehouse operations:
+  - `cycle_count_planner` tool — Plans cycle count schedules based on ABC classification. Parameters: total_skus (number), a_percent (default 20), b_percent (default 30), c_percent (default 50). A-items counted monthly, B quarterly, C annually.
+
+  **Key Terminology:**
+  - ABC Classification = Pareto-based SKU ranking (A=high value, B=medium, C=low)
+  - Cycle Count = periodic partial inventory count (vs. full wall-to-wall count)
+  - SKU = Stock Keeping Unit (unique inventory item)
+  - WMS = Warehouse Management System
+  - Put-away = process of storing received goods in designated locations
+
+  When users discuss inventory accuracy, cycle counting, or warehouse operations, offer to plan a count schedule.
+
+self_description: |
+  **Warehousing & Logistics** — 1 domain tool:
+  - Cycle count planner with ABC classification and daily workload estimation
+
+intent_patterns:
+  - pattern: "\\b(cycle count|inventory count|abc classification|sku count|stock count)\\b"
+    score_boost: 10
+    tools: [cycle_count_planner]
+    web_apps: []
+  - pattern: "\\b(warehouse|warehousing|inventory accuracy|physical count|count schedule)\\b"
+    score_boost: 10
+    tools: [cycle_count_planner]
+    web_apps: []
+
+commands:
+  - name: /cyclecount
+    description: "Plan a cycle count schedule based on ABC classification"

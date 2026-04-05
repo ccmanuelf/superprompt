@@ -1,0 +1,47 @@
+# Engineering & Development Domain Pack
+
+name: engineering
+display_name: "Engineering & Development"
+description: "Software engineering tools for code review workflows, development checklists, and quality gates. Helps engineering teams maintain consistent review standards."
+version: "0.1.0"
+author: ""
+enabled: true
+level: 2
+
+departments:
+  - engineering
+  - software-development
+  - devops
+  - quality-assurance
+
+capabilities: |
+  ### Engineering & Development
+  You have domain-specific tools for engineering workflows:
+  - `code_review_checklist` tool — Generates a structured code review checklist from a change description. Parameters: change_description (string), language (string, default "general")
+
+  **Key Terminology:**
+  - PR = Pull Request (proposed code change for review)
+  - CI/CD = Continuous Integration / Continuous Deployment
+  - Linting = automated code style and error checking
+  - Test Coverage = percentage of code exercised by tests
+  - Code Smell = indicator of deeper design problems
+
+  When users discuss code reviews, PRs, or development quality processes, offer to generate a review checklist.
+
+self_description: |
+  **Engineering & Development** — 1 domain tool:
+  - Code review checklist generator with 10 standard quality checks
+
+intent_patterns:
+  - pattern: "\\b(code review|pull request|pr review|review checklist|merge request)\\b"
+    score_boost: 10
+    tools: [code_review_checklist]
+    web_apps: []
+  - pattern: "\\b(engineering|dev workflow|quality gate|code quality)\\b"
+    score_boost: 10
+    tools: [code_review_checklist]
+    web_apps: []
+
+commands:
+  - name: /review
+    description: "Generate a code review checklist"

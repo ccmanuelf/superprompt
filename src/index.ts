@@ -87,42 +87,18 @@ async function main(): Promise<void> {
   const storage = createStorageProvider();
   app.registerStorage(storage);
 
-  // ── Table initializers (domain subsystems register their DB schemas) ──
+  // ── Table initializers (core subsystems) ──
   const { learningTableInit } = await import('./learning/db.js');
   const { citationTableInit } = await import('./citations.js');
-  const { balanceTableInit } = await import('./balance.js');
-  const { sigmaTableInit } = await import('./sigma.js');
-  const { inventoryTableInit } = await import('./inventory.js');
-  const { controlPlanTableInit } = await import('./control-plan.js');
-  const { fmeaTableInit } = await import('./fmea.js');
-  const { rcaTableInit } = await import('./rca.js');
   const { kanbanTableInit } = await import('./kanban.js');
-  const { simulationTableInit } = await import('./simulation/index.js');
-  const { capacityTableInit } = await import('./capacity/index.js');
-  const { sequencerTableInit } = await import('./sequencer/index.js');
-  const { vsmTableInit } = await import('./vsm/index.js');
-  const { tocTableInit } = await import('./toc/index.js');
-  const { conwipTableInit } = await import('./conwip/index.js');
-  const { doeTableInit } = await import('./doe/index.js');
-  const { fsmTableInit } = await import('./fsm/index.js');
 
   storage.registerTables(learningTableInit);
   storage.registerTables(citationTableInit);
-  storage.registerTables(balanceTableInit);
-  storage.registerTables(sigmaTableInit);
-  storage.registerTables(inventoryTableInit);
-  storage.registerTables(controlPlanTableInit);
-  storage.registerTables(fmeaTableInit);
-  storage.registerTables(rcaTableInit);
   storage.registerTables(kanbanTableInit);
-  storage.registerTables(simulationTableInit);
-  storage.registerTables(capacityTableInit);
-  storage.registerTables(sequencerTableInit);
-  storage.registerTables(vsmTableInit);
-  storage.registerTables(tocTableInit);
-  storage.registerTables(conwipTableInit);
-  storage.registerTables(doeTableInit);
-  storage.registerTables(fsmTableInit);
+
+  // ── Manufacturing pack (Level 3 — owns 15 domain modules) ──
+  const manufacturingPack = await import('./packs/manufacturing/index.js');
+  storage.registerTables(manufacturingPack.tableInit);
 
   // Auto-skills tables (skill_triggers, skill_proposals)
   const { autoSkillsTableInit } = await import('./auto-skills.js');
@@ -155,6 +131,8 @@ async function main(): Promise<void> {
     name: 'tools',
     init: () => {
       registerBuiltinTools();
+      // Register manufacturing pack tools (SA5 — Level 3 pack)
+      manufacturingPack.registerTools();
       loadUserTools();
 
       // Auto-import skills & tools from forge/ directory

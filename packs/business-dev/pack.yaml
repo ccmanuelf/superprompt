@@ -1,0 +1,47 @@
+# Business Development Domain Pack
+
+name: business-dev
+display_name: "Business Development"
+description: "Business development tools for ROI analysis, investment evaluation, and payback period estimation. Helps sales and strategy teams build financial cases for opportunities."
+version: "0.1.0"
+author: ""
+enabled: true
+level: 2
+
+departments:
+  - business-development
+  - sales
+  - strategy
+  - executive
+
+capabilities: |
+  ### Business Development
+  You have domain-specific tools for business case analysis:
+  - `roi_estimator` tool — Calculates ROI percentage, payback period, and net profit from investment parameters. Parameters: investment_cost (number), annual_gain (number), years (number, default 5)
+
+  **Key Terminology:**
+  - ROI = Return on Investment ((gain - cost) / cost * 100)
+  - Payback Period = time to recover initial investment
+  - Net Profit = total gain minus investment cost
+  - CAC = Customer Acquisition Cost
+  - LTV = Lifetime Value of a customer
+
+  When users discuss business cases, investment decisions, or project justifications, offer to run ROI calculations.
+
+self_description: |
+  **Business Development** — 1 domain tool:
+  - ROI estimator with payback period and net profit analysis
+
+intent_patterns:
+  - pattern: "\\b(roi|return on investment|payback period|business case|investment return)\\b"
+    score_boost: 10
+    tools: [roi_estimator]
+    web_apps: []
+  - pattern: "\\b(business dev|biz dev|deal analysis|opportunity cost|cost.?benefit)\\b"
+    score_boost: 10
+    tools: [roi_estimator]
+    web_apps: []
+
+commands:
+  - name: /roi
+    description: "Calculate ROI for an investment opportunity"
