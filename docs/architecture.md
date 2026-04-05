@@ -1112,4 +1112,4 @@ Users can create Level 2 packs through conversation:
 
 ### Test Coverage
 
-1720 tests across 71 files validate all pack-loaded tools and core infrastructure.
+1813 tests across 76 files validate all pack-loaded tools, core infrastructure, circuit breaker, rate limiting, guardrails, context health, and pack tuner.

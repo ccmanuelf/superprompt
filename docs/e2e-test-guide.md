@@ -1,9 +1,9 @@
-# clauded v1.0.0-rc.22 — End-to-End Test Guide & Checklist
+# clauded v1.0.0-rc.29 — End-to-End Test Guide & Checklist
 
 Complete E2E validation for the architecture-hardened version (SA1-SA5).
 Run all sections to certify a deployment is production-ready.
 
-**Estimated time:** 45-60 minutes
+**Estimated time:** 60-75 minutes
 **Prerequisites:** clauded running, Telegram bot connected, Ollama responding
 
 ---
@@ -130,17 +130,50 @@ Run all sections to certify a deployment is production-ready.
 | 12.3 | Approval | Reply "yes" / "si" | Skill created, confirmation shown | [ ] |
 | 12.4 | Skill trigger | Send similar request | Auto-generated skill suggests activation | [ ] |
 
+## Section 13: Circuit Breaker (3 min)
+
+| # | Test | How | Expected | Pass |
+|---|------|-----|----------|------|
+| 13.1 | Bilingual breaker message | Trigger repeated tool failure | Error contains [EN] + [ES] | [ ] |
+
+## Section 14: Rate Limiting (3 min)
+
+| # | Test | How | Expected | Pass |
+|---|------|-----|----------|------|
+| 14.1 | Rate limit status | Ask AI about usage | Shows calls/hour for both providers | [ ] |
+| 14.2 | Provider switch suggestion | Hit rate limit | Bilingual message suggests /ollama or /claude | [ ] |
+
+## Section 15: Guardrails (3 min)
+
+| # | Test | How | Expected | Pass |
+|---|------|-----|----------|------|
+| 15.1 | Manual guardrail | /guardrail add "Always verify data" | Guardrail stored | [ ] |
+| 15.2 | Guardrail persistence | Send new message | Guardrail injected in context | [ ] |
+
+## Section 16: Context Health (3 min)
+
+| # | Test | How | Expected | Pass |
+|---|------|-----|----------|------|
+| 16.1 | Health status | After many messages | Yellow/red suggestion appears | [ ] |
+| 16.2 | Reset health | /newchat | Health resets to green | [ ] |
+
+## Section 17: Self-Tuning Packs (3 min)
+
+| # | Test | How | Expected | Pass |
+|---|------|-----|----------|------|
+| 17.1 | Pack weight tracking | Use manufacturing tools | Weight adjusts after 5+ calls | [ ] |
+
 ---
 
 ## Sign-Off
 
 | Item | Value |
 |------|-------|
-| **Version** | v1.0.0-rc.22 |
+| **Version** | v1.0.0-rc.29 |
 | **Date** | |
 | **Tester** | |
 | **Environment** | |
-| **Sections passed** | /12 |
+| **Sections passed** | /17 |
 | **Tests passed** | /XX |
 | **Notes** | |
 

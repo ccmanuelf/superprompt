@@ -5,7 +5,7 @@
 
 ## Summary
 
-clauded is evolving from personal AI assistant into a **company-wide AI operations platform** serving 9 departments. Core sprints S1-S16 + S9 complete (1514 tests, 61 files). Currently in multi-department E2E validation (v1.0.0-rc.11).
+clauded is evolving from personal AI assistant into a **company-wide AI operations platform** serving 9 departments. Core sprints S1-S16 + S9 complete (1813 tests, 76 files). Currently in multi-department E2E validation (v1.0.0-rc.29).
 
 **Completed:** S1-S8 ✅ → S10-S14 ✅ → S16 ✅ → S15 ✅ → S9 ✅
 
@@ -832,7 +832,7 @@ S19 (Auto-Skills) ────► S3 (Production Deployment)
 ## Sprint S4: Full E2E Validation — IN PROGRESS
 
 **Goal:** Concurrent end-to-end testing across 4 department workstations.
-**Status:** Active. 93 test cases in `scripts/e2e-test.md`. Currently v1.0.0-rc.11.
+**Status:** Active. 93 test cases in `scripts/e2e-test.md`. Currently v1.0.0-rc.29.
 **Participants:** Engineering, Manufacturing (+ other departments joining).
 **Completion criteria:** All 93 tests pass across all participating workstations.
 

@@ -180,6 +180,22 @@ These work through conversation — send data via messages or files.
 | `/pack create <name> "description"` | Scaffold a new pack directory with starter files |
 | `/pack templates <name>` | Send all template files from a pack |
 
+### Pack Management (SA5)
+
+| Command | Description |
+|---------|-------------|
+| `/pack enable <name>` | Enable a pack for this chat |
+| `/pack disable <name>` | Disable a pack for this chat |
+| `/pack guide` | Show bilingual pack development guide |
+
+### Trust Management (SA4 Policy Engine)
+
+| Command | Description |
+|---------|-------------|
+| `/trust list` | Show stored trust decisions for your account |
+| `/trust revoke <tool>` | Revoke trust for a specific tool |
+| `/trust clear` | Clear all trust decisions |
+
 See `docs/customization-guide.md` for the full guide on creating packs.
 
 ## Web Interfaces

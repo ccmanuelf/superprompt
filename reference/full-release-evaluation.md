@@ -1,6 +1,6 @@
 # clauded Full Release Evaluation — CTO & Board Assessment
 
-> Prepared 2026-04-05 | v1.0.0-rc.23 | Post SA1-SA5 Architecture Hardening
+> Prepared 2026-04-05 | v1.0.0-rc.29 | Post SA1-SA5 + Board Release Path Complete
 
 ---
 

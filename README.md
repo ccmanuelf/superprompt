@@ -1,6 +1,6 @@
 # clauded
 
-A personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department. **v1.0.0-rc.22**
+A personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department. **v1.0.0-rc.29**
 
 **New here?** Start with the [Department Onboarding Runbook](docs/deployment-runbook.md) — a 30-minute step-by-step guide to get your own instance running.
 
@@ -35,7 +35,7 @@ A personal AI assistant daemon that bridges messaging platforms to AI backends r
 - Safety scanning for user-created tools
 
 **Domain Packs** (department customization)
-- 9 bundled department packs: manufacturing, finance, supply-chain, hr, engineering, business-dev, customer-service, warehousing, trade-compliance
+- 10 department and client packs: manufacturing, finance, supply-chain, hr, engineering, business-dev, customer-service, warehousing, trade-compliance, client-acme
 - Bundled tools + skills + templates + AI context per department
 - Three customization levels: Simple (5 min), Domain Pack (1-2 hrs), TypeScript Module (1-2 days)
 - Conversational pack builder ("I need a pack for quality engineering" and AI builds it)
@@ -82,6 +82,10 @@ A personal AI assistant daemon that bridges messaging platforms to AI backends r
 - **Per-user trust memory**: works like "remember passwords" — once a user is trusted for a tool category, clauded never asks again
 - **43 tools classified by risk level**: 3 critical, 16 high, 19 medium, 5 low — each risk level gates differently through the policy engine
 - **Auto-generated skills with self-healing**: adapts from Hermes Agent concepts — clauded learns from failures and proposes corrected skill definitions
+- **Circuit breaker for agentic loops** (stagnation, repetition, error detection)
+- **Per-user rate limiting** (100 Claude / 200 Ollama calls per hour)
+- **Guardrails memory sector** (permanent learned constraints)
+- **Context health monitoring** (proactive degradation detection)
 
 ## Quick Start
 
@@ -230,7 +234,7 @@ npm run test:watch # Watch mode
 npm run typecheck  # TypeScript type checking
 ```
 
-1720 tests across 71 files covering domain packs, manufacturing modules, memory system, tools, security architecture, and utilities.
+1813 tests across 76 files covering domain packs, manufacturing modules, memory system, tools, security architecture, and utilities.
 
 ## E2E Testing
 
