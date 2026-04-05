@@ -1,6 +1,6 @@
 # clauded v1.0.0-rc.29 — Department Onboarding Runbook
 
-Get your own clauded instance running in 30 minutes. This guide is for team members receiving the repository who need to set up their own independent instance.
+Get your own clauded instance running in 45-60 minutes. This guide is for team members receiving the repository who need to set up their own independent instance.
 
 **What you'll have when done:** Your own autonomous AI assistant on Telegram with:
 - Voice processing (EN/ES), 10 department packs (manufacturing, finance, HR, engineering, etc.)
@@ -105,7 +105,7 @@ Verify you have:
 - [ ] The superprompt repository cloned: `git clone https://github.com/ccmanuelf/superprompt.git`
 - [ ] A Telegram account on your phone
 
-**Time estimate:** 30 minutes for first setup (most of it is waiting for Docker to build and models to download).
+**Time estimate:** 45-60 minutes for first setup (Docker build, model downloads, configuration of 3-process architecture + 10 packs). Add 60-75 minutes if running the full E2E validation (`docs/e2e-test-guide.md`).
 
 ---
 
