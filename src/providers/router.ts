@@ -342,6 +342,17 @@ export class ProviderRouter {
     const { chatId } = params;
     const provider = this.getProviderForChat(chatId, params.message);
 
+    // Rate limiting — check before sending to provider
+    const { getRateLimiter } = await import('../rate-limiter.js');
+    const limiter = getRateLimiter();
+    const rateCheck = limiter.check(chatId, provider.name);
+    if (!rateCheck.allowed) {
+      return {
+        text: rateCheck.message || 'Rate limit reached',
+        provider: provider.name,
+      };
+    }
+
     // Load existing session ID for Claude
     const session = getSession(chatId);
     const sessionId =
@@ -425,6 +436,10 @@ export class ProviderRouter {
     }
 
     if (autoTriggerNotice) response.autoTriggerNotice = autoTriggerNotice;
+
+    // Record successful call for rate limiting
+    limiter.record(chatId, provider.name);
+
     return response;
   }
 
