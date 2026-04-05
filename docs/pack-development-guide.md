@@ -141,3 +141,22 @@ See existing packs in the `packs/` directory:
 - `finance/` — Level 2, 2 tools (NPV, budget variance)
 - `hr/` — Level 2, 1 tool (PTO calculator)
 - `engineering/` — Level 2, 1 tool (code review checklist)
+
+## What You Can Build vs. What Needs the Software Team
+
+### You (any department user) CAN build:
+- **Level 1 packs:** Data templates, reference files
+- **Level 2 packs:** Tools with calculation logic, API integrations, skills, intent patterns
+- **Auto-skills:** Just use clauded — it learns automatically from complex workflows
+- All of the above can be created **conversationally** with clauded's help
+
+### The SOFTWARE TEAM must build:
+- **Level 3 features:** Web dashboards (HTML/TypeScript), database schemas, custom Telegram commands
+- **The manufacturing dashboards** (/sim, /capacity, /sequence, etc.) are Level 3 — they were built by developers
+- If you want a similar-looking dashboard for your department, the **tools and logic** can be created conversationally, but the **visual web interface** requires developer expertise
+
+### How to get a dashboard built:
+1. Build your tools conversationally (Level 2) — these work immediately via chat
+2. Ask clauded to draft requirements for the dashboard you want
+3. Submit the requirements to the software team — they build the Level 3 web interface
+4. Your Level 2 tools become the backend for the Level 3 dashboard
