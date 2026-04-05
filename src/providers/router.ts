@@ -440,6 +440,15 @@ export class ProviderRouter {
     // Record successful call for rate limiting
     limiter.record(chatId, provider.name);
 
+    // Context health tracking — both providers
+    try {
+      const { getContextHealthMonitor } = await import('../context-health.js');
+      const monitor = getContextHealthMonitor();
+      monitor.recordMessage(chatId, params.message);
+    } catch {
+      // Context health module not loaded — skip
+    }
+
     return response;
   }
 

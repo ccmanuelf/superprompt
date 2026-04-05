@@ -48,6 +48,7 @@ import type {
   addGuardrail, getGuardrails, removeGuardrail, clearGuardrails,
   formatGuardrailsList, detectToolFailureGuardrail, detectCorrectionGuardrail,
 } from '../guardrails.js';
+import type { ContextHealthMonitor } from '../context-health.js';
 import type { enablePack, disablePack, getPackSubscriptions, isPackEnabled } from '../packs.js';
 import type {
   generatePackBlueprint, formatPackProposal, detectPackCreationResponse,
@@ -201,6 +202,10 @@ export interface PlatformContext {
     searchPapers: typeof searchPapers;
   };
 
+  contextHealth: {
+    getMonitor(): ContextHealthMonitor;
+  };
+
   guardrails: {
     add: typeof addGuardrail;
     get: typeof getGuardrails;
@@ -318,7 +323,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     skillParserMod, skillFixerMod, toolParserMod, scannerMod,
     toolRegistryMod, toolGenMod, toolFixerMod, exporterMod,
     proactiveMod, orchestratorMod, kanbanMod, citationsMod,
-    selfMonitorMod, researchMod, guardrailsMod, learningMod, autoSkillsMod, policyMod, packsMod, packBuilderMod,
+    selfMonitorMod, researchMod, guardrailsMod, contextHealthMod, learningMod, autoSkillsMod, policyMod, packsMod, packBuilderMod,
   ] = await Promise.all([
     import('../memory.js'),
     import('../db.js'),
@@ -341,6 +346,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     import('../self-monitor.js'),
     import('../providers/tools/research.js'),
     import('../guardrails.js'),
+    import('../context-health.js'),
     import('../learning/index.js'),
     import('../auto-skills.js'),
     import('../policy-engine.js'),
@@ -455,6 +461,9 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     },
     research: {
       searchPapers: researchMod.searchPapers,
+    },
+    contextHealth: {
+      getMonitor: contextHealthMod.getContextHealthMonitor,
     },
     guardrails: {
       add: guardrailsMod.addGuardrail,
