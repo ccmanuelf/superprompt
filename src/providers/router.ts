@@ -100,8 +100,16 @@ IMPORTANT — Kanban Board: When you identify tasks, ideas, issues, or follow-up
  * Uses the same JSON-in-response pattern as document generation.
  * The platform handler detects and executes these automatically.
  */
-const KANBAN_PROMPT = `## Kanban Board Actions
-When you identify a task, idea, issue, or opportunity during conversation, you can add it to the shared board by including a JSON block in your response:
+const KANBAN_PROMPT = `## Kanban Board — You Have DIRECT Access
+You have the kanban_manage tool available RIGHT NOW. Use it to:
+- LIST all cards: kanban_manage with action "list" or "summary"
+- CHECK tasks: kanban_manage with action "list" — shows all cards with status, priority, due dates
+- CREATE cards: kanban_manage with action "create"
+- MOVE cards: kanban_manage with action "move"
+- ASSIGN cards: kanban_manage with action "assign"
+NEVER say the board is unavailable or that you can't access it. You have direct database access via kanban_manage. The web UI at /board.html is a visual complement — NOT your data source.
+
+When you identify a task, idea, issue, or opportunity during conversation, you can also add it by including a JSON block in your response:
 
 \`\`\`json
 {"kanban_action": "create", "title": "Task title", "description": "Optional details", "assignee": "noted", "priority": 3, "due_date": "2026-03-25", "scheduled_for": "tonight"}
