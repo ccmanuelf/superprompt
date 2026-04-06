@@ -179,6 +179,7 @@ async function handleMessage(
           chatId,
           message: `Tool "${pendingToolConfirm.toolName}" executed. Result: ${JSON.stringify(confirmResult.result)}`,
           skipTools: true,
+          platform: 'telegram',
         });
         if (aiResponse.text) {
           const formatted = formatForTelegram(aiResponse.text);
@@ -250,7 +251,7 @@ async function handleMessage(
           const plan = pc.learning.getPlan(activeSession.planId);
           if (plan) {
             const expandPrompt = pc.learning.buildExpandPrompt(plan);
-            const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true });
+            const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true, platform: 'telegram' });
             const newTopics = pc.learning.parsePlanResponse(expandResponse.text || '');
             if (newTopics.length > 0) {
               pc.learning.addExpansionTopics(plan.id, newTopics);
@@ -277,6 +278,7 @@ async function handleMessage(
         message: fullMessage,
         skipAutoTrigger: true,
         systemPrompt: sessionPrompt ?? undefined,
+        platform: 'telegram',
       });
 
       if (response.text) {
@@ -324,7 +326,7 @@ async function handleMessage(
               const plan = pc.learning.getPlan(session.planId);
               if (plan) {
                 const expandPrompt = pc.learning.buildExpandPrompt(plan);
-                const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true });
+                const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true, platform: 'telegram' });
                 const newTopics = pc.learning.parsePlanResponse(expandResponse.text || '');
                 if (newTopics.length > 0) {
                   pc.learning.addExpansionTopics(plan.id, newTopics);
@@ -416,6 +418,7 @@ async function handleMessage(
       onTyping: refreshTyping,
       skipTools,
       isVoice,
+      platform: 'telegram',
     });
 
     // 4. Stop typing
@@ -1922,6 +1925,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           message: openingPrompt,
           skipAutoTrigger: true,
           systemPrompt: sessionPrompt ?? undefined,
+          platform: 'telegram',
         });
 
         if (response.text) {
@@ -1948,6 +1952,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           message: openingPrompt,
           skipAutoTrigger: true,
           systemPrompt: sessionPrompt ?? undefined,
+          platform: 'telegram',
         });
 
         if (response.text) {
@@ -2043,6 +2048,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
             message: assessPrompt,
             skipAutoTrigger: true,
             systemPrompt: sessionPrompt ?? undefined,
+            platform: 'telegram',
           });
 
           if (response.text) {

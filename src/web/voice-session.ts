@@ -99,6 +99,7 @@ export class VoiceSession {
         chatId: this.chatId,
         message: fullMessage,
         isVoice: true,
+        platform: 'voice-web',
       });
 
       const responseText = response.text || '(No response)';

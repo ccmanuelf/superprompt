@@ -152,6 +152,7 @@ async function handleMessage(
           chatId: roomId,
           message: `Tool "${pendingToolConfirm.toolName}" executed. Result: ${JSON.stringify(confirmResult.result)}`,
           skipTools: true,
+          platform: 'matrix',
         });
         if (aiResponse.text) {
           await client.sendMessage(roomId, {
@@ -226,6 +227,7 @@ async function handleMessage(
       chatId: roomId,
       message: fullMessage,
       isVoice,
+      platform: 'matrix',
     });
 
     // Send auto-trigger notice if a skill was activated for this message

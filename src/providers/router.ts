@@ -93,21 +93,28 @@ When relevant, you can mention these commands to help the user. For example, if 
 
 You also have access to GitHub tools (github_list_repos, github_read_file, github_list_issues, github_clone_repo, github_diff, github_commit_push, github_create_pr), Render deploy tools (render_list_services, render_deploy_status, render_get_logs), a take_screenshot tool for capturing web pages visually, and kanban_manage for task tracking.
 
-IMPORTANT — Kanban Board: When you identify tasks, ideas, issues, or follow-ups during conversation, suggest adding them to the board. If you have the kanban_manage tool (Ollama), call it directly. If not (Claude), tell the user: "This sounds like something to track. Want me to add it to the board? You can use: /board add <title>".`;
+IMPORTANT — Kanban Board: When you identify tasks, ideas, issues, or follow-ups during conversation, proactively suggest adding them to the board. With Ollama: call kanban_manage directly. With Claude: embed a kanban_action JSON block OR guide the user to \`/board add <title>\`.`;
 
 /**
  * Kanban board action format — teaches BOTH providers how to create/manage cards.
  * Uses the same JSON-in-response pattern as document generation.
  * The platform handler detects and executes these automatically.
  */
-const KANBAN_PROMPT = `## Kanban Board — You Have DIRECT Access
-You have the kanban_manage tool available RIGHT NOW. Use it to:
-- LIST all cards: kanban_manage with action "list" or "summary"
-- CHECK tasks: kanban_manage with action "list" — shows all cards with status, priority, due dates
-- CREATE cards: kanban_manage with action "create"
-- MOVE cards: kanban_manage with action "move"
-- ASSIGN cards: kanban_manage with action "assign"
-NEVER say the board is unavailable or that you can't access it. You have direct database access via kanban_manage. The web UI at /board.html is a visual complement — NOT your data source.
+const KANBAN_PROMPT = `## Kanban Board — Always Accessible
+
+The board is ALWAYS accessible from this conversation. NEVER say "the board is unavailable" or "I can't access it."
+
+**How to access the board:**
+- **With tools (Ollama):** call kanban_manage directly with action "list", "create", "move", "assign", or "summary"
+- **Without tools (Claude):** use these Telegram commands or embed a kanban_action JSON block:
+  - \`/board\` — shows the full board with all columns and cards
+  - \`/board add "Task title"\` — creates a new card
+  - \`/board move [id] done\` — moves a card to done
+  - \`/board show [id]\` — shows card details
+  - \`/board priority [id] 1\` — sets priority (1=critical to 5=minimal)
+  - Web UI: \`/board.html\`
+
+NEVER say a feature is unavailable — either use the tool directly OR guide to the slash command/web UI.
 
 When you identify a task, idea, issue, or opportunity during conversation, you can also add it by including a JSON block in your response:
 
@@ -131,6 +138,71 @@ scheduled_for: optional start time — "tonight", "tomorrow morning", or ISO dat
 Set priority and dates conversationally: "this is urgent" → priority 1. "by Friday" → due_date. "run it tonight" → scheduled_for.
 
 Be PROACTIVE about creating cards when the user mentions something actionable. But be CONSERVATIVE about assignment — let the user decide who does what.`;
+
+/**
+ * Claude-specific provider notice — injected ONLY when Claude is the active provider.
+ *
+ * KEY INSIGHT: Claude CLI has its own built-in identity ("I am Claude Code") which
+ * overrides our system prompt unless we explicitly counter it. The platformIdentity
+ * section (injected first in the prompt) handles identity. This section handles
+ * HOW Claude accesses features without callable tool functions.
+ *
+ * The framing is critical: NOT "you can't call tools" (which Claude misinterprets as
+ * "tools don't exist here") but "the platform executes actions for you via JSON blocks
+ * and slash commands."
+ */
+const CLAUDE_PROVIDER_NOTICE = `## How You Access Features (Claude Engine)
+
+You are powered by the Claude engine. Your tool access works differently from Ollama — you access features through JSON blocks embedded in your response and by guiding users to slash commands. The platform intercepts your JSON blocks and executes them automatically.
+
+### What works DIRECTLY from your response (embed JSON blocks):
+1. **Board cards** — embed a kanban_action JSON block and the platform creates/manages cards automatically
+2. **Documents** — embed a DocGenRequest JSON block and the platform generates XLSX/DOCX/PDF/PPTX/CSV files
+3. **Conversation** — analysis, reasoning, writing, advice, bilingual support — this is where you excel
+
+### What works via SLASH COMMANDS (tell the user to type these in chat):
+| Feature | Command | What it does |
+|---------|---------|-------------|
+| Board | \`/board\` | List all cards with status |
+| Board | \`/board add "title"\` | Create a new card |
+| Board | \`/board move [id] done\` | Move card to done |
+| Board | \`/board show [id]\` | Show card details |
+| Memory | \`/memory\` | Show stored memories |
+| Schedule | \`/schedule add "msg" "cron"\` | Create reminder |
+| Schedule | \`/schedule list\` | List active schedules |
+| Skills | \`/skill list\` | Show available skills |
+| Learning | \`/learn start <topic>\` | Start learning plan |
+| Research | \`/research <query>\` | Search academic papers |
+| Citations | \`/cite list\` | Show saved citations |
+
+### What works via WEB DASHBOARDS (guide the user to open in browser):
+| Dashboard | URL | Best for |
+|-----------|-----|----------|
+| Board | /board | Visual kanban with drag-and-drop |
+| Learning | /learn | Study plans, streak tracking |
+| Voice | / | Voice conversation |
+| Simulation | /sim | Production line DES modeling |
+| Capacity | /capacity | Capacity planning analysis |
+| Sequencing | /sequence | Job scheduling optimizer |
+| VSM | /vsm | Value stream mapping |
+| TOC | /toc | Theory of constraints |
+| CONWIP | /conwip | Production leveling |
+| DOE | /doe | Design of experiments |
+| FSM | /fsm | State machine simulator |
+| Hub | /hub | Production orders & tracking |
+| BOM | /hub/bom | BOM & shortage resolution |
+
+### What requires switching to Ollama (\`/ollama\`):
+Manufacturing calculation tools (capacity_planning, production_simulation, job_sequencer, line_balance, sigma_analysis, etc.), web search, file reading, GitHub operations, system commands. These need Ollama's direct function-calling.
+
+When the user asks for these: "I can help you think through this, and for the full calculation you can switch to \`/ollama\` or use the web dashboard at [URL]."
+
+### ABSOLUTE RULES:
+1. NEVER say "I don't have access to that" or "that tool isn't available" — EVERY feature has an access path
+2. NEVER say "this is Claude Code" or "this is a CLI/terminal" — you are clauded on the user's messaging platform
+3. NEVER pretend to execute a function call — use JSON blocks or guide to slash commands
+4. When creating board cards: ALWAYS embed the kanban_action JSON block — it works immediately
+5. When the user needs manufacturing tools: suggest \`/ollama\` AND the web dashboard URL`;
 
 const VOICE_RESPONSE_HINT = `The user sent a voice message. Respond as if in a verbal conversation:
 - Keep responses to 1-3 sentences. Be concise.
@@ -250,6 +322,43 @@ Supported formats: \`xlsx\`, \`docx\`, \`pdf\`, \`csv\`, \`pptx\`. Use \`csv\` f
 When you cite a source in your response, use the search_papers tool to find supporting evidence and the manage_citations tool to save references for the user.`;
 
 /**
+ * Patterns that FORCE Ollama — tool-dependent operations that Claude cannot execute.
+ * These are checked FIRST, before Claude patterns and length heuristics.
+ * Without this, auto-routing may send tool-heavy requests to Claude which can't call them.
+ * Exported for testing.
+ */
+export const OLLAMA_TOOL_PATTERNS = [
+  // Manufacturing tools (EN + ES)
+  /\b(simulat|capacity|sequenc|balance|bottleneck|toc|conwip|heijunka|kanban|vsm|value stream|doe|experiment|fmea|rca|root cause|spc|control chart|sigma|cpk|fsm|state machine|inventory plan)\b/i,
+  /\b(simulaci[oó]n|capacidad|secuencia|balanc|cuello de botella|heijunka|kanban|flujo de valor|experimento|causa ra[ií]z|carta de control|m[aá]quina de estados|inventario)\b/i,
+  // Tool-action phrases (EN + ES)
+  /\b(run|execute|calculate|optimize|schedule)\s+(a\s+)?(simulation|capacity|sequence|balance|doe|experiment|fmea|rca)\b/i,
+  /\b(ejecut|calcul|optimi|program)\w*\s+(una?\s+)?(simulaci[oó]n|capacidad|secuencia|balance|experimento)\b/i,
+  // Board/task management via tool
+  /\b(show|list|create|move|assign|delete)\s+(a\s+)?(card|task|board)\b/i,
+  /\b(muestra|lista|crea|mueve|asigna|elimina)\w*\s+(una?\s+)?(tarjeta|tarea|tablero)\b/i,
+  // Memory queries
+  /\b(remember|recall|what did (I|we)|search memory|query memory)\b/i,
+  /\b(recuerd|qu[eé] (dije|hablamos)|busca en memoria)\b/i,
+  // Web search / URL
+  /\b(search the web|web search|look up online|busca en (la )?web|buscar en internet)\b/i,
+  /\b(summarize|fetch|read)\s+(this\s+)?(url|link|page|p[aá]gina)\b/i,
+  // GitHub operations (action-oriented: clone repo, list issues, create PR — not "review the pull request")
+  /\b(clone|commit|push)\s+(a\s+|the\s+|to\s+)?(repo|branch|remote)\b/i,
+  /\b(list|show|check)\s+(my\s+)?(repos|issues|prs|pull requests)\b/i,
+  /\b(create|open)\s+(a\s+)?(pr|pull request|issue)\b/i,
+  /\bgithub\s+(clone|list|issues|deploy|diff)\b/i,
+  // Schedule / reminder
+  /\b(remind me|set (a\s+)?reminder|schedule|recu[eé]rdame|programa)\b/i,
+  // File operations
+  /\b(read|parse|open)\s+(the\s+)?(file|document|archivo|documento)\b/i,
+  // Screenshot
+  /\b(take|capture)\s+(a\s+)?screenshot\b/i,
+  // Research
+  /\b(search papers|find papers|academic search|busca art[ií]culos|papers)\b/i,
+];
+
+/**
  * Heuristic patterns that suggest Claude is the better provider.
  * These indicate complex analysis, creative writing, or document generation.
  * Exported for testing.
@@ -272,12 +381,20 @@ export const LONG_MESSAGE_THRESHOLD = 500;
  * Classify a message to determine the best provider.
  * Heuristic-based — no AI call needed.
  *
- * Route to Claude: long messages, complex analysis, document generation, code review.
- * Route to Ollama: short messages, simple questions, tool-dependent tasks.
+ * Priority order:
+ * 1. Tool-dependent patterns → Ollama (Claude can't call tools)
+ * 2. Claude-preferred patterns → Claude (complex reasoning, writing)
+ * 3. Length heuristic → long=Claude, short=Ollama
+ * 4. Default → Ollama (local, no API cost)
  *
  * Exported for testing.
  */
 export function classifyMessage(message: string): 'claude' | 'ollama' {
+  // FIRST: Tool-dependent requests MUST go to Ollama (Claude can't call tools)
+  for (const pattern of OLLAMA_TOOL_PATTERNS) {
+    if (pattern.test(message)) return 'ollama';
+  }
+
   // Long messages → Claude (more capable at complex reasoning)
   if (message.length > LONG_MESSAGE_THRESHOLD) return 'claude';
 
@@ -390,6 +507,16 @@ export class ProviderRouter {
     // Inject voice hint when the message is from a voice note
     const voiceHint = params.isVoice ? VOICE_RESPONSE_HINT : '';
 
+    // Platform identity — tells the AI WHERE the user is chatting from
+    // This prevents Claude from confusing itself with "Claude Code" CLI
+    const platformLabels: Record<string, string> = {
+      telegram: 'Telegram Bot',
+      matrix: 'Matrix chat',
+      'voice-web': 'Web Voice interface',
+    };
+    const platformName = params.platform ? platformLabels[params.platform] || params.platform : 'messaging platform';
+    const platformIdentity = `## Identity — READ THIS FIRST\nYou are **clauded**, an AI assistant running on the user's company infrastructure. The user is chatting with you via **${platformName}**. You are NOT "Claude Code", you are NOT a CLI tool, you are NOT running in a terminal or IDE. You are the clauded ${platformName} — the user's AI partner deployed on their company server.`;
+
     // Inject capabilities, document generation, quality rules, command list, and kanban prompt
     // Manufacturing context hint is generated per-message based on conversational intent
     const mfgHint = generateMfgContextHint(params.message);
@@ -398,10 +525,13 @@ export class ProviderRouter {
     const webAppsPrompt = buildWebAppsPrompt();
     const webUIAwareness = buildWebUIAwarenessPrompt();
     const fullCapabilities = [CAPABILITIES_PROMPT, packCaps, webAppsPrompt, webUIAwareness].filter(Boolean).join('\n\n');
-    // Language hint is Claude-only (Ollama has its own in the model system prompt)
+    // Provider-aware system prompt composition:
+    // - BOTH providers: platformIdentity comes FIRST (prevents Claude identity confusion)
+    // - Claude: CLAUDE_PROVIDER_NOTICE (tool access via JSON blocks) + LANGUAGE_HINT
+    // - Ollama: standard (has callable tools, model handles language)
     const systemPrompt = provider.name === 'claude'
-      ? [voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : [voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
+      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, CLAUDE_PROVIDER_NOTICE, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
+      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)

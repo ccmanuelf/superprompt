@@ -13,6 +13,8 @@ export interface SendMessageParams {
   isVoice?: boolean;
   /** When true, skip skill auto-triggering for this message (used by orchestrator step calls). */
   skipAutoTrigger?: boolean;
+  /** Platform the message originated from — used for provider-aware identity in system prompt. */
+  platform?: 'telegram' | 'matrix' | 'voice-web';
 }
 
 export interface GeneratedFile {
