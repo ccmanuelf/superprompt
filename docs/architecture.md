@@ -1113,3 +1113,68 @@ Users can create Level 2 packs through conversation:
 ### Test Coverage
 
 1813 tests across 76 files validate all pack-loaded tools, core infrastructure, circuit breaker, rate limiting, guardrails, context health, and pack tuner.
+
+---
+
+## Production Reference Architecture
+
+Recommended deployment for InfoSec sign-off:
+
+```
+                    ┌─────────────────────────────┐
+                    │       DMZ / Reverse Proxy    │
+                    │   (Nginx/Apache + TLS cert)  │
+                    │   Port 443 → localhost:3030  │
+                    └──────────┬──────────────────┘
+                               │ HTTPS
+                    ┌──────────┴──────────────────┐
+                    │     Docker Host (VMware)     │
+                    │                              │
+                    │  ┌─────────────────────┐     │
+                    │  │   clauded-bot        │     │
+                    │  │   Process 1: Core    │     │
+                    │  │   Process 2: Tools   │     │
+                    │  │   Process 3: Parsers │     │
+                    │  │   Port 3030 (web UI) │     │
+                    │  └─────────┬───────────┘     │
+                    │            │                  │
+                    │  ┌─────────┴───────────┐     │
+                    │  │   clauded-speaches   │     │
+                    │  │   STT + TTS          │     │
+                    │  │   (no external access)│     │
+                    │  └─────────────────────┘     │
+                    │                              │
+                    │  ┌─────────────────────┐     │
+                    │  │   PostgreSQL / MariaDB│     │
+                    │  │   (or SQLite for pilot)│    │
+                    │  │   Daily backup (cron) │     │
+                    │  └─────────────────────┘     │
+                    └──────────────────────────────┘
+                               │
+                    ┌──────────┴──────────────────┐
+                    │   Ollama Host (GPU optional)  │
+                    │   OLLAMA_HOST=http://host:11434│
+                    │   qwen3.5 + nomic-embed-text  │
+                    └──────────────────────────────┘
+                               │
+              ┌────────────────┴────────────────────┐
+              │         External Services            │
+              │  Anthropic API (Claude subscription) │
+              │  Telegram Bot API                    │
+              │  Client APIs (Shopify, ERP — future) │
+              └─────────────────────────────────────┘
+```
+
+**Key security boundaries:**
+- Reverse proxy terminates TLS — internal traffic is HTTP
+- Speaches has NO external network access
+- Process 2 (tools) has NO database access, NO bot tokens
+- Process 3 (parsers) has NO network access, NO database, NO API keys
+- Ollama can run on a separate GPU host (no credentials needed, just inference)
+- Database is only accessible from Process 1 (core)
+
+**Backup strategy:**
+- Database: automated daily backup via cron (pg_dump or sqlite copy)
+- Configuration (.env): version controlled separately, NOT in git
+- Packs: version controlled in git repository
+- Recovery: restore DB + restart container (<30 minutes)
