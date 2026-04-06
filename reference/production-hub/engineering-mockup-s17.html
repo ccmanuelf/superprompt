@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<!-- saved from url=(1553)https://ppl-ai-code-interpreter-files.s3.amazonaws.com/web/direct-files/66666eddd633f58efac30b887942e1a5/9dafd0d7-967c-43db-aee9-bc667f944081/f82e253d.html?AWSAccessKeyId=ASIA2F3EMEYE2XY4PPUC&Signature=P6Ly4LKaX7481VGD8S%2FmHHCmEzs%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEGQaCXVzLWVhc3QtMSJIMEYCIQD2wEWqcb8fDOpt9sCyF1eYl%2FbA8M5tUObyFHzPczV%2BsQIhAPqsn9neEkiaSgHAQct0H7huy9TNN95xowoAEh6SJV40KvMECC0QARoMNjk5NzUzMzA5NzA1IgzQWS5IczB9CO7WWP8q0AQu1d2FXx71ZitdPeIxtuXsSUWIyBF6RINdKRxEl3bmAY79O06kQP8Advc6aVPwV3%2FXatsWIrrJOsLUhtT9aSFMAh4%2FQvMjwUDzXnDZ6kd%2FT83XmBGPfwOCyyStFnobkelV2IYuDL%2F%2FMSrbmDfA8NUNLZpe61JdeRb9Fjx0UPg8dTdtMiZ%2F5YXKlHEePPiG6AJAC2nZl24CpOOeHP6pdUw2aibMP0u%2F9z839RaQ3DYsh0Ily1%2BctwJQxn%2BvNJDA3uOuvwqvKL9cpxRTMr3zo77L68vHcKzDLAz%2BDGWvETtEaUe0geJ7DFQ5WCa2Zy9CvSggnLq4fXlXD3fX3kG9zlSujHbz2dFjaiXwrYtQ9F4y526tFs1VSt26xZ38jNnnjPQoyzeV6ias7hz0kD8CXAJ5cP4ja%2BB0yMNRsCKWjD5Or0KsUCjVdQpTjkajkYI0HKSFHm3si%2BusEnIXHjMyO5n8tURiBgdd2DlBNHd%2FkO6fAIwscsMrkRgiAaYkyiBBb3MKD4VlOPgNqAPWWzfexXmbVfYKt4KZtvNuD4GsFLYd6qnk1CpF4TbMFirAF5HtnvsP3Y%2B4xoiAak6wj9tTash%2FhJsNMjpr8saQh%2F1%2F66Fhxk%2F%2FZua9evL6x36hNVqAls7qQ6lKgKeJ7DsQ3wdJBAA1IA%2Bpy%2FWpCmEiPBG74B33dvq82LCrpnF7Hfxu6Ju60eTF8XR5DLuUB2Pf172tMdFRjtudnu88Rxr8PRT8sHMfKkE53qva5Wqr0Xg45PhNKDs0s%2FUDJR%2Bie6Hc6lyfWv2IMImgq84GOpcB%2Bbew6qqr4evuPairMIJ49Vy8zAvfFSzl8wRJRAsc%2FbxGqHAMmSfPrCLz8JFfyJ4af%2FWTgmzZwU5F%2BD%2FWsvMD5DhY1q96Nosw%2FJMJFqcLmrMEaIuAj4Vxn6Lb6KUPnW6pW3hbWw4ocrLnnAPSrxAGbRIi7rWdTuGaL%2BKDEWgB0tfydchUHvfL1fG3jAK2pDuYl8V0bkHz7g%3D%3D&Expires=1774902748&utm_source=perplexity -->
+<html lang="en" data-theme="dark"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Novalink Production Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com/">
+<link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
+<link href="./Novalink-Production-Hub_files/css2" rel="stylesheet">
+<script src="./Novalink-Production-Hub_files/chart.js"></script>
+<style>
+/* ─── DESIGN TOKENS ─── */
+:root,[data-theme="light"]{
+  --color-bg:#f7f6f2;--color-surface:#f9f8f5;--color-surface-2:#fbfbf9;
+  --color-surface-offset:#f3f0ec;--color-surface-dynamic:#e6e4df;
+  --color-divider:#dcd9d5;--color-border:#d4d1ca;
+  --color-text:#28251d;--color-text-muted:#7a7974;--color-text-faint:#bab9b4;
+  --color-text-inverse:#f9f8f4;
+  --color-primary:#01696f;--color-primary-hover:#0c4e54;
+  --color-primary-highlight:#cedcd8;
+  --color-success:#437a22;--color-success-highlight:#d4dfcc;
+  --color-warning:#964219;--color-warning-highlight:#ddcfc6;
+  --color-error:#a12c7b;--color-error-highlight:#e0ced7;
+  --color-orange:#da7101;--color-orange-highlight:#e7d7c4;
+  --color-gold:#d19900;--color-gold-highlight:#e9e0c6;
+  --color-blue:#006494;--color-blue-highlight:#c6d8e4;
+  --shadow-sm:0 1px 2px oklch(0.2 0.01 80/0.06);
+  --shadow-md:0 4px 12px oklch(0.2 0.01 80/0.08);
+  --shadow-lg:0 12px 32px oklch(0.2 0.01 80/0.12);
+  --radius-sm:0.375rem;--radius-md:0.5rem;--radius-lg:0.75rem;--radius-xl:1rem;--radius-full:9999px;
+  --space-1:0.25rem;--space-2:0.5rem;--space-3:0.75rem;--space-4:1rem;--space-5:1.25rem;
+  --space-6:1.5rem;--space-8:2rem;--space-10:2.5rem;--space-12:3rem;--space-16:4rem;
+  --text-xs:clamp(0.75rem,0.7rem + 0.25vw,0.875rem);
+  --text-sm:clamp(0.875rem,0.8rem + 0.35vw,1rem);
+  --text-base:clamp(1rem,0.95rem + 0.25vw,1.125rem);
+  --text-lg:clamp(1.125rem,1rem + 0.75vw,1.5rem);
+  --text-xl:clamp(1.5rem,1.2rem + 1.25vw,2.25rem);
+  --transition:180ms cubic-bezier(0.16,1,0.3,1);
+  --font-body:'Inter','Helvetica Neue',sans-serif;
+  --font-mono:'JetBrains Mono','Courier New',monospace;
+}
+[data-theme="dark"]{
+  --color-bg:#171614;--color-surface:#1c1b19;--color-surface-2:#201f1d;
+  --color-surface-offset:#1d1c1a;--color-surface-dynamic:#2d2c2a;
+  --color-divider:#262523;--color-border:#393836;
+  --color-text:#cdccca;--color-text-muted:#797876;--color-text-faint:#5a5957;
+  --color-text-inverse:#2b2a28;
+  --color-primary:#4f98a3;--color-primary-hover:#227f8b;
+  --color-primary-highlight:#313b3b;
+  --color-success:#6daa45;--color-success-highlight:#3a4435;
+  --color-warning:#bb653b;--color-warning-highlight:#564942;
+  --color-error:#d163a7;--color-error-highlight:#4c3d46;
+  --color-orange:#fdab43;--color-orange-highlight:#564b3e;
+  --color-gold:#e8af34;--color-gold-highlight:#4d4332;
+  --color-blue:#5591c7;--color-blue-highlight:#3a4550;
+  --shadow-sm:0 1px 2px oklch(0 0 0/0.2);
+  --shadow-md:0 4px 12px oklch(0 0 0/0.3);
+  --shadow-lg:0 12px 32px oklch(0 0 0/0.4);
+}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){
+  --color-bg:#171614;--color-surface:#1c1b19;--color-surface-2:#201f1d;
+  --color-surface-offset:#1d1c1a;--color-surface-dynamic:#2d2c2a;
+  --color-divider:#262523;--color-border:#393836;
+  --color-text:#cdccca;--color-text-muted:#797876;--color-text-faint:#5a5957;
+  --color-text-inverse:#2b2a28;--color-primary:#4f98a3;--color-primary-hover:#227f8b;
+  --color-primary-highlight:#313b3b;--color-success:#6daa45;--color-success-highlight:#3a4435;
+  --color-warning:#bb653b;--color-warning-highlight:#564942;
+  --color-error:#d163a7;--color-error-highlight:#4c3d46;
+  --color-orange:#fdab43;--color-orange-highlight:#564b3e;
+  --color-gold:#e8af34;--color-gold-highlight:#4d4332;
+  --color-blue:#5591c7;--color-blue-highlight:#3a4550;
+}}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;scroll-behavior:smooth}
+body{min-height:100dvh;font-family:var(--font-body);font-size:var(--text-sm);color:var(--color-text);background:var(--color-bg);display:flex;overflow:hidden}
+img{display:block;max-width:100%}
+button{cursor:pointer;background:none;border:none;font:inherit;color:inherit}
+input,select,textarea{font:inherit;color:inherit}
+table{border-collapse:collapse;width:100%}
+a,button,[role="button"],input,select{transition:color var(--transition),background var(--transition),border-color var(--transition),box-shadow var(--transition)}
+:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px;border-radius:var(--radius-sm)}
+
+/* ─── LAYOUT ─── */
+.sidebar{width:220px;min-width:220px;background:var(--color-surface);border-right:1px solid var(--color-border);display:flex;flex-direction:column;height:100dvh;overflow:hidden;transition:width var(--transition)}
+.sidebar-header{padding:var(--space-4) var(--space-5);border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:var(--space-3)}
+.logo-mark{flex-shrink:0}
+.logo-text{font-weight:700;font-size:var(--text-sm);letter-spacing:-0.01em;line-height:1.1}
+.logo-sub{font-size:var(--text-xs);color:var(--color-text-muted);font-weight:400}
+.nav-section{padding:var(--space-3) var(--space-3) 0}
+.nav-label{font-size:var(--text-xs);color:var(--color-text-faint);font-weight:600;letter-spacing:0.06em;text-transform:uppercase;padding:var(--space-2) var(--space-2) var(--space-1)}
+.nav-item{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-2);border-radius:var(--radius-md);cursor:pointer;color:var(--color-text-muted);font-size:var(--text-sm);font-weight:500;margin-bottom:2px;transition:background var(--transition),color var(--transition)}
+.nav-item:hover{background:var(--color-surface-dynamic);color:var(--color-text)}
+.nav-item.active{background:var(--color-primary-highlight);color:var(--color-primary)}
+.nav-item svg{flex-shrink:0;opacity:0.8}
+.nav-badge{margin-left:auto;background:var(--color-primary);color:var(--color-text-inverse);font-size:10px;font-weight:700;border-radius:var(--radius-full);padding:1px 6px;min-width:18px;text-align:center}
+.nav-badge.warn{background:var(--color-warning)}
+.nav-badge.err{background:var(--color-error)}
+.sidebar-footer{margin-top:auto;padding:var(--space-4);border-top:1px solid var(--color-border)}
+.user-card{display:flex;align-items:center;gap:var(--space-2)}
+.user-avatar{width:30px;height:30px;border-radius:var(--radius-full);background:var(--color-primary-highlight);display:flex;align-items:center;justify-content:center;font-size:var(--text-xs);font-weight:700;color:var(--color-primary);flex-shrink:0}
+.user-info{min-width:0}
+.user-name{font-size:var(--text-xs);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-role{font-size:10px;color:var(--color-text-muted)}
+.main{flex:1;display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+.topbar{height:52px;background:var(--color-surface);border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-6);flex-shrink:0}
+.topbar-title{font-size:var(--text-base);font-weight:600;flex:1}
+.topbar-actions{display:flex;align-items:center;gap:var(--space-2)}
+.icon-btn{width:34px;height:34px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);position:relative}
+.icon-btn:hover{background:var(--color-surface-dynamic);color:var(--color-text)}
+.notif-dot{position:absolute;top:6px;right:6px;width:7px;height:7px;background:var(--color-error);border-radius:var(--radius-full);border:1.5px solid var(--color-surface)}
+.content{flex:1;overflow-y:auto;padding:var(--space-6)}
+.page{display:none}
+.page.active{display:block}
+
+/* ─── KPI GRID ─── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:var(--space-4);margin-bottom:var(--space-6)}
+.kpi-card{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-4) var(--space-5);box-shadow:var(--shadow-sm)}
+.kpi-label{font-size:var(--text-xs);color:var(--color-text-muted);font-weight:500;margin-bottom:var(--space-2);display:flex;align-items:center;gap:var(--space-2)}
+.kpi-value{font-size:var(--text-xl);font-weight:700;font-variant-numeric:tabular-nums lining-nums;line-height:1;margin-bottom:var(--space-1)}
+.kpi-delta{font-size:var(--text-xs);font-weight:500}
+.kpi-delta.up{color:var(--color-success)}
+.kpi-delta.down{color:var(--color-error)}
+.kpi-delta.flat{color:var(--color-text-muted)}
+
+/* ─── SECTION CARDS ─── */
+.section-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);margin-bottom:var(--space-4)}
+.section-grid.thirds{grid-template-columns:2fr 1fr}
+.card{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden}
+.card-header{padding:var(--space-4) var(--space-5) var(--space-3);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--color-border)}
+.card-title{font-size:var(--text-sm);font-weight:600}
+.card-body{padding:var(--space-4) var(--space-5)}
+.card-body.no-pad{padding:0}
+
+/* ─── ORDERS TABLE ─── */
+.orders-table-wrap{overflow-x:auto}
+.orders-table{width:100%;font-size:var(--text-xs)}
+.orders-table th{padding:var(--space-2) var(--space-3);text-align:left;font-size:10px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--color-text-muted);background:var(--color-surface-offset);border-bottom:1px solid var(--color-border);white-space:nowrap}
+.orders-table td{padding:var(--space-2) var(--space-3);border-bottom:1px solid var(--color-divider);vertical-align:middle;white-space:nowrap;font-variant-numeric:tabular-nums}
+.orders-table tr:last-child td{border-bottom:none}
+.orders-table tr:hover td{background:var(--color-surface-dynamic)}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:var(--radius-full)}
+.badge-inprocess{background:var(--color-blue-highlight);color:var(--color-blue)}
+.badge-queued{background:var(--color-gold-highlight);color:var(--color-gold)}
+.badge-completed{background:var(--color-success-highlight);color:var(--color-success)}
+.badge-onhold{background:var(--color-warning-highlight);color:var(--color-warning)}
+.badge-shipped{background:var(--color-primary-highlight);color:var(--color-primary)}
+.badge-high{background:var(--color-error-highlight);color:var(--color-error)}
+.badge-med{background:var(--color-orange-highlight);color:var(--color-orange)}
+.badge-low{background:var(--color-success-highlight);color:var(--color-success)}
+.pct-bar{width:80px;height:6px;background:var(--color-surface-dynamic);border-radius:var(--radius-full);overflow:hidden}
+.pct-fill{height:100%;border-radius:var(--radius-full);background:var(--color-primary);transition:width 0.6s ease}
+.pct-fill.warn{background:var(--color-warning)}
+.pct-fill.danger{background:var(--color-error)}
+.mono{font-family:var(--font-mono);font-size:11px}
+
+/* ─── CHAT BOT ─── */
+.chat-panel{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;height:480px}
+.chat-header{padding:var(--space-3) var(--space-4);border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:var(--space-3)}
+.bot-avatar{width:28px;height:28px;border-radius:var(--radius-full);background:var(--color-primary);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.bot-online{width:8px;height:8px;background:#4ade80;border-radius:var(--radius-full);border:1.5px solid var(--color-surface);margin-left:auto}
+.chat-messages{flex:1;overflow-y:auto;padding:var(--space-3) var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)}
+.msg{max-width:85%;display:flex;flex-direction:column;gap:4px}
+.msg.bot{align-self:flex-start}
+.msg.user{align-self:flex-end}
+.msg-bubble{padding:var(--space-2) var(--space-3);border-radius:var(--radius-lg);font-size:var(--text-xs);line-height:1.5}
+.msg.bot .msg-bubble{background:var(--color-surface-offset);border-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm)}
+.msg.user .msg-bubble{background:var(--color-primary);color:var(--color-text-inverse);border-radius:var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg)}
+.msg-time{font-size:10px;color:var(--color-text-faint)}
+.msg.user .msg-time{text-align:right}
+.msg-sender{font-size:10px;font-weight:600;color:var(--color-text-muted)}
+.chat-input-area{padding:var(--space-3) var(--space-4);border-top:1px solid var(--color-border);display:flex;gap:var(--space-2);align-items:flex-end}
+.chat-input{flex:1;background:var(--color-surface-dynamic);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-2) var(--space-3);font-size:var(--text-xs);resize:none;min-height:36px;max-height:80px;line-height:1.5}
+.chat-input:focus{outline:none;border-color:var(--color-primary)}
+.chat-send{width:34px;height:34px;border-radius:var(--radius-md);background:var(--color-primary);color:var(--color-text-inverse);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.chat-send:hover{background:var(--color-primary-hover)}
+.chat-quick-cmds{padding:0 var(--space-4) var(--space-2);display:flex;flex-wrap:wrap;gap:var(--space-1)}
+.quick-cmd{font-size:10px;padding:3px 8px;border-radius:var(--radius-full);background:var(--color-primary-highlight);color:var(--color-primary);font-weight:500;cursor:pointer;transition:opacity var(--transition)}
+.quick-cmd:hover{opacity:0.75}
+
+/* ─── HOLD ALERTS ─── */
+.alert-list{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-4)}
+.alert-item{display:flex;align-items:flex-start;gap:var(--space-3);padding:var(--space-3);border-radius:var(--radius-md);background:var(--color-surface-offset)}
+.alert-icon{width:28px;height:28px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.alert-icon.warn{background:var(--color-warning-highlight);color:var(--color-warning)}
+.alert-icon.err{background:var(--color-error-highlight);color:var(--color-error)}
+.alert-icon.info{background:var(--color-blue-highlight);color:var(--color-blue)}
+.alert-icon.ok{background:var(--color-success-highlight);color:var(--color-success)}
+.alert-body{}
+.alert-title{font-size:var(--text-xs);font-weight:600;margin-bottom:2px}
+.alert-detail{font-size:10px;color:var(--color-text-muted)}
+
+/* ─── ACTIVITY FEED ─── */
+.activity-feed{padding:var(--space-3) var(--space-4);display:flex;flex-direction:column;gap:var(--space-2)}
+.activity-item{display:flex;align-items:flex-start;gap:var(--space-3)}
+.activity-dot{width:8px;height:8px;border-radius:var(--radius-full);flex-shrink:0;margin-top:4px}
+.activity-content{flex:1;min-width:0}
+.activity-text{font-size:var(--text-xs);line-height:1.4}
+.activity-text strong{font-weight:600}
+.activity-time{font-size:10px;color:var(--color-text-faint);margin-top:1px}
+
+/* ─── CHART AREA ─── */
+.chart-wrap{position:relative;height:180px;padding:var(--space-4)}
+
+/* ─── PROGRESS SWIMLANE ─── */
+.swimlane{padding:var(--space-3) var(--space-5)}
+.swimlane-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3);font-size:var(--text-xs);font-weight:600;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.05em}
+.swimlane-row{display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3)}
+.swimlane-label{width:90px;font-size:var(--text-xs);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--font-mono);font-size:11px}
+.swimlane-bar-track{flex:1;height:20px;background:var(--color-surface-dynamic);border-radius:var(--radius-sm);overflow:hidden;position:relative}
+.swimlane-fill{height:100%;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:flex-end;padding-right:var(--space-2);font-size:10px;font-weight:600;color:white;transition:width 0.8s cubic-bezier(0.16,1,0.3,1)}
+.swimlane-count{font-size:10px;color:var(--color-text-muted);white-space:nowrap}
+
+/* ─── BOT PAGE ─── */
+.bot-page-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)}
+.full-chat-panel{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;height:600px}
+.intent-card{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-4);margin-bottom:var(--space-3)}
+.intent-tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);background:var(--color-primary-highlight);color:var(--color-primary);margin-bottom:var(--space-2)}
+.intent-example{font-size:var(--text-xs);color:var(--color-text-muted);font-style:italic;line-height:1.5;border-left:2px solid var(--color-border);padding-left:var(--space-3);margin-top:var(--space-2)}
+.intent-result{font-size:var(--text-xs);color:var(--color-text);margin-top:var(--space-2);padding:var(--space-2) var(--space-3);background:var(--color-success-highlight);border-radius:var(--radius-md);color:var(--color-success);font-weight:500}
+
+/* ─── SCROLLBAR ─── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:3px}
+
+/* ─── THEME TOGGLE ─── */
+.theme-toggle{width:34px;height:34px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;color:var(--color-text-muted)}
+.theme-toggle:hover{background:var(--color-surface-dynamic);color:var(--color-text)}
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:900px){.section-grid,.section-grid.thirds,.bot-page-grid{grid-template-columns:1fr}.sidebar{display:none}}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo-mark">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-label="Novalink logo">
+        <rect width="28" height="28" rx="7" fill="var(--color-primary)"></rect>
+        <path d="M7 20V8l5 8 5-8v12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+        <circle cx="21" cy="14" r="3" fill="white" opacity="0.7"></circle>
+      </svg>
+    </div>
+    <div class="logo-text">
+      Novalink
+      <div class="logo-sub">Production Hub</div>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Operations</div>
+    <div class="nav-item active" onclick="showPage(&#39;dashboard&#39;,this)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
+      Dashboard
+    </div>
+    <div class="nav-item" onclick="showPage(&#39;orders&#39;,this)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path><rect x="9" y="3" width="6" height="4" rx="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg>
+      Orders
+      <span class="nav-badge">14</span>
+    </div>
+    <div class="nav-item" onclick="showPage(&#39;bot&#39;,this)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+      Bot / AI
+      <span class="nav-badge">3</span>
+    </div>
+    <div class="nav-item" onclick="showPage(&#39;alerts&#39;,this)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      Alerts &amp; Holds
+      <span class="nav-badge warn">2</span>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Reports</div>
+    <div class="nav-item" onclick="showPage(&#39;activity&#39;,this)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+      Activity Log
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div style="display:flex;align-items:center;gap:var(--space-2)">
+      <div class="user-card" style="flex:1">
+        <div class="user-avatar">PC</div>
+        <div class="user-info">
+          <div class="user-name">Production Control</div>
+          <div class="user-role">Planner · Supervisor</div>
+        </div>
+      </div>
+      <button class="theme-toggle" data-theme-toggle="" aria-label="Toggle theme" onclick="toggleTheme()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      </button>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title" id="page-title">Live Dashboard</div>
+    <div class="topbar-actions">
+      <div style="font-size:var(--text-xs);color:var(--color-text-muted)">Last refresh: <span id="last-refresh">3m ago</span></div>
+      <button class="icon-btn" title="Notifications">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+        <div class="notif-dot"></div>
+      </button>
+    </div>
+  </div>
+
+  <div class="content">
+    <!-- ─── DASHBOARD PAGE ─── -->
+    <div class="page active" id="page-dashboard">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            In-Process
+          </div>
+          <div class="kpi-value" style="color:var(--color-blue)">6</div>
+          <div class="kpi-delta up">↑ 2 vs yesterday</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            Queued
+          </div>
+          <div class="kpi-value" style="color:var(--color-gold)">5</div>
+          <div class="kpi-delta flat">→ same as yesterday</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            Completed Today
+          </div>
+          <div class="kpi-value" style="color:var(--color-success)">3</div>
+          <div class="kpi-delta up">↑ 1 vs avg</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line></svg>
+            On Hold
+          </div>
+          <div class="kpi-value" style="color:var(--color-warning)">2</div>
+          <div class="kpi-delta down">↑ 1 new hold</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+            Shipped Today
+          </div>
+          <div class="kpi-value" style="color:var(--color-primary)">3</div>
+          <div class="kpi-delta up">On schedule</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4l3 3"></path></svg>
+            Avg Lead Time
+          </div>
+          <div class="kpi-value">4.2<span style="font-size:var(--text-sm);font-weight:400"> days</span></div>
+          <div class="kpi-delta down">↑ 0.3 days vs target</div>
+        </div>
+      </div>
+
+      <div class="section-grid thirds">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Order Pipeline</span>
+            <span style="font-size:var(--text-xs);color:var(--color-text-muted)">14 active orders</span>
+          </div>
+          <div class="swimlane">
+            <div class="swimlane-header"><span>Order</span><span>Progress</span><span>Qty</span></div>
+            <div class="swimlane-row"><div class="swimlane-label">ORD-2847</div><div class="swimlane-bar-track"><div class="swimlane-fill" style="width:72%;background:var(--color-blue)">72%</div></div><div class="swimlane-count">360/500</div></div>
+            <div class="swimlane-row"><div class="swimlane-label">ORD-2851</div><div class="swimlane-bar-track"><div class="swimlane-fill" style="width:45%;background:var(--color-blue)">45%</div></div><div class="swimlane-count">90/200</div></div>
+            <div class="swimlane-row"><div class="swimlane-label">ORD-2853</div><div class="swimlane-bar-track"><div class="swimlane-fill" style="width:100%;background:var(--color-success)">Done</div></div><div class="swimlane-count">150/150</div></div>
+            <div class="swimlane-row"><div class="swimlane-label">ORD-2855</div><div class="swimlane-bar-track"><div class="swimlane-fill" style="width:18%;background:var(--color-blue)">18%</div></div><div class="swimlane-count">54/300</div></div>
+            <div class="swimlane-row"><div class="swimlane-label">ORD-2856</div><div class="swimlane-bar-track"><div class="swimlane-fill" style="width:0%;background:var(--color-warning)">0%</div></div><div class="swimlane-count" style="color:var(--color-warning)">HOLD</div></div>
+            <div class="swimlane-row"><div class="swimlane-label">ORD-2857</div><div class="swimlane-bar-track"><div class="swimlane-fill" style="width:0%;background:var(--color-gold)">Queue</div></div><div class="swimlane-count">0/400</div></div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:var(--space-4)">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Output This Week</span>
+            </div>
+            <div class="chart-wrap" style="height:160px">
+              <canvas id="outputChart" style="display: block; box-sizing: border-box; height: 128px; width: 541.7px;" width="541" height="128"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Active Holds</span>
+            </div>
+            <div class="alert-list" style="padding:var(--space-3)">
+              <div class="alert-item">
+                <div class="alert-icon warn">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line></svg>
+                </div>
+                <div class="alert-body">
+                  <div class="alert-title">ORD-2856 — FG-PRN-0041</div>
+                  <div class="alert-detail">Material shortage: Fabric lot #FL-1892. Bot notified.</div>
+                </div>
+              </div>
+              <div class="alert-item">
+                <div class="alert-icon err">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+                </div>
+                <div class="alert-body">
+                  <div class="alert-title">ORD-2849 — FG-EMB-0017</div>
+                  <div class="alert-detail">Client approval pending for revised spec.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Recent Bot Activity</span>
+          <span style="font-size:var(--text-xs);color:var(--color-text-muted)">Auto-refreshed</span>
+        </div>
+        <div class="activity-feed">
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-success)"></div><div class="activity-content"><div class="activity-text"><strong>Planner</strong> set ORD-2847 to <strong>HIGH PRIORITY</strong> via bot command</div><div class="activity-time">Today 2:31 PM</div></div></div>
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-warning)"></div><div class="activity-content"><div class="activity-text"><strong>Bot</strong> placed FG-PRN-0041 on hold — material shortage reported by <strong>Materials Mgr</strong></div><div class="activity-time">Today 1:47 PM</div></div></div>
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-blue)"></div><div class="activity-content"><div class="activity-text"><strong>Supervisor</strong> reported 360 pcs complete on ORD-2847 — balance ETA Apr 2</div><div class="activity-time">Today 11:12 AM</div></div></div>
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-primary)"></div><div class="activity-content"><div class="activity-text"><strong>Bot</strong> ingested new order ORD-2857 (400 pcs, FG-FLT-0099) via Telegram — queued</div><div class="activity-time">Today 9:05 AM</div></div></div>
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-success)"></div><div class="activity-content"><div class="activity-text"><strong>Bot</strong> marked ORD-2853 as SHIPPED to client DC — notified Planner + Supervisor</div><div class="activity-time">Yesterday 4:45 PM</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── ORDERS PAGE ─── -->
+    <div class="page" id="page-orders">
+      <div style="margin-bottom:var(--space-4);display:flex;align-items:center;gap:var(--space-3)">
+        <input type="text" placeholder="Search order, part number..." style="flex:1;max-width:320px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);font-size:var(--text-xs)">
+        <select style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);font-size:var(--text-xs)">
+          <option>All statuses</option><option>In-Process</option><option>Queued</option><option>On Hold</option><option>Completed</option><option>Shipped</option>
+        </select>
+      </div>
+      <div class="card">
+        <div class="card-body no-pad">
+          <div class="orders-table-wrap">
+            <table class="orders-table">
+              <thead><tr>
+                <th>Order ID</th><th>FG Part #</th><th>Description</th><th>Qty Req</th><th>Qty Done</th><th>Progress</th><th>Priority</th><th>Status</th><th>Expected Ship</th><th>Destination</th>
+              </tr></thead>
+              <tbody>
+                <tr><td class="mono">ORD-2847</td><td class="mono">FG-SHT-0234</td><td>Polo Shirt S/S WHT</td><td>500</td><td>360</td><td><div class="pct-bar"><div class="pct-fill" style="width:72%"></div></div></td><td><span class="badge badge-high">HIGH</span></td><td><span class="badge badge-inprocess">In-Process</span></td><td>Apr 2</td><td>Client DC</td></tr>
+                <tr><td class="mono">ORD-2848</td><td class="mono">FG-PCK-0081</td><td>Windbreaker BLK L</td><td>200</td><td>200</td><td><div class="pct-bar"><div class="pct-fill" style="width:100%;background:var(--color-success)"></div></div></td><td><span class="badge badge-med">MED</span></td><td><span class="badge badge-completed">Completed</span></td><td>Mar 28</td><td>End Customer</td></tr>
+                <tr><td class="mono">ORD-2849</td><td class="mono">FG-EMB-0017</td><td>Emb. Jacket NVY XL</td><td>120</td><td>0</td><td><div class="pct-bar"><div class="pct-fill warn" style="width:0%"></div></div></td><td><span class="badge badge-high">HIGH</span></td><td><span class="badge badge-onhold">On Hold</span></td><td>Apr 5</td><td>Client DC</td></tr>
+                <tr><td class="mono">ORD-2851</td><td class="mono">FG-TRK-0045</td><td>Track Pant GRY M</td><td>200</td><td>90</td><td><div class="pct-bar"><div class="pct-fill" style="width:45%"></div></div></td><td><span class="badge badge-med">MED</span></td><td><span class="badge badge-inprocess">In-Process</span></td><td>Apr 4</td><td>Client DC</td></tr>
+                <tr><td class="mono">ORD-2853</td><td class="mono">FG-SHT-0112</td><td>T-Shirt WHT S</td><td>150</td><td>150</td><td><div class="pct-bar"><div class="pct-fill" style="width:100%;background:var(--color-primary)"></div></div></td><td><span class="badge badge-low">LOW</span></td><td><span class="badge badge-shipped">Shipped</span></td><td>Mar 29</td><td>End Customer</td></tr>
+                <tr><td class="mono">ORD-2855</td><td class="mono">FG-SWT-0077</td><td>Crewneck SWT BLK</td><td>300</td><td>54</td><td><div class="pct-bar"><div class="pct-fill" style="width:18%"></div></div></td><td><span class="badge badge-med">MED</span></td><td><span class="badge badge-inprocess">In-Process</span></td><td>Apr 7</td><td>Client DC</td></tr>
+                <tr><td class="mono">ORD-2856</td><td class="mono">FG-PRN-0041</td><td>Printed Tee RED M</td><td>400</td><td>0</td><td><div class="pct-bar"><div class="pct-fill warn" style="width:0%"></div></div></td><td><span class="badge badge-high">HIGH</span></td><td><span class="badge badge-onhold">On Hold</span></td><td>Apr 3</td><td>Client DC</td></tr>
+                <tr><td class="mono">ORD-2857</td><td class="mono">FG-FLT-0099</td><td>Fleece Hoodie GRY</td><td>400</td><td>0</td><td><div class="pct-bar"><div class="pct-fill" style="width:0%"></div></div></td><td><span class="badge badge-med">MED</span></td><td><span class="badge badge-queued">Queued</span></td><td>Apr 10</td><td>End Customer</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── BOT PAGE ─── -->
+    <div class="page" id="page-bot">
+      <div class="bot-page-grid">
+        <!-- Full Chat Simulation -->
+        <div>
+          <div class="full-chat-panel">
+            <div class="chat-header">
+              <div class="bot-avatar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.35-1-.99-1-1.73a2 2 0 0 1 2-2zm0 7a5 5 0 0 0-5 5v5h10v-5a5 5 0 0 0-5-5zm-2.5 4.5a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm5 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"></path></svg>
+              </div>
+              <div>
+                <div style="font-size:var(--text-xs);font-weight:600">OpenClaw Bot</div>
+                <div style="font-size:10px;color:var(--color-text-muted)">Production Intelligence Agent</div>
+              </div>
+              <div class="bot-online"></div>
+            </div>
+            <div class="chat-messages" id="botMessages">
+              <div class="msg bot">
+                <div class="msg-sender">OpenClaw Bot</div>
+                <div class="msg-bubble">👋 Hello team! I'm monitoring <strong>14 active orders</strong>. You have <strong>2 on-hold orders</strong> requiring attention. How can I help?</div>
+                <div class="msg-time">9:00 AM</div>
+              </div>
+              <div class="msg user">
+                <div class="msg-sender">Planner</div>
+                <div class="msg-bubble">Set order ORD-2847 to take priority on top of order ORD-2851</div>
+                <div class="msg-time">2:28 PM</div>
+              </div>
+              <div class="msg bot">
+                <div class="msg-sender">OpenClaw Bot</div>
+                <div class="msg-bubble">✅ Done. <strong>ORD-2847</strong> priority set to <strong>HIGH</strong> and moved ahead of ORD-2851 in the production queue. Supervisor and Materials Manager have been notified. Dashboard updated.</div>
+                <div class="msg-time">2:28 PM</div>
+              </div>
+              <div class="msg user">
+                <div class="msg-sender">Planner</div>
+                <div class="msg-bubble">Mark FG-PRN-0041 on-hold due to material shortage of Fabric lot FL-1892, proceed with rest of the order</div>
+                <div class="msg-time">1:45 PM</div>
+              </div>
+              <div class="msg bot">
+                <div class="msg-sender">OpenClaw Bot</div>
+                <div class="msg-bubble">⚠️ Understood. <strong>FG-PRN-0041</strong> in ORD-2856 marked <strong>ON HOLD</strong> — reason: material shortage, Fabric lot #FL-1892. Other part numbers in ORD-2856 remain active. Materials Manager notified to expedite. Hold logged in dashboard.</div>
+                <div class="msg-time">1:45 PM</div>
+              </div>
+              <div class="msg user">
+                <div class="msg-sender">Supervisor</div>
+                <div class="msg-bubble">Report 360 pcs complete on ORD-2847, planning to complete balance by April 2</div>
+                <div class="msg-time">11:10 AM</div>
+              </div>
+              <div class="msg bot">
+                <div class="msg-sender">OpenClaw Bot</div>
+                <div class="msg-bubble">📦 Progress logged. <strong>ORD-2847</strong>: 360/500 pcs complete (72%). Balance ETA: <strong>April 2</strong>. Planner notified. Client shipment can be confirmed by EOD Apr 2. Dashboard updated.</div>
+                <div class="msg-time">11:10 AM</div>
+              </div>
+              <div class="msg user">
+                <div class="msg-sender">Materials</div>
+                <div class="msg-bubble">Material Y (FL-1892) has been received, is currently on-hand. Release orders on hold due to this shortage.</div>
+                <div class="msg-time">Now</div>
+              </div>
+              <div class="msg bot" id="typing-indicator" style="display:none">
+                <div class="msg-sender">OpenClaw Bot</div>
+                <div class="msg-bubble" style="color:var(--color-text-muted)">✦ Processing…</div>
+              </div>
+            </div>
+            <div class="chat-quick-cmds">
+              <span class="quick-cmd" onclick="insertCmd(&#39;Set [order] to HIGH priority&#39;)">📌 Set Priority</span>
+              <span class="quick-cmd" onclick="insertCmd(&#39;Mark [part] on hold due to [reason]&#39;)">⏸ Place Hold</span>
+              <span class="quick-cmd" onclick="insertCmd(&#39;Report [qty] pcs complete on [order]&#39;)">✅ Log Progress</span>
+              <span class="quick-cmd" onclick="insertCmd(&#39;Release holds for material [ID]&#39;)">▶ Release Hold</span>
+              <span class="quick-cmd" onclick="insertCmd(&#39;Show all HIGH priority orders&#39;)">🔍 Query Status</span>
+            </div>
+            <div class="chat-input-area">
+              <textarea class="chat-input" id="chatInput" placeholder="Type a command or update… (e.g. &#39;Set ORD-2857 to HIGH priority&#39;)" rows="1"></textarea>
+              <button class="chat-send" onclick="sendBotMessage()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Intent Reference -->
+        <div>
+          <div style="font-size:var(--text-sm);font-weight:600;margin-bottom:var(--space-3)">Bot Command Reference</div>
+          <div class="intent-card">
+            <div class="intent-tag">Priority Control</div>
+            <div style="font-size:var(--text-xs);font-weight:500">Set or reorder production priorities</div>
+            <div class="intent-example">"Set order ORD-2847 to take priority on top of ORD-2851"<br>"Mark ORD-2855 as URGENT before end of shift"</div>
+            <div class="intent-result">→ Updates DB priority field, reorders queue, notifies Supervisor + Materials Mgr, refreshes dashboard</div>
+          </div>
+          <div class="intent-card">
+            <div class="intent-tag">Hold Management</div>
+            <div style="font-size:var(--text-xs);font-weight:500">Place or release part-level or order-level holds</div>
+            <div class="intent-example">"Mark FG-PRN-0041 on hold due to material shortage of Y, proceed with rest"<br>"Release all holds caused by fabric lot FL-1892"</div>
+            <div class="intent-result">→ Updates order status, logs hold reason, notifies Materials Mgr, posts alert on dashboard</div>
+          </div>
+          <div class="intent-card">
+            <div class="intent-tag">Progress Reporting</div>
+            <div style="font-size:var(--text-xs);font-weight:500">Report production completions and ETAs</div>
+            <div class="intent-example">"Report 360 pcs completed on ORD-2847, balance by Apr 2"<br>"ORD-2853 fully completed, ready to ship"</div>
+            <div class="intent-result">→ Updates pcs complete, calculates % progress, recalculates ETA, sends client notification draft</div>
+          </div>
+          <div class="intent-card">
+            <div class="intent-tag">Order Ingestion</div>
+            <div style="font-size:var(--text-xs);font-weight:500">Receive orders from Telegram, email, ERP, PDF</div>
+            <div class="intent-example">Client sends: "Need 500 pcs FG-SHT-0234, priority HIGH, ship by Apr 2"</div>
+            <div class="intent-result">→ Parses part #, qty, priority, date — inserts to DB — notifies Planner + Supervisor — adds to queue</div>
+          </div>
+          <div class="intent-card">
+            <div class="intent-tag">Status Query</div>
+            <div style="font-size:var(--text-xs);font-weight:500">Ask for current order or part status</div>
+            <div class="intent-example">"Show all HIGH priority orders"<br>"What orders are due before April 5?"<br>"What is currently on hold?"</div>
+            <div class="intent-result">→ Queries DB, responds with formatted summary in chat, highlights on dashboard</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── ALERTS PAGE ─── -->
+    <div class="page" id="page-alerts">
+      <div class="section-grid">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Active Holds</span></div>
+          <div class="alert-list">
+            <div class="alert-item">
+              <div class="alert-icon warn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line></svg>
+              </div>
+              <div class="alert-body">
+                <div class="alert-title">ORD-2856 / FG-PRN-0041 — MATERIAL HOLD</div>
+                <div class="alert-detail">Fabric lot #FL-1892 shortage. Bot notified Materials Mgr 1:45 PM. ETA resolution: unknown.</div>
+              </div>
+            </div>
+            <div class="alert-item">
+              <div class="alert-icon err">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+              </div>
+              <div class="alert-body">
+                <div class="alert-title">ORD-2849 / FG-EMB-0017 — CLIENT HOLD</div>
+                <div class="alert-detail">Client approval pending for revised embroidery spec. Awaiting client response via Telegram thread.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Notifications Sent Today</span></div>
+          <div class="activity-feed">
+            <div class="activity-item"><div class="activity-dot" style="background:var(--color-primary)"></div><div class="activity-content"><div class="activity-text">Bot → <strong>Planner</strong>: ORD-2847 priority updated</div><div class="activity-time">2:31 PM</div></div></div>
+            <div class="activity-item"><div class="activity-dot" style="background:var(--color-warning)"></div><div class="activity-content"><div class="activity-text">Bot → <strong>Materials Mgr</strong>: Hold placed on FG-PRN-0041</div><div class="activity-time">1:47 PM</div></div></div>
+            <div class="activity-item"><div class="activity-dot" style="background:var(--color-blue)"></div><div class="activity-content"><div class="activity-text">Bot → <strong>Supervisor</strong>: Progress logged ORD-2847</div><div class="activity-time">11:12 AM</div></div></div>
+            <div class="activity-item"><div class="activity-dot" style="background:var(--color-gold)"></div><div class="activity-content"><div class="activity-text">Bot → <strong>All</strong>: New order ORD-2857 queued</div><div class="activity-time">9:05 AM</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── ACTIVITY PAGE ─── -->
+    <div class="page" id="page-activity">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Full Activity Log</span><span style="font-size:var(--text-xs);color:var(--color-text-muted)">Sourced from all channels</span></div>
+        <div class="activity-feed" style="max-height:500px;overflow-y:auto">
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-success)"></div><div class="activity-content"><div class="activity-text"><strong>[Bot]</strong> Planner set ORD-2847 HIGH priority via Telegram chat</div><div class="activity-time">Today 2:31 PM · Source: Telegram bot</div></div></div>
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-warning)"></div><div class="activity-content"><div class="activity-text"><strong>[Bot]</strong> Hold placed on FG-PRN-0041 — shortage FL-1892 — Materials Mgr notified</div><div class="activity-time">Today 1:47 PM · Source: Telegram bot</div></div></div>
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-blue)"></div><div class="activity-content"><div class="activity-text"><strong>[Supervisor]</strong> Logged 360/500 pcs on ORD-2847. ETA Apr 2 confirmed</div><div class="activity-time">Today 11:12 AM · Source: Telegram bot</div></div></div>
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-primary)"></div><div class="activity-content"><div class="activity-text"><strong>[Bot]</strong> New order ORD-2857 (400 pcs FG-FLT-0099) ingested via Telegram — parsed, queued, team notified</div><div class="activity-time">Today 9:05 AM · Source: Telegram</div></div></div>
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-success)"></div><div class="activity-content"><div class="activity-text"><strong>[Bot]</strong> ORD-2853 (150/150 pcs) marked SHIPPED to end customer — Planner + Supervisor notified</div><div class="activity-time">Yesterday 4:45 PM · Source: Telegram bot</div></div></div>
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-gold)"></div><div class="activity-content"><div class="activity-text"><strong>[Bot]</strong> New order ORD-2851 ingested from client ERP access — 200 pcs FG-TRK-0045, MED priority, Apr 4</div><div class="activity-time">Yesterday 8:30 AM · Source: Client ERP (SAP)</div></div></div>
+          <div class="activity-item"><div class="activity-dot" style="background:var(--color-blue)"></div><div class="activity-content"><div class="activity-text"><strong>[Bot]</strong> ORD-2849 hold — client approval pending spec revision. Planner flagged via Telegram</div><div class="activity-time">Mar 28 3:00 PM · Source: Email → Bot</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── PAGE NAVIGATION ───
+function showPage(id, navEl) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if(navEl) navEl.classList.add('active');
+  const titles = {dashboard:'Live Dashboard',orders:'Production Orders',bot:'Bot / AI Interface',alerts:'Alerts & Holds',activity:'Activity Log'};
+  document.getElementById('page-title').textContent = titles[id] || 'Dashboard';
+}
+
+// ─── THEME TOGGLE ───
+function toggleTheme(){
+  const html = document.documentElement;
+  const t = html.getAttribute('data-theme');
+  html.setAttribute('data-theme', t === 'dark' ? 'light' : 'dark');
+  setTimeout(()=>{ if(outputChart) outputChart.update(); }, 50);
+}
+
+// ─── CHART ───
+let outputChart;
+function initChart(){
+  const ctx = document.getElementById('outputChart');
+  if(!ctx) return;
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const labelColor = isDark ? '#797876' : '#7a7974';
+  outputChart = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels:['Mon','Tue','Wed','Thu','Fri','Today'],
+      datasets:[{
+        data:[320,480,290,560,410,360],
+        backgroundColor:'rgba(79,152,163,0.7)',
+        borderRadius:4,
+        borderSkipped:false
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.raw} pcs`}}},
+      scales:{
+        x:{grid:{color:gridColor},ticks:{color:labelColor,font:{size:10}}},
+        y:{grid:{color:gridColor},ticks:{color:labelColor,font:{size:10},callback:v=>v+'pcs'}}
+      }
+    }
+  });
+}
+document.addEventListener('DOMContentLoaded', initChart);
+
+// ─── BOT CHAT SIMULATION ───
+function insertCmd(cmd){ document.getElementById('chatInput').value = cmd; document.getElementById('chatInput').focus(); }
+
+const botResponses = {
+  priority: (msg) => {
+    const m = msg.match(/(\bORD-\w+)/gi);
+    if(m) return `✅ Done. **${m[0]}** set to HIGH priority${m[1]?' and moved ahead of '+m[1]:''}. Queue updated. Supervisor and Materials Manager notified. Dashboard refreshed.`;
+    return `✅ Priority updated. Dashboard refreshed.`;
+  },
+  hold: (msg) => `⚠️ Hold placed as requested. Affected part numbers flagged. Materials Manager notified. Reason logged in system. Dashboard updated.`,
+  progress: (msg) => {
+    const qty = msg.match(/(\d+)\s*pcs?/i);
+    const ord = msg.match(/ORD-\w+/i);
+    return `📦 Progress logged.${ord?' **'+ord[0]+'**:':''} ${qty?qty[1]+' pcs completed.':''} ETA updated. Planner notified. Dashboard updated.`;
+  },
+  release: (msg) => `▶️ All holds linked to that material have been **released**. Affected orders returned to active queue. Planner and Supervisor notified. Dashboard updated.`,
+  query: (msg) => `🔍 Here's what I found in the current queue:\n• **HIGH priority**: ORD-2847, ORD-2849, ORD-2856\n• **On Hold**: ORD-2856 (material), ORD-2849 (client approval)\n• **Nearest due**: ORD-2847 (Apr 2), ORD-2856 (Apr 3)`,
+  default: (msg) => `I've processed your request. If this is an order update or command, it has been logged and the relevant team members have been notified. Could you confirm the order ID and action for precision?`
+};
+
+function detectIntent(msg){
+  const m = msg.toLowerCase();
+  if(m.includes('priority') || m.includes('on top') || m.includes('urgent')) return 'priority';
+  if(m.includes('hold') && !m.includes('release')) return 'hold';
+  if(m.includes('complet') || m.includes('pcs') || m.includes('done') || m.includes('report')) return 'progress';
+  if(m.includes('release') || m.includes('received') || m.includes('on-hand') || m.includes('on hand')) return 'release';
+  if(m.includes('show') || m.includes('status') || m.includes('what') || m.includes('list')) return 'query';
+  return 'default';
+}
+
+function appendMsg(role, sender, text, time){
+  const feed = document.getElementById('botMessages');
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  const now = time || new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  div.innerHTML = `<div class="msg-sender">${sender}</div><div class="msg-bubble">${text.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>')}</div><div class="msg-time">${now}</div>`;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+  return div;
+}
+
+function sendBotMessage(){
+  const inp = document.getElementById('chatInput');
+  const msg = inp.value.trim();
+  if(!msg) return;
+  inp.value = '';
+  appendMsg('user', 'You', msg);
+  const typing = document.getElementById('typing-indicator');
+  if(typing) { typing.style.display = 'flex'; document.getElementById('botMessages').scrollTop = 9999; }
+  setTimeout(()=>{
+    if(typing) typing.style.display = 'none';
+    const intent = detectIntent(msg);
+    const reply = botResponses[intent](msg);
+    appendMsg('bot', 'OpenClaw Bot', reply);
+  }, 900);
+}
+
+document.getElementById('chatInput').addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendBotMessage(); }
+});
+
+// ─── REFRESH TICKER ───
+let secs = 0;
+setInterval(()=>{
+  secs++;
+  const el = document.getElementById('last-refresh');
+  if(el) el.textContent = secs < 60 ? secs+'s ago' : Math.floor(secs/60)+'m ago';
+}, 1000);
+</script>
+
+
+</body></html>
