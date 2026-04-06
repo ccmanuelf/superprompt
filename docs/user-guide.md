@@ -332,7 +332,7 @@ Each user sends `/chatid` to get their ID. Restart after updating `.env`.
 
 **Practical example:** Three engineers share one bot. Engineer A asks about capacity planning, Engineer B discusses a FMEA, Engineer C practices Spanish with the learning coach — all simultaneously, without any cross-talk.
 
-**Web UI users** share a single `VOICE_WEB_TOKEN`. Anyone with the token can access all dashboards. Voice web chat sessions are isolated per WebSocket connection.
+**Web UI users** each create their own access tokens via `/webtoken create` in Telegram. Each token is scoped to the user's data — board cards, learning plans, memory, and schedules are all isolated per user. The legacy `VOICE_WEB_TOKEN` env var is supported as a fallback for backward compatibility.
 
 ---
 
@@ -839,15 +839,24 @@ Finite State Machine design and simulation:
 
 ## Web Dashboards
 
-All web UIs are served from a single port (default: 3030) with token-based authentication.
+All web UIs are served from a single port (default: 3030) with per-user token authentication.
 
 ### Setup
 
-In `.env`:
+1. Set the web port in `.env`:
 ```bash
 VOICE_WEB_PORT=3030
-VOICE_WEB_TOKEN=your-secret-token-here
 ```
+
+2. Each user creates their own token via Telegram:
+```
+/webtoken create laptop
+/webtoken create phone 30d
+```
+
+3. Use the token to log into any web dashboard (board, learn, voice, etc.)
+
+**Legacy fallback:** The `VOICE_WEB_TOKEN` env var is still supported for backward compatibility. Per-user tokens are recommended for multi-user deployments.
 
 ### Available Dashboards
 
@@ -1058,7 +1067,7 @@ Every variable is documented in detail in `.env.example` with purpose, format, h
 | `OLLAMA_EMBED_MODEL` | No | Defaults to `nomic-embed-text`. |
 | `SPEACHES_URL` | No | Defaults to `http://localhost:8000/v1`. Auto-overridden in Docker. |
 | `VOICE_WEB_PORT` | No | Web UI disabled. Dashboards and docs not available. |
-| `VOICE_WEB_TOKEN` | If port is set | **Web server refuses to start** if port is set but token is empty. |
+| `VOICE_WEB_TOKEN` | No | Optional legacy fallback. Users can create per-user tokens via `/webtoken` instead. |
 | `VOICE_WEB_TLS_CERT` | If remote access | Web server disabled with error log if file not found. |
 | `VOICE_WEB_TLS_KEY` | If remote access | Same — web server disabled if file not found. |
 | `VOICE_WEB_ORIGIN` | If remote access | Only localhost allowed (secure default). |

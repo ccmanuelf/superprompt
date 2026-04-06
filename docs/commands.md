@@ -12,6 +12,10 @@ Quick reference for all commands across Telegram, Matrix, and the web interface.
 |---------|-------------|
 | `/start` | Welcome message and feature overview |
 | `/help` | Categorized command reference (this list) |
+| `/webtoken create [label] [ttl]` | Create a web UI access token (e.g. `/webtoken create laptop 30d`) |
+| `/webtoken list` | Show all your web tokens (active, revoked, expired) |
+| `/webtoken revoke <prefix>` | Revoke a token by its first 4+ characters |
+| `/webtoken revoke-all` | Revoke all your active tokens |
 | `/chatid` | Show your current chat ID (useful for `ALLOWED_CHAT_ID`) |
 | `/newchat` or `/forget` | Clear conversation history for this chat |
 | `/claude` | Switch to Claude provider (manual mode) |

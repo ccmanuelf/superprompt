@@ -216,6 +216,14 @@ export function getAllRecentSessions(limit: number = 20): LearningSession[] {
   ).all(limit) as LearningSession[];
 }
 
+/** Get recent sessions for a specific chat. */
+export function getRecentSessionsByChat(chatId: string, limit: number = 20): LearningSession[] {
+  const db = getDatabase();
+  return db.prepare(
+    'SELECT * FROM learning_sessions WHERE chat_id = ? ORDER BY started_at DESC LIMIT ?',
+  ).all(chatId, limit) as LearningSession[];
+}
+
 /** Calculate study streak: consecutive days meeting the goal (10 min). */
 export function calculateStreak(chatId?: string): number {
   const db = getDatabase();

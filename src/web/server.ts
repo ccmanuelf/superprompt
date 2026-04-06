@@ -12,7 +12,8 @@ import { VoiceSession } from './voice-session.js';
 import { validateWebToken, logTokenAudit } from './web-tokens.js';
 import { listAllCards, createCard, moveCard, assignCard, updateCard, deleteCard, parseDateHint, type CardStatus, type CardAssignee } from '../kanban.js';
 import {
-  getAllPlans, getPlan, getTopicsByPlan, getAllWeeklyTime, getAllRecentSessions,
+  getAllPlans, getPlansByChat, getPlan, getTopicsByPlan, getAllWeeklyTime, getAllRecentSessions,
+  getRecentSessionsByChat, getWeeklyTime,
   calculateStreak, getMasterySummary, getEffectiveMastery, countDueReviews,
   reorderTopic, updatePlan, getSessionsByPlan, getDailyTime,
   type PlanStatus,
@@ -258,8 +259,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
   const token = config.VOICE_WEB_TOKEN;
 
   if (!token) {
-    logger.warn('VOICE_WEB_TOKEN is not set — voice web server requires a token for auth');
-    return { close: () => {} };
+    logger.info('VOICE_WEB_TOKEN is not set — per-user tokens (/webtoken) will be used for auth');
   }
 
   // Create HTTP or HTTPS server
@@ -378,6 +378,10 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       filePath = resolve(PUBLIC_DIR, 'hub', 'bom.html');
     } else if (urlPath === '/docs' || urlPath === '/docs/') {
       filePath = resolve(PUBLIC_DIR, 'docs', 'index.html');
+    } else if (urlPath === '/board' || urlPath === '/board/') {
+      filePath = resolve(PUBLIC_DIR, 'board.html');
+    } else if (urlPath === '/learn' || urlPath === '/learn/') {
+      filePath = resolve(PUBLIC_DIR, 'learn.html');
     } else {
       filePath = resolve(PUBLIC_DIR, urlPath.slice(1));
     }
@@ -472,7 +476,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
           authChatId = perUserResult.chatId;
           tokenId = msg.token;
           logTokenAudit(perUserResult.chatId, 'auth_success', perUserResult.tokenPrefix, ip);
-        } else if (validateToken(msg.token, token)) {
+        } else if (token && validateToken(msg.token, token)) {
           // Legacy token — use first ALLOWED_CHAT_ID as fallback
           authChatId = config.ALLOWED_CHAT_ID?.split(',')[0]?.trim() || null;
         } else {
@@ -503,7 +507,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
         if (mode === 'board') {
           setupBoardHandler(ws, authChatId);
         } else if (mode === 'learn') {
-          setupLearnHandler(ws);
+          setupLearnHandler(ws, authChatId);
         } else {
           setupVoiceHandler(ws, router, authChatId);
         }
@@ -594,8 +598,9 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
   }
 
   // ── Learn Mode Handler ──
-  function setupLearnHandler(ws: WebSocket): void {
-    logger.info('Learn web: client connected');
+  function setupLearnHandler(ws: WebSocket, authChatId?: string | null): void {
+    const learnChatId = authChatId || config.ALLOWED_CHAT_ID?.split(',')[0]?.trim() || null;
+    logger.info({ chatId: learnChatId }, 'Learn web: client connected');
 
     ws.on('message', (data: Buffer | string) => {
       const text = typeof data === 'string' ? data : data.toString('utf-8');
@@ -603,7 +608,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
         const msg = JSON.parse(text);
         switch (msg.type) {
           case 'learn_list_plans': {
-            const plans = getAllPlans();
+            // Scope plans to authenticated user; fall back to all plans if no chatId
+            const plans = learnChatId ? getPlansByChat(learnChatId) : getAllPlans();
             const enriched = plans.map((p) => {
               const topics = getTopicsByPlan(p.id);
               const summary = getMasterySummary(topics);
@@ -632,11 +638,11 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
           }
           case 'learn_time': {
             const todayStr = new Date().toISOString().slice(0, 10);
-            const week = getAllWeeklyTime(7);
+            const week = learnChatId ? getWeeklyTime(learnChatId) : getAllWeeklyTime(7);
             const todayData = week.find((d) => d.date === todayStr);
             const todaySeconds = todayData?.total_seconds ?? 0;
             const todaySessions = todayData?.session_count ?? 0;
-            const streak = calculateStreak();
+            const streak = calculateStreak(learnChatId || undefined);
             ws.send(JSON.stringify({
               type: 'learn_time_data',
               today: { seconds: todaySeconds, sessions: todaySessions, goalMet: todaySeconds >= 600 },
@@ -648,7 +654,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
           case 'learn_sessions': {
             const sessions = msg.planId
               ? getSessionsByPlan(msg.planId, msg.limit ?? 20)
-              : getAllRecentSessions(msg.limit ?? 20);
+              : (learnChatId ? getRecentSessionsByChat(learnChatId, msg.limit ?? 20) : getAllRecentSessions(msg.limit ?? 20));
             ws.send(JSON.stringify({ type: 'learn_session_history', sessions }));
             break;
           }

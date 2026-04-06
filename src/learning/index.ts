@@ -12,7 +12,7 @@ export {
   createSession as createDbSession, getSession as getDbSession, updateSession as updateDbSession, getSessionsByPlan, getSessionsByChat,
   addDailyTime, getDailyTime, getWeeklyTime,
   getLeastRecentPlan, getMostOverduePlan, getStalePlans,
-  getAllWeeklyTime, getAllRecentSessions, calculateStreak,
+  getAllWeeklyTime, getAllRecentSessions, getRecentSessionsByChat, calculateStreak,
 } from './db.js';
 
 // Spaced Repetition
