@@ -18,55 +18,61 @@ clauded is a **department-ready AI assistant platform** that runs on company-con
 
 ## Business Outcomes
 
-### Before clauded
+### The Challenge
 
-| Activity | Current State | Time/Cost |
-|----------|-------------|-----------|
-| Order data entry | Manual Excel normalization from 10+ client formats | 20 roles × 1 hr/day |
-| Production reports | Manual compilation from multiple sources | 2-4 hrs/week per planner |
-| Quality escape investigation | Reactive — found after shipment | $5K-15K per incident |
-| Communication delays | Phone tag, email chains, lost context | 3-5 hrs/week per role |
-| New hire training | Tribal knowledge transfer, 3-6 month ramp | $2K-4K/month per hire |
+Our teams handle complex, multi-format workflows across 10+ clients — each with different order formats, terminology, and communication preferences. This complexity limits how many clients and orders the current team can manage effectively, and creates risk when experienced staff are unavailable.
 
-### After clauded
+### How clauded Changes the Equation
 
-| Activity | With clauded | Improvement |
-|----------|-------------|-------------|
-| Order data entry | AI parses any format, normalizes automatically | **~80% time reduction** |
-| Production reports | Generated conversationally or scheduled | **Minutes, not hours** |
-| Quality investigation | 15 quality tools (FMEA, RCA, SPC, DOE) with data | **Proactive detection** |
-| Communication | Single AI bridge — all stakeholders see all actions | **Real-time, traceable** |
-| New hire training | Learning coach with structured plans + AI partner | **Weeks, not months** |
+clauded doesn't replace people — it **amplifies their capacity**. The same team can handle more clients, respond faster, and catch issues earlier.
 
-### Estimated ROI
+| Activity | Without AI Partner | With AI Partner |
+|----------|-------------------|-----------------|
+| Order processing | Manual normalization per client format | AI handles format translation — team focuses on exceptions |
+| Production reporting | Hours compiling from multiple sources | AI generates reports — team focuses on analysis and action |
+| Quality management | Reactive investigation after issues | 15 quality tools enable proactive detection |
+| Cross-team communication | Phone tag, email chains, lost context | AI bridges all stakeholders — nothing falls through cracks |
+| Knowledge continuity | 3-6 month ramp for new team members | Learning coach + institutional memory preserved in AI |
 
-| Category | Monthly Estimate |
-|----------|:---:|
-| Data entry labor reallocation | $8,000-10,000 |
-| Report generation automation | $2,000-3,000 |
-| Quality escape prevention | $5,000-15,000 |
-| Communication delay reduction | $3,000-5,000 |
-| Knowledge preservation | $2,000-4,000 |
-| **Total internal savings** | **$20,000-37,000/month** |
+### Value Creation Model
 
-**Cost:** $200-1,000/month (1-5 Claude subscriptions + existing infrastructure)
-**Payback period:** < 1 month
+clauded creates value by **unlocking capacity for growth**, not by reducing headcount:
+
+| Value Driver | How It Works |
+|-------------|-------------|
+| **Handle more clients** | Same team processes orders from new clients without proportional staffing |
+| **Faster response times** | AI-assisted workflows reduce client wait times → higher satisfaction |
+| **Quality improvement** | Proactive detection prevents costly escapes → lower rework, fewer returns |
+| **Knowledge preservation** | AI remembers procedures, learns from experience → reduces key-person risk |
+| **New service offerings** | AI-powered client integrations become a billable value-added service |
+
+### Growth Enablement
+
+clauded positions the company to **grow revenue without proportional cost increase**:
+
+| Growth Scenario | Without clauded | With clauded |
+|----------------|-----------------|-------------|
+| Onboard 5 new clients | Hire 2-3 additional staff | Current team handles it with AI support |
+| Client requests real-time order status | "We'll get back to you" (hours/days) | Instant via Telegram bot or web portal |
+| Quality audit for new certification | Weeks of manual documentation | AI generates compliance reports from existing data |
+| Experienced planner leaves | 3-6 months institutional knowledge loss | AI preserves procedures, guides successor |
+
+**Investment:** $200-1,000/month (Claude subscriptions + existing infrastructure)
 
 ---
 
 ## Revenue Opportunity
 
-Beyond cost savings, clauded enables **new revenue streams**:
+clauded enables **new value-added services** for existing clients:
 
-| Service Tier | What Client Gets | Revenue |
-|-------------|-----------------|---------|
-| Basic | Submit orders via Telegram, get status updates | Included in contract |
-| Standard | API integration (Shopify/ERP → production) | $500-1,500/month per client |
-| Premium | Full EDI + BOM visibility + shortage alerts | $2,000-5,000/month per client |
+| Service | What Client Gets | Value Proposition |
+|---------|-----------------|-------------------|
+| Order Integration | Submit orders via any channel, get status updates | Client convenience → stronger relationship |
+| Production Visibility | Real-time production status via API or Telegram | Transparency → client confidence |
+| Shortage Alerts | Proactive material shortage notifications | Early warning → fewer surprises |
+| Custom Automation | Client-specific workflows and reporting | Premium service → competitive differentiation |
 
-**At 10 clients:** $5,000-50,000/month in recurring integration fees.
-
-A sample client integration (ACME Corp) is already pre-built as a proof of concept.
+A sample client integration (ACME Corp) is already pre-built as a proof of concept, demonstrating how declarative tools connect to client systems without custom development.
 
 ---
 

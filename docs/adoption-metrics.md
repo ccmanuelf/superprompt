@@ -51,7 +51,7 @@
 |--------|---------|--------|
 | 200+ messages/day | Company-wide adoption | Monitor rate limits, consider second instance |
 | Multiple packs active per chat | Cross-department value | Document for Board |
-| Documents generated daily | Report automation working | Quantify time saved |
+| Documents generated daily | Report automation working | Quantify capacity unlocked for higher-value work |
 | Learning sessions active | Training engagement | Track completion rates |
 
 ### Maturity (Month 3+)
@@ -128,7 +128,8 @@ QUALITY
 - Guardrails learned: ___
 
 VALUE
-- Estimated hours saved: ___
+- Capacity unlocked (hours redirected to higher-value work): ___
+- New clients/orders handled without additional headcount: ___
 - Reports automated: ___
 - Key wins: [specific examples from departments]
 
