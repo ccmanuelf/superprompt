@@ -14,7 +14,7 @@ import {
 } from '../db.js';
 import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAutoTrigger } from '../skills.js';
 import { CAPABILITIES_PROMPT, generateMfgContextHint } from '../capabilities.js';
-import { getAggregatedCapabilities } from '../packs.js';
+import { getAggregatedCapabilities, buildWebAppsPrompt } from '../packs.js';
 
 const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
 
@@ -386,7 +386,8 @@ export class ProviderRouter {
     const mfgHint = generateMfgContextHint(params.message);
     // Compose full capabilities: base (manufacturing) + domain packs
     const packCaps = getAggregatedCapabilities();
-    const fullCapabilities = packCaps ? CAPABILITIES_PROMPT + '\n\n' + packCaps : CAPABILITIES_PROMPT;
+    const webAppsPrompt = buildWebAppsPrompt();
+    const fullCapabilities = [CAPABILITIES_PROMPT, packCaps, webAppsPrompt].filter(Boolean).join('\n\n');
     // Language hint is Claude-only (Ollama has its own in the model system prompt)
     const systemPrompt = provider.name === 'claude'
       ? [voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')

@@ -80,6 +80,43 @@ export function getAggregatedCapabilities(): string {
   return parts.length > 0 ? parts.join('\n\n') : '';
 }
 
+/**
+ * Get all web UI URLs from loaded packs.
+ * Used to dynamically update the AI's self-awareness about available dashboards.
+ * Prevents the AI from trying to build solutions that already exist as web UIs.
+ */
+export function getAggregatedWebApps(): Array<{ packName: string; url: string }> {
+  const webApps: Array<{ packName: string; url: string }> = [];
+  const seen = new Set<string>();
+
+  for (const pack of loadedPacks) {
+    if (!pack.enabled) continue;
+    for (const ip of pack.intentPatterns) {
+      for (const url of ip.webApps) {
+        if (!seen.has(url)) {
+          seen.add(url);
+          webApps.push({ packName: pack.name, url });
+        }
+      }
+    }
+  }
+
+  return webApps;
+}
+
+/**
+ * Build a dynamic web UI discovery prompt section.
+ * Injected into the system prompt so the AI knows about ALL available dashboards,
+ * including those added by newly loaded packs.
+ */
+export function buildWebAppsPrompt(): string {
+  const apps = getAggregatedWebApps();
+  if (apps.length === 0) return '';
+
+  const lines = apps.map((a) => `- ${a.url} (from pack: ${a.packName})`);
+  return `\n### Pack-Provided Web Dashboards (auto-discovered)\nThese web UIs are available from loaded packs. ALWAYS suggest them instead of building from scratch:\n${lines.join('\n')}\n`;
+}
+
 export function getAggregatedSelfDescription(): string {
   const parts = loadedPacks
     .filter((p) => p.enabled && p.selfDescription)
