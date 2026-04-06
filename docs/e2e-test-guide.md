@@ -169,13 +169,30 @@ Run all sections to certify a deployment is production-ready.
 
 | Item | Value |
 |------|-------|
-| **Version** | v1.0.0-rc.29 |
+| **Version** | v1.0.0-rc.30 |
 | **Date** | |
 | **Tester** | |
 | **Environment** | |
 | **Sections passed** | /17 |
 | **Tests passed** | /XX |
 | **Notes** | |
+
+## Complementary: Operations Hub Completion
+
+After passing the E2E checklist, the **Production Planning team** should complete the Operations Hub configuration using the dedicated guide:
+
+**[Hub Completion Guide](hub-completion-guide.md)** — covers:
+- What's mocked vs real (every item listed with replacement instructions)
+- What the team needs to provide (3-priority checklist)
+- How to load templates (Telegram upload, pack directory, conversational)
+- How to tweak tool behavior conversationally
+- When to contact the software team (clear boundary)
+- How to validate real data vs sample data (step-by-step)
+- Current assumptions and how to correct them
+
+**This guide is for the Planning team, not IT.** Most configuration is done by talking to clauded.
+
+---
 
 ## Claude Subscription Note
 
