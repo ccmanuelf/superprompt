@@ -1123,10 +1123,135 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         '/pack templates &lt;name&gt; — Get template files\n\n' +
 
         '<b>🔧 System</b>\n' +
+        '/webtoken — Manage web UI tokens (create|list|revoke)\n' +
         '/chatid — Show your chat ID\n' +
         '/start — Welcome message',
       { parse_mode: 'HTML' },
     );
+  });
+
+  // ── /webtoken — Self-service web UI token management ──
+  bot.command('webtoken', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const text = ctx.message?.text ?? '';
+    const args = text.replace(/^\/webtoken(@\w+)?/, '').trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase() || 'help';
+
+    const {
+      createWebToken,
+      listWebTokens,
+      revokeWebToken,
+      revokeAllWebTokens,
+      getActiveTokenIds,
+    } = await import('../web/web-tokens.js');
+    const { disconnectTokenSessions } = await import('../web/server.js');
+
+    switch (subcommand) {
+      case 'create': {
+        const label = parts.slice(1).filter(p => !/^\d+[dhm]$/i.test(p)).join(' ') || 'default';
+        // Parse optional TTL: "24h", "7d", "30d", "60m"
+        const ttlArg = parts.find(p => /^\d+[dhm]$/i.test(p));
+        let ttlSeconds: number | undefined;
+        if (ttlArg) {
+          const num = parseInt(ttlArg);
+          const unit = ttlArg.slice(-1).toLowerCase();
+          if (unit === 'd') ttlSeconds = num * 86400;
+          else if (unit === 'h') ttlSeconds = num * 3600;
+          else if (unit === 'm') ttlSeconds = num * 60;
+        }
+
+        try {
+          const token = createWebToken(chatId, label, ttlSeconds);
+          const expiryText = token.expires_at
+            ? `Expires: ${new Date(token.expires_at).toLocaleString()}`
+            : 'No expiry';
+
+          await ctx.reply(
+            `🔑 <b>Web Token Created</b>\n\n` +
+            `<code>${token.id}</code>\n\n` +
+            `Label: ${escapeHtml(label)}\n` +
+            `${expiryText}\n\n` +
+            `⚠️ <b>Copy this token now — it will only be shown once.</b>\n` +
+            `Use it to log into /board, /learn, or voice chat at your web UI.`,
+            { parse_mode: 'HTML' },
+          );
+        } catch (err) {
+          await ctx.reply(`❌ ${(err as Error).message}`);
+        }
+        break;
+      }
+
+      case 'list': {
+        const tokens = listWebTokens(chatId);
+        if (tokens.length === 0) {
+          await ctx.reply('No web tokens. Create one with `/webtoken create [label]`.');
+          return;
+        }
+
+        const lines = tokens.map((t) => {
+          const prefix = t.id.slice(0, 8);
+          const status = t.revoked_at ? '🚫 revoked' : (t.expires_at && Date.now() > t.expires_at ? '⏰ expired' : '✅ active');
+          const lastUsed = t.last_used_at ? new Date(t.last_used_at).toLocaleDateString() : 'never';
+          const created = new Date(t.created_at).toLocaleDateString();
+          const labelStr = t.label ? ` "${escapeHtml(t.label)}"` : '';
+          return `<code>${prefix}…</code>${labelStr}\n  ${status} | Created: ${created} | Last used: ${lastUsed}`;
+        });
+
+        await ctx.reply(
+          `🔑 <b>Your Web Tokens</b> (${tokens.length})\n\n${lines.join('\n\n')}`,
+          { parse_mode: 'HTML' },
+        );
+        break;
+      }
+
+      case 'revoke': {
+        const prefix = parts[1];
+        if (!prefix || prefix.length < 4) {
+          await ctx.reply('Usage: `/webtoken revoke <prefix>` (at least 4 chars of the token)');
+          return;
+        }
+
+        const revokedId = revokeWebToken(chatId, prefix);
+        if (revokedId) {
+          disconnectTokenSessions(revokedId);
+          await ctx.reply(`✅ Token <code>${prefix}…</code> revoked. Active web sessions disconnected.`, { parse_mode: 'HTML' });
+        } else {
+          await ctx.reply(`❌ No active token found starting with <code>${escapeHtml(prefix)}</code>`, { parse_mode: 'HTML' });
+        }
+        break;
+      }
+
+      case 'revoke-all': {
+        // Get all active token IDs first (for session disconnect)
+        const activeIds = getActiveTokenIds(chatId);
+        const count = revokeAllWebTokens(chatId);
+        for (const tid of activeIds) {
+          disconnectTokenSessions(tid);
+        }
+        await ctx.reply(`✅ Revoked ${count} token(s). All web sessions disconnected.`);
+        break;
+      }
+
+      default: {
+        await ctx.reply(
+          '<b>🔑 /webtoken — Web UI Token Management</b>\n\n' +
+          '/webtoken create [label] [ttl] — Create a new token\n' +
+          '  Examples:\n' +
+          '  <code>/webtoken create laptop</code>\n' +
+          '  <code>/webtoken create phone 30d</code>\n' +
+          '  <code>/webtoken create temp 24h</code>\n\n' +
+          '/webtoken list — Show all your tokens\n' +
+          '/webtoken revoke &lt;prefix&gt; — Revoke a specific token\n' +
+          '/webtoken revoke-all — Revoke all tokens\n\n' +
+          'Each token gives access to web UIs (board, voice, learn).\n' +
+          'Your token only shows YOUR data — board cards, memory, etc.\n' +
+          'Max 5 active tokens per user. TTL: 24h, 7d, 30d, or none.',
+          { parse_mode: 'HTML' },
+        );
+      }
+    }
   });
 
   bot.command('chatid', async (ctx) => {

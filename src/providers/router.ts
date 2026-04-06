@@ -87,6 +87,7 @@ The user can type these commands in the chat:
 - /reload — Reload user tools from database
 - /compress — Compress the last response into 5 decision-relevant sentences (or reply to any message)
 - /pack — Domain packs (list, info, create) — customize for your department
+- /webtoken — Manage web UI access tokens (create, list, revoke, revoke-all)
 - /help — Show categorized command reference
 
 When relevant, you can mention these commands to help the user. For example, if the user asks "can you remember this?", you might mention /memory. If they seem to want a different AI behavior, mention /skill. If they say "remind me about X", use the create_reminder tool instead of suggesting /schedule.

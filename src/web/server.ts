@@ -9,6 +9,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { config, PROJECT_ROOT } from '../config.js';
 import { logger } from '../logger.js';
 import { VoiceSession } from './voice-session.js';
+import { validateWebToken, logTokenAudit } from './web-tokens.js';
 import { listAllCards, createCard, moveCard, assignCard, updateCard, deleteCard, parseDateHint, type CardStatus, type CardAssignee } from '../kanban.js';
 import {
   getAllPlans, getPlan, getTopicsByPlan, getAllWeeklyTime, getAllRecentSessions,
@@ -95,6 +96,33 @@ function isOriginAllowed(origin: string | undefined): boolean {
   }
 }
 
+// ── Per-user token session tracking (for immediate revocation) ──
+const activeTokenSessions = new Map<string, Set<WebSocket>>();
+
+function trackTokenSession(tokenId: string, ws: WebSocket): void {
+  let sockets = activeTokenSessions.get(tokenId);
+  if (!sockets) {
+    sockets = new Set();
+    activeTokenSessions.set(tokenId, sockets);
+  }
+  sockets.add(ws);
+  ws.on('close', () => {
+    sockets!.delete(ws);
+    if (sockets!.size === 0) activeTokenSessions.delete(tokenId);
+  });
+}
+
+/** Disconnect all WebSocket sessions using a specific token (called on revocation). */
+export function disconnectTokenSessions(tokenId: string): void {
+  const sockets = activeTokenSessions.get(tokenId);
+  if (sockets) {
+    for (const ws of sockets) {
+      ws.close(4002, 'Token revoked');
+    }
+    activeTokenSessions.delete(tokenId);
+  }
+}
+
 // ── API Authentication ─────────────────────────────────────
 
 /** CORS headers for authenticated API responses */
@@ -130,26 +158,33 @@ function authenticateApiRequest(
     res.setHeader(k, v);
   }
 
-  // If no token configured, web server shouldn't be running (but allow for safety)
-  if (!config.VOICE_WEB_TOKEN) {
-    res.writeHead(503, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Web server token not configured' }));
+  // Extract token from header or query parameter
+  let candidateToken: string | null = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    candidateToken = authHeader.slice(7);
+  }
+  if (!candidateToken) {
+    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    candidateToken = url.searchParams.get('token');
+  }
+
+  if (!candidateToken) {
+    const ip = req.socket.remoteAddress || 'unknown';
+    recordAuthFailure(ip);
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Unauthorized — provide token via Authorization: Bearer <token> header or ?token=<token> query parameter' }));
     return false;
   }
 
-  // Check Authorization header
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice(7);
-    if (token.length === config.VOICE_WEB_TOKEN.length && validateToken(token, config.VOICE_WEB_TOKEN)) {
-      return true;
-    }
+  // Try per-user token first
+  const perUserResult = validateWebToken(candidateToken);
+  if (perUserResult.valid) {
+    return true;
   }
 
-  // Check query parameter
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  const queryToken = url.searchParams.get('token');
-  if (queryToken && queryToken.length === config.VOICE_WEB_TOKEN.length && validateToken(queryToken, config.VOICE_WEB_TOKEN)) {
+  // Fall back to legacy VOICE_WEB_TOKEN
+  if (config.VOICE_WEB_TOKEN && candidateToken.length === config.VOICE_WEB_TOKEN.length && validateToken(candidateToken, config.VOICE_WEB_TOKEN)) {
     return true;
   }
 
@@ -157,7 +192,7 @@ function authenticateApiRequest(
   const ip = req.socket.remoteAddress || 'unknown';
   recordAuthFailure(ip);
   res.writeHead(401, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ error: 'Unauthorized — provide token via Authorization: Bearer <token> header or ?token=<token> query parameter' }));
+  res.end(JSON.stringify({ error: 'Unauthorized — invalid token' }));
   return false;
 }
 
@@ -429,8 +464,22 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
           return;
         }
 
-        if (!validateToken(msg.token, token)) {
+        // Try per-user token first, then fall back to legacy VOICE_WEB_TOKEN
+        let authChatId: string | null = null;
+        let tokenId: string | null = null;
+        const perUserResult = validateWebToken(msg.token);
+        if (perUserResult.valid && perUserResult.chatId) {
+          authChatId = perUserResult.chatId;
+          tokenId = msg.token;
+          logTokenAudit(perUserResult.chatId, 'auth_success', perUserResult.tokenPrefix, ip);
+        } else if (validateToken(msg.token, token)) {
+          // Legacy token — use first ALLOWED_CHAT_ID as fallback
+          authChatId = config.ALLOWED_CHAT_ID?.split(',')[0]?.trim() || null;
+        } else {
           recordAuthFailure(ip);
+          if (perUserResult.tokenPrefix) {
+            logTokenAudit('unknown', 'auth_failure', perUserResult.tokenPrefix, ip);
+          }
           logger.warn({ ip }, 'Web: invalid token');
           ws.send(JSON.stringify({ type: 'error', message: 'Invalid token' }));
           ws.close(4001, 'Unauthorized');
@@ -442,16 +491,21 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
         mode = msg.mode || 'voice';
         clearTimeout(authTimer);
 
+        // Track per-user token session for immediate revocation
+        if (tokenId) {
+          trackTokenSession(tokenId, ws);
+        }
+
         // Remove this one-shot auth handler
         ws.removeListener('message', authHandler);
 
-        // Route to the appropriate mode handler
+        // Route to the appropriate mode handler — pass chat_id for data scoping
         if (mode === 'board') {
-          setupBoardHandler(ws);
+          setupBoardHandler(ws, authChatId);
         } else if (mode === 'learn') {
           setupLearnHandler(ws);
         } else {
-          setupVoiceHandler(ws, router);
+          setupVoiceHandler(ws, router, authChatId);
         }
 
         // Signal ready
@@ -464,8 +518,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
   });
 
   // ── Board Mode Handler ──
-  function setupBoardHandler(ws: WebSocket): void {
-    const boardChatId = config.ALLOWED_CHAT_ID?.split(',')[0]?.trim() || 'web-board';
+  function setupBoardHandler(ws: WebSocket, authChatId?: string | null): void {
+    const boardChatId = authChatId || config.ALLOWED_CHAT_ID?.split(',')[0]?.trim() || 'web-board';
     logger.info('Board web: client connected');
 
     ws.on('message', (data: Buffer | string) => {
@@ -637,8 +691,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
   }
 
   // ── Voice Mode Handler ──
-  function setupVoiceHandler(ws: WebSocket, voiceRouter: ProviderRouter): void {
-    const sessionChatId = `voice-web-${randomUUID()}`;
+  function setupVoiceHandler(ws: WebSocket, voiceRouter: ProviderRouter, authChatId?: string | null): void {
+    const sessionChatId = authChatId || `voice-web-${randomUUID()}`;
     logger.info({ chatId: sessionChatId }, 'Voice web: client connected');
 
     const session = new VoiceSession(sessionChatId, voiceRouter);

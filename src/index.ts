@@ -120,6 +120,10 @@ async function main(): Promise<void> {
   const packTunerMod = await import('./pack-tuner.js');
   storage.registerTables(packTunerMod.packTunerTableInit);
 
+  // Web tokens tables (per-user auth for web UIs)
+  const { webTokenTableInit } = await import('./web/web-tokens.js');
+  storage.registerTables(webTokenTableInit);
+
   // Wire pack tuner into pack intent scoring
   const { setPackTunerModule } = await import('./packs.js');
   setPackTunerModule({ applyTunedWeight: packTunerMod.applyTunedWeight });
