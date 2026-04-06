@@ -49,6 +49,7 @@ import type {
   formatGuardrailsList, detectToolFailureGuardrail, detectCorrectionGuardrail,
 } from '../guardrails.js';
 import type { ContextHealthMonitor } from '../context-health.js';
+import type { getWebUIOnboarding } from '../web-ui-guide.js';
 import type { getAllPackWeights, formatPackWeights, resetPackWeights, applyTunedWeight } from '../pack-tuner.js';
 import type { enablePack, disablePack, getPackSubscriptions, isPackEnabled } from '../packs.js';
 import type {
@@ -207,6 +208,10 @@ export interface PlatformContext {
     getMonitor(): ContextHealthMonitor;
   };
 
+  webUI: {
+    getOnboarding: typeof getWebUIOnboarding;
+  };
+
   packTuner: {
     getWeights: typeof getAllPackWeights;
     formatWeights: typeof formatPackWeights;
@@ -331,7 +336,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     skillParserMod, skillFixerMod, toolParserMod, scannerMod,
     toolRegistryMod, toolGenMod, toolFixerMod, exporterMod,
     proactiveMod, orchestratorMod, kanbanMod, citationsMod,
-    selfMonitorMod, researchMod, guardrailsMod, contextHealthMod, packTunerMod, learningMod, autoSkillsMod, policyMod, packsMod, packBuilderMod,
+    selfMonitorMod, researchMod, guardrailsMod, contextHealthMod, webUIMod, packTunerMod, learningMod, autoSkillsMod, policyMod, packsMod, packBuilderMod,
   ] = await Promise.all([
     import('../memory.js'),
     import('../db.js'),
@@ -355,6 +360,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     import('../providers/tools/research.js'),
     import('../guardrails.js'),
     import('../context-health.js'),
+    import('../web-ui-guide.js'),
     import('../pack-tuner.js'),
     import('../learning/index.js'),
     import('../auto-skills.js'),
@@ -473,6 +479,9 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     },
     contextHealth: {
       getMonitor: contextHealthMod.getContextHealthMonitor,
+    },
+    webUI: {
+      getOnboarding: webUIMod.getWebUIOnboarding,
     },
     packTuner: {
       getWeights: packTunerMod.getAllPackWeights,
