@@ -337,6 +337,10 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       filePath = resolve(PUBLIC_DIR, 'doe', 'index.html');
     } else if (urlPath === '/fsm' || urlPath === '/fsm/') {
       filePath = resolve(PUBLIC_DIR, 'fsm', 'index.html');
+    } else if (urlPath === '/hub' || urlPath === '/hub/') {
+      filePath = resolve(PUBLIC_DIR, 'hub', 'index.html');
+    } else if (urlPath === '/hub/bom' || urlPath === '/hub/bom/') {
+      filePath = resolve(PUBLIC_DIR, 'hub', 'bom.html');
     } else if (urlPath === '/docs' || urlPath === '/docs/') {
       filePath = resolve(PUBLIC_DIR, 'docs', 'index.html');
     } else {

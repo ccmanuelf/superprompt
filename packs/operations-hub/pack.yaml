@@ -1,0 +1,55 @@
+name: operations-hub
+display_name: "NovaLink Operations Hub"
+description: >
+  Unified production operations hub — order management, BOM intelligence,
+  shortage resolution, FIFO tracking, and activity logging. Pre-built from
+  engineering mockups with sample data. Pending: real API connections,
+  WO numbering convention, client document templates.
+version: "0.1.0-preview"
+author: novalink-engineering
+enabled: true
+level: 2
+
+departments:
+  - manufacturing
+  - customer-service
+  - supply-chain
+
+capabilities: |
+  ### NovaLink Operations Hub (Preview)
+  Production order management and BOM shortage intelligence:
+  - Work order tracking (create, status, priority, progress)
+  - BOM lookup and component shortage detection
+  - FIFO split-order tracking and allocation
+  - Role-based notifications (supervisor, planner, materials manager)
+  - Activity logging from all channels (Telegram, ERP, email, file upload)
+  Web dashboards: /hub (Production Hub), /hub/bom (BOM & Shortage)
+  NOTE: Preview version with sample data. Real API connections pending.
+
+self_description: |
+  **NovaLink Operations Hub** (Preview) — I can help with production order
+  tracking, BOM lookups, shortage alerts, and FIFO management. The web
+  dashboards at /hub and /hub/bom show the full interface. Currently using
+  sample data — real connections will be wired when API details are provided.
+
+intent_patterns:
+  - pattern: \b(work\s*order|WO-|production\s*order|order\s*status)\b
+    score_boost: 15
+    tools: [hub_create_order, hub_order_status, hub_update_progress]
+    web_apps: [/hub]
+  - pattern: \b(bom|bill\s*of\s*material|component|shortage|out\s*of\s*stock)\b
+    score_boost: 15
+    tools: [hub_bom_lookup, hub_shortage_check]
+    web_apps: [/hub/bom]
+  - pattern: \b(fifo|split.order|allocation|first.in.first.out)\b
+    score_boost: 10
+    tools: [hub_fifo_status]
+    web_apps: [/hub/bom]
+  - pattern: \b(client\s*order|customer\s*order|ingestion|order\s*received)\b
+    score_boost: 10
+    tools: [hub_create_order]
+    web_apps: [/hub]
+
+commands:
+  - name: hub
+    description: Operations Hub — orders, BOM, shortages, activity log
