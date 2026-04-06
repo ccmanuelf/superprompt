@@ -53,11 +53,15 @@ export const WEB_UI_GUIDES: WebUIGuide[] = [
       'User asks about browser access to clauded',
     ],
     tips: [
+      'You need an access token to connect — ask your IT administrator or department champion for it',
+      'The token is the VOICE_WEB_TOKEN from the deployment configuration',
       'Click the microphone button and speak clearly',
       'Wait for the "processing" indicator before speaking again',
       'Works best in Chrome or Edge',
     ],
     tipsEs: [
+      'Necesitas un token de acceso para conectar — consultalo con tu administrador de TI o lider de departamento',
+      'El token es el VOICE_WEB_TOKEN de la configuracion de despliegue',
       'Haz clic en el boton del microfono y habla claramente',
       'Espera el indicador de "procesando" antes de hablar de nuevo',
       'Funciona mejor en Chrome o Edge',

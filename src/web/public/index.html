@@ -249,8 +249,19 @@
 <!-- Auth Screen -->
 <div id="auth-screen">
   <h1>clauded voice</h1>
-  <input type="password" id="token-input" placeholder="Enter access token" autofocus>
-  <button id="connect-btn" onclick="connect()">Connect</button>
+  <p style="color: var(--text-dim); font-size: 0.85rem; max-width: 320px; margin: 0 auto 1rem; line-height: 1.5;">
+    Enter the web access token to connect.<br>
+    Ask your IT administrator or department champion for the token.<br>
+    <span style="color: var(--text-dim); font-size: 0.75rem;">
+      (This is the VOICE_WEB_TOKEN from your deployment configuration)
+    </span>
+  </p>
+  <p style="color: var(--text-dim); font-size: 0.8rem; max-width: 320px; margin: 0 auto 1.5rem; line-height: 1.4;">
+    Ingresa el token de acceso web para conectar.<br>
+    Consulta con tu administrador de TI o lider de departamento.<br>
+  </p>
+  <input type="password" id="token-input" placeholder="Enter access token / Ingresa token" autofocus>
+  <button id="connect-btn" onclick="connect()">Connect / Conectar</button>
 </div>
 
 <!-- Main Screen -->
