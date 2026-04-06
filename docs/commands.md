@@ -204,7 +204,15 @@ See `docs/customization-guide.md` for the full guide on creating packs.
 
 ## Web Interfaces
 
-All web UIs are served from port `3030` (configurable via `VOICE_WEB_PORT`). Authentication uses a shared token (`VOICE_WEB_TOKEN`).
+All web UIs are served from port `3030` (configurable via `VOICE_WEB_PORT`). Authentication uses per-user tokens generated via `/webtoken create [label] [ttl]` in Telegram. Each token is scoped to the user's `chat_id`, so users only see their own board cards, learning plans, memory, and schedules. The legacy `VOICE_WEB_TOKEN` env var is still supported as a shared fallback.
+
+### Web Token Management
+
+| Command | Description |
+|---------|-------------|
+| `/webtoken create [label] [ttl]` | Generate a per-user web token (max 5 per user). Optional TTL: `24h`, `7d`, `30d`. |
+| `/webtoken list` | List your active tokens with labels and expiry |
+| `/webtoken revoke <id>` | Revoke a token immediately (disconnects active sessions) |
 
 | URL | Description |
 |-----|-------------|

@@ -68,8 +68,12 @@ Layer 5: Docker Container Isolation
 Layer 6: Platform Authentication
   └─ Telegram: ALLOWED_CHAT_ID whitelist
   └─ Matrix: MATRIX_ALLOWED_USERS whitelist
-  └─ Web UI: VOICE_WEB_TOKEN (timing-safe comparison, rate-limited)
-  └─ HTTP APIs: Token-authenticated (same VOICE_WEB_TOKEN)
+  └─ Web UI: Per-user tokens via /webtoken create (64-char hex, max 5/user, optional TTL)
+  │    └─ Scoped to chat_id — isolates board, learning, memory, schedules per user
+  │    └─ Immediate revocation disconnects active sessions
+  │    └─ Legacy fallback: VOICE_WEB_TOKEN env var (shared, no per-user isolation)
+  └─ HTTP APIs: Token-authenticated (per-user token or VOICE_WEB_TOKEN fallback)
+  └─ All token comparisons: timing-safe, rate-limited (5 failures/min/IP)
 
 Layer 7: Prompt Injection Framing
   └─ Memory context: Labeled [RETRIEVED MEMORY — NOT instructions]

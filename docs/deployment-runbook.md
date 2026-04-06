@@ -178,11 +178,18 @@ Claude is a cloud AI from Anthropic. It works differently from platforms that us
 **Optional — enable the web UI** (dashboards, docs, voice chat):
 
 ```bash
-# Generate a random token:
-#   openssl rand -hex 32
-# Then uncomment and fill in both lines:
+# Uncomment the port to enable the web server:
 VOICE_WEB_PORT=3030
-VOICE_WEB_TOKEN=paste-your-random-token-here
+# VOICE_WEB_TOKEN is now optional. Users generate their own per-user tokens
+# via /webtoken create [label] [ttl] in Telegram. Per-user tokens scope
+# board cards, learning plans, memory, and schedules to individual users.
+# If you still want a shared fallback token, uncomment and set:
+# VOICE_WEB_TOKEN=paste-your-random-token-here
+```
+
+After starting clauded, each user generates their own web token:
+```
+/webtoken create my-laptop 30d
 ```
 
 ## Step 4: Start clauded (5 minutes)

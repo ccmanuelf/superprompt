@@ -726,8 +726,10 @@ Express HTTP server + WebSocket (ws) on a single port.
 
 ### Authentication
 
-- **WebSocket**: Token-based (`VOICE_WEB_TOKEN`) sent in connection URL
-- **HTTP API**: Token in query string or Authorization header
+- **WebSocket**: Per-user token (64-char hex) or legacy `VOICE_WEB_TOKEN` sent in connection URL
+- **HTTP API**: Per-user token or `VOICE_WEB_TOKEN` in query string or Authorization header
+- **Per-user tokens**: Generated via `/webtoken create [label] [ttl]`, scoped to chat_id (isolates board, learning, memory, schedules). Max 5 per user, optional TTL (24h/7d/30d), revocation disconnects sessions.
+- **Legacy fallback**: `VOICE_WEB_TOKEN` env var still accepted (shared, no per-user data isolation)
 - **Rate limiting**: 5 failed auth attempts per minute per IP
 
 ### Security

@@ -446,7 +446,7 @@ When multiple departments each run their own clauded instance:
 - SQLite database (all memories, skills, tools, board cards)
 - Ollama models (each machine's local Ollama)
 - Domain packs (each instance has its own packs/)
-- Web UI token (each instance has its own VOICE_WEB_TOKEN)
+- Web UI tokens: Per-user tokens (via `/webtoken create`) scope data to individual users within each instance. The shared `VOICE_WEB_TOKEN` env var is still supported as a fallback but does not provide per-user data isolation.
 - Conversation history and memories (scoped per chat_id AND per instance)
 
 ### What Could Be Shared (Optional)

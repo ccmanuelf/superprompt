@@ -52,7 +52,7 @@ Pre-deployment criteria, considerations, and decision factors for production dep
 
 ### Web UI
 - [ ] VOICE_WEB_PORT set (default: 3030)
-- [ ] VOICE_WEB_TOKEN generated: `openssl rand -hex 32`
+- [ ] VOICE_WEB_TOKEN generated (optional fallback): `openssl rand -hex 32` — per-user tokens via `/webtoken create` are now the recommended approach
 - [ ] TLS certificates (VOICE_WEB_TLS_CERT/KEY) for non-localhost access
 - [ ] Reverse proxy (Nginx/Apache) configured for HTTPS
 
@@ -64,7 +64,7 @@ Pre-deployment criteria, considerations, and decision factors for production dep
 
 ### Security
 - [ ] ALLOWED_CHAT_ID set (prevents unauthorized access)
-- [ ] VOICE_WEB_TOKEN set (prevents unauthorized web access)
+- [ ] VOICE_WEB_TOKEN set (optional shared fallback) or per-user tokens configured via `/webtoken create`
 - [ ] TLS certificates installed (web UI HTTPS)
 - [ ] .env file permissions restricted (chmod 600)
 - [ ] Docker network isolated from host network
@@ -97,6 +97,8 @@ Run the full E2E test guide: `docs/e2e-test-guide.md` (17 sections, 65+ tests)
 - [ ] `/pack list` → shows 10 packs with status ✅
 - [ ] `/board add Test task` → card created ✅
 - [ ] `/trust list` → shows trust decisions ✅
+- [ ] `/webtoken create smoke-test 24h` → generates per-user web token ✅
+- [ ] `/webtoken list` → shows the token just created ✅
 - [ ] Web dashboards: all 12 return HTTP 200 ✅
 - [ ] API security: `/api/sim/info` returns 401 without token ✅
 
