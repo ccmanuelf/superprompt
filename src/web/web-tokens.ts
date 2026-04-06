@@ -195,19 +195,18 @@ export function validateWebToken(candidateToken: string): WebTokenValidation {
   ).get(candidateToken) as WebToken | undefined;
 
   if (!row) {
-    // Dummy timing-safe compare to prevent timing leaks
-    const dummy = randomBytes(TOKEN_BYTES).toString('hex');
-    timingSafeEqual(Buffer.from(candidateToken), Buffer.from(dummy));
+    // Timing equalization: perform a dummy compare so the not-found path
+    // takes roughly the same CPU time as the found path. The DB lookup
+    // itself has constant-time B-tree behavior on PK, and the rate limiter
+    // (5 failures/minute/IP) is the primary defense against brute force.
+    const dummy = Buffer.alloc(TOKEN_BYTES * 2, 0);
+    timingSafeEqual(Buffer.from(candidateToken), dummy);
     return { valid: false, chatId: null, tokenPrefix: prefix, isLegacy: false };
   }
 
-  // Timing-safe verify (defense-in-depth — DB already matched by PK)
-  const match = timingSafeEqual(
-    Buffer.from(candidateToken),
-    Buffer.from(row.id),
-  );
-
-  if (!match) {
+  // Defense-in-depth: timing-safe verify after DB lookup (DB matched by PK,
+  // but we verify to guard against hypothetical DB layer issues)
+  if (!timingSafeEqual(Buffer.from(candidateToken), Buffer.from(row.id))) {
     return { valid: false, chatId: null, tokenPrefix: prefix, isLegacy: false };
   }
 

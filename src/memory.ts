@@ -81,14 +81,13 @@ export async function buildMemoryContext(
   if (sanitized) {
     try {
       ftsResults = searchMemories(chatId, sanitized, 3);
-    } catch {
-      // FTS5 MATCH can fail on certain query patterns — not critical
-      logger.debug({ query: sanitized }, 'FTS5 search failed, using recent only');
+    } catch (err) {
+      logger.warn({ query: sanitized, err }, 'FTS5 memory search failed — falling back to recent memories');
     }
     try {
       ftsEpisodes = searchEpisodes(chatId, sanitized, 2);
-    } catch {
-      logger.debug('Episode FTS5 search failed');
+    } catch (err) {
+      logger.warn({ query: sanitized, err }, 'FTS5 episode search failed — falling back to recent episodes');
     }
   }
 

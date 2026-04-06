@@ -477,8 +477,11 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
           tokenId = msg.token;
           logTokenAudit(perUserResult.chatId, 'auth_success', perUserResult.tokenPrefix, ip);
         } else if (token && validateToken(msg.token, token)) {
-          // Legacy token — use first ALLOWED_CHAT_ID as fallback
+          // Legacy shared token — no per-user scoping. Falls back to first
+          // ALLOWED_CHAT_ID so all legacy users share the same data view.
+          // For per-user isolation, users should create per-user tokens via /webtoken.
           authChatId = config.ALLOWED_CHAT_ID?.split(',')[0]?.trim() || null;
+          logger.info({ ip, authChatId }, 'Web: legacy VOICE_WEB_TOKEN auth (shared data view)');
         } else {
           recordAuthFailure(ip);
           if (perUserResult.tokenPrefix) {
