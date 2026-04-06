@@ -410,6 +410,110 @@ export function classifyMessage(message: string): 'claude' | 'ollama' {
   return 'ollama';
 }
 
+// ── Claude data pre-fetch patterns (bilingual) ────────────────────────
+// When Claude is the active provider, these patterns detect what data the
+// user is asking about. The platform then queries the DB directly and injects
+// the results into the message, so Claude has real data and doesn't need tools.
+//
+// This is the ARCHITECTURAL solution to Claude CLI's inability to call our tools.
+// Instead of prompt engineering (which fails because Claude Code's identity overrides
+// our system prompt), we give Claude the actual data it needs.
+
+const BOARD_INTENT = /\b(board|kanban|card|cards|task|tasks|pending|backlog|to.?do|in progress|tablero|tarjeta|tarjetas|tarea|tareas|pendiente|activit)/i;
+const SCHEDULE_INTENT = /\b(schedule|reminder|reminders|schedules|cron|programad|recordatorio|alarm)/i;
+const MEMORY_INTENT = /\b(remember|recall|what did (I|we)|you remember|memory|memori|recuerd|qu[eé] (dije|dijimos|hablamos)|memoria)/i;
+const SKILL_INTENT = /\b(skill|skills|persona|personas|habilidad|habilidades)/i;
+const TIME_INTENT = /\b(what time|current time|date today|today'?s date|hora|fecha|qué hora|qué día)/i;
+
+/**
+ * Pre-fetch data that Claude would normally get via tool calls.
+ * Returns formatted context string to prepend to the message, or empty string.
+ *
+ * Covers: board, schedules, memory, skills, time.
+ * Manufacturing tools (simulation, capacity, etc.) are not pre-fetchable — those require
+ * Ollama or the web UI. The CLAUDE_PROVIDER_NOTICE guides users to /ollama for those.
+ */
+async function prefetchDataForClaude(chatId: string, message: string): Promise<string> {
+  const sections: string[] = [];
+
+  // Board / Kanban data
+  if (BOARD_INTENT.test(message)) {
+    try {
+      const { formatBoard } = await import('../kanban.js');
+      const boardData = formatBoard(chatId);
+      sections.push(`[BOARD DATA — queried from database for you. Present this data to the user directly.]\n${boardData}`);
+      logger.debug({ chatId }, 'Pre-fetched board data for Claude');
+    } catch (err) {
+      logger.warn({ err }, 'Failed to pre-fetch board data');
+    }
+  }
+
+  // Schedule / Reminder data
+  if (SCHEDULE_INTENT.test(message)) {
+    try {
+      const { getTasksByChat } = await import('../db.js');
+      const tasks = getTasksByChat(chatId);
+      if (tasks.length > 0) {
+        const formatted = tasks.map((t) =>
+          `  ${t.status === 'active' ? '▶' : '⏸'} ID:${t.id} — "${t.prompt}" (${t.schedule})`,
+        ).join('\n');
+        sections.push(`[SCHEDULE DATA — queried from database for you. Present this data to the user directly.]\n${formatted}`);
+      } else {
+        sections.push('[SCHEDULE DATA — no scheduled tasks found for this chat]');
+      }
+      logger.debug({ chatId }, 'Pre-fetched schedule data for Claude');
+    } catch (err) {
+      logger.warn({ err }, 'Failed to pre-fetch schedule data');
+    }
+  }
+
+  // Memory data
+  if (MEMORY_INTENT.test(message)) {
+    try {
+      const { getRecentMemories } = await import('../db.js');
+      const memories = getRecentMemories(chatId, 10);
+      if (memories.length > 0) {
+        const formatted = memories.map((m) =>
+          `  [${m.sector || 'general'}] ${m.content.slice(0, 200)}${m.content.length > 200 ? '...' : ''}`,
+        ).join('\n');
+        sections.push(`[MEMORY DATA — queried from database for you. Present this data to the user directly.]\n${formatted}`);
+      } else {
+        sections.push('[MEMORY DATA — no stored memories found for this chat]');
+      }
+      logger.debug({ chatId }, 'Pre-fetched memory data for Claude');
+    } catch (err) {
+      logger.warn({ err }, 'Failed to pre-fetch memory data');
+    }
+  }
+
+  // Skills data
+  if (SKILL_INTENT.test(message)) {
+    try {
+      const { listSkills } = await import('../db.js');
+      const skills = listSkills();
+      if (skills.length > 0) {
+        const formatted = skills.map((s) =>
+          `  ${s.locked ? '🔒' : '📝'} ${s.name} — ${(s.description || 'No description').slice(0, 100)}`,
+        ).join('\n');
+        sections.push(`[SKILLS DATA — queried from database for you. Present this data to the user directly.]\n${formatted}`);
+      } else {
+        sections.push('[SKILLS DATA — no custom skills created yet]');
+      }
+      logger.debug({ chatId }, 'Pre-fetched skills data for Claude');
+    } catch (err) {
+      logger.warn({ err }, 'Failed to pre-fetch skills data');
+    }
+  }
+
+  // Time / Date
+  if (TIME_INTENT.test(message)) {
+    const now = new Date();
+    sections.push(`[CURRENT TIME — ${now.toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}]`);
+  }
+
+  return sections.join('\n\n');
+}
+
 export class ProviderRouter {
   private claude: ClaudeProvider;
   private ollama: OllamaProvider;
@@ -504,6 +608,19 @@ export class ProviderRouter {
     const skillPrompt = getSkillSystemPrompt(chatId);
     const allowedTools = getSkillAllowedTools(chatId);
 
+    // ── Claude data pre-fetch ──────────────────────────────────────────
+    // Claude CLI cannot call our tools (kanban_manage, query_memory, etc.)
+    // because it has its own built-in tool system. Instead of fighting this
+    // with prompt engineering, we pre-fetch the data the user is asking about
+    // and inject it into the message so Claude can answer naturally.
+    let prefetchedData = '';
+    if (provider.name === 'claude' && !params.skipTools) {
+      prefetchedData = await prefetchDataForClaude(chatId, params.message);
+    }
+    const effectiveMessage = prefetchedData
+      ? `${prefetchedData}\n\n${params.message}`
+      : params.message;
+
     // Inject voice hint when the message is from a voice note
     const voiceHint = params.isVoice ? VOICE_RESPONSE_HINT : '';
 
@@ -544,6 +661,7 @@ export class ProviderRouter {
 
     const response = await provider.sendMessage({
       ...params,
+      message: effectiveMessage,
       sessionId: effectiveSessionId,
       systemPrompt,
       allowedTools: allowedTools ?? undefined,
