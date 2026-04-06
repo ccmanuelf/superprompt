@@ -129,6 +129,7 @@ export function registerTools(): void {
       definition: minizincOptimizeDefinition,
       execute: async (args) => minizincOptimize(args as Record<string, unknown>),
       source: 'builtin',
+      packName: 'manufacturing',
       policy: { riskLevel: 'medium', scopes: ['command', 'database:write'], requiresConfirmation: false },
     },
     {
