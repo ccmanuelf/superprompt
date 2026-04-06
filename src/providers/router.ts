@@ -437,11 +437,14 @@ const TIME_INTENT = /\b(what time|current time|date today|today'?s date|hora|fec
 async function prefetchDataForClaude(chatId: string, message: string): Promise<string> {
   const sections: string[] = [];
 
-  // Board / Kanban data
+  // Board / Kanban data (capped at 2000 chars to prevent token waste)
   if (BOARD_INTENT.test(message)) {
     try {
       const { formatBoard } = await import('../kanban.js');
-      const boardData = formatBoard(chatId);
+      let boardData = formatBoard(chatId);
+      if (boardData.length > 2000) {
+        boardData = boardData.slice(0, 2000) + '\n... (board truncated — open /board for full view)';
+      }
       sections.push(`[BOARD DATA — queried from database for you. Present this data to the user directly.]\n${boardData}`);
       logger.debug({ chatId }, 'Pre-fetched board data for Claude');
     } catch (err) {

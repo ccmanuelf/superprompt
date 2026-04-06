@@ -505,9 +505,9 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
 
         // Route to the appropriate mode handler — pass chat_id for data scoping
         if (mode === 'board') {
-          setupBoardHandler(ws, authChatId);
+          setupBoardHandler(ws, authChatId, tokenId);
         } else if (mode === 'learn') {
-          setupLearnHandler(ws, authChatId);
+          setupLearnHandler(ws, authChatId, tokenId);
         } else {
           setupVoiceHandler(ws, router, authChatId);
         }
@@ -521,12 +521,33 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     });
   });
 
+  // ── Token re-validation (checks token still valid every 60s) ──
+  function createTokenRevalidator(ws: WebSocket, tokenId: string | null): () => boolean {
+    if (!tokenId) return () => true; // Legacy tokens don't expire
+    let lastCheck = Date.now();
+    const RECHECK_INTERVAL = 60_000; // 60 seconds
+    return () => {
+      const now = Date.now();
+      if (now - lastCheck < RECHECK_INTERVAL) return true;
+      lastCheck = now;
+      const result = validateWebToken(tokenId);
+      if (!result.valid) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Token expired or revoked' }));
+        ws.close(4002, 'Token expired');
+        return false;
+      }
+      return true;
+    };
+  }
+
   // ── Board Mode Handler ──
-  function setupBoardHandler(ws: WebSocket, authChatId?: string | null): void {
+  function setupBoardHandler(ws: WebSocket, authChatId?: string | null, tokenId?: string | null): void {
     const boardChatId = authChatId || config.ALLOWED_CHAT_ID?.split(',')[0]?.trim() || 'web-board';
+    const isTokenValid = createTokenRevalidator(ws, tokenId || null);
     logger.info('Board web: client connected');
 
     ws.on('message', (data: Buffer | string) => {
+      if (!isTokenValid()) return; // Re-validate token periodically
       const text = typeof data === 'string' ? data : data.toString('utf-8');
       try {
         const msg = JSON.parse(text);
@@ -598,11 +619,13 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
   }
 
   // ── Learn Mode Handler ──
-  function setupLearnHandler(ws: WebSocket, authChatId?: string | null): void {
+  function setupLearnHandler(ws: WebSocket, authChatId?: string | null, tokenId?: string | null): void {
     const learnChatId = authChatId || config.ALLOWED_CHAT_ID?.split(',')[0]?.trim() || null;
+    const isTokenValid = createTokenRevalidator(ws, tokenId || null);
     logger.info({ chatId: learnChatId }, 'Learn web: client connected');
 
     ws.on('message', (data: Buffer | string) => {
+      if (!isTokenValid()) return; // Re-validate token periodically
       const text = typeof data === 'string' ? data : data.toString('utf-8');
       try {
         const msg = JSON.parse(text);

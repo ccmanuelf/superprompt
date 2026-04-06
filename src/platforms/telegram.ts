@@ -1139,14 +1139,18 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     const parts = args.split(/\s+/);
     const subcommand = parts[0]?.toLowerCase() || 'help';
 
-    const {
-      createWebToken,
-      listWebTokens,
-      revokeWebToken,
-      revokeAllWebTokens,
-      getActiveTokenIds,
-    } = await import('../web/web-tokens.js');
-    const { disconnectTokenSessions } = await import('../web/server.js');
+    let webTokenMod: Awaited<typeof import('../web/web-tokens.js')>;
+    let disconnectTokenSessions: (id: string) => void;
+    try {
+      webTokenMod = await import('../web/web-tokens.js');
+      const serverMod = await import('../web/server.js');
+      disconnectTokenSessions = serverMod.disconnectTokenSessions;
+    } catch (err) {
+      logger.warn({ err }, 'Web token modules not available');
+      await ctx.reply('Web token management is not available. Ensure the web server is configured.');
+      return;
+    }
+    const { createWebToken, listWebTokens, revokeWebToken, revokeAllWebTokens, getActiveTokenIds } = webTokenMod;
 
     switch (subcommand) {
       case 'create': {
@@ -1156,6 +1160,10 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         let ttlSeconds: number | undefined;
         if (ttlArg) {
           const num = parseInt(ttlArg);
+          if (isNaN(num) || num <= 0) {
+            await ctx.reply('TTL must be a positive number (e.g. `24h`, `7d`, `30d`).');
+            return;
+          }
           const unit = ttlArg.slice(-1).toLowerCase();
           if (unit === 'd') ttlSeconds = num * 86400;
           else if (unit === 'h') ttlSeconds = num * 3600;
@@ -1208,8 +1216,8 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
       case 'revoke': {
         const prefix = parts[1];
-        if (!prefix || prefix.length < 4) {
-          await ctx.reply('Usage: `/webtoken revoke <prefix>` (at least 4 chars of the token)');
+        if (!prefix || prefix.length < 8) {
+          await ctx.reply('Usage: `/webtoken revoke <prefix>` (at least 8 chars of the token — shown in `/webtoken list`)');
           return;
         }
 

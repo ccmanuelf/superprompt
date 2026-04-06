@@ -140,6 +140,20 @@ describe('web-tokens', () => {
       const t2 = createWebToken(CHAT_A, 'two');
       expect(t1.id).not.toBe(t2.id);
     });
+
+    it('rejects TTL of zero', () => {
+      expect(() => createWebToken(CHAT_A, 'zero-ttl', 0)).toThrow(/positive/);
+    });
+
+    it('rejects negative TTL', () => {
+      expect(() => createWebToken(CHAT_A, 'neg-ttl', -3600)).toThrow(/positive/);
+    });
+
+    it('truncates label to 50 chars', () => {
+      const longLabel = 'x'.repeat(100);
+      const token = createWebToken(CHAT_A, longLabel);
+      expect(token.label).toHaveLength(50);
+    });
   });
 
   // ── Listing ─────────────────────────────────────────────
@@ -255,6 +269,14 @@ describe('web-tokens', () => {
       createWebToken(CHAT_A, 'mine');
       const result = revokeWebToken(CHAT_A, 'zzzzzzzz');
       expect(result).toBeNull();
+    });
+
+    it('rejects prefix shorter than 8 chars', () => {
+      const token = createWebToken(CHAT_A, 'short-prefix');
+      const result = revokeWebToken(CHAT_A, token.id.slice(0, 4));
+      expect(result).toBeNull();
+      // Token should still be valid
+      expect(validateWebToken(token.id).valid).toBe(true);
     });
 
     it('cannot revoke another user\'s token', () => {

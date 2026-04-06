@@ -110,6 +110,16 @@ export function createWebToken(
   label: string = '',
   ttlSeconds?: number,
 ): WebToken {
+  // Validate TTL
+  if (ttlSeconds !== undefined && ttlSeconds <= 0) {
+    throw new Error('Token TTL must be a positive number of seconds.');
+  }
+
+  // Validate label length
+  if (label.length > 50) {
+    label = label.slice(0, 50);
+  }
+
   const activeCount = getActiveTokenCount(chatId);
   if (activeCount >= MAX_TOKENS_PER_USER) {
     throw new Error(
@@ -226,14 +236,19 @@ export function validateWebToken(candidateToken: string): WebTokenValidation {
 }
 
 /**
- * Revoke a token by its prefix (first 8+ chars).
+ * Revoke a token by its prefix (minimum 8 chars for safety).
  * Only the token owner (matching chat_id) can revoke their own tokens.
+ * If multiple tokens match, the oldest (first created) is revoked.
  * @returns The full token ID if revoked (for session disconnect), or null if not found
  */
 export function revokeWebToken(chatId: string, tokenPrefix: string): string | null {
+  if (tokenPrefix.length < 8) {
+    return null; // Require minimum 8-char prefix to avoid accidental revocation
+  }
+
   const db = getDatabase();
   const row = db.prepare(
-    'SELECT id FROM web_tokens WHERE chat_id = ? AND id LIKE ? AND revoked_at IS NULL',
+    'SELECT id FROM web_tokens WHERE chat_id = ? AND id LIKE ? AND revoked_at IS NULL ORDER BY created_at ASC LIMIT 1',
   ).get(chatId, tokenPrefix + '%') as { id: string } | undefined;
 
   if (!row) return null;
