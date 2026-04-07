@@ -48,9 +48,10 @@
 <body>
   <div id="auth" class="auth">
     <h2>clauded Board</h2>
-    <p style="color: #8b949e; font-size: 13px; margin-bottom: 12px; max-width: 300px;">
-      Ask your IT admin or department champion for the access token.<br>
-      <span style="font-size: 11px;">Consulta con tu administrador de TI o lider de departamento.</span>
+    <p style="color: #8b949e; font-size: 13px; margin-bottom: 12px; max-width: 320px; line-height: 1.5;">
+      Enter your personal access token.<br>
+      Generate one in Telegram: <code style="background: #30363d; padding: 1px 5px; border-radius: 3px; font-size: 12px;">/webtoken create</code><br>
+      <span style="font-size: 11px;">Ingresa tu token personal. Genera uno en Telegram: <code style="background: #30363d; padding: 1px 4px; border-radius: 3px;">/webtoken create</code></span>
     </p>
     <input type="password" id="token-input" placeholder="Enter token / Ingresa token" autofocus>
     <button class="btn btn-primary" onclick="authenticate()">Connect / Conectar</button>
