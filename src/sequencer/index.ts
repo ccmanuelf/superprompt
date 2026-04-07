@@ -51,8 +51,6 @@ export function initSequencerTables(): void {
 
     CREATE INDEX IF NOT EXISTS idx_seq_schedules_name
       ON seq_schedules(name);
-    CREATE INDEX IF NOT EXISTS idx_seq_schedules_chat
-      ON seq_schedules(chat_id, name);
   `);
 
   // Migration: add chat_id column if missing (for existing databases)

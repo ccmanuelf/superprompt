@@ -31,7 +31,6 @@ export function initFsmTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_fsm_configs_name ON fsm_configs(name);
-    CREATE INDEX IF NOT EXISTS idx_fsm_configs_chat ON fsm_configs(chat_id, name);
   `);
 
   // Migration: add chat_id column if missing (for existing databases)

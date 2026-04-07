@@ -37,7 +37,6 @@ export function initVsmTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_vsm_maps_name ON vsm_maps(name);
-    CREATE INDEX IF NOT EXISTS idx_vsm_maps_chat ON vsm_maps(chat_id, name);
   `);
 
   // Migration: add chat_id column if missing (for existing databases)

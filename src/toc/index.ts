@@ -36,7 +36,6 @@ export function initTocTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_toc_configs_name ON toc_configs(name);
-    CREATE INDEX IF NOT EXISTS idx_toc_configs_chat ON toc_configs(chat_id, name);
 
     CREATE TABLE IF NOT EXISTS toc_throughput_history (
       id TEXT PRIMARY KEY,

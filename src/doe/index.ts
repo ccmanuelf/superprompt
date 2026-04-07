@@ -32,7 +32,6 @@ export function initDoeTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_doe_experiments_name ON doe_experiments(name);
-    CREATE INDEX IF NOT EXISTS idx_doe_experiments_chat ON doe_experiments(chat_id, name);
   `);
 
   // Migration: add chat_id column if missing (for existing databases)

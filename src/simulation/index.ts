@@ -57,15 +57,14 @@ export function initSimulationTables(): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_sim_results_scenario ON sim_results(scenario_id);
-    CREATE INDEX IF NOT EXISTS idx_sim_scenarios_chat ON sim_scenarios(chat_id, name);
   `);
 
   // Migration: add chat_id column if missing (for existing databases)
   const cols = db.prepare("PRAGMA table_info(sim_scenarios)").all() as Array<{ name: string }>;
   if (!cols.some(c => c.name === 'chat_id')) {
     db.exec("ALTER TABLE sim_scenarios ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
-    db.exec('CREATE INDEX IF NOT EXISTS idx_sim_scenarios_chat ON sim_scenarios(chat_id, name)');
   }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sim_scenarios_chat ON sim_scenarios(chat_id, name)');
 }
 
 export const simulationTableInit: TableInitializer = { name: 'simulation', initTables: initSimulationTables };

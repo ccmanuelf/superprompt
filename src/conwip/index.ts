@@ -26,7 +26,6 @@ export function initConwipTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_conwip_configs_name ON conwip_configs(name);
-    CREATE INDEX IF NOT EXISTS idx_conwip_configs_chat ON conwip_configs(chat_id, name);
   `);
 
   // Migration: add chat_id column if missing (for existing databases)

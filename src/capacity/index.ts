@@ -46,8 +46,6 @@ export function initCapacityTables(): void {
 
     CREATE INDEX IF NOT EXISTS idx_capacity_plans_name
       ON capacity_plans(name);
-    CREATE INDEX IF NOT EXISTS idx_capacity_plans_chat
-      ON capacity_plans(chat_id, name);
 
     CREATE TABLE IF NOT EXISTS capacity_results (
       id TEXT PRIMARY KEY,
