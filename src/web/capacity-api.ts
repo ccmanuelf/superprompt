@@ -43,6 +43,7 @@ export async function handleCapacityApi(
   req: IncomingMessage,
   res: ServerResponse,
   urlPath: string,
+  chatId: string,
 ): Promise<boolean> {
   if (!urlPath.startsWith('/api/capacity')) return false;
 
@@ -60,14 +61,14 @@ export async function handleCapacityApi(
 
   try {
     if (req.method === 'GET') {
-      return handleGet(route, res);
+      return handleGet(route, res, chatId);
     }
     if (req.method === 'POST') {
       const body = await readBody(req);
-      return await handlePost(route, body, res);
+      return await handlePost(route, body, res, chatId);
     }
     if (req.method === 'DELETE') {
-      return handleDelete(route, res);
+      return handleDelete(route, res, chatId);
     }
 
     jsonResponse(res, 405, { error: 'Method not allowed' });
@@ -82,7 +83,7 @@ export async function handleCapacityApi(
 
 // ── GET Routes ───────────────────────────────────────────────
 
-function handleGet(route: string, res: ServerResponse): boolean {
+function handleGet(route: string, res: ServerResponse, chatId: string): boolean {
   switch (route) {
     case '/':
     case '/info': {
@@ -100,7 +101,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
     }
 
     case '/plans': {
-      const plans = listPlans();
+      const plans = listPlans(chatId);
       jsonResponse(res, 200, {
         plans: plans.map((p) => ({
           id: p.id,
@@ -122,7 +123,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
       // GET /plans/:id
       const planMatch = route.match(/^\/plans\/(.+)$/);
       if (planMatch) {
-        const plan = getPlan(planMatch[1]);
+        const plan = getPlan(planMatch[1], chatId);
         if (!plan) {
           jsonResponse(res, 404, { error: 'Plan not found' });
           return true;
@@ -149,7 +150,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
 
 // ── POST Routes ──────────────────────────────────────────────
 
-async function handlePost(route: string, body: unknown, res: ServerResponse): Promise<boolean> {
+async function handlePost(route: string, body: unknown, res: ServerResponse, chatId: string): Promise<boolean> {
   const data = body as Record<string, unknown>;
 
   switch (route) {
@@ -177,7 +178,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
 
       // Auto-save if name provided
       if (config.name) {
-        savePlan(config.name, config, result);
+        savePlan(config.name, config, result, chatId);
       }
 
       jsonResponse(res, 200, {
@@ -278,7 +279,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
 
       // Save result if plan name provided
       if (config.name) {
-        const plan = savePlan(config.name, config);
+        const plan = savePlan(config.name, config, undefined, chatId);
         saveResult(plan.id, 'monte_carlo', mcResults);
       }
 
@@ -322,7 +323,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
         jsonResponse(res, 400, { error: 'name and config required' });
         return true;
       }
-      const plan = savePlan(name, config);
+      const plan = savePlan(name, config, undefined, chatId);
       jsonResponse(res, 201, { success: true, plan: { id: plan.id, name: plan.name } });
       return true;
     }
@@ -371,10 +372,10 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
 
 // ── DELETE Routes ────────────────────────────────────────────
 
-function handleDelete(route: string, res: ServerResponse): boolean {
+function handleDelete(route: string, res: ServerResponse, chatId: string): boolean {
   const planMatch = route.match(/^\/plans\/(.+)$/);
   if (planMatch) {
-    const deleted = deletePlan(planMatch[1]);
+    const deleted = deletePlan(planMatch[1], chatId);
     if (deleted) {
       jsonResponse(res, 200, { success: true });
     } else {

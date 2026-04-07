@@ -18,6 +18,7 @@ export function initConwipTables(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS conwip_configs (
       id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       config_json TEXT NOT NULL,
       result_json TEXT,
@@ -25,18 +26,26 @@ export function initConwipTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_conwip_configs_name ON conwip_configs(name);
+    CREATE INDEX IF NOT EXISTS idx_conwip_configs_chat ON conwip_configs(chat_id, name);
   `);
+
+  // Migration: add chat_id column if missing (for existing databases)
+  const cols = db.prepare("PRAGMA table_info(conwip_configs)").all() as Array<{ name: string }>;
+  if (!cols.some(c => c.name === 'chat_id')) {
+    db.exec("ALTER TABLE conwip_configs ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
+    db.exec('CREATE INDEX IF NOT EXISTS idx_conwip_configs_chat ON conwip_configs(chat_id, name)');
+  }
 }
 
 export const conwipTableInit: TableInitializer = { name: 'conwip', initTables: initConwipTables };
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 
-export function saveConwip(name: string, config: unknown, result?: unknown): SavedConwip {
+export function saveConwip(name: string, config: unknown, result?: unknown, chatId: string = ''): SavedConwip {
   const db = getDatabase();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
-  const existing = db.prepare('SELECT * FROM conwip_configs WHERE name = ? COLLATE NOCASE').get(name) as SavedConwip | undefined;
+  const existing = db.prepare('SELECT * FROM conwip_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SavedConwip | undefined;
   if (existing) {
     db.prepare('UPDATE conwip_configs SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?')
       .run(configJson, resultJson, Date.now(), existing.id);
@@ -44,23 +53,23 @@ export function saveConwip(name: string, config: unknown, result?: unknown): Sav
   }
   const id = genId();
   const now = Date.now();
-  db.prepare('INSERT INTO conwip_configs (id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, name, configJson, resultJson, now, now);
+  db.prepare('INSERT INTO conwip_configs (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, chatId, name, configJson, resultJson, now, now);
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getConwip(nameOrId: string): SavedConwip | undefined {
+export function getConwip(nameOrId: string, chatId: string = ''): SavedConwip | undefined {
   const db = getDatabase();
   return (db.prepare('SELECT * FROM conwip_configs WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM conwip_configs WHERE name = ? COLLATE NOCASE').get(nameOrId)) as SavedConwip | undefined;
+    db.prepare('SELECT * FROM conwip_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)) as SavedConwip | undefined;
 }
 
-export function listConwips(): SavedConwip[] {
-  return getDatabase().prepare('SELECT * FROM conwip_configs ORDER BY updated_at DESC').all() as SavedConwip[];
+export function listConwips(chatId: string = ''): SavedConwip[] {
+  return getDatabase().prepare('SELECT * FROM conwip_configs WHERE chat_id = ? ORDER BY updated_at DESC').all(chatId) as SavedConwip[];
 }
 
-export function deleteConwip(id: string): boolean {
-  return getDatabase().prepare('DELETE FROM conwip_configs WHERE id = ?').run(id).changes > 0;
+export function deleteConwip(id: string, chatId: string = ''): boolean {
+  return getDatabase().prepare('DELETE FROM conwip_configs WHERE id = ? AND chat_id = ?').run(id, chatId).changes > 0;
 }
 
 // ── Charts ───────────────────────────────────────────────────

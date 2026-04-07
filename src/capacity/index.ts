@@ -36,6 +36,7 @@ export function initCapacityTables(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS capacity_plans (
       id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       config_json TEXT NOT NULL,
       result_json TEXT,
@@ -45,6 +46,8 @@ export function initCapacityTables(): void {
 
     CREATE INDEX IF NOT EXISTS idx_capacity_plans_name
       ON capacity_plans(name);
+    CREATE INDEX IF NOT EXISTS idx_capacity_plans_chat
+      ON capacity_plans(chat_id, name);
 
     CREATE TABLE IF NOT EXISTS capacity_results (
       id TEXT PRIMARY KEY,
@@ -58,6 +61,13 @@ export function initCapacityTables(): void {
     CREATE INDEX IF NOT EXISTS idx_capacity_results_plan
       ON capacity_results(plan_id);
   `);
+
+  // Migration: add chat_id column if missing (for existing databases)
+  const cols = db.prepare("PRAGMA table_info(capacity_plans)").all() as Array<{ name: string }>;
+  if (!cols.some(c => c.name === 'chat_id')) {
+    db.exec("ALTER TABLE capacity_plans ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
+    db.exec('CREATE INDEX IF NOT EXISTS idx_capacity_plans_chat ON capacity_plans(chat_id, name)');
+  }
 }
 
 export const capacityTableInit: TableInitializer = { name: 'capacity', initTables: initCapacityTables };
@@ -72,14 +82,15 @@ export function savePlan(
   name: string,
   config: CapacityPlanConfig,
   result?: CapacityAnalysisResult,
+  chatId: string = '',
 ): CapacityPlan {
   const db = getDatabase();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
 
   const existing = db.prepare(
-    'SELECT * FROM capacity_plans WHERE name = ? COLLATE NOCASE',
-  ).get(name) as CapacityPlan | undefined;
+    'SELECT * FROM capacity_plans WHERE name = ? COLLATE NOCASE AND chat_id = ?',
+  ).get(name, chatId) as CapacityPlan | undefined;
 
   if (existing) {
     db.prepare(
@@ -91,29 +102,29 @@ export function savePlan(
   const id = genId();
   const now = Date.now();
   db.prepare(
-    'INSERT INTO capacity_plans (id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(id, name, configJson, resultJson, now, now);
+    'INSERT INTO capacity_plans (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run(id, chatId, name, configJson, resultJson, now, now);
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, updated_at: now, created_at: now };
 }
 
-export function getPlan(nameOrId: string): CapacityPlan | undefined {
+export function getPlan(nameOrId: string, chatId: string = ''): CapacityPlan | undefined {
   const db = getDatabase();
   return (
     db.prepare('SELECT * FROM capacity_plans WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM capacity_plans WHERE name = ? COLLATE NOCASE').get(nameOrId)
+    db.prepare('SELECT * FROM capacity_plans WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)
   ) as CapacityPlan | undefined;
 }
 
-export function listPlans(): CapacityPlan[] {
+export function listPlans(chatId: string = ''): CapacityPlan[] {
   return getDatabase()
-    .prepare('SELECT * FROM capacity_plans ORDER BY updated_at DESC')
-    .all() as CapacityPlan[];
+    .prepare('SELECT * FROM capacity_plans WHERE chat_id = ? ORDER BY updated_at DESC')
+    .all(chatId) as CapacityPlan[];
 }
 
-export function deletePlan(id: string): boolean {
+export function deletePlan(id: string, chatId: string = ''): boolean {
   return getDatabase()
-    .prepare('DELETE FROM capacity_plans WHERE id = ?')
-    .run(id).changes > 0;
+    .prepare('DELETE FROM capacity_plans WHERE id = ? AND chat_id = ?')
+    .run(id, chatId).changes > 0;
 }
 
 export function saveResult(

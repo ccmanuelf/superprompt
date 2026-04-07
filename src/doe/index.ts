@@ -24,6 +24,7 @@ export function initDoeTables(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS doe_experiments (
       id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       config_json TEXT NOT NULL,
       result_json TEXT,
@@ -31,18 +32,26 @@ export function initDoeTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_doe_experiments_name ON doe_experiments(name);
+    CREATE INDEX IF NOT EXISTS idx_doe_experiments_chat ON doe_experiments(chat_id, name);
   `);
+
+  // Migration: add chat_id column if missing (for existing databases)
+  const cols = db.prepare("PRAGMA table_info(doe_experiments)").all() as Array<{ name: string }>;
+  if (!cols.some(c => c.name === 'chat_id')) {
+    db.exec("ALTER TABLE doe_experiments ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
+    db.exec('CREATE INDEX IF NOT EXISTS idx_doe_experiments_chat ON doe_experiments(chat_id, name)');
+  }
 }
 
 export const doeTableInit: TableInitializer = { name: 'doe', initTables: initDoeTables };
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 
-export function saveDOE(name: string, config: unknown, result?: unknown): SavedDOE {
+export function saveDOE(name: string, config: unknown, result?: unknown, chatId: string = ''): SavedDOE {
   const db = getDatabase();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
-  const existing = db.prepare('SELECT * FROM doe_experiments WHERE name = ? COLLATE NOCASE').get(name) as SavedDOE | undefined;
+  const existing = db.prepare('SELECT * FROM doe_experiments WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SavedDOE | undefined;
   if (existing) {
     db.prepare('UPDATE doe_experiments SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?')
       .run(configJson, resultJson, Date.now(), existing.id);
@@ -50,23 +59,23 @@ export function saveDOE(name: string, config: unknown, result?: unknown): SavedD
   }
   const id = genId();
   const now = Date.now();
-  db.prepare('INSERT INTO doe_experiments (id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, name, configJson, resultJson, now, now);
+  db.prepare('INSERT INTO doe_experiments (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, chatId, name, configJson, resultJson, now, now);
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getDOE(nameOrId: string): SavedDOE | undefined {
+export function getDOE(nameOrId: string, chatId: string = ''): SavedDOE | undefined {
   const db = getDatabase();
   return (db.prepare('SELECT * FROM doe_experiments WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM doe_experiments WHERE name = ? COLLATE NOCASE').get(nameOrId)) as SavedDOE | undefined;
+    db.prepare('SELECT * FROM doe_experiments WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)) as SavedDOE | undefined;
 }
 
-export function listDOEs(): SavedDOE[] {
-  return getDatabase().prepare('SELECT * FROM doe_experiments ORDER BY updated_at DESC').all() as SavedDOE[];
+export function listDOEs(chatId: string = ''): SavedDOE[] {
+  return getDatabase().prepare('SELECT * FROM doe_experiments WHERE chat_id = ? ORDER BY updated_at DESC').all(chatId) as SavedDOE[];
 }
 
-export function deleteDOE(id: string): boolean {
-  return getDatabase().prepare('DELETE FROM doe_experiments WHERE id = ?').run(id).changes > 0;
+export function deleteDOE(id: string, chatId: string = ''): boolean {
+  return getDatabase().prepare('DELETE FROM doe_experiments WHERE id = ? AND chat_id = ?').run(id, chatId).changes > 0;
 }
 
 // ── Charts ───────────────────────────────────────────────────

@@ -14,6 +14,7 @@ export async function handleDoeApi(
   req: IncomingMessage,
   res: ServerResponse,
   urlPath: string,
+  chatId: string,
 ): Promise<boolean> {
   if (!urlPath.startsWith('/api/doe')) return false;
 
@@ -25,16 +26,16 @@ export async function handleDoeApi(
   const route = urlPath.replace('/api/doe', '') || '/';
 
   try {
-    if (req.method === 'GET') return handleGet(route, res);
+    if (req.method === 'GET') return handleGet(route, res, chatId);
     if (req.method === 'POST') {
       const body = await readBody(req);
-      return await handlePost(route, body, res);
+      return await handlePost(route, body, res, chatId);
     }
     if (req.method === 'PUT') {
       const body = await readBody(req);
-      return handlePut(route, body, res);
+      return handlePut(route, body, res, chatId);
     }
-    if (req.method === 'DELETE') return handleDelete(route, res);
+    if (req.method === 'DELETE') return handleDelete(route, res, chatId);
     json(res, 405, { error: 'Method not allowed' });
     return true;
   } catch (err) {
@@ -45,7 +46,7 @@ export async function handleDoeApi(
   }
 }
 
-function handleGet(route: string, res: ServerResponse): boolean {
+function handleGet(route: string, res: ServerResponse, chatId: string): boolean {
   if (route === '/' || route === '/info') {
     json(res, 200, {
       engine: 'Design of Experiments v1.0',
@@ -55,7 +56,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
   }
   if (route === '/experiments') {
     json(res, 200, {
-      experiments: listDOEs().map((e) => ({
+      experiments: listDOEs(chatId).map((e) => ({
         id: e.id, name: e.name, has_result: !!e.result_json,
         created_at: e.created_at, updated_at: e.updated_at,
       })),
@@ -64,7 +65,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
   }
   const match = route.match(/^\/experiments\/(.+)$/);
   if (match) {
-    const exp = getDOE(match[1]);
+    const exp = getDOE(match[1], chatId);
     if (!exp) { json(res, 404, { error: 'Not found' }); return true; }
     json(res, 200, {
       ...exp, config: JSON.parse(exp.config_json),
@@ -76,7 +77,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
   return true;
 }
 
-async function handlePost(route: string, body: unknown, res: ServerResponse): Promise<boolean> {
+async function handlePost(route: string, body: unknown, res: ServerResponse, chatId: string): Promise<boolean> {
   const data = body as Record<string, unknown>;
 
   switch (route) {
@@ -88,7 +89,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
         return true;
       }
       const matrix = generateMatrix(config);
-      if (config.name) saveDOE(config.name, { config, matrix });
+      if (config.name) saveDOE(config.name, { config, matrix }, undefined, chatId);
       json(res, 200, { success: true, matrix });
       return true;
     }
@@ -117,7 +118,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
         }
       } catch (err) { logger.warn({ err }, 'DOE chart generation failed'); }
 
-      if (config.name) saveDOE(config.name, { config, matrix }, analysis);
+      if (config.name) saveDOE(config.name, { config, matrix }, analysis, chatId);
 
       json(res, 200, {
         success: true, analysis,
@@ -132,7 +133,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
       const config = data.config;
       const name = (data.name as string) || (config as Record<string, unknown>)?.name as string;
       if (!name || !config) { json(res, 400, { error: 'name and config required' }); return true; }
-      const saved = saveDOE(name, config);
+      const saved = saveDOE(name, config, undefined, chatId);
       json(res, 201, { success: true, experiment: { id: saved.id, name: saved.name } });
       return true;
     }
@@ -144,10 +145,10 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
 }
 
 // PUT to update response data in runs
-function handlePut(route: string, body: unknown, res: ServerResponse): boolean {
+function handlePut(route: string, body: unknown, res: ServerResponse, chatId: string): boolean {
   const match = route.match(/^\/experiments\/(.+)\/responses$/);
   if (match) {
-    const exp = getDOE(match[1]);
+    const exp = getDOE(match[1], chatId);
     if (!exp) { json(res, 404, { error: 'Not found' }); return true; }
 
     const data = body as Record<string, unknown>;
@@ -161,7 +162,7 @@ function handlePut(route: string, body: unknown, res: ServerResponse): boolean {
           run.responses = { ...run.responses, ...runResponses };
         }
       }
-      saveDOE(exp.name, config);
+      saveDOE(exp.name, config, undefined, chatId);
     }
 
     json(res, 200, { success: true });
@@ -171,10 +172,10 @@ function handlePut(route: string, body: unknown, res: ServerResponse): boolean {
   return true;
 }
 
-function handleDelete(route: string, res: ServerResponse): boolean {
+function handleDelete(route: string, res: ServerResponse, chatId: string): boolean {
   const match = route.match(/^\/experiments\/(.+)$/);
   if (match) {
-    const d = deleteDOE(match[1]);
+    const d = deleteDOE(match[1], chatId);
     json(res, d ? 200 : 404, d ? { success: true } : { error: 'Not found' });
     return true;
   }

@@ -40,6 +40,7 @@ export function initSimulationTables(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS sim_scenarios (
       id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       config_json TEXT NOT NULL,
       created_at INTEGER NOT NULL,
@@ -56,7 +57,15 @@ export function initSimulationTables(): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_sim_results_scenario ON sim_results(scenario_id);
+    CREATE INDEX IF NOT EXISTS idx_sim_scenarios_chat ON sim_scenarios(chat_id, name);
   `);
+
+  // Migration: add chat_id column if missing (for existing databases)
+  const cols = db.prepare("PRAGMA table_info(sim_scenarios)").all() as Array<{ name: string }>;
+  if (!cols.some(c => c.name === 'chat_id')) {
+    db.exec("ALTER TABLE sim_scenarios ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sim_scenarios_chat ON sim_scenarios(chat_id, name)');
+  }
 }
 
 export const simulationTableInit: TableInitializer = { name: 'simulation', initTables: initSimulationTables };
@@ -65,11 +74,11 @@ function genId(): string {
   return randomBytes(16).toString('hex');
 }
 
-export function saveScenario(name: string, config: SimulationConfig): SimScenario {
+export function saveScenario(name: string, config: SimulationConfig, chatId: string = ''): SimScenario {
   const db = getDatabase();
 
-  // Reuse existing or create new
-  const existing = db.prepare('SELECT * FROM sim_scenarios WHERE name = ? COLLATE NOCASE').get(name) as SimScenario | undefined;
+  // Reuse existing (scoped to user) or create new
+  const existing = db.prepare('SELECT * FROM sim_scenarios WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SimScenario | undefined;
   if (existing) {
     db.prepare('UPDATE sim_scenarios SET config_json = ?, updated_at = ? WHERE id = ?')
       .run(JSON.stringify(config), Date.now(), existing.id);
@@ -78,21 +87,21 @@ export function saveScenario(name: string, config: SimulationConfig): SimScenari
 
   const id = genId();
   const now = Date.now();
-  db.prepare('INSERT INTO sim_scenarios (id, name, config_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
-    .run(id, name, JSON.stringify(config), now, now);
+  db.prepare('INSERT INTO sim_scenarios (id, chat_id, name, config_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, chatId, name, JSON.stringify(config), now, now);
   return { id, name, config_json: JSON.stringify(config), created_at: now, updated_at: now };
 }
 
-export function getScenarioByName(name: string): SimScenario | undefined {
-  return getDatabase().prepare('SELECT * FROM sim_scenarios WHERE name = ? COLLATE NOCASE').get(name) as SimScenario | undefined;
+export function getScenarioByName(name: string, chatId: string = ''): SimScenario | undefined {
+  return getDatabase().prepare('SELECT * FROM sim_scenarios WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SimScenario | undefined;
 }
 
-export function listScenarios(): SimScenario[] {
-  return getDatabase().prepare('SELECT * FROM sim_scenarios ORDER BY updated_at DESC').all() as SimScenario[];
+export function listScenarios(chatId: string = ''): SimScenario[] {
+  return getDatabase().prepare('SELECT * FROM sim_scenarios WHERE chat_id = ? ORDER BY updated_at DESC').all(chatId) as SimScenario[];
 }
 
-export function deleteScenario(id: string): boolean {
-  return getDatabase().prepare('DELETE FROM sim_scenarios WHERE id = ?').run(id).changes > 0;
+export function deleteScenario(id: string, chatId: string = ''): boolean {
+  return getDatabase().prepare('DELETE FROM sim_scenarios WHERE id = ? AND chat_id = ?').run(id, chatId).changes > 0;
 }
 
 export function saveSimResult(scenarioId: string, resultType: string, data: unknown): string {

@@ -41,6 +41,7 @@ export function initSequencerTables(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS seq_schedules (
       id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       config_json TEXT NOT NULL,
       result_json TEXT,
@@ -50,7 +51,16 @@ export function initSequencerTables(): void {
 
     CREATE INDEX IF NOT EXISTS idx_seq_schedules_name
       ON seq_schedules(name);
+    CREATE INDEX IF NOT EXISTS idx_seq_schedules_chat
+      ON seq_schedules(chat_id, name);
   `);
+
+  // Migration: add chat_id column if missing (for existing databases)
+  const cols = db.prepare("PRAGMA table_info(seq_schedules)").all() as Array<{ name: string }>;
+  if (!cols.some(c => c.name === 'chat_id')) {
+    db.exec("ALTER TABLE seq_schedules ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
+    db.exec('CREATE INDEX IF NOT EXISTS idx_seq_schedules_chat ON seq_schedules(chat_id, name)');
+  }
 }
 
 export const sequencerTableInit: TableInitializer = { name: 'sequencer', initTables: initSequencerTables };
@@ -65,14 +75,15 @@ export function saveSchedule(
   name: string,
   config: SequencerConfig,
   result?: ScheduleResult | RuleComparison,
+  chatId: string = '',
 ): SavedSchedule {
   const db = getDatabase();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
 
   const existing = db.prepare(
-    'SELECT * FROM seq_schedules WHERE name = ? COLLATE NOCASE',
-  ).get(name) as SavedSchedule | undefined;
+    'SELECT * FROM seq_schedules WHERE name = ? COLLATE NOCASE AND chat_id = ?',
+  ).get(name, chatId) as SavedSchedule | undefined;
 
   if (existing) {
     db.prepare(
@@ -84,29 +95,29 @@ export function saveSchedule(
   const id = genId();
   const now = Date.now();
   db.prepare(
-    'INSERT INTO seq_schedules (id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(id, name, configJson, resultJson, now, now);
+    'INSERT INTO seq_schedules (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run(id, chatId, name, configJson, resultJson, now, now);
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getSchedule(nameOrId: string): SavedSchedule | undefined {
+export function getSchedule(nameOrId: string, chatId: string = ''): SavedSchedule | undefined {
   const db = getDatabase();
   return (
     db.prepare('SELECT * FROM seq_schedules WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM seq_schedules WHERE name = ? COLLATE NOCASE').get(nameOrId)
+    db.prepare('SELECT * FROM seq_schedules WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)
   ) as SavedSchedule | undefined;
 }
 
-export function listSchedules(): SavedSchedule[] {
+export function listSchedules(chatId: string = ''): SavedSchedule[] {
   return getDatabase()
-    .prepare('SELECT * FROM seq_schedules ORDER BY updated_at DESC')
-    .all() as SavedSchedule[];
+    .prepare('SELECT * FROM seq_schedules WHERE chat_id = ? ORDER BY updated_at DESC')
+    .all(chatId) as SavedSchedule[];
 }
 
-export function deleteSchedule(id: string): boolean {
+export function deleteSchedule(id: string, chatId: string = ''): boolean {
   return getDatabase()
-    .prepare('DELETE FROM seq_schedules WHERE id = ?')
-    .run(id).changes > 0;
+    .prepare('DELETE FROM seq_schedules WHERE id = ? AND chat_id = ?')
+    .run(id, chatId).changes > 0;
 }
 
 // ── Chart Generation ─────────────────────────────────────────

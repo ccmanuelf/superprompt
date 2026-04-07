@@ -23,6 +23,7 @@ export function initFsmTables(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS fsm_configs (
       id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       config_json TEXT NOT NULL,
       result_json TEXT,
@@ -30,18 +31,26 @@ export function initFsmTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_fsm_configs_name ON fsm_configs(name);
+    CREATE INDEX IF NOT EXISTS idx_fsm_configs_chat ON fsm_configs(chat_id, name);
   `);
+
+  // Migration: add chat_id column if missing (for existing databases)
+  const cols = db.prepare("PRAGMA table_info(fsm_configs)").all() as Array<{ name: string }>;
+  if (!cols.some(c => c.name === 'chat_id')) {
+    db.exec("ALTER TABLE fsm_configs ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
+    db.exec('CREATE INDEX IF NOT EXISTS idx_fsm_configs_chat ON fsm_configs(chat_id, name)');
+  }
 }
 
 export const fsmTableInit: TableInitializer = { name: 'fsm', initTables: initFsmTables };
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 
-export function saveFSM(name: string, config: unknown, result?: unknown): SavedFSM {
+export function saveFSM(name: string, config: unknown, result?: unknown, chatId: string = ''): SavedFSM {
   const db = getDatabase();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
-  const existing = db.prepare('SELECT * FROM fsm_configs WHERE name = ? COLLATE NOCASE').get(name) as SavedFSM | undefined;
+  const existing = db.prepare('SELECT * FROM fsm_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SavedFSM | undefined;
   if (existing) {
     db.prepare('UPDATE fsm_configs SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?')
       .run(configJson, resultJson, Date.now(), existing.id);
@@ -49,23 +58,23 @@ export function saveFSM(name: string, config: unknown, result?: unknown): SavedF
   }
   const id = genId();
   const now = Date.now();
-  db.prepare('INSERT INTO fsm_configs (id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, name, configJson, resultJson, now, now);
+  db.prepare('INSERT INTO fsm_configs (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, chatId, name, configJson, resultJson, now, now);
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getFSMConfig(nameOrId: string): SavedFSM | undefined {
+export function getFSMConfig(nameOrId: string, chatId: string = ''): SavedFSM | undefined {
   const db = getDatabase();
   return (db.prepare('SELECT * FROM fsm_configs WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM fsm_configs WHERE name = ? COLLATE NOCASE').get(nameOrId)) as SavedFSM | undefined;
+    db.prepare('SELECT * FROM fsm_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)) as SavedFSM | undefined;
 }
 
-export function listFSMs(): SavedFSM[] {
-  return getDatabase().prepare('SELECT * FROM fsm_configs ORDER BY updated_at DESC').all() as SavedFSM[];
+export function listFSMs(chatId: string = ''): SavedFSM[] {
+  return getDatabase().prepare('SELECT * FROM fsm_configs WHERE chat_id = ? ORDER BY updated_at DESC').all(chatId) as SavedFSM[];
 }
 
-export function deleteFSMConfig(id: string): boolean {
-  return getDatabase().prepare('DELETE FROM fsm_configs WHERE id = ?').run(id).changes > 0;
+export function deleteFSMConfig(id: string, chatId: string = ''): boolean {
+  return getDatabase().prepare('DELETE FROM fsm_configs WHERE id = ? AND chat_id = ?').run(id, chatId).changes > 0;
 }
 
 // ── Charts ───────────────────────────────────────────────────

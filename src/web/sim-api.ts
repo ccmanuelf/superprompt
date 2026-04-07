@@ -43,6 +43,7 @@ export async function handleSimApi(
   req: IncomingMessage,
   res: ServerResponse,
   urlPath: string,
+  chatId: string,
 ): Promise<boolean> {
   if (!urlPath.startsWith('/api/sim')) return false;
 
@@ -61,14 +62,14 @@ export async function handleSimApi(
 
   try {
     if (req.method === 'GET') {
-      return await handleGet(route, res);
+      return await handleGet(route, res, chatId);
     }
     if (req.method === 'POST') {
       const body = await readBody(req);
-      return await handlePost(route, body, res);
+      return await handlePost(route, body, res, chatId);
     }
     if (req.method === 'DELETE') {
-      return await handleDelete(route, res);
+      return await handleDelete(route, res, chatId);
     }
 
     jsonResponse(res, 405, { error: 'Method not allowed' });
@@ -83,7 +84,7 @@ export async function handleSimApi(
 
 // ── GET Routes ───────────────────────────────────────────────
 
-async function handleGet(route: string, res: ServerResponse): Promise<boolean> {
+async function handleGet(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   switch (route) {
     case '/':
     case '/info': {
@@ -97,7 +98,7 @@ async function handleGet(route: string, res: ServerResponse): Promise<boolean> {
     }
 
     case '/scenarios': {
-      const scenarios = listScenarios();
+      const scenarios = listScenarios(chatId);
       jsonResponse(res, 200, {
         scenarios: scenarios.map((s) => ({
           id: s.id,
@@ -113,7 +114,7 @@ async function handleGet(route: string, res: ServerResponse): Promise<boolean> {
       const scenarioMatch = route.match(/^\/scenarios\/(.+)$/);
       if (scenarioMatch) {
         const name = decodeURIComponent(scenarioMatch[1]);
-        const scenario = getScenarioByName(name);
+        const scenario = getScenarioByName(name, chatId);
         if (!scenario) {
           jsonResponse(res, 404, { error: `Scenario "${name}" not found` });
           return true;
@@ -139,7 +140,7 @@ async function handleGet(route: string, res: ServerResponse): Promise<boolean> {
 
 // ── POST Routes ──────────────────────────────────────────────
 
-async function handlePost(route: string, body: Record<string, unknown>, res: ServerResponse): Promise<boolean> {
+async function handlePost(route: string, body: Record<string, unknown>, res: ServerResponse, chatId: string): Promise<boolean> {
   switch (route) {
     case '/validate': {
       const config = body.config as SimulationConfig;
@@ -166,7 +167,7 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
       // Auto-save if scenario name provided
       const scenarioName = body.scenario_name as string;
       if (scenarioName) {
-        const scenario = saveScenario(scenarioName, config);
+        const scenario = saveScenario(scenarioName, config, chatId);
         saveSimResult(scenario.id, 'single', results);
       }
 
@@ -193,7 +194,7 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
 
       const scenarioName = body.scenario_name as string;
       if (scenarioName) {
-        const scenario = saveScenario(scenarioName, config);
+        const scenario = saveScenario(scenarioName, config, chatId);
         saveSimResult(scenario.id, 'monte_carlo', {
           replications: mcResults.replications,
           throughput: mcResults.throughput,
@@ -329,7 +330,7 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
       const name = body.name as string;
       const config = body.config as SimulationConfig;
       if (!name || !config) { jsonResponse(res, 400, { error: 'name and config are required' }); return true; }
-      const scenario = saveScenario(name, config);
+      const scenario = saveScenario(name, config, chatId);
       jsonResponse(res, 200, { success: true, id: scenario.id, name: scenario.name });
       return true;
     }
@@ -342,16 +343,16 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
 
 // ── DELETE Routes ─────────────────────────────────────────────
 
-async function handleDelete(route: string, res: ServerResponse): Promise<boolean> {
+async function handleDelete(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   const scenarioMatch = route.match(/^\/scenarios\/(.+)$/);
   if (scenarioMatch) {
     const name = decodeURIComponent(scenarioMatch[1]);
-    const scenario = getScenarioByName(name);
+    const scenario = getScenarioByName(name, chatId);
     if (!scenario) {
       jsonResponse(res, 404, { error: `Scenario "${name}" not found` });
       return true;
     }
-    deleteScenario(scenario.id);
+    deleteScenario(scenario.id, chatId);
     jsonResponse(res, 200, { success: true });
     return true;
   }

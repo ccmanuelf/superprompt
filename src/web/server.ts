@@ -137,21 +137,21 @@ function apiCorsHeaders(): Record<string, string> {
 }
 
 /**
- * Authenticate HTTP API requests. Returns true if authenticated, false otherwise.
- * Checks: Authorization: Bearer <token> header, or ?token=<token> query param.
- * Also handles CORS preflight (OPTIONS) requests.
+ * Authenticate HTTP API requests.
+ * Returns the authenticated chatId (for per-user data scoping) or null if unauthenticated.
+ * Handles CORS preflight (OPTIONS) — returns null and ends the response.
  */
 function authenticateApiRequest(
   req: import('node:http').IncomingMessage,
   res: import('node:http').ServerResponse,
-): boolean {
+): string | null {
   const cors = apiCorsHeaders();
 
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(204, cors);
     res.end();
-    return false; // Handled, but not authenticated — caller should return
+    return null; // Handled, but not authenticated — caller should return
   }
 
   // Set CORS headers on all responses
@@ -175,18 +175,18 @@ function authenticateApiRequest(
     recordAuthFailure(ip);
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Unauthorized — provide token via Authorization: Bearer <token> header or ?token=<token> query parameter' }));
-    return false;
+    return null;
   }
 
-  // Try per-user token first
+  // Try per-user token first — returns scoped chatId
   const perUserResult = validateWebToken(candidateToken);
-  if (perUserResult.valid) {
-    return true;
+  if (perUserResult.valid && perUserResult.chatId) {
+    return perUserResult.chatId;
   }
 
-  // Fall back to legacy VOICE_WEB_TOKEN
+  // Fall back to legacy VOICE_WEB_TOKEN — scoped to first ALLOWED_CHAT_ID
   if (config.VOICE_WEB_TOKEN && candidateToken.length === config.VOICE_WEB_TOKEN.length && validateToken(candidateToken, config.VOICE_WEB_TOKEN)) {
-    return true;
+    return config.ALLOWED_CHAT_ID?.split(',')[0]?.trim() || 'legacy';
   }
 
   // Unauthorized
@@ -194,7 +194,7 @@ function authenticateApiRequest(
   recordAuthFailure(ip);
   res.writeHead(401, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Unauthorized — invalid token' }));
-  return false;
+  return null;
 }
 
 // ── Docs API ───────────────────────────────────────────────
@@ -290,62 +290,38 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
 
     // ── API routes (handle before static files) ──
     if (urlPath.startsWith('/api/')) {
-      // Authenticate all API requests (except docs — public read-only)
-      if (!urlPath.startsWith('/api/docs') && !authenticateApiRequest(req, res)) {
+      // Docs API is public read-only — no auth
+      if (urlPath.startsWith('/api/docs')) {
+        handleDocsApi(req, res, urlPath);
         return;
       }
 
+      // Authenticate all other API requests — returns chatId for data scoping
+      const apiChatId = authenticateApiRequest(req, res);
+      if (!apiChatId) return;
+
+      const apiError = (label: string) => (err: unknown) => {
+        logger.error({ err }, `${label} API unhandled error`);
+        res.writeHead(500);
+        res.end('Internal Server Error');
+      };
+
       if (urlPath.startsWith('/api/capacity')) {
-        handleCapacityApi(req, res, urlPath).catch((err) => {
-          logger.error({ err }, 'Capacity API unhandled error');
-          res.writeHead(500);
-          res.end('Internal Server Error');
-        });
+        handleCapacityApi(req, res, urlPath, apiChatId).catch(apiError('Capacity'));
       } else if (urlPath.startsWith('/api/sequence')) {
-        handleSequencerApi(req, res, urlPath).catch((err) => {
-          logger.error({ err }, 'Sequencer API unhandled error');
-          res.writeHead(500);
-          res.end('Internal Server Error');
-        });
+        handleSequencerApi(req, res, urlPath, apiChatId).catch(apiError('Sequencer'));
       } else if (urlPath.startsWith('/api/vsm')) {
-        handleVsmApi(req, res, urlPath).catch((err) => {
-          logger.error({ err }, 'VSM API unhandled error');
-          res.writeHead(500);
-          res.end('Internal Server Error');
-        });
+        handleVsmApi(req, res, urlPath, apiChatId).catch(apiError('VSM'));
       } else if (urlPath.startsWith('/api/toc')) {
-        handleTocApi(req, res, urlPath).catch((err) => {
-          logger.error({ err }, 'TOC API unhandled error');
-          res.writeHead(500);
-          res.end('Internal Server Error');
-        });
+        handleTocApi(req, res, urlPath, apiChatId).catch(apiError('TOC'));
       } else if (urlPath.startsWith('/api/conwip')) {
-        handleConwipApi(req, res, urlPath).catch((err) => {
-          logger.error({ err }, 'CONWIP API unhandled error');
-          res.writeHead(500);
-          res.end('Internal Server Error');
-        });
+        handleConwipApi(req, res, urlPath, apiChatId).catch(apiError('CONWIP'));
       } else if (urlPath.startsWith('/api/doe')) {
-        handleDoeApi(req, res, urlPath).catch((err) => {
-          logger.error({ err }, 'DOE API unhandled error');
-          res.writeHead(500);
-          res.end('Internal Server Error');
-        });
+        handleDoeApi(req, res, urlPath, apiChatId).catch(apiError('DOE'));
       } else if (urlPath.startsWith('/api/fsm')) {
-        handleFsmApi(req, res, urlPath).catch((err) => {
-          logger.error({ err }, 'FSM API unhandled error');
-          res.writeHead(500);
-          res.end('Internal Server Error');
-        });
-      } else if (urlPath.startsWith('/api/docs')) {
-        handleDocsApi(req, res, urlPath);
-        return;
+        handleFsmApi(req, res, urlPath, apiChatId).catch(apiError('FSM'));
       } else {
-        handleSimApi(req, res, urlPath).catch((err) => {
-          logger.error({ err }, 'Sim API unhandled error');
-          res.writeHead(500);
-          res.end('Internal Server Error');
-        });
+        handleSimApi(req, res, urlPath, apiChatId).catch(apiError('Sim'));
       }
       return;
     }

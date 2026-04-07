@@ -13,7 +13,7 @@ import {
   type FSMConfig, type FSMEvent,
 } from '../fsm/index.js';
 
-export async function handleFsmApi(req: IncomingMessage, res: ServerResponse, urlPath: string): Promise<boolean> {
+export async function handleFsmApi(req: IncomingMessage, res: ServerResponse, urlPath: string, chatId: string): Promise<boolean> {
   if (!urlPath.startsWith('/api/fsm')) return false;
 
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -22,9 +22,9 @@ export async function handleFsmApi(req: IncomingMessage, res: ServerResponse, ur
 
   const route = urlPath.replace('/api/fsm', '') || '/';
   try {
-    if (req.method === 'GET') return handleGet(route, res);
-    if (req.method === 'POST') { const body = await readBody(req); return await handlePost(route, body, res); }
-    if (req.method === 'DELETE') return handleDelete(route, res);
+    if (req.method === 'GET') return handleGet(route, res, chatId);
+    if (req.method === 'POST') { const body = await readBody(req); return await handlePost(route, body, res, chatId); }
+    if (req.method === 'DELETE') return handleDelete(route, res, chatId);
     json(res, 405, { error: 'Method not allowed' }); return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -33,7 +33,7 @@ export async function handleFsmApi(req: IncomingMessage, res: ServerResponse, ur
   }
 }
 
-function handleGet(route: string, res: ServerResponse): boolean {
+function handleGet(route: string, res: ServerResponse, chatId: string): boolean {
   if (route === '/' || route === '/info') {
     json(res, 200, {
       engine: 'State Machine Simulator v1.0',
@@ -51,12 +51,12 @@ function handleGet(route: string, res: ServerResponse): boolean {
     json(res, 200, { template: t }); return true;
   }
   if (route === '/configs') {
-    json(res, 200, { configs: listFSMs().map((c) => ({ id: c.id, name: c.name, has_result: !!c.result_json, created_at: c.created_at, updated_at: c.updated_at })) });
+    json(res, 200, { configs: listFSMs(chatId).map((c) => ({ id: c.id, name: c.name, has_result: !!c.result_json, created_at: c.created_at, updated_at: c.updated_at })) });
     return true;
   }
   const match = route.match(/^\/configs\/(.+)$/);
   if (match) {
-    const c = getFSMConfig(match[1]);
+    const c = getFSMConfig(match[1], chatId);
     if (!c) { json(res, 404, { error: 'Not found' }); return true; }
     json(res, 200, { ...c, config: JSON.parse(c.config_json), result: c.result_json ? JSON.parse(c.result_json) : null });
     return true;
@@ -64,7 +64,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
   json(res, 404, { error: 'Not found' }); return true;
 }
 
-async function handlePost(route: string, body: unknown, res: ServerResponse): Promise<boolean> {
+async function handlePost(route: string, body: unknown, res: ServerResponse, chatId: string): Promise<boolean> {
   const data = body as Record<string, unknown>;
 
   switch (route) {
@@ -96,7 +96,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
         }
       } catch (err) { logger.warn({ err }, 'FSM chart generation failed'); }
 
-      if (config.name) saveFSM(config.name, config, analysis);
+      if (config.name) saveFSM(config.name, config, analysis, chatId);
 
       json(res, 200, {
         success: true, analysis, simulation_state: finalState,
@@ -146,7 +146,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
       const config = data.config;
       const name = (data.name as string) || (config as Record<string, unknown>)?.name as string;
       if (!name || !config) { json(res, 400, { error: 'name and config required' }); return true; }
-      const saved = saveFSM(name, config);
+      const saved = saveFSM(name, config, undefined, chatId);
       json(res, 201, { success: true, config: { id: saved.id, name: saved.name } });
       return true;
     }
@@ -155,9 +155,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
   }
 }
 
-function handleDelete(route: string, res: ServerResponse): boolean {
+function handleDelete(route: string, res: ServerResponse, chatId: string): boolean {
   const match = route.match(/^\/configs\/(.+)$/);
-  if (match) { const d = deleteFSMConfig(match[1]); json(res, d ? 200 : 404, d ? { success: true } : { error: 'Not found' }); return true; }
+  if (match) { const d = deleteFSMConfig(match[1], chatId); json(res, d ? 200 : 404, d ? { success: true } : { error: 'Not found' }); return true; }
   json(res, 404, { error: 'Not found' }); return true;
 }
 

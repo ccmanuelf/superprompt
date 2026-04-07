@@ -34,6 +34,7 @@ export async function handleSequencerApi(
   req: IncomingMessage,
   res: ServerResponse,
   urlPath: string,
+  chatId: string,
 ): Promise<boolean> {
   if (!urlPath.startsWith('/api/sequence')) return false;
 
@@ -50,12 +51,12 @@ export async function handleSequencerApi(
   const route = urlPath.replace('/api/sequence', '') || '/';
 
   try {
-    if (req.method === 'GET') return handleGet(route, res);
+    if (req.method === 'GET') return handleGet(route, res, chatId);
     if (req.method === 'POST') {
       const body = await readBody(req);
-      return await handlePost(route, body, res);
+      return await handlePost(route, body, res, chatId);
     }
-    if (req.method === 'DELETE') return handleDelete(route, res);
+    if (req.method === 'DELETE') return handleDelete(route, res, chatId);
 
     jsonResponse(res, 405, { error: 'Method not allowed' });
     return true;
@@ -69,7 +70,7 @@ export async function handleSequencerApi(
 
 // ── GET Routes ───────────────────────────────────────────────
 
-function handleGet(route: string, res: ServerResponse): boolean {
+function handleGet(route: string, res: ServerResponse, chatId: string): boolean {
   switch (route) {
     case '/':
     case '/info': {
@@ -83,7 +84,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
     }
 
     case '/schedules': {
-      const schedules = listSchedules();
+      const schedules = listSchedules(chatId);
       jsonResponse(res, 200, {
         schedules: schedules.map((s) => ({
           id: s.id,
@@ -99,7 +100,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
     default: {
       const match = route.match(/^\/schedules\/(.+)$/);
       if (match) {
-        const sched = getSchedule(match[1]);
+        const sched = getSchedule(match[1], chatId);
         if (!sched) { jsonResponse(res, 404, { error: 'Schedule not found' }); return true; }
         jsonResponse(res, 200, {
           ...sched,
@@ -116,7 +117,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
 
 // ── POST Routes ──────────────────────────────────────────────
 
-async function handlePost(route: string, body: unknown, res: ServerResponse): Promise<boolean> {
+async function handlePost(route: string, body: unknown, res: ServerResponse, chatId: string): Promise<boolean> {
   const data = body as Record<string, unknown>;
 
   switch (route) {
@@ -139,7 +140,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
         logger.warn({ err }, 'Gantt chart generation failed');
       }
 
-      if (config.name) saveSchedule(config.name + '_' + rule, config, result);
+      if (config.name) saveSchedule(config.name + '_' + rule, config, result, chatId);
 
       jsonResponse(res, 200, {
         success: true,
@@ -177,7 +178,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
         } catch { /* optional */ }
       }
 
-      if (config.name) saveSchedule(config.name, config, comparison);
+      if (config.name) saveSchedule(config.name, config, comparison, chatId);
 
       jsonResponse(res, 200, {
         success: true,
@@ -207,7 +208,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
         logger.warn({ err }, 'GA Gantt chart generation failed');
       }
 
-      if (config.name) saveSchedule(config.name + '_GA', config, result);
+      if (config.name) saveSchedule(config.name + '_GA', config, result, chatId);
 
       jsonResponse(res, 200, {
         success: true,
@@ -238,7 +239,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
         jsonResponse(res, 400, { error: 'name and config required' });
         return true;
       }
-      const sched = saveSchedule(name, config);
+      const sched = saveSchedule(name, config, undefined, chatId);
       jsonResponse(res, 201, { success: true, schedule: { id: sched.id, name: sched.name } });
       return true;
     }
@@ -269,10 +270,10 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
 
 // ── DELETE Routes ────────────────────────────────────────────
 
-function handleDelete(route: string, res: ServerResponse): boolean {
+function handleDelete(route: string, res: ServerResponse, chatId: string): boolean {
   const match = route.match(/^\/schedules\/(.+)$/);
   if (match) {
-    const deleted = deleteSchedule(match[1]);
+    const deleted = deleteSchedule(match[1], chatId);
     jsonResponse(res, deleted ? 200 : 404, deleted ? { success: true } : { error: 'Not found' });
     return true;
   }

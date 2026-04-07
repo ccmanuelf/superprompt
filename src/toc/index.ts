@@ -28,6 +28,7 @@ export function initTocTables(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS toc_configs (
       id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       config_json TEXT NOT NULL,
       result_json TEXT,
@@ -35,6 +36,7 @@ export function initTocTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_toc_configs_name ON toc_configs(name);
+    CREATE INDEX IF NOT EXISTS idx_toc_configs_chat ON toc_configs(chat_id, name);
 
     CREATE TABLE IF NOT EXISTS toc_throughput_history (
       id TEXT PRIMARY KEY,
@@ -48,6 +50,13 @@ export function initTocTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_toc_history_config ON toc_throughput_history(config_name, period);
   `);
+
+  // Migration: add chat_id column if missing (for existing databases)
+  const cols = db.prepare("PRAGMA table_info(toc_configs)").all() as Array<{ name: string }>;
+  if (!cols.some(c => c.name === 'chat_id')) {
+    db.exec("ALTER TABLE toc_configs ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
+    db.exec('CREATE INDEX IF NOT EXISTS idx_toc_configs_chat ON toc_configs(chat_id, name)');
+  }
 }
 
 export const tocTableInit: TableInitializer = { name: 'toc', initTables: initTocTables };
@@ -56,11 +65,11 @@ export const tocTableInit: TableInitializer = { name: 'toc', initTables: initToc
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 
-export function saveTOC(name: string, config: TOCConfig, result?: TOCAnalysis): SavedTOC {
+export function saveTOC(name: string, config: TOCConfig, result?: TOCAnalysis, chatId: string = ''): SavedTOC {
   const db = getDatabase();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
-  const existing = db.prepare('SELECT * FROM toc_configs WHERE name = ? COLLATE NOCASE').get(name) as SavedTOC | undefined;
+  const existing = db.prepare('SELECT * FROM toc_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SavedTOC | undefined;
   if (existing) {
     db.prepare('UPDATE toc_configs SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?')
       .run(configJson, resultJson, Date.now(), existing.id);
@@ -68,23 +77,23 @@ export function saveTOC(name: string, config: TOCConfig, result?: TOCAnalysis): 
   }
   const id = genId();
   const now = Date.now();
-  db.prepare('INSERT INTO toc_configs (id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, name, configJson, resultJson, now, now);
+  db.prepare('INSERT INTO toc_configs (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, chatId, name, configJson, resultJson, now, now);
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getTOC(nameOrId: string): SavedTOC | undefined {
+export function getTOC(nameOrId: string, chatId: string = ''): SavedTOC | undefined {
   const db = getDatabase();
   return (db.prepare('SELECT * FROM toc_configs WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM toc_configs WHERE name = ? COLLATE NOCASE').get(nameOrId)) as SavedTOC | undefined;
+    db.prepare('SELECT * FROM toc_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)) as SavedTOC | undefined;
 }
 
-export function listTOCs(): SavedTOC[] {
-  return getDatabase().prepare('SELECT * FROM toc_configs ORDER BY updated_at DESC').all() as SavedTOC[];
+export function listTOCs(chatId: string = ''): SavedTOC[] {
+  return getDatabase().prepare('SELECT * FROM toc_configs WHERE chat_id = ? ORDER BY updated_at DESC').all(chatId) as SavedTOC[];
 }
 
-export function deleteTOC(id: string): boolean {
-  return getDatabase().prepare('DELETE FROM toc_configs WHERE id = ?').run(id).changes > 0;
+export function deleteTOC(id: string, chatId: string = ''): boolean {
+  return getDatabase().prepare('DELETE FROM toc_configs WHERE id = ? AND chat_id = ?').run(id, chatId).changes > 0;
 }
 
 // ── Throughput History ───────────────────────────────────────

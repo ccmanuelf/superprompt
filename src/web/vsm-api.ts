@@ -23,6 +23,7 @@ export async function handleVsmApi(
   req: IncomingMessage,
   res: ServerResponse,
   urlPath: string,
+  chatId: string,
 ): Promise<boolean> {
   if (!urlPath.startsWith('/api/vsm')) return false;
 
@@ -35,12 +36,12 @@ export async function handleVsmApi(
   const route = urlPath.replace('/api/vsm', '') || '/';
 
   try {
-    if (req.method === 'GET') return handleGet(route, res);
+    if (req.method === 'GET') return handleGet(route, res, chatId);
     if (req.method === 'POST') {
       const body = await readBody(req);
-      return await handlePost(route, body, res);
+      return await handlePost(route, body, res, chatId);
     }
-    if (req.method === 'DELETE') return handleDelete(route, res);
+    if (req.method === 'DELETE') return handleDelete(route, res, chatId);
     jsonResponse(res, 405, { error: 'Method not allowed' });
     return true;
   } catch (err) {
@@ -51,7 +52,7 @@ export async function handleVsmApi(
   }
 }
 
-function handleGet(route: string, res: ServerResponse): boolean {
+function handleGet(route: string, res: ServerResponse, chatId: string): boolean {
   switch (route) {
     case '/':
     case '/info':
@@ -63,7 +64,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
       return true;
 
     case '/maps': {
-      const maps = listVSMs();
+      const maps = listVSMs(chatId);
       jsonResponse(res, 200, {
         maps: maps.map((m) => ({
           id: m.id, name: m.name, has_result: !!m.result_json,
@@ -76,7 +77,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
     default: {
       const match = route.match(/^\/maps\/(.+)$/);
       if (match) {
-        const vsm = getVSM(match[1]);
+        const vsm = getVSM(match[1], chatId);
         if (!vsm) { jsonResponse(res, 404, { error: 'Map not found' }); return true; }
         jsonResponse(res, 200, {
           ...vsm,
@@ -91,7 +92,7 @@ function handleGet(route: string, res: ServerResponse): boolean {
   }
 }
 
-async function handlePost(route: string, body: unknown, res: ServerResponse): Promise<boolean> {
+async function handlePost(route: string, body: unknown, res: ServerResponse, chatId: string): Promise<boolean> {
   const data = body as Record<string, unknown>;
 
   switch (route) {
@@ -112,7 +113,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
         }
       } catch (err) { logger.warn({ err }, 'VSM chart generation failed'); }
 
-      if (config.name) saveVSM(config.name, config, result);
+      if (config.name) saveVSM(config.name, config, result, chatId);
 
       jsonResponse(res, 200, {
         success: true,
@@ -152,7 +153,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
         jsonResponse(res, 400, { error: 'name and config required' });
         return true;
       }
-      const saved = saveVSM(name, config);
+      const saved = saveVSM(name, config, undefined, chatId);
       jsonResponse(res, 201, { success: true, map: { id: saved.id, name: saved.name } });
       return true;
     }
@@ -163,10 +164,10 @@ async function handlePost(route: string, body: unknown, res: ServerResponse): Pr
   }
 }
 
-function handleDelete(route: string, res: ServerResponse): boolean {
+function handleDelete(route: string, res: ServerResponse, chatId: string): boolean {
   const match = route.match(/^\/maps\/(.+)$/);
   if (match) {
-    const deleted = deleteVSM(match[1]);
+    const deleted = deleteVSM(match[1], chatId);
     jsonResponse(res, deleted ? 200 : 404, deleted ? { success: true } : { error: 'Not found' });
     return true;
   }

@@ -29,6 +29,7 @@ export function initVsmTables(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS vsm_maps (
       id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       config_json TEXT NOT NULL,
       result_json TEXT,
@@ -36,7 +37,15 @@ export function initVsmTables(): void {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_vsm_maps_name ON vsm_maps(name);
+    CREATE INDEX IF NOT EXISTS idx_vsm_maps_chat ON vsm_maps(chat_id, name);
   `);
+
+  // Migration: add chat_id column if missing (for existing databases)
+  const cols = db.prepare("PRAGMA table_info(vsm_maps)").all() as Array<{ name: string }>;
+  if (!cols.some(c => c.name === 'chat_id')) {
+    db.exec("ALTER TABLE vsm_maps ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
+    db.exec('CREATE INDEX IF NOT EXISTS idx_vsm_maps_chat ON vsm_maps(chat_id, name)');
+  }
 }
 
 export const vsmTableInit: TableInitializer = { name: 'vsm', initTables: initVsmTables };
@@ -51,14 +60,15 @@ export function saveVSM(
   name: string,
   config: VSMConfig,
   result?: VSMAnalysis,
+  chatId: string = '',
 ): SavedVSM {
   const db = getDatabase();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
 
   const existing = db.prepare(
-    'SELECT * FROM vsm_maps WHERE name = ? COLLATE NOCASE',
-  ).get(name) as SavedVSM | undefined;
+    'SELECT * FROM vsm_maps WHERE name = ? COLLATE NOCASE AND chat_id = ?',
+  ).get(name, chatId) as SavedVSM | undefined;
 
   if (existing) {
     db.prepare(
@@ -70,29 +80,29 @@ export function saveVSM(
   const id = genId();
   const now = Date.now();
   db.prepare(
-    'INSERT INTO vsm_maps (id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(id, name, configJson, resultJson, now, now);
+    'INSERT INTO vsm_maps (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run(id, chatId, name, configJson, resultJson, now, now);
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getVSM(nameOrId: string): SavedVSM | undefined {
+export function getVSM(nameOrId: string, chatId: string = ''): SavedVSM | undefined {
   const db = getDatabase();
   return (
     db.prepare('SELECT * FROM vsm_maps WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM vsm_maps WHERE name = ? COLLATE NOCASE').get(nameOrId)
+    db.prepare('SELECT * FROM vsm_maps WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)
   ) as SavedVSM | undefined;
 }
 
-export function listVSMs(): SavedVSM[] {
+export function listVSMs(chatId: string = ''): SavedVSM[] {
   return getDatabase()
-    .prepare('SELECT * FROM vsm_maps ORDER BY updated_at DESC')
-    .all() as SavedVSM[];
+    .prepare('SELECT * FROM vsm_maps WHERE chat_id = ? ORDER BY updated_at DESC')
+    .all(chatId) as SavedVSM[];
 }
 
-export function deleteVSM(id: string): boolean {
+export function deleteVSM(id: string, chatId: string = ''): boolean {
   return getDatabase()
-    .prepare('DELETE FROM vsm_maps WHERE id = ?')
-    .run(id).changes > 0;
+    .prepare('DELETE FROM vsm_maps WHERE id = ? AND chat_id = ?')
+    .run(id, chatId).changes > 0;
 }
 
 // ── Chart Generation ─────────────────────────────────────────
