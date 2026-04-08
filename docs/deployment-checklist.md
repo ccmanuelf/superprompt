@@ -56,6 +56,13 @@ Pre-deployment criteria, considerations, and decision factors for production dep
 - [ ] TLS certificates (VOICE_WEB_TLS_CERT/KEY) for non-localhost access
 - [ ] Reverse proxy (Nginx/Apache) configured for HTTPS
 
+### Web Search (required for Ollama)
+- [ ] SEARXNG_URL or BRAVE_API_KEY configured (at least one)
+- [ ] Note: Claude has built-in web search; this is only needed for Ollama
+- [ ] SearXNG: `docker run -p 8888:8080 searxng/searxng` or self-hosted
+- [ ] Brave: free tier at https://brave.com/search/api/ (2,000 queries/month)
+- [ ] Verified: `/ollama` then ask "search the web for..." returns results
+
 ### Database
 - [ ] **Development/E2E:** SQLite (default, no config needed)
 - [ ] **Production:** MariaDB or PostgreSQL selected

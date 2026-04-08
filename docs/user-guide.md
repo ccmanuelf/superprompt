@@ -968,7 +968,7 @@ These settings are read once at startup. After changing them in `.env`, restart 
 | Web UI token | `VOICE_WEB_TOKEN` | Authentication secret loaded at startup |
 | TLS certificates | `VOICE_WEB_TLS_CERT/KEY` | Read and bound to HTTPS server at startup |
 | File access paths | `OLLAMA_ALLOWED_PATHS` | Security boundary — evaluated per tool call |
-| Search backend | `SEARXNG_URL`, `BRAVE_API_KEY` | Service URL/key used by search tool |
+| Search backend | `SEARXNG_URL`, `BRAVE_API_KEY` | Required for Ollama web search (Claude has built-in search) |
 | GitHub token | `GH_TOKEN` | Credential for gh CLI authentication |
 | Render API key | `RENDER_API_KEY` | Credential for Render API |
 | Matrix config | `MATRIX_HOMESERVER`, etc. | Connection established at startup |
@@ -1072,8 +1072,8 @@ Every variable is documented in detail in `.env.example` with purpose, format, h
 | `VOICE_WEB_TLS_KEY` | If remote access | Same — web server disabled if file not found. |
 | `VOICE_WEB_ORIGIN` | If remote access | Only localhost allowed (secure default). |
 | `OLLAMA_ALLOWED_PATHS` | No | File reading completely blocked (secure default). |
-| `SEARXNG_URL` | No | Web search tool shows "No search backend available". |
-| `BRAVE_API_KEY` | No | Fallback if SearXNG not set. Both missing = search unavailable. |
+| `SEARXNG_URL` | If using Ollama | Required for web search with Ollama. Claude has built-in search. |
+| `BRAVE_API_KEY` | If using Ollama | Fallback search backend. Both missing = Ollama web search unavailable. |
 | `GH_TOKEN` | No | GitHub tools show "gh CLI not authenticated" error. |
 | `RENDER_API_KEY` | No | Render tools show "RENDER_API_KEY not set" error. |
 | `MATRIX_HOMESERVER` | No | Matrix bot doesn't start. |

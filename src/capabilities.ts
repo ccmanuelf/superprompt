@@ -79,7 +79,7 @@ You have a full learning system with spaced repetition, not just Q&A:
 - Web UI: /learn (plan overview, session tracking, streak display)
 
 ### Web & System
-- \`web_search\` — Real-time web search (you DO have internet access)
+- \`web_search\` — Real-time web search. With Ollama: requires SEARXNG_URL or BRAVE_API_KEY configured in .env (Ollama is a local model with no built-in internet access). With Claude: built-in, no configuration needed. If a user reports "No search backend available", guide them to configure one of these in .env and restart.
 - \`summarize_url\` — Fetch and summarize any web page
 - \`take_screenshot\` — Capture web page screenshots
 - \`read_file\` / \`parse_file\` — Read local files and parse documents (PDF, XLSX, DOCX, CSV, PPTX)
