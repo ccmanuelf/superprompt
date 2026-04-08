@@ -10,10 +10,12 @@
  * Gets API keys for web services but NO database path, NO bot tokens.
  */
 export const TOOLS_PROCESS_ENV: string[] = [
+  // Search backends (web_search tool)
+  'SEARXNG_URL',
+  'BRAVE_API_KEY',
   // API keys for network tools
   'GH_TOKEN',
   'GITHUB_TOKEN',
-  'BRAVE_API_KEY',
   'RENDER_API_KEY',
   // Workspace paths (for read_file, run_command)
   'WORKSPACE_DIR',
