@@ -38,6 +38,8 @@ services:
     depends_on:
       speaches:
         condition: service_started
+      searxng:
+        condition: service_healthy
     networks:
       - clauded-net
     restart: unless-stopped
@@ -66,6 +68,32 @@ services:
       resources:
         limits:
           memory: 2G
+
+  # ── SearXNG search engine ───────────────────────────────────
+  # Self-hosted meta-search: queries DuckDuckGo, Bing, Brave, Wikipedia,
+  # arXiv, Semantic Scholar — no API keys needed. Used by Ollama's
+  # web_search tool. Internal network only (not exposed to host).
+  searxng:
+    image: searxng/searxng:latest
+    container_name: clauded-searxng
+    volumes:
+      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080
+    # No ports exposed — only accessible from clauded via Docker network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # ── Synapse Matrix homeserver (optional) ───────────────────
   synapse:

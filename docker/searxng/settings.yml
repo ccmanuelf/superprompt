@@ -1,0 +1,96 @@
+# SearXNG settings for clauded
+# Optimized for AI tool use: JSON API only, no browser UI, privacy-first.
+
+use_default_settings: true
+
+general:
+  # No debug, no public instance
+  debug: false
+  instance_name: "clauded-search"
+
+search:
+  # Safe search moderate by default
+  safe_search: 1
+  # Return up to 10 results per query
+  default_lang: "auto"
+  formats:
+    - json
+    # HTML format disabled — no browser UI needed
+
+server:
+  # Internal Docker network only — not exposed to host
+  bind_address: "0.0.0.0"
+  port: 8080
+  # Secret key for CSRF (generated at startup)
+  secret_key: "auto"
+  # Disable interactive UI features — API-only usage
+  method: "GET"
+  # Limiter protects against abuse from tool loops
+  limiter: true
+  # No public instance — don't show in SearXNG instances list
+  public_instance: false
+  # No image proxy — not needed for text search
+  image_proxy: false
+
+ui:
+  # Minimal UI — primarily used via JSON API
+  default_theme: simple
+  static_use_hash: true
+
+# Privacy settings — no tracking, no analytics
+outgoing:
+  # Use system DNS
+  request_timeout: 5.0
+  max_request_timeout: 10.0
+  # Don't send referrer headers to search engines
+  useragent_suffix: ""
+  # Parallel requests to engines
+  pool_connections: 50
+  pool_maxsize: 20
+
+# Engine selection — curated for manufacturing/engineering use
+# Enable reliable, fast engines. Disable slow or unreliable ones.
+engines:
+  # General web search
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+  - name: bing
+    engine: bing
+    shortcut: bi
+    disabled: false
+  - name: brave
+    engine: brave
+    shortcut: br
+    disabled: false
+  - name: qwant
+    engine: qwant
+    shortcut: qw
+    disabled: false
+
+  # Wikipedia — reference lookups
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
+
+  # Academic / technical
+  - name: arxiv
+    engine: arxiv
+    shortcut: arx
+    disabled: false
+  - name: semantic scholar
+    engine: semantic_scholar
+    shortcut: ss
+    disabled: false
+
+  # Disable engines that are slow, require API keys, or add noise
+  - name: google
+    engine: google
+    shortcut: go
+    disabled: true  # Requires CAPTCHA solving or API key; use DDG/Bing instead
+  - name: yahoo
+    engine: yahoo
+    shortcut: yh
+    disabled: true  # Slow, redundant with Bing
