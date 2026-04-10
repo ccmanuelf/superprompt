@@ -532,14 +532,14 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
         const msg = JSON.parse(text);
         switch (msg.type) {
           case 'board_list': {
-            const cards = listAllCards(boardChatId);
+            const cards = await listAllCards(boardChatId);
             ws.send(JSON.stringify({ type: 'board_data', cards }));
             break;
           }
           case 'board_create': {
             const dueDate = msg.due_date ? parseDateHint(msg.due_date) : undefined;
             const scheduledFor = msg.scheduled_for ? parseDateHint(msg.scheduled_for) : undefined;
-            const card = createCard(boardChatId, msg.title, {
+            const card = await createCard(boardChatId, msg.title, {
               description: msg.description,
               assignee: msg.assignee as CardAssignee,
               priority: msg.priority,
@@ -548,21 +548,21 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
               source: 'user',
             });
             ws.send(JSON.stringify({ type: 'card_created', card }));
-            ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
+            ws.send(JSON.stringify({ type: 'board_data', cards: await listAllCards(boardChatId) }));
             break;
           }
           case 'board_move': {
-            const moved = moveCard(msg.cardId, msg.status as CardStatus, boardChatId);
+            const moved = await moveCard(msg.cardId, msg.status as CardStatus, boardChatId);
             if (!moved) { ws.send(JSON.stringify({ type: 'error', message: 'Card not found or invalid status' })); break; }
             ws.send(JSON.stringify({ type: 'card_updated' }));
-            ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
+            ws.send(JSON.stringify({ type: 'board_data', cards: await listAllCards(boardChatId) }));
             break;
           }
           case 'board_assign': {
-            const assigned = assignCard(msg.cardId, msg.assignee as CardAssignee, boardChatId);
+            const assigned = await assignCard(msg.cardId, msg.assignee as CardAssignee, boardChatId);
             if (!assigned) { ws.send(JSON.stringify({ type: 'error', message: 'Card not found or invalid assignee' })); break; }
             ws.send(JSON.stringify({ type: 'card_updated' }));
-            ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
+            ws.send(JSON.stringify({ type: 'board_data', cards: await listAllCards(boardChatId) }));
             break;
           }
           case 'board_update': {
@@ -570,17 +570,17 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
             if (msg.priority !== undefined) updates.priority = msg.priority;
             if ('due_date' in msg) updates.due_date = msg.due_date ? parseDateHint(msg.due_date) : null;
             if ('scheduled_for' in msg) updates.scheduled_for = msg.scheduled_for ? parseDateHint(msg.scheduled_for) : null;
-            const updatedCard = updateCard(msg.cardId, updates, boardChatId);
+            const updatedCard = await updateCard(msg.cardId, updates, boardChatId);
             if (!updatedCard) { ws.send(JSON.stringify({ type: 'error', message: 'Update failed' })); break; }
             ws.send(JSON.stringify({ type: 'card_updated' }));
-            ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
+            ws.send(JSON.stringify({ type: 'board_data', cards: await listAllCards(boardChatId) }));
             break;
           }
           case 'board_delete': {
-            const deleted = deleteCard(msg.cardId, boardChatId);
+            const deleted = await deleteCard(msg.cardId, boardChatId);
             if (!deleted) { ws.send(JSON.stringify({ type: 'error', message: 'Card not found' })); break; }
             ws.send(JSON.stringify({ type: 'card_deleted' }));
-            ws.send(JSON.stringify({ type: 'board_data', cards: listAllCards(boardChatId) }));
+            ws.send(JSON.stringify({ type: 'board_data', cards: await listAllCards(boardChatId) }));
             break;
           }
           case 'ping': {

@@ -511,7 +511,7 @@ async function handleMessage(
     if (responseText && pc.kanban.isKanbanAction(responseText)) {
       const kanbanReq = pc.kanban.parseKanbanAction(responseText);
       if (kanbanReq) {
-        const kanbanResult = pc.kanban.executeKanbanAction(chatId, kanbanReq);
+        const kanbanResult = await pc.kanban.executeKanbanAction(chatId, kanbanReq);
         await ctx.reply(formatForTelegram(kanbanResult), { parse_mode: 'HTML' });
         responseText = pc.kanban.stripKanbanBlock(responseText);
       }
@@ -2390,7 +2390,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list':
       case 'show': {
-        const board = pc.kanban.formatBoard(chatId);
+        const board = await pc.kanban.formatBoard(chatId);
         await ctx.reply(formatForTelegram(board), { parse_mode: 'HTML' });
         return;
       }
@@ -2401,7 +2401,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /board add &lt;title&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const card = pc.kanban.createCard(chatId, title, { source: 'user' });
+        const card = await pc.kanban.createCard(chatId, title, { source: 'user' });
         await ctx.reply(
           formatForTelegram(`✅ Card created: **${card.title}**\nID: \`${card.id.slice(0, 8)}\` | Status: backlog | Assignee: noted (assign with /board assign)`),
           { parse_mode: 'HTML' },
@@ -2416,9 +2416,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /board move &lt;id&gt; &lt;status&gt;\nStatuses: backlog, in_progress, review, done, deferred, cancelled', { parse_mode: 'HTML' });
           return;
         }
-        const card = pc.kanban.getCardByPrefix(chatId, cardId);
+        const card = await pc.kanban.getCardByPrefix(chatId, cardId);
         if (!card) { await ctx.reply('Card not found.'); return; }
-        const updated = pc.kanban.moveCard(card.id, newStatus);
+        const updated = await pc.kanban.moveCard(card.id, newStatus);
         if (!updated) { await ctx.reply('Invalid status.'); return; }
         await ctx.reply(formatForTelegram(`Moved **${updated.title}** → ${newStatus}`), { parse_mode: 'HTML' });
         return;
@@ -2431,9 +2431,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /board assign &lt;id&gt; &lt;assignee&gt;\nAssignees: me, bot, collaborative, noted', { parse_mode: 'HTML' });
           return;
         }
-        const card = pc.kanban.getCardByPrefix(chatId, cardId);
+        const card = await pc.kanban.getCardByPrefix(chatId, cardId);
         if (!card) { await ctx.reply('Card not found.'); return; }
-        const updated = pc.kanban.assignCard(card.id, newAssignee);
+        const updated = await pc.kanban.assignCard(card.id, newAssignee);
         if (!updated) { await ctx.reply('Invalid assignee.'); return; }
         await ctx.reply(formatForTelegram(`Assigned **${updated.title}** → ${newAssignee}`), { parse_mode: 'HTML' });
         // If assigned to bot, trigger immediate execution (don't wait for hourly loop)
@@ -2450,9 +2450,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /board priority &lt;id&gt; &lt;1-5&gt;\n1=critical, 2=high, 3=medium, 4=low, 5=minimal', { parse_mode: 'HTML' });
           return;
         }
-        const card = pc.kanban.getCardByPrefix(chatId, cardId);
+        const card = await pc.kanban.getCardByPrefix(chatId, cardId);
         if (!card) { await ctx.reply('Card not found.'); return; }
-        const updated = pc.kanban.updateCard(card.id, { priority: newPriority });
+        const updated = await pc.kanban.updateCard(card.id, { priority: newPriority });
         if (!updated) { await ctx.reply('Update failed.'); return; }
         const labels = ['', '🔴 Critical', '🟠 High', '🟡 Medium', '🔵 Low', '⚪ Minimal'];
         await ctx.reply(formatForTelegram(`Updated **${updated.title}** → ${labels[newPriority]}`), { parse_mode: 'HTML' });
@@ -2462,9 +2462,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'cancel': {
         const cardId = parts[1];
         if (!cardId) { await ctx.reply('Usage: /board cancel &lt;id&gt;', { parse_mode: 'HTML' }); return; }
-        const card = pc.kanban.getCardByPrefix(chatId, cardId);
+        const card = await pc.kanban.getCardByPrefix(chatId, cardId);
         if (!card) { await ctx.reply('Card not found.'); return; }
-        const cancelled = pc.kanban.moveCard(card.id, 'cancelled');
+        const cancelled = await pc.kanban.moveCard(card.id, 'cancelled');
         if (!cancelled) { await ctx.reply('Failed to cancel.'); return; }
         await ctx.reply(formatForTelegram(`🚫 Cancelled: **${cancelled.title}**`), { parse_mode: 'HTML' });
         return;
@@ -2474,11 +2474,11 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const cardId = parts[1];
         const dateStr = parts.slice(2).join(' ');
         if (!cardId || !dateStr) { await ctx.reply('Usage: /board due &lt;id&gt; &lt;date&gt;\nExamples: tomorrow, 2026-03-25, next Friday', { parse_mode: 'HTML' }); return; }
-        const card = pc.kanban.getCardByPrefix(chatId, cardId);
+        const card = await pc.kanban.getCardByPrefix(chatId, cardId);
         if (!card) { await ctx.reply('Card not found.'); return; }
         const dueMs = pc.kanban.parseDateHint(dateStr);
         if (!dueMs) { await ctx.reply(`Could not parse date: "${dateStr}"`); return; }
-        const updated = pc.kanban.updateCard(card.id, { due_date: dueMs });
+        const updated = await pc.kanban.updateCard(card.id, { due_date: dueMs });
         if (!updated) { await ctx.reply('Update failed.'); return; }
         await ctx.reply(formatForTelegram(`Updated **${updated.title}** — Due: ${new Date(dueMs).toLocaleDateString()}`), { parse_mode: 'HTML' });
         return;
@@ -2488,11 +2488,11 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const cardId = parts[1];
         const timeStr = parts.slice(2).join(' ');
         if (!cardId || !timeStr) { await ctx.reply('Usage: /board schedule &lt;id&gt; &lt;time&gt;\nExamples: tonight, tomorrow morning, now, 2026-03-25T14:00', { parse_mode: 'HTML' }); return; }
-        const card = pc.kanban.getCardByPrefix(chatId, cardId);
+        const card = await pc.kanban.getCardByPrefix(chatId, cardId);
         if (!card) { await ctx.reply('Card not found.'); return; }
         const schedMs = pc.kanban.parseDateHint(timeStr);
         if (!schedMs) { await ctx.reply(`Could not parse time: "${timeStr}"`); return; }
-        const updated = pc.kanban.updateCard(card.id, { scheduled_for: schedMs });
+        const updated = await pc.kanban.updateCard(card.id, { scheduled_for: schedMs });
         if (!updated) { await ctx.reply('Update failed.'); return; }
         await ctx.reply(formatForTelegram(`Updated **${updated.title}** — Scheduled: ${new Date(schedMs).toLocaleString()}`), { parse_mode: 'HTML' });
         return;
@@ -2502,9 +2502,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'remove': {
         const cardId = parts[1];
         if (!cardId) { await ctx.reply('Usage: /board delete &lt;id&gt;', { parse_mode: 'HTML' }); return; }
-        const card = pc.kanban.getCardByPrefix(chatId, cardId);
+        const card = await pc.kanban.getCardByPrefix(chatId, cardId);
         if (!card) { await ctx.reply('Card not found.'); return; }
-        pc.kanban.deleteCard(card.id);
+        await pc.kanban.deleteCard(card.id);
         await ctx.reply(formatForTelegram(`Deleted: **${card.title}**`), { parse_mode: 'HTML' });
         return;
       }
@@ -2512,7 +2512,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'view': {
         const cardId = parts[1];
         if (!cardId) { await ctx.reply('Usage: /board view &lt;id&gt;', { parse_mode: 'HTML' }); return; }
-        const card = pc.kanban.getCardByPrefix(chatId, cardId);
+        const card = await pc.kanban.getCardByPrefix(chatId, cardId);
         if (!card) { await ctx.reply('Card not found.'); return; }
         await ctx.reply(formatForTelegram(pc.kanban.formatCard(card)), { parse_mode: 'HTML' });
         return;
@@ -3016,7 +3016,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
     if (args === 'now') {
       const DAY_MS = 24 * 60 * 60 * 1000;
-      const digest = pc.proactive.buildDigest(chatId, DAY_MS);
+      const digest = await pc.proactive.buildDigest(chatId, DAY_MS);
       await ctx.reply(formatForTelegram(digest), { parse_mode: 'HTML' });
       return;
     }

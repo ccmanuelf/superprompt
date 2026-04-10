@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import type { TableInitializer } from './core/interfaces.js';
 
@@ -90,13 +90,13 @@ export function parseKanbanAction(text: string): KanbanActionRequest | null {
  * Execute a kanban action from an AI response and return a user-facing message.
  * Exported for testing.
  */
-export function executeKanbanAction(chatId: string, action: KanbanActionRequest): string {
+export async function executeKanbanAction(chatId: string, action: KanbanActionRequest): Promise<string> {
   switch (action.kanban_action) {
     case 'create': {
       if (!action.title) return 'Kanban action error: title required for create.';
       const dueDate = action.due_date ? parseDateHint(action.due_date) : undefined;
       const scheduledFor = action.scheduled_for ? parseDateHint(action.scheduled_for) : undefined;
-      const card = createCard(chatId, action.title, {
+      const card = await createCard(chatId, action.title, {
         description: action.description,
         assignee: action.assignee || 'noted',
         priority: action.priority || 3,
@@ -112,23 +112,23 @@ export function executeKanbanAction(chatId: string, action: KanbanActionRequest)
     }
     case 'move': {
       if (!action.card_id || !action.status) return 'Kanban action error: card_id and status required.';
-      const card = getCardByPrefix(chatId, action.card_id);
+      const card = await getCardByPrefix(chatId, action.card_id);
       if (!card) return `Card "${action.card_id}" not found.`;
-      const moved = moveCard(card.id, action.status, chatId);
+      const moved = await moveCard(card.id, action.status, chatId);
       if (!moved) return `Invalid status: ${action.status}`;
       return `Moved **${moved.title}** → ${moved.status}`;
     }
     case 'assign': {
       if (!action.card_id || !action.assignee) return 'Kanban action error: card_id and assignee required.';
-      const card = getCardByPrefix(chatId, action.card_id);
+      const card = await getCardByPrefix(chatId, action.card_id);
       if (!card) return `Card "${action.card_id}" not found.`;
-      const assigned = assignCard(card.id, action.assignee, chatId);
+      const assigned = await assignCard(card.id, action.assignee, chatId);
       if (!assigned) return `Invalid assignee: ${action.assignee}`;
       return `Assigned **${assigned.title}** → ${assigned.assignee}`;
     }
     case 'update': {
       if (!action.card_id) return 'Kanban action error: card_id required for update.';
-      const card = getCardByPrefix(chatId, action.card_id);
+      const card = await getCardByPrefix(chatId, action.card_id);
       if (!card) return `Card "${action.card_id}" not found.`;
 
       const updates: Record<string, unknown> = {};
@@ -138,7 +138,7 @@ export function executeKanbanAction(chatId: string, action: KanbanActionRequest)
 
       if (Object.keys(updates).length === 0) return 'Nothing to update.';
 
-      const updated = updateCard(card.id, updates);
+      const updated = await updateCard(card.id, updates);
       if (!updated) return 'Update failed.';
 
       const changes: string[] = [];
@@ -197,33 +197,36 @@ const VALID_ASSIGNEES: CardAssignee[] = ['me', 'bot', 'collaborative', 'noted'];
 /**
  * Initialize the kanban table. Called during DB init.
  */
-export function initKanbanTable(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS kanban_cards (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'backlog' CHECK(status IN ('backlog', 'in_progress', 'review', 'done', 'deferred', 'cancelled')),
-      assignee TEXT NOT NULL DEFAULT 'noted' CHECK(assignee IN ('me', 'bot', 'collaborative', 'noted')),
-      priority INTEGER NOT NULL DEFAULT 3,
-      labels TEXT,
-      due_date INTEGER,
-      scheduled_for INTEGER,
-      source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user', 'bot')),
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+export async function initKanbanTable(): Promise<void> {
+  const db = getKnex();
 
-    CREATE INDEX IF NOT EXISTS idx_kanban_chat_status
-      ON kanban_cards(chat_id, status);
-  `);
+  const exists = await db.schema.hasTable('kanban_cards');
+  if (!exists) {
+    await db.schema.createTable('kanban_cards', (table) => {
+      table.string('id').primary();
+      table.string('chat_id').notNullable();
+      table.string('title').notNullable();
+      table.text('description').notNullable().defaultTo('');
+      table.string('status').notNullable().defaultTo('backlog');
+      table.string('assignee').notNullable().defaultTo('noted');
+      table.integer('priority').notNullable().defaultTo(3);
+      table.text('labels').nullable();
+      table.bigInteger('due_date').nullable();
+      table.bigInteger('scheduled_for').nullable();
+      table.string('source').notNullable().defaultTo('user');
+      table.bigInteger('created_at').notNullable();
+      table.bigInteger('updated_at').notNullable();
+
+      table.index(['chat_id', 'status'], 'idx_kanban_chat_status');
+    });
+  }
 
   // Migration: add scheduled_for column if not exists
-  const cols = db.prepare('PRAGMA table_info(kanban_cards)').all() as Array<{ name: string }>;
-  if (!cols.some((c) => c.name === 'scheduled_for')) {
-    db.exec('ALTER TABLE kanban_cards ADD COLUMN scheduled_for INTEGER');
+  const hasScheduledFor = await db.schema.hasColumn('kanban_cards', 'scheduled_for');
+  if (!hasScheduledFor) {
+    await db.schema.alterTable('kanban_cards', (table) => {
+      table.bigInteger('scheduled_for').nullable();
+    });
   }
 }
 
@@ -231,7 +234,7 @@ export const kanbanTableInit: TableInitializer = { name: 'kanban', initTables: i
 
 // ── CRUD Operations ─────────────────────────────────────────
 
-export function createCard(
+export async function createCard(
   chatId: string,
   title: string,
   options?: {
@@ -243,8 +246,8 @@ export function createCard(
     scheduledFor?: number;
     source?: 'user' | 'bot';
   },
-): KanbanCard {
-  const db = getDatabase();
+): Promise<KanbanCard> {
+  const db = getKnex();
   const id = randomBytes(6).toString('hex');
   const now = Date.now();
 
@@ -264,114 +267,111 @@ export function createCard(
     updated_at: now,
   };
 
-  db.prepare(
-    `INSERT INTO kanban_cards (id, chat_id, title, description, status, assignee, priority, labels, due_date, scheduled_for, source, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(card.id, card.chat_id, card.title, card.description, card.status, card.assignee, card.priority, card.labels, card.due_date, card.scheduled_for, card.source, card.created_at, card.updated_at);
+  await db('kanban_cards').insert(card);
 
   logger.debug({ cardId: id, chatId, title }, 'Kanban card created');
   return card;
 }
 
-export function getCard(id: string): KanbanCard | undefined {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM kanban_cards WHERE id = ?').get(id) as KanbanCard | undefined;
+export async function getCard(id: string): Promise<KanbanCard | undefined> {
+  const db = getKnex();
+  return await db('kanban_cards').where({ id }).first() as KanbanCard | undefined;
 }
 
-export function getCardByPrefix(chatId: string, prefix: string): KanbanCard | undefined {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM kanban_cards WHERE chat_id = ? AND id LIKE ? LIMIT 1',
-  ).get(chatId, `${prefix}%`) as KanbanCard | undefined;
+export async function getCardByPrefix(chatId: string, prefix: string): Promise<KanbanCard | undefined> {
+  const db = getKnex();
+  return await db('kanban_cards')
+    .where({ chat_id: chatId })
+    .andWhere('id', 'like', `${prefix}%`)
+    .first() as KanbanCard | undefined;
 }
 
-export function listCards(chatId: string, status?: CardStatus): KanbanCard[] {
-  const db = getDatabase();
+export async function listCards(chatId: string, status?: CardStatus): Promise<KanbanCard[]> {
+  const db = getKnex();
   if (status) {
-    return db.prepare(
-      'SELECT * FROM kanban_cards WHERE chat_id = ? AND status = ? ORDER BY priority ASC, updated_at DESC',
-    ).all(chatId, status) as KanbanCard[];
+    return await db('kanban_cards')
+      .where({ chat_id: chatId, status })
+      .orderBy('priority', 'asc')
+      .orderBy('updated_at', 'desc') as KanbanCard[];
   }
-  return db.prepare(
-    'SELECT * FROM kanban_cards WHERE chat_id = ? AND status NOT IN (?, ?) ORDER BY priority ASC, updated_at DESC',
-  ).all(chatId, 'done', 'cancelled') as KanbanCard[];
+  return await db('kanban_cards')
+    .where({ chat_id: chatId })
+    .whereNotIn('status', ['done', 'cancelled'])
+    .orderBy('priority', 'asc')
+    .orderBy('updated_at', 'desc') as KanbanCard[];
 }
 
-export function listAllCards(chatId: string): KanbanCard[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM kanban_cards WHERE chat_id = ? ORDER BY status, priority ASC, updated_at DESC',
-  ).all(chatId) as KanbanCard[];
+export async function listAllCards(chatId: string): Promise<KanbanCard[]> {
+  const db = getKnex();
+  return await db('kanban_cards')
+    .where({ chat_id: chatId })
+    .orderBy('status', 'asc')
+    .orderBy('priority', 'asc')
+    .orderBy('updated_at', 'desc') as KanbanCard[];
 }
 
-export function moveCard(id: string, newStatus: CardStatus, chatId?: string): KanbanCard | null {
+export async function moveCard(id: string, newStatus: CardStatus, chatId?: string): Promise<KanbanCard | null> {
   if (!VALID_STATUSES.includes(newStatus)) return null;
 
-  const db = getDatabase();
+  const db = getKnex();
   // If chatId provided, enforce ownership
   if (chatId) {
-    const card = getCard(id);
+    const card = await getCard(id);
     if (!card || card.chat_id !== chatId) return null;
   }
 
-  db.prepare(
-    'UPDATE kanban_cards SET status = ?, updated_at = ? WHERE id = ?',
-  ).run(newStatus, Date.now(), id);
+  await db('kanban_cards').where({ id }).update({ status: newStatus, updated_at: Date.now() });
 
-  return getCard(id) || null;
+  return await getCard(id) || null;
 }
 
-export function assignCard(id: string, assignee: CardAssignee, chatId?: string): KanbanCard | null {
+export async function assignCard(id: string, assignee: CardAssignee, chatId?: string): Promise<KanbanCard | null> {
   if (!VALID_ASSIGNEES.includes(assignee)) return null;
 
-  const db = getDatabase();
   if (chatId) {
-    const card = getCard(id);
+    const card = await getCard(id);
     if (!card || card.chat_id !== chatId) return null;
   }
 
-  db.prepare(
-    'UPDATE kanban_cards SET assignee = ?, updated_at = ? WHERE id = ?',
-  ).run(assignee, Date.now(), id);
+  const db = getKnex();
+  await db('kanban_cards').where({ id }).update({ assignee, updated_at: Date.now() });
 
-  return getCard(id) || null;
+  return await getCard(id) || null;
 }
 
-export function updateCard(
+export async function updateCard(
   id: string,
   updates: Partial<Pick<KanbanCard, 'title' | 'description' | 'priority' | 'due_date' | 'scheduled_for'>>,
   chatId?: string,
-): KanbanCard | null {
-  const db = getDatabase();
-  const card = getCard(id);
+): Promise<KanbanCard | null> {
+  const card = await getCard(id);
   if (!card) return null;
   if (chatId && card.chat_id !== chatId) return null;
 
-  // Build dynamic UPDATE — use explicit null to CLEAR fields (not COALESCE which preserves old values)
-  const sets: string[] = ['updated_at = ?'];
-  const vals: unknown[] = [Date.now()];
+  // Build dynamic UPDATE — use explicit null to CLEAR fields
+  const updateData: Record<string, unknown> = { updated_at: Date.now() };
 
-  if ('title' in updates && updates.title !== undefined) { sets.push('title = ?'); vals.push(updates.title); }
-  if ('description' in updates && updates.description !== undefined) { sets.push('description = ?'); vals.push(updates.description); }
-  if ('priority' in updates && updates.priority !== undefined) { sets.push('priority = ?'); vals.push(updates.priority); }
+  if ('title' in updates && updates.title !== undefined) updateData.title = updates.title;
+  if ('description' in updates && updates.description !== undefined) updateData.description = updates.description;
+  if ('priority' in updates && updates.priority !== undefined) updateData.priority = updates.priority;
   // For dates: allow explicit null to CLEAR the field
-  if ('due_date' in updates) { sets.push('due_date = ?'); vals.push(updates.due_date ?? null); }
-  if ('scheduled_for' in updates) { sets.push('scheduled_for = ?'); vals.push(updates.scheduled_for ?? null); }
+  if ('due_date' in updates) updateData.due_date = updates.due_date ?? null;
+  if ('scheduled_for' in updates) updateData.scheduled_for = updates.scheduled_for ?? null;
 
-  vals.push(id);
-  db.prepare(`UPDATE kanban_cards SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+  const db = getKnex();
+  await db('kanban_cards').where({ id }).update(updateData);
 
-  return getCard(id) || null;
+  return await getCard(id) || null;
 }
 
-export function deleteCard(id: string, chatId?: string): boolean {
-  const db = getDatabase();
+export async function deleteCard(id: string, chatId?: string): Promise<boolean> {
   if (chatId) {
-    const card = getCard(id);
+    const card = await getCard(id);
     if (!card || card.chat_id !== chatId) return false;
   }
-  const result = db.prepare('DELETE FROM kanban_cards WHERE id = ?').run(id);
-  return result.changes > 0;
+  const db = getKnex();
+  const count = await db('kanban_cards').where({ id }).del();
+  return count > 0;
 }
 
 // ── Bot-Assigned Task Execution ─────────────────────────────
@@ -387,32 +387,36 @@ export function deleteCard(id: string, chatId?: string): boolean {
  * Default scheduled window: 22:00-06:00 local time (nightly).
  * Cards with explicit scheduled_for override the window.
  */
-export function getBotAssignedCards(chatId: string): KanbanCard[] {
-  const db = getDatabase();
+export async function getBotAssignedCards(chatId: string): Promise<KanbanCard[]> {
+  const db = getKnex();
   const now = Date.now();
 
   // Priority 1-2: always ready (immediate execution)
-  const urgent = db.prepare(
-    `SELECT * FROM kanban_cards
-     WHERE chat_id = ? AND assignee = 'bot' AND status = 'backlog'
-       AND priority <= 2
-     ORDER BY priority ASC, created_at ASC
-     LIMIT 3`,
-  ).all(chatId) as KanbanCard[];
+  const urgent = await db('kanban_cards')
+    .where({ chat_id: chatId, assignee: 'bot', status: 'backlog' })
+    .andWhere('priority', '<=', 2)
+    .orderBy('priority', 'asc')
+    .orderBy('created_at', 'asc')
+    .limit(3) as KanbanCard[];
 
   // Priority 3-5: only during nightly window OR if scheduled_for has passed
   const hour = new Date().getHours();
   const isNightWindow = hour >= 22 || hour < 6;
 
-  const scheduled = db.prepare(
-    `SELECT * FROM kanban_cards
-     WHERE chat_id = ? AND assignee = 'bot' AND status = 'backlog'
-       AND priority > 2
-       AND (scheduled_for IS NOT NULL AND scheduled_for <= ?
-            OR scheduled_for IS NULL AND ?)
-     ORDER BY priority ASC, created_at ASC
-     LIMIT 3`,
-  ).all(chatId, now, isNightWindow ? 1 : 0) as KanbanCard[];
+  const scheduled = await db('kanban_cards')
+    .where({ chat_id: chatId, assignee: 'bot', status: 'backlog' })
+    .andWhere('priority', '>', 2)
+    .andWhere(function () {
+      this.where(function () {
+        this.whereNotNull('scheduled_for').andWhere('scheduled_for', '<=', now);
+      });
+      if (isNightWindow) {
+        this.orWhereNull('scheduled_for');
+      }
+    })
+    .orderBy('priority', 'asc')
+    .orderBy('created_at', 'asc')
+    .limit(3) as KanbanCard[];
 
   return [...urgent, ...scheduled].slice(0, 5);
 }
@@ -420,12 +424,11 @@ export function getBotAssignedCards(chatId: string): KanbanCard[] {
 /**
  * Get all distinct chat IDs that have bot-assigned backlog cards.
  */
-export function getChatsWithBotTasks(): string[] {
-  const db = getDatabase();
-  const rows = db.prepare(
-    `SELECT DISTINCT chat_id FROM kanban_cards
-     WHERE assignee = 'bot' AND status = 'backlog'`,
-  ).all() as Array<{ chat_id: string }>;
+export async function getChatsWithBotTasks(): Promise<string[]> {
+  const db = getKnex();
+  const rows = await db('kanban_cards')
+    .distinct('chat_id')
+    .where({ assignee: 'bot', status: 'backlog' }) as Array<{ chat_id: string }>;
   return rows.map((r) => r.chat_id);
 }
 
@@ -441,11 +444,13 @@ export interface BoardSummary {
   total: number;
 }
 
-export function getBoardSummary(chatId: string): BoardSummary {
-  const db = getDatabase();
-  const rows = db.prepare(
-    'SELECT status, COUNT(*) as count FROM kanban_cards WHERE chat_id = ? GROUP BY status',
-  ).all(chatId) as Array<{ status: string; count: number }>;
+export async function getBoardSummary(chatId: string): Promise<BoardSummary> {
+  const db = getKnex();
+  const rows = await db('kanban_cards')
+    .select('status')
+    .count('* as count')
+    .where({ chat_id: chatId })
+    .groupBy('status') as Array<{ status: string; count: number }>;
 
   const summary: BoardSummary = {
     backlog: 0, in_progress: 0, review: 0, done: 0, deferred: 0, cancelled: 0, total: 0,
@@ -453,9 +458,9 @@ export function getBoardSummary(chatId: string): BoardSummary {
 
   for (const row of rows) {
     if (row.status in summary) {
-      (summary as unknown as Record<string, number>)[row.status] = row.count;
+      (summary as unknown as Record<string, number>)[row.status] = Number(row.count);
     }
-    summary.total += row.count;
+    summary.total += Number(row.count);
   }
 
   return summary;
@@ -521,8 +526,8 @@ export function formatCard(card: KanbanCard): string {
  * Format the full board for Telegram/Matrix display.
  * Exported for testing.
  */
-export function formatBoard(chatId: string): string {
-  const summary = getBoardSummary(chatId);
+export async function formatBoard(chatId: string): Promise<string> {
+  const summary = await getBoardSummary(chatId);
 
   if (summary.total === 0) {
     return 'Board is empty. Use `/board add <title>` to create a card.';
@@ -533,7 +538,7 @@ export function formatBoard(chatId: string): string {
   sections.push(header);
 
   for (const status of ['backlog', 'in_progress', 'review', 'done', 'deferred'] as CardStatus[]) {
-    const cards = listCards(chatId, status);
+    const cards = await listCards(chatId, status);
     if (cards.length === 0) continue;
 
     const statusLabel = `${STATUS_EMOJI[status]} ${status.replace('_', ' ').toUpperCase()} (${cards.length})`;

@@ -11,8 +11,8 @@ import {
   insertEpisode,
   type Memory,
   type Episode,
-  getDatabase,
-} from './db.js';
+} from './db-core.js';
+import { getKnex } from './db-knex.js';
 import { generateEmbedding } from './embeddings.js';
 import { estimateTokens } from './context-budget.js';
 import { logger } from './logger.js';
@@ -80,12 +80,12 @@ export async function buildMemoryContext(
   let ftsEpisodes: Episode[] = [];
   if (sanitized) {
     try {
-      ftsResults = searchMemories(chatId, sanitized, 3);
+      ftsResults = await searchMemories(chatId, sanitized, 3);
     } catch (err) {
       logger.warn({ query: sanitized, err }, 'FTS5 memory search failed — falling back to recent memories');
     }
     try {
-      ftsEpisodes = searchEpisodes(chatId, sanitized, 2);
+      ftsEpisodes = await searchEpisodes(chatId, sanitized, 2);
     } catch (err) {
       logger.warn({ query: sanitized, err }, 'FTS5 episode search failed — falling back to recent episodes');
     }
@@ -97,14 +97,14 @@ export async function buildMemoryContext(
   try {
     const embedding = await generateEmbedding(userMessage);
     if (embedding) {
-      vecResults = vectorSearchMemories(chatId, embedding, 3);
-      vecEpisodes = vectorSearchEpisodes(chatId, embedding, 2);
+      vecResults = await vectorSearchMemories(chatId, embedding, 3);
+      vecEpisodes = await vectorSearchEpisodes(chatId, embedding, 2);
     }
   } catch {
     logger.debug('Vector search failed, using FTS5 only');
   }
 
-  const recentResults = getRecentMemories(chatId, 5);
+  const recentResults = await getRecentMemories(chatId, 5);
 
   // Deduplicate memories by id, preserving order (FTS first, then vec, then recent)
   const seen = new Set<number>();
@@ -134,14 +134,15 @@ export async function buildMemoryContext(
   if (topMemories.length === 0 && topEpisodes.length === 0) return '';
 
   // Touch each memory: bump accessed_at and reinforce salience (+0.1, cap 5.0)
-  const db = getDatabase();
-  const touchStmt = db.prepare(
-    'UPDATE memories SET accessed_at = ?, salience = MIN(salience + 0.1, 5.0) WHERE id = ?',
-  );
-
+  const db = getKnex();
   const now = Date.now();
   for (const m of topMemories) {
-    touchStmt.run(now, m.id);
+    await db('memories')
+      .where({ id: m.id })
+      .update({
+        accessed_at: now,
+        salience: db.raw('MIN(salience + 0.1, 5.0)'),
+      });
   }
 
   // Format context — episodes first (they're higher-level summaries)
@@ -217,7 +218,7 @@ export async function saveConversationTurn(
     // Fire-and-forget: embedding failure is not critical
   }
 
-  insertMemory(chatId, content, sector, undefined, embedding ?? undefined);
+  await insertMemory(chatId, content, sector, undefined, embedding ?? undefined);
 
   logger.debug(
     { chatId, sector, contentLength: content.length, hasEmbedding: !!embedding },
@@ -238,15 +239,13 @@ export async function saveConversationTurn(
  * Call on startup and then every 24 hours via setInterval.
  */
 export async function runDecaySweep(): Promise<void> {
-  const db = getDatabase();
+  const db = getKnex();
   const cutoff = Date.now() - DAY_MS;
 
   // Only decay memories older than 24 hours
-  const decayResult = db
-    .prepare(
-      'UPDATE memories SET salience = salience * 0.98 WHERE created_at < ?',
-    )
-    .run(cutoff);
+  const decayCount = await db('memories')
+    .where('created_at', '<', cutoff)
+    .update({ salience: db.raw('salience * 0.98') });
 
   // Compress episodic memories that have decayed enough to be candidates
   let compressed = 0;
@@ -261,16 +260,15 @@ export async function runDecaySweep(): Promise<void> {
   // SAFETY: If compression failed, protect compressible memories from deletion.
   // Boost their salience so they survive until the next successful compression.
   if (compressionFailed) {
-    const protected_ = db
-      .prepare(
-        `UPDATE memories SET salience = MAX(salience, 0.15)
-         WHERE sector = 'episodic' AND salience > 0.05 AND salience <= ?`,
-      )
-      .run(COMPRESSION_SALIENCE_THRESHOLD);
+    const protectedCount = await db('memories')
+      .where({ sector: 'episodic' })
+      .where('salience', '>', 0.05)
+      .where('salience', '<=', COMPRESSION_SALIENCE_THRESHOLD)
+      .update({ salience: db.raw('MAX(salience, 0.15)') });
 
-    if (protected_.changes > 0) {
+    if (protectedCount > 0) {
       logger.info(
-        { protected: protected_.changes },
+        { protected: protectedCount },
         'Protected compressible memories from deletion (compression unavailable)',
       );
     }
@@ -278,27 +276,27 @@ export async function runDecaySweep(): Promise<void> {
 
   // Delete memories that have decayed below threshold
   // Also clean up their vec0 entries
-  const toDelete = db
-    .prepare('SELECT id FROM memories WHERE salience < 0.1')
-    .all() as Array<{ id: number }>;
+  const toDelete = await db('memories')
+    .where('salience', '<', 0.1)
+    .select('id') as Array<{ id: number }>;
 
   for (const row of toDelete) {
     try {
-      db.prepare('DELETE FROM memories_vec WHERE memory_id = ?').run(row.id);
+      await db('memories_vec').where({ memory_id: row.id }).del();
     } catch {
       // best-effort
     }
   }
 
-  const deleteResult = db
-    .prepare('DELETE FROM memories WHERE salience < 0.1')
-    .run();
+  const deletedCount = await db('memories')
+    .where('salience', '<', 0.1)
+    .del();
 
   logger.info(
     {
-      decayed: decayResult.changes,
+      decayed: decayCount,
       compressed,
-      deleted: deleteResult.changes,
+      deleted: deletedCount,
       compressionFailed,
     },
     'Memory decay sweep completed',
@@ -320,11 +318,11 @@ export async function runDecaySweep(): Promise<void> {
  * Returns the number of episodes created.
  */
 export async function compressEpisodes(): Promise<number> {
-  const chatIds = getChatsWithCompressibleMemories(COMPRESSION_SALIENCE_THRESHOLD);
+  const chatIds = await getChatsWithCompressibleMemories(COMPRESSION_SALIENCE_THRESHOLD);
   let totalCreated = 0;
 
   for (const chatId of chatIds) {
-    const memories = getCompressibleMemories(chatId, COMPRESSION_SALIENCE_THRESHOLD);
+    const memories = await getCompressibleMemories(chatId, COMPRESSION_SALIENCE_THRESHOLD);
 
     if (memories.length < MIN_MEMORIES_FOR_COMPRESSION) continue;
 
@@ -470,7 +468,7 @@ Rules:
   }
 
   // Save the episode
-  const episodeId = insertEpisode(
+  const episodeId = await insertEpisode(
     chatId,
     parsed.summary,
     parsed.key_facts.length > 0 ? parsed.key_facts : null,
@@ -480,7 +478,7 @@ Rules:
   );
 
   // Delete the original memories ONLY after episode is successfully saved
-  deleteMemories(memories.map((m) => m.id));
+  await deleteMemories(memories.map((m) => m.id));
 
   logger.debug(
     {

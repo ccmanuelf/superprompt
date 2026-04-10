@@ -327,7 +327,7 @@ async function handleMessage(
     if (responseText && ctx.kanban.isKanbanAction(responseText)) {
       const kanbanReq = ctx.kanban.parseKanbanAction(responseText);
       if (kanbanReq) {
-        const kanbanResult = ctx.kanban.executeKanbanAction(roomId, kanbanReq);
+        const kanbanResult = await ctx.kanban.executeKanbanAction(roomId, kanbanReq);
         await sendNotice(client, roomId, kanbanResult);
         responseText = ctx.kanban.stripKanbanBlock(responseText);
       }
@@ -566,28 +566,28 @@ async function handleCommand(
       const boardSub = boardParts[0]?.toLowerCase() || 'list';
 
       if (boardSub === 'list' || boardSub === 'show') {
-        await sendNotice(client, roomId, ctx.kanban.formatBoard(roomId));
+        await sendNotice(client, roomId, await ctx.kanban.formatBoard(roomId));
       } else if (boardSub === 'add') {
         const title = boardParts.slice(1).join(' ');
         if (!title) { await sendNotice(client, roomId, 'Usage: !board add <title>'); return true; }
-        const card = ctx.kanban.createCard(roomId, title, { source: 'user' });
+        const card = await ctx.kanban.createCard(roomId, title, { source: 'user' });
         await sendNotice(client, roomId, `Card created: "${card.title}" — ID: ${card.id.slice(0, 8)}`);
       } else if (boardSub === 'move') {
-        const card = ctx.kanban.getCardByPrefix(roomId, boardParts[1] || '');
+        const card = await ctx.kanban.getCardByPrefix(roomId, boardParts[1] || '');
         if (!card) { await sendNotice(client, roomId, 'Card not found.'); return true; }
-        const updated = ctx.kanban.moveCard(card.id, (boardParts[2] || '') as CardStatus);
+        const updated = await ctx.kanban.moveCard(card.id, (boardParts[2] || '') as CardStatus);
         if (!updated) { await sendNotice(client, roomId, 'Invalid status.'); return true; }
         await sendNotice(client, roomId, `Moved "${updated.title}" → ${updated.status}`);
       } else if (boardSub === 'assign') {
-        const card = ctx.kanban.getCardByPrefix(roomId, boardParts[1] || '');
+        const card = await ctx.kanban.getCardByPrefix(roomId, boardParts[1] || '');
         if (!card) { await sendNotice(client, roomId, 'Card not found.'); return true; }
-        const updated = ctx.kanban.assignCard(card.id, (boardParts[2] || '') as CardAssignee);
+        const updated = await ctx.kanban.assignCard(card.id, (boardParts[2] || '') as CardAssignee);
         if (!updated) { await sendNotice(client, roomId, 'Invalid assignee.'); return true; }
         await sendNotice(client, roomId, `Assigned "${updated.title}" → ${updated.assignee}`);
       } else if (boardSub === 'delete') {
-        const card = ctx.kanban.getCardByPrefix(roomId, boardParts[1] || '');
+        const card = await ctx.kanban.getCardByPrefix(roomId, boardParts[1] || '');
         if (!card) { await sendNotice(client, roomId, 'Card not found.'); return true; }
-        ctx.kanban.deleteCard(card.id);
+        await ctx.kanban.deleteCard(card.id);
         await sendNotice(client, roomId, `Deleted: "${card.title}"`);
       } else {
         await sendNotice(client, roomId, 'Usage: !board [list|add|move|assign|delete]');
@@ -609,7 +609,7 @@ async function handleCommand(
           : `Digest set to ${digestArgs}.`);
       } else if (digestArgs === 'now') {
         const DAY_MS = 24 * 60 * 60 * 1000;
-        const digest = ctx.proactive.buildDigest(roomId, DAY_MS);
+        const digest = await ctx.proactive.buildDigest(roomId, DAY_MS);
         await sendNotice(client, roomId, digest);
       } else {
         const current = ctx.proactive.getPreference(roomId);

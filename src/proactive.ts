@@ -1,4 +1,5 @@
-import { getDatabase, type Episode } from './db.js';
+import { type Episode } from './db-core.js';
+import { getKnex } from './db-knex.js';
 import { getChatsWithBotTasks, getBotAssignedCards, moveCard } from './kanban.js';
 import { logger } from './logger.js';
 import type { NotifyFn } from './scheduler.js';
@@ -18,29 +19,28 @@ let routerRef: ProviderRouter | undefined;
  * 2. It was created more than FOLLOW_UP_DELAY_MS ago
  * 3. It hasn't been followed up on yet (no 'followed_up' flag)
  */
-export function getEpisodesNeedingFollowUp(): Episode[] {
-  const db = getDatabase();
+export async function getEpisodesNeedingFollowUp(): Promise<Episode[]> {
+  const db = getKnex();
   const cutoff = Date.now() - FOLLOW_UP_DELAY_MS;
 
-  return db.prepare(
-    `SELECT * FROM episodes
-     WHERE open_threads IS NOT NULL
-       AND open_threads != '[]'
-       AND created_at < ?
-       AND id NOT IN (SELECT episode_id FROM episode_follow_ups)
-     ORDER BY created_at ASC
-     LIMIT 5`,
-  ).all(cutoff) as Episode[];
+  return db('episodes')
+    .whereNotNull('open_threads')
+    .where('open_threads', '!=', '[]')
+    .where('created_at', '<', cutoff)
+    .whereNotIn('id', db('episode_follow_ups').select('episode_id'))
+    .orderBy('created_at', 'asc')
+    .limit(5);
 }
 
 /**
  * Mark an episode as followed up so we don't send duplicate messages.
  */
-export function markEpisodeFollowedUp(episodeId: number): void {
-  const db = getDatabase();
-  db.prepare(
-    'INSERT OR IGNORE INTO episode_follow_ups (episode_id, followed_up_at) VALUES (?, ?)',
-  ).run(episodeId, Date.now());
+export async function markEpisodeFollowedUp(episodeId: number): Promise<void> {
+  const db = getKnex();
+  await db('episode_follow_ups')
+    .insert({ episode_id: episodeId, followed_up_at: Date.now() })
+    .onConflict('episode_id')
+    .ignore();
 }
 
 /**
@@ -68,20 +68,20 @@ async function runFollowUpCheck(): Promise<void> {
   if (!notifyFn) return;
 
   try {
-    const episodes = getEpisodesNeedingFollowUp();
+    const episodes = await getEpisodesNeedingFollowUp();
 
     if (episodes.length === 0) return;
 
     for (const episode of episodes) {
       const message = buildFollowUpMessage(episode);
       if (!message) {
-        markEpisodeFollowedUp(episode.id);
+        await markEpisodeFollowedUp(episode.id);
         continue;
       }
 
       try {
         await notifyFn(episode.chat_id, message);
-        markEpisodeFollowedUp(episode.id);
+        await markEpisodeFollowedUp(episode.id);
         logger.info(
           { episodeId: episode.id, chatId: episode.chat_id },
           'Sent follow-up for episode with open threads',
@@ -101,29 +101,14 @@ async function runFollowUpCheck(): Promise<void> {
 /**
  * Get a digest of recent activity for a chat.
  */
-export function buildDigest(chatId: string, periodMs: number): string {
-  const db = getDatabase();
+export async function buildDigest(chatId: string, periodMs: number): Promise<string> {
+  const db = getKnex();
   const since = Date.now() - periodMs;
 
-  // Count memories created
-  const memoryCount = (db.prepare(
-    'SELECT COUNT(*) as count FROM memories WHERE chat_id = ? AND created_at > ?',
-  ).get(chatId, since) as { count: number }).count;
-
-  // Count episodes created
-  const episodeCount = (db.prepare(
-    'SELECT COUNT(*) as count FROM episodes WHERE chat_id = ? AND created_at > ?',
-  ).get(chatId, since) as { count: number }).count;
-
-  // Recent episodes with summaries
-  const recentEpisodes = db.prepare(
-    'SELECT summary FROM episodes WHERE chat_id = ? AND created_at > ? ORDER BY created_at DESC LIMIT 5',
-  ).all(chatId, since) as Array<{ summary: string }>;
-
-  // Scheduled tasks that ran
-  const tasksRun = (db.prepare(
-    'SELECT COUNT(*) as count FROM scheduled_tasks WHERE chat_id = ? AND last_run > ?',
-  ).get(chatId, since) as { count: number }).count;
+  const memoryCount = ((await db('memories').where({ chat_id: chatId }).where('created_at', '>', since).count('* as count').first()) as { count: number })?.count ?? 0;
+  const episodeCount = ((await db('episodes').where({ chat_id: chatId }).where('created_at', '>', since).count('* as count').first()) as { count: number })?.count ?? 0;
+  const recentEpisodes = await db('episodes').select('summary').where({ chat_id: chatId }).where('created_at', '>', since).orderBy('created_at', 'desc').limit(5) as Array<{ summary: string }>;
+  const tasksRun = ((await db('scheduled_tasks').where({ chat_id: chatId }).where('last_run', '>', since).count('* as count').first()) as { count: number })?.count ?? 0;
 
   if (memoryCount === 0 && episodeCount === 0 && tasksRun === 0) {
     return 'No activity in this period.';
@@ -158,24 +143,21 @@ export type DigestFrequency = 'daily' | 'weekly' | 'off';
 /**
  * Get the digest preference for a chat.
  */
-export function getDigestPreference(chatId: string): DigestFrequency {
-  const db = getDatabase();
-  const row = db.prepare(
-    'SELECT frequency FROM digest_preferences WHERE chat_id = ?',
-  ).get(chatId) as { frequency: string } | undefined;
+export async function getDigestPreference(chatId: string): Promise<DigestFrequency> {
+  const db = getKnex();
+  const row = await db('digest_preferences').where({ chat_id: chatId }).select('frequency').first() as { frequency: string } | undefined;
   return (row?.frequency as DigestFrequency) || 'off';
 }
 
 /**
  * Set the digest preference for a chat.
  */
-export function setDigestPreference(chatId: string, frequency: DigestFrequency): void {
-  const db = getDatabase();
-  db.prepare(
-    `INSERT INTO digest_preferences (chat_id, frequency, updated_at)
-     VALUES (?, ?, ?)
-     ON CONFLICT(chat_id) DO UPDATE SET frequency = excluded.frequency, updated_at = excluded.updated_at`,
-  ).run(chatId, frequency, Date.now());
+export async function setDigestPreference(chatId: string, frequency: DigestFrequency): Promise<void> {
+  const db = getKnex();
+  await db('digest_preferences')
+    .insert({ chat_id: chatId, frequency, updated_at: Date.now() })
+    .onConflict('chat_id')
+    .merge({ frequency, updated_at: Date.now() });
 }
 
 /**
@@ -184,14 +166,13 @@ export function setDigestPreference(chatId: string, frequency: DigestFrequency):
 async function runDigestDelivery(): Promise<void> {
   if (!notifyFn) return;
 
-  const db = getDatabase();
+  const db = getKnex();
   const now = Date.now();
   const DAY_MS = 24 * 60 * 60 * 1000;
   const WEEK_MS = 7 * DAY_MS;
 
-  const prefs = db.prepare(
-    'SELECT * FROM digest_preferences WHERE frequency != ?',
-  ).all('off') as Array<{ chat_id: string; frequency: string; updated_at: number }>;
+  const prefs = await db('digest_preferences')
+    .where('frequency', '!=', 'off') as Array<{ chat_id: string; frequency: string; updated_at: number }>;
 
   for (const pref of prefs) {
     const periodMs = pref.frequency === 'daily' ? DAY_MS : WEEK_MS;
@@ -200,14 +181,13 @@ async function runDigestDelivery(): Promise<void> {
     // (prevents sending multiple digests on restart)
     if (now - pref.updated_at < periodMs * 0.9) continue;
 
-    const digest = buildDigest(pref.chat_id, periodMs);
+    const digest = await buildDigest(pref.chat_id, periodMs);
     if (digest === 'No activity in this period.') continue;
 
     try {
       await notifyFn(pref.chat_id, digest);
       // Update timestamp so we don't re-send
-      db.prepare('UPDATE digest_preferences SET updated_at = ? WHERE chat_id = ?')
-        .run(now, pref.chat_id);
+      await db('digest_preferences').where({ chat_id: pref.chat_id }).update({ updated_at: now });
       logger.info({ chatId: pref.chat_id, frequency: pref.frequency }, 'Sent digest');
     } catch (err) {
       logger.warn({ err, chatId: pref.chat_id }, 'Failed to send digest');
@@ -227,16 +207,16 @@ async function runDigestDelivery(): Promise<void> {
 async function runBotTasks(): Promise<void> {
   if (!notifyFn || !routerRef) return;
 
-  const chatIds = getChatsWithBotTasks();
+  const chatIds = await getChatsWithBotTasks();
   if (chatIds.length === 0) return;
 
   for (const chatId of chatIds) {
-    const cards = getBotAssignedCards(chatId);
+    const cards = await getBotAssignedCards(chatId);
 
     for (const card of cards) {
       try {
         // Move to in_progress
-        moveCard(card.id, 'in_progress');
+        await moveCard(card.id, 'in_progress');
 
         logger.info(
           { cardId: card.id, chatId, title: card.title },
@@ -257,7 +237,7 @@ async function runBotTasks(): Promise<void> {
         const result = response.text || '(no output)';
 
         // Move to review
-        moveCard(card.id, 'review');
+        await moveCard(card.id, 'review');
 
         // Notify the user
         await notifyFn(
@@ -279,7 +259,7 @@ async function runBotTasks(): Promise<void> {
         );
 
         // Move back to backlog so it can be retried
-        moveCard(card.id, 'backlog');
+        await moveCard(card.id, 'backlog');
       }
     }
   }

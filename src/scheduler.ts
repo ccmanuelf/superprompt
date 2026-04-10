@@ -1,5 +1,5 @@
 import { CronExpressionParser } from 'cron-parser';
-import { getDueTasks, updateTaskAfterRun, type ScheduledTask } from './db.js';
+import { getDueTasks, updateTaskAfterRun, type ScheduledTask } from './db-core.js';
 import { logger } from './logger.js';
 import type { ProviderRouter } from './providers/router.js';
 
@@ -36,7 +36,7 @@ export function validateCron(cronExpression: string): string | null {
  * Run all due tasks. Called by the poll loop.
  */
 async function runDueTasks(router: ProviderRouter): Promise<void> {
-  const tasks = getDueTasks();
+  const tasks = await getDueTasks();
 
   if (tasks.length === 0) return;
 
@@ -66,7 +66,7 @@ async function runTask(
 
     // Compute next run
     const nextRun = computeNextRun(task.schedule);
-    updateTaskAfterRun(task.id, nextRun, resultText.slice(0, 1000));
+    await updateTaskAfterRun(task.id, nextRun, resultText.slice(0, 1000));
 
     // Notify the user with the result
     if (notifyCallback) {
@@ -87,7 +87,7 @@ async function runTask(
     // Still advance next_run so we don't keep retrying a broken task
     try {
       const nextRun = computeNextRun(task.schedule);
-      updateTaskAfterRun(
+      await updateTaskAfterRun(
         task.id,
         nextRun,
         `Error: ${err instanceof Error ? err.message : String(err)}`,
