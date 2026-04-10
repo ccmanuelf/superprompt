@@ -27,7 +27,7 @@ export interface TableInitializer {
   /** Unique name for logging and ordering */
   name: string;
   /** Create tables, indexes, triggers. Called once after the database is open. */
-  initTables(): void;
+  initTables(): void | Promise<void>;
 }
 
 /**
@@ -42,7 +42,7 @@ export interface StorageProvider {
   /** Register a subsystem's table initializer (call before init or initAllTables) */
   registerTables(initializer: TableInitializer): void;
   /** Execute all registered table initializers in registration order */
-  initAllTables(): void;
+  initAllTables(): void | Promise<void>;
   /** Close the database connection */
   close(): void;
 }

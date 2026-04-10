@@ -161,7 +161,7 @@ export class Application {
 
     // 1. Initialize storage
     this._storage.init();
-    this._storage.initAllTables();
+    await this._storage.initAllTables();
     logger.info('Storage initialized');
 
     // 2. Initialize subsystems (DB is ready, tables exist)

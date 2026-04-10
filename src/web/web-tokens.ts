@@ -11,10 +11,12 @@
  * - Optional TTL (default: no expiry)
  * - Immediate revocation disconnects active WebSocket sessions
  * - Audit log for create/revoke/auth events
+ *
+ * Database: Uses Knex for cross-dialect support (SQLite/MariaDB/PostgreSQL).
  */
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { getDatabase } from '../db.js';
+import { getKnex } from '../db-knex.js';
 import type { TableInitializer } from '../core/interfaces.js';
 import { logger } from '../logger.js';
 
@@ -39,36 +41,34 @@ export interface WebTokenValidation {
 
 // ── Table Initializer ──────────────────────────────────────
 
-const TOKEN_TABLE_SQL = `
-  CREATE TABLE IF NOT EXISTS web_tokens (
-    id TEXT PRIMARY KEY,
-    chat_id TEXT NOT NULL,
-    label TEXT NOT NULL DEFAULT '',
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER,
-    last_used_at INTEGER,
-    revoked_at INTEGER
-  )
-`;
+async function initWebTokenTables(): Promise<void> {
+  const db = getKnex();
 
-const AUDIT_TABLE_SQL = `
-  CREATE TABLE IF NOT EXISTS web_token_audit (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chat_id TEXT NOT NULL,
-    action TEXT NOT NULL,
-    token_prefix TEXT NOT NULL,
-    ip TEXT,
-    created_at INTEGER NOT NULL
-  )
-`;
+  if (!(await db.schema.hasTable('web_tokens'))) {
+    await db.schema.createTable('web_tokens', (t) => {
+      t.string('id').primary();
+      t.string('chat_id').notNullable();
+      t.string('label').notNullable().defaultTo('');
+      t.bigInteger('created_at').notNullable();
+      t.bigInteger('expires_at').nullable();
+      t.bigInteger('last_used_at').nullable();
+      t.bigInteger('revoked_at').nullable();
+      t.index(['chat_id']);
+      t.index(['chat_id', 'revoked_at']);
+    });
+  }
 
-function initWebTokenTables(): void {
-  const db = getDatabase();
-  db.exec(TOKEN_TABLE_SQL);
-  db.exec('CREATE INDEX IF NOT EXISTS idx_web_tokens_chat ON web_tokens(chat_id)');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_web_tokens_active ON web_tokens(chat_id, revoked_at)');
-  db.exec(AUDIT_TABLE_SQL);
-  db.exec('CREATE INDEX IF NOT EXISTS idx_web_token_audit_chat ON web_token_audit(chat_id, created_at)');
+  if (!(await db.schema.hasTable('web_token_audit'))) {
+    await db.schema.createTable('web_token_audit', (t) => {
+      t.increments('id').primary();
+      t.string('chat_id').notNullable();
+      t.string('action').notNullable();
+      t.string('token_prefix').notNullable();
+      t.string('ip').nullable();
+      t.bigInteger('created_at').notNullable();
+      t.index(['chat_id', 'created_at']);
+    });
+  }
 }
 
 export const webTokenTableInit: TableInitializer = {
@@ -83,16 +83,20 @@ const TOKEN_BYTES = 32; // 32 bytes = 64 hex chars
 
 // ── Audit Logging ──────────────────────────────────────────
 
-export function logTokenAudit(
+export async function logTokenAudit(
   chatId: string,
   action: 'create' | 'revoke' | 'revoke_all' | 'auth_success' | 'auth_failure',
   tokenPrefix: string,
   ip?: string,
-): void {
-  const db = getDatabase();
-  db.prepare(
-    'INSERT INTO web_token_audit (chat_id, action, token_prefix, ip, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(chatId, action, tokenPrefix, ip || null, Date.now());
+): Promise<void> {
+  const db = getKnex();
+  await db('web_token_audit').insert({
+    chat_id: chatId,
+    action,
+    token_prefix: tokenPrefix,
+    ip: ip || null,
+    created_at: Date.now(),
+  });
 }
 
 // ── CRUD ───────────────────────────────────────────────────
@@ -105,11 +109,11 @@ export function logTokenAudit(
  * @returns The created token (full value shown only once)
  * @throws Error if user already has MAX_TOKENS_PER_USER active tokens
  */
-export function createWebToken(
+export async function createWebToken(
   chatId: string,
   label: string = '',
   ttlSeconds?: number,
-): WebToken {
+): Promise<WebToken> {
   // Validate TTL
   if (ttlSeconds !== undefined && ttlSeconds <= 0) {
     throw new Error('Token TTL must be a positive number of seconds.');
@@ -120,7 +124,7 @@ export function createWebToken(
     label = label.slice(0, 50);
   }
 
-  const activeCount = getActiveTokenCount(chatId);
+  const activeCount = await getActiveTokenCount(chatId);
   if (activeCount >= MAX_TOKENS_PER_USER) {
     throw new Error(
       `Maximum ${MAX_TOKENS_PER_USER} active tokens per user. Revoke an existing token first.`,
@@ -131,12 +135,16 @@ export function createWebToken(
   const now = Date.now();
   const expiresAt = ttlSeconds ? now + ttlSeconds * 1000 : null;
 
-  const db = getDatabase();
-  db.prepare(
-    'INSERT INTO web_tokens (id, chat_id, label, created_at, expires_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(tokenId, chatId, label, now, expiresAt);
+  const db = getKnex();
+  await db('web_tokens').insert({
+    id: tokenId,
+    chat_id: chatId,
+    label,
+    created_at: now,
+    expires_at: expiresAt,
+  });
 
-  logTokenAudit(chatId, 'create', tokenId.slice(0, 8));
+  await logTokenAudit(chatId, 'create', tokenId.slice(0, 8));
 
   logger.info(
     { chatId, tokenPrefix: tokenId.slice(0, 8), label },
@@ -157,23 +165,28 @@ export function createWebToken(
 /**
  * List all tokens for a user (active and revoked).
  */
-export function listWebTokens(chatId: string): WebToken[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM web_tokens WHERE chat_id = ? ORDER BY created_at DESC',
-  ).all(chatId) as WebToken[];
+export async function listWebTokens(chatId: string): Promise<WebToken[]> {
+  const db = getKnex();
+  return db('web_tokens')
+    .where({ chat_id: chatId })
+    .orderBy('created_at', 'desc') as Promise<WebToken[]>;
 }
 
 /**
  * Count active (non-revoked, non-expired) tokens for a user.
  */
-export function getActiveTokenCount(chatId: string): number {
-  const db = getDatabase();
+export async function getActiveTokenCount(chatId: string): Promise<number> {
+  const db = getKnex();
   const now = Date.now();
-  const result = db.prepare(
-    'SELECT COUNT(*) as count FROM web_tokens WHERE chat_id = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)',
-  ).get(chatId, now) as { count: number };
-  return result.count;
+  const result = await db('web_tokens')
+    .where({ chat_id: chatId })
+    .whereNull('revoked_at')
+    .where(function () {
+      this.whereNull('expires_at').orWhere('expires_at', '>', now);
+    })
+    .count('* as count')
+    .first();
+  return (result as { count: number })?.count ?? 0;
 }
 
 /**
@@ -181,7 +194,7 @@ export function getActiveTokenCount(chatId: string): number {
  * Returns validation result with chat_id if valid.
  * Uses timing-safe comparison after DB lookup for defense-in-depth.
  */
-export function validateWebToken(candidateToken: string): WebTokenValidation {
+export async function validateWebToken(candidateToken: string): Promise<WebTokenValidation> {
   const prefix = candidateToken.slice(0, 8);
 
   // Quick reject: tokens are always 64 hex chars
@@ -189,23 +202,18 @@ export function validateWebToken(candidateToken: string): WebTokenValidation {
     return { valid: false, chatId: null, tokenPrefix: prefix, isLegacy: false };
   }
 
-  const db = getDatabase();
-  const row = db.prepare(
-    'SELECT * FROM web_tokens WHERE id = ?',
-  ).get(candidateToken) as WebToken | undefined;
+  const db = getKnex();
+  const row = await db('web_tokens').where({ id: candidateToken }).first() as WebToken | undefined;
 
   if (!row) {
     // Timing equalization: perform a dummy compare so the not-found path
-    // takes roughly the same CPU time as the found path. The DB lookup
-    // itself has constant-time B-tree behavior on PK, and the rate limiter
-    // (5 failures/minute/IP) is the primary defense against brute force.
+    // takes roughly the same CPU time as the found path.
     const dummy = Buffer.alloc(TOKEN_BYTES * 2, 0);
     timingSafeEqual(Buffer.from(candidateToken), dummy);
     return { valid: false, chatId: null, tokenPrefix: prefix, isLegacy: false };
   }
 
-  // Defense-in-depth: timing-safe verify after DB lookup (DB matched by PK,
-  // but we verify to guard against hypothetical DB layer issues)
+  // Defense-in-depth: timing-safe verify after DB lookup
   if (!timingSafeEqual(Buffer.from(candidateToken), Buffer.from(row.id))) {
     return { valid: false, chatId: null, tokenPrefix: prefix, isLegacy: false };
   }
@@ -221,10 +229,7 @@ export function validateWebToken(candidateToken: string): WebTokenValidation {
   }
 
   // Valid — update last_used_at
-  db.prepare('UPDATE web_tokens SET last_used_at = ? WHERE id = ?').run(
-    Date.now(),
-    row.id,
-  );
+  await db('web_tokens').where({ id: row.id }).update({ last_used_at: Date.now() });
 
   return {
     valid: true,
@@ -240,24 +245,24 @@ export function validateWebToken(candidateToken: string): WebTokenValidation {
  * If multiple tokens match, the oldest (first created) is revoked.
  * @returns The full token ID if revoked (for session disconnect), or null if not found
  */
-export function revokeWebToken(chatId: string, tokenPrefix: string): string | null {
+export async function revokeWebToken(chatId: string, tokenPrefix: string): Promise<string | null> {
   if (tokenPrefix.length < 8) {
     return null; // Require minimum 8-char prefix to avoid accidental revocation
   }
 
-  const db = getDatabase();
-  const row = db.prepare(
-    'SELECT id FROM web_tokens WHERE chat_id = ? AND id LIKE ? AND revoked_at IS NULL ORDER BY created_at ASC LIMIT 1',
-  ).get(chatId, tokenPrefix + '%') as { id: string } | undefined;
+  const db = getKnex();
+  const row = await db('web_tokens')
+    .where({ chat_id: chatId })
+    .where('id', 'like', tokenPrefix + '%')
+    .whereNull('revoked_at')
+    .orderBy('created_at', 'asc')
+    .first() as { id: string } | undefined;
 
   if (!row) return null;
 
-  db.prepare('UPDATE web_tokens SET revoked_at = ? WHERE id = ?').run(
-    Date.now(),
-    row.id,
-  );
+  await db('web_tokens').where({ id: row.id }).update({ revoked_at: Date.now() });
 
-  logTokenAudit(chatId, 'revoke', row.id.slice(0, 8));
+  await logTokenAudit(chatId, 'revoke', row.id.slice(0, 8));
 
   logger.info(
     { chatId, tokenPrefix: row.id.slice(0, 8) },
@@ -271,49 +276,51 @@ export function revokeWebToken(chatId: string, tokenPrefix: string): string | nu
  * Revoke ALL active tokens for a user.
  * @returns Number of tokens revoked
  */
-export function revokeAllWebTokens(chatId: string): number {
-  const db = getDatabase();
-  const result = db.prepare(
-    'UPDATE web_tokens SET revoked_at = ? WHERE chat_id = ? AND revoked_at IS NULL',
-  ).run(Date.now(), chatId);
+export async function revokeAllWebTokens(chatId: string): Promise<number> {
+  const db = getKnex();
+  const count = await db('web_tokens')
+    .where({ chat_id: chatId })
+    .whereNull('revoked_at')
+    .update({ revoked_at: Date.now() });
 
-  if (result.changes > 0) {
-    logTokenAudit(chatId, 'revoke_all', 'all');
-    logger.info({ chatId, count: result.changes }, 'All web tokens revoked');
+  if (count > 0) {
+    await logTokenAudit(chatId, 'revoke_all', 'all');
+    logger.info({ chatId, count }, 'All web tokens revoked');
   }
 
-  return result.changes;
+  return count;
 }
 
 /**
  * Get all active (non-revoked) token IDs for a user.
  * Used for bulk session disconnect on revoke-all.
  */
-export function getActiveTokenIds(chatId: string): string[] {
-  const db = getDatabase();
+export async function getActiveTokenIds(chatId: string): Promise<string[]> {
+  const db = getKnex();
   const now = Date.now();
-  const rows = db.prepare(
-    'SELECT id FROM web_tokens WHERE chat_id = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)',
-  ).all(chatId, now) as { id: string }[];
+  const rows = await db('web_tokens')
+    .select('id')
+    .where({ chat_id: chatId })
+    .whereNull('revoked_at')
+    .where(function () {
+      this.whereNull('expires_at').orWhere('expires_at', '>', now);
+    }) as { id: string }[];
   return rows.map((r) => r.id);
 }
 
 /**
  * Get audit log entries for a user (most recent first).
  */
-export function getTokenAuditLog(chatId: string, limit: number = 20): Array<{
+export async function getTokenAuditLog(chatId: string, limit: number = 20): Promise<Array<{
   action: string;
   token_prefix: string;
   ip: string | null;
   created_at: number;
-}> {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT action, token_prefix, ip, created_at FROM web_token_audit WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?',
-  ).all(chatId, limit) as Array<{
-    action: string;
-    token_prefix: string;
-    ip: string | null;
-    created_at: number;
-  }>;
+}>> {
+  const db = getKnex();
+  return db('web_token_audit')
+    .select('action', 'token_prefix', 'ip', 'created_at')
+    .where({ chat_id: chatId })
+    .orderBy('created_at', 'desc')
+    .limit(limit);
 }

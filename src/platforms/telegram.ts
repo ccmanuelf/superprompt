@@ -1171,7 +1171,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         }
 
         try {
-          const token = createWebToken(chatId, label, ttlSeconds);
+          const token = await createWebToken(chatId, label, ttlSeconds);
           const expiryText = token.expires_at
             ? `Expires: ${new Date(token.expires_at).toLocaleString()}`
             : 'No expiry';
@@ -1192,7 +1192,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       }
 
       case 'list': {
-        const tokens = listWebTokens(chatId);
+        const tokens = await listWebTokens(chatId);
         if (tokens.length === 0) {
           await ctx.reply('No web tokens. Create one with `/webtoken create [label]`.');
           return;
@@ -1221,7 +1221,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const revokedId = revokeWebToken(chatId, prefix);
+        const revokedId = await revokeWebToken(chatId, prefix);
         if (revokedId) {
           disconnectTokenSessions(revokedId);
           await ctx.reply(`✅ Token <code>${prefix}…</code> revoked. Active web sessions disconnected.`, { parse_mode: 'HTML' });
@@ -1233,8 +1233,8 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
       case 'revoke-all': {
         // Get all active token IDs first (for session disconnect)
-        const activeIds = getActiveTokenIds(chatId);
-        const count = revokeAllWebTokens(chatId);
+        const activeIds = await getActiveTokenIds(chatId);
+        const count = await revokeAllWebTokens(chatId);
         for (const tid of activeIds) {
           disconnectTokenSessions(tid);
         }

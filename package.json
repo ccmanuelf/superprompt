@@ -1,6 +1,6 @@
 {
   "name": "clauded",
-  "version": "1.0.0-rc.48",
+  "version": "1.0.0-rc.49",
   "description": "Personal AI assistant daemon — bridges messaging platforms to AI backends",
   "type": "module",
   "engines": {
@@ -27,11 +27,14 @@
     "exceljs": "^4.4.0",
     "franc-min": "^6.2.0",
     "grammy": "^1.40.0",
+    "knex": "^3.2.9",
     "mammoth": "^1.11.0",
+    "mysql2": "^3.22.0",
     "ollama": "^0.5.0",
     "openai": "^4.80.0",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.17.2",
+    "pg": "^8.20.0",
     "pino": "^10.3.0",
     "pino-pretty": "^13.0.0",
     "pptxgenjs": "^4.0.1",

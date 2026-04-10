@@ -45,9 +45,9 @@ export function createStorageProvider(): StorageProvider {
     registerTables(initializer: TableInitializer): void {
       tableInitializers.push(initializer);
     },
-    initAllTables(): void {
+    async initAllTables(): Promise<void> {
       for (const init of tableInitializers) {
-        init.initTables();
+        await init.initTables();
         logger.debug({ table: init.name }, 'Table initializer executed');
       }
       logger.info({ count: tableInitializers.length }, 'All table initializers executed');

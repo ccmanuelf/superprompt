@@ -141,10 +141,10 @@ function apiCorsHeaders(): Record<string, string> {
  * Returns the authenticated chatId (for per-user data scoping) or null if unauthenticated.
  * Handles CORS preflight (OPTIONS) — returns null and ends the response.
  */
-function authenticateApiRequest(
+async function authenticateApiRequest(
   req: import('node:http').IncomingMessage,
   res: import('node:http').ServerResponse,
-): string | null {
+): Promise<string | null> {
   const cors = apiCorsHeaders();
 
   // Handle CORS preflight
@@ -179,7 +179,7 @@ function authenticateApiRequest(
   }
 
   // Try per-user token first — returns scoped chatId
-  const perUserResult = validateWebToken(candidateToken);
+  const perUserResult = await validateWebToken(candidateToken);
   if (perUserResult.valid && perUserResult.chatId) {
     return perUserResult.chatId;
   }
@@ -282,10 +282,10 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
   }
 
   // Serve static files and API routes with security headers
-  function handleRequest(
+  async function handleRequest(
     req: import('node:http').IncomingMessage,
     res: import('node:http').ServerResponse,
-  ): void {
+  ): Promise<void> {
     const urlPath = req.url?.split('?')[0] || '/';
 
     // ── API routes (handle before static files) ──
@@ -297,7 +297,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       }
 
       // Authenticate all other API requests — returns chatId for data scoping
-      const apiChatId = authenticateApiRequest(req, res);
+      const apiChatId = await authenticateApiRequest(req, res);
       if (!apiChatId) return;
 
       const apiError = (label: string) => (err: unknown) => {
@@ -432,7 +432,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       return null;
     }
 
-    ws.on('message', function authHandler(data: Buffer | string) {
+    ws.on('message', async function authHandler(data: Buffer | string) {
       const text = parseMessage(data);
       if (!text) return;
 
@@ -447,11 +447,11 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
         // Try per-user token first, then fall back to legacy VOICE_WEB_TOKEN
         let authChatId: string | null = null;
         let tokenId: string | null = null;
-        const perUserResult = validateWebToken(msg.token);
+        const perUserResult = await validateWebToken(msg.token);
         if (perUserResult.valid && perUserResult.chatId) {
           authChatId = perUserResult.chatId;
           tokenId = msg.token;
-          logTokenAudit(perUserResult.chatId, 'auth_success', perUserResult.tokenPrefix, ip);
+          await logTokenAudit(perUserResult.chatId, 'auth_success', perUserResult.tokenPrefix, ip);
         } else if (token && validateToken(msg.token, token)) {
           // Legacy shared token — no per-user scoping. Falls back to first
           // ALLOWED_CHAT_ID so all legacy users share the same data view.
@@ -461,7 +461,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
         } else {
           recordAuthFailure(ip);
           if (perUserResult.tokenPrefix) {
-            logTokenAudit('unknown', 'auth_failure', perUserResult.tokenPrefix, ip);
+            await logTokenAudit('unknown', 'auth_failure', perUserResult.tokenPrefix, ip);
           }
           logger.warn({ ip }, 'Web: invalid token');
           ws.send(JSON.stringify({ type: 'error', message: 'Invalid token' }));
@@ -501,15 +501,15 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
   });
 
   // ── Token re-validation (checks token still valid every 60s) ──
-  function createTokenRevalidator(ws: WebSocket, tokenId: string | null): () => boolean {
-    if (!tokenId) return () => true; // Legacy tokens don't expire
+  function createTokenRevalidator(ws: WebSocket, tokenId: string | null): () => Promise<boolean> {
+    if (!tokenId) return async () => true; // Legacy tokens don't expire
     let lastCheck = Date.now();
     const RECHECK_INTERVAL = 60_000; // 60 seconds
-    return () => {
+    return async () => {
       const now = Date.now();
       if (now - lastCheck < RECHECK_INTERVAL) return true;
       lastCheck = now;
-      const result = validateWebToken(tokenId);
+      const result = await validateWebToken(tokenId);
       if (!result.valid) {
         ws.send(JSON.stringify({ type: 'error', message: 'Token expired or revoked' }));
         ws.close(4002, 'Token expired');
@@ -525,8 +525,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     const isTokenValid = createTokenRevalidator(ws, tokenId || null);
     logger.info('Board web: client connected');
 
-    ws.on('message', (data: Buffer | string) => {
-      if (!isTokenValid()) return; // Re-validate token periodically
+    ws.on('message', async (data: Buffer | string) => {
+      if (!(await isTokenValid())) return; // Re-validate token periodically
       const text = typeof data === 'string' ? data : data.toString('utf-8');
       try {
         const msg = JSON.parse(text);
@@ -603,8 +603,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     const isTokenValid = createTokenRevalidator(ws, tokenId || null);
     logger.info({ chatId: learnChatId }, 'Learn web: client connected');
 
-    ws.on('message', (data: Buffer | string) => {
-      if (!isTokenValid()) return; // Re-validate token periodically
+    ws.on('message', async (data: Buffer | string) => {
+      if (!(await isTokenValid())) return; // Re-validate token periodically
       const text = typeof data === 'string' ? data : data.toString('utf-8');
       try {
         const msg = JSON.parse(text);
