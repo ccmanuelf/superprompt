@@ -4,7 +4,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import type { TableInitializer } from './core/interfaces.js';
 
@@ -38,24 +38,24 @@ export interface CitationInput {
 
 // ── Initialization ──────────────────────────────────────────
 
-export function initCitationTable(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS citations (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      authors TEXT,
-      url TEXT,
-      doi TEXT,
-      year INTEGER,
-      source TEXT NOT NULL DEFAULT 'manual',
-      abstract TEXT,
-      added_at INTEGER NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_citations_chat ON citations(chat_id, added_at);
-  `);
+export async function initCitationTable(): Promise<void> {
+  const db = getKnex();
+  const exists = await db.schema.hasTable('citations');
+  if (!exists) {
+    await db.schema.createTable('citations', (t) => {
+      t.text('id').primary();
+      t.text('chat_id').notNullable();
+      t.text('title').notNullable();
+      t.text('authors');
+      t.text('url');
+      t.text('doi');
+      t.integer('year');
+      t.text('source').notNullable().defaultTo('manual');
+      t.text('abstract');
+      t.integer('added_at').notNullable();
+      t.index(['chat_id', 'added_at'], 'idx_citations_chat');
+    });
+  }
 
   logger.info('Citation table initialized');
 }
@@ -64,56 +64,59 @@ export const citationTableInit: TableInitializer = { name: 'citations', initTabl
 
 // ── CRUD ────────────────────────────────────────────────────
 
-export function addCitation(chatId: string, input: CitationInput): Citation {
-  const db = getDatabase();
+export async function addCitation(chatId: string, input: CitationInput): Promise<Citation> {
+  const db = getKnex();
   const id = randomBytes(6).toString('hex');
   const now = Date.now();
 
-  db.prepare(
-    `INSERT INTO citations (id, chat_id, title, authors, url, doi, year, source, abstract, added_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id, chatId, input.title,
-    input.authors ? JSON.stringify(input.authors) : null,
-    input.url ?? null,
-    input.doi ?? null,
-    input.year ?? null,
-    input.source ?? 'manual',
-    input.abstract ?? null,
-    now,
-  );
+  await db('citations').insert({
+    id,
+    chat_id: chatId,
+    title: input.title,
+    authors: input.authors ? JSON.stringify(input.authors) : null,
+    url: input.url ?? null,
+    doi: input.doi ?? null,
+    year: input.year ?? null,
+    source: input.source ?? 'manual',
+    abstract: input.abstract ?? null,
+    added_at: now,
+  });
 
-  return getCitationById(id)!;
+  return (await getCitationById(id))!;
 }
 
-export function getCitationById(id: string): Citation | undefined {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM citations WHERE id = ?').get(id) as Citation | undefined;
+export async function getCitationById(id: string): Promise<Citation | undefined> {
+  const db = getKnex();
+  return db('citations').where('id', id).first() as Promise<Citation | undefined>;
 }
 
-export function getCitations(chatId: string, limit: number = 50): Citation[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM citations WHERE chat_id = ? ORDER BY added_at DESC LIMIT ?',
-  ).all(chatId, limit) as Citation[];
+export async function getCitations(chatId: string, limit: number = 50): Promise<Citation[]> {
+  const db = getKnex();
+  return db('citations')
+    .where('chat_id', chatId)
+    .orderBy('added_at', 'desc')
+    .limit(limit) as Promise<Citation[]>;
 }
 
-export function deleteCitation(id: string): boolean {
-  const db = getDatabase();
-  return db.prepare('DELETE FROM citations WHERE id = ?').run(id).changes > 0;
+export async function deleteCitation(id: string): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('citations').where('id', id).del();
+  return count > 0;
 }
 
-export function clearCitations(chatId: string): number {
-  const db = getDatabase();
-  return db.prepare('DELETE FROM citations WHERE chat_id = ?').run(chatId).changes;
+export async function clearCitations(chatId: string): Promise<number> {
+  const db = getKnex();
+  return db('citations').where('chat_id', chatId).del();
 }
 
 /** Check for duplicate by title (case-insensitive) before adding. */
-export function citationExists(chatId: string, title: string): boolean {
-  const db = getDatabase();
-  const row = db.prepare(
-    'SELECT id FROM citations WHERE chat_id = ? AND LOWER(title) = LOWER(?)',
-  ).get(chatId, title);
+export async function citationExists(chatId: string, title: string): Promise<boolean> {
+  const db = getKnex();
+  const row = await db('citations')
+    .where('chat_id', chatId)
+    .whereRaw('LOWER(title) = LOWER(?)', [title])
+    .select('id')
+    .first();
   return !!row;
 }
 
@@ -141,8 +144,8 @@ function formatAuthorBibtex(authors: string[]): string {
   return authors.join(' and ');
 }
 
-export function exportCitations(chatId: string, format: CitationFormat): string {
-  const citations = getCitations(chatId, 500);
+export async function exportCitations(chatId: string, format: CitationFormat): Promise<string> {
+  const citations = await getCitations(chatId, 500);
   if (citations.length === 0) return 'No citations to export.';
 
   switch (format) {

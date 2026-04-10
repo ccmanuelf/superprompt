@@ -25,7 +25,7 @@ import {
   getUserToolByName,
   createUserTool,
   insertToolRevision,
-} from './db.js';
+} from './db-core.js';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -133,19 +133,20 @@ export function getAggregatedCommands(): PackCommand[] {
 // ── Pack Subscriptions (SA5) ──────────────────────────────
 
 import type { TableInitializer } from './core/interfaces.js';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 
-export function initPackSubscriptionTable(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS pack_subscriptions (
-      chat_id TEXT NOT NULL,
-      pack_name TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      enabled_at INTEGER NOT NULL,
-      PRIMARY KEY (chat_id, pack_name)
-    );
-  `);
+export async function initPackSubscriptionTable(): Promise<void> {
+  const db = getKnex();
+  const exists = await db.schema.hasTable('pack_subscriptions');
+  if (!exists) {
+    await db.schema.createTable('pack_subscriptions', (t) => {
+      t.text('chat_id').notNullable();
+      t.text('pack_name').notNullable();
+      t.integer('enabled').notNullable().defaultTo(1);
+      t.integer('enabled_at').notNullable();
+      t.primary(['chat_id', 'pack_name']);
+    });
+  }
 }
 
 export const packSubscriptionTableInit: TableInitializer = {
@@ -158,12 +159,13 @@ export const packSubscriptionTableInit: TableInitializer = {
  * Default: all packs are enabled (backward compatible).
  * Only returns false if explicitly disabled.
  */
-export function isPackEnabled(chatId: string, packName: string): boolean {
+export async function isPackEnabled(chatId: string, packName: string): Promise<boolean> {
   try {
-    const db = getDatabase();
-    const row = db.prepare(
-      'SELECT enabled FROM pack_subscriptions WHERE chat_id = ? AND pack_name = ?',
-    ).get(chatId, packName) as { enabled: number } | undefined;
+    const db = getKnex();
+    const row = await db('pack_subscriptions')
+      .where({ chat_id: chatId, pack_name: packName })
+      .select('enabled')
+      .first() as { enabled: number } | undefined;
     if (!row) return true; // Default: enabled
     return row.enabled === 1;
   } catch {
@@ -174,50 +176,76 @@ export function isPackEnabled(chatId: string, packName: string): boolean {
 /**
  * Enable a pack for a chat.
  */
-export function enablePack(chatId: string, packName: string): void {
-  const db = getDatabase();
-  db.prepare(
-    'INSERT OR REPLACE INTO pack_subscriptions (chat_id, pack_name, enabled, enabled_at) VALUES (?, ?, 1, ?)',
-  ).run(chatId, packName, Date.now());
+export async function enablePack(chatId: string, packName: string): Promise<void> {
+  const db = getKnex();
+  await db('pack_subscriptions')
+    .insert({
+      chat_id: chatId,
+      pack_name: packName,
+      enabled: 1,
+      enabled_at: Date.now(),
+    })
+    .onConflict(['chat_id', 'pack_name'])
+    .merge({
+      enabled: 1,
+      enabled_at: Date.now(),
+    });
 }
 
 /**
  * Disable a pack for a chat.
  */
-export function disablePack(chatId: string, packName: string): void {
-  const db = getDatabase();
-  db.prepare(
-    'INSERT OR REPLACE INTO pack_subscriptions (chat_id, pack_name, enabled, enabled_at) VALUES (?, ?, 0, ?)',
-  ).run(chatId, packName, Date.now());
+export async function disablePack(chatId: string, packName: string): Promise<void> {
+  const db = getKnex();
+  await db('pack_subscriptions')
+    .insert({
+      chat_id: chatId,
+      pack_name: packName,
+      enabled: 0,
+      enabled_at: Date.now(),
+    })
+    .onConflict(['chat_id', 'pack_name'])
+    .merge({
+      enabled: 0,
+      enabled_at: Date.now(),
+    });
 }
 
 /**
  * Get all pack subscription statuses for a chat.
  */
-export function getPackSubscriptions(chatId: string): Array<{ packName: string; enabled: boolean }> {
+export async function getPackSubscriptions(chatId: string): Promise<Array<{ packName: string; enabled: boolean }>> {
   const allPacks = loadedPacks.map((p) => p.name);
-  return allPacks.map((name) => ({
-    packName: name,
-    enabled: isPackEnabled(chatId, name),
-  }));
+  const results: Array<{ packName: string; enabled: boolean }> = [];
+  for (const name of allPacks) {
+    results.push({
+      packName: name,
+      enabled: await isPackEnabled(chatId, name),
+    });
+  }
+  return results;
 }
 
 /**
  * Get enabled packs for a chat — used to filter tools and intent scoring.
  */
-export function getEnabledPackNames(chatId: string): string[] {
-  return loadedPacks
-    .filter((p) => p.enabled && isPackEnabled(chatId, p.name))
-    .map((p) => p.name);
+export async function getEnabledPackNames(chatId: string): Promise<string[]> {
+  const enabledNames: string[] = [];
+  for (const p of loadedPacks) {
+    if (p.enabled && await isPackEnabled(chatId, p.name)) {
+      enabledNames.push(p.name);
+    }
+  }
+  return enabledNames;
 }
 
 // ── Intent Scoring ─────────────────────────────────────────
 
-export function scorePackIntent(message: string, chatId?: string): {
+export async function scorePackIntent(message: string, chatId?: string): Promise<{
   score: number;
   tools: string[];
   webApps: string[];
-} {
+}> {
   const lower = message.toLowerCase();
   let score = 0;
   const tools: string[] = [];
@@ -237,7 +265,7 @@ export function scorePackIntent(message: string, chatId?: string): {
 
     // Apply self-tuning weight (rc.28) — packs that succeed get boosted
     if (packScore > 0 && chatId) {
-      packScore = applyPackTuning(packScore, pack.name, chatId);
+      packScore = await applyPackTuning(packScore, pack.name, chatId);
     }
 
     score += packScore;
@@ -247,22 +275,22 @@ export function scorePackIntent(message: string, chatId?: string): {
 }
 
 /** Apply self-tuning weight from pack-tuner */
-function applyPackTuning(baseScore: number, packName: string, chatId: string): number {
+async function applyPackTuning(baseScore: number, packName: string, chatId: string): Promise<number> {
   try {
     const { applyTunedWeight } = packTunerModule;
-    return applyTunedWeight(baseScore, packName, chatId);
+    return await applyTunedWeight(baseScore, packName, chatId);
   } catch {
     return baseScore;
   }
 }
 
 // Lazy-loaded pack-tuner module reference
-let packTunerModule: { applyTunedWeight: (b: number, p: string, c: string) => number } = {
-  applyTunedWeight: (b) => b,
+let packTunerModule: { applyTunedWeight: (b: number, p: string, c: string) => Promise<number> } = {
+  applyTunedWeight: async (b) => b,
 };
 
 /** Set the pack tuner module reference (called from index.ts after initialization) */
-export function setPackTunerModule(mod: { applyTunedWeight: (b: number, p: string, c: string) => number }): void {
+export function setPackTunerModule(mod: { applyTunedWeight: (b: number, p: string, c: string) => Promise<number> }): void {
   packTunerModule = mod;
 }
 
@@ -411,7 +439,7 @@ function parseYamlValue(raw: string): unknown {
 
 // ── Pack Loading ───────────────────────────────────────────
 
-export function loadAllPacks(): PackMetadata[] {
+export async function loadAllPacks(): Promise<PackMetadata[]> {
   loadedPacks.length = 0;
 
   if (!existsSync(PACKS_DIR)) {
@@ -433,7 +461,7 @@ export function loadAllPacks(): PackMetadata[] {
     }
 
     try {
-      const pack = loadSinglePack(packDir, entry.name);
+      const pack = await loadSinglePack(packDir, entry.name);
       if (pack) {
         loadedPacks.push(pack);
       }
@@ -445,7 +473,7 @@ export function loadAllPacks(): PackMetadata[] {
   return [...loadedPacks];
 }
 
-function loadSinglePack(packDir: string, dirName: string): PackMetadata | null {
+async function loadSinglePack(packDir: string, dirName: string): Promise<PackMetadata | null> {
   const yamlContent = readFileSync(resolve(packDir, 'pack.yaml'), 'utf-8');
   const raw = parsePackYaml(yamlContent);
 
@@ -461,14 +489,14 @@ function loadSinglePack(packDir: string, dirName: string): PackMetadata | null {
   const toolsDir = resolve(packDir, 'tools');
   let toolCount = 0;
   if (existsSync(toolsDir)) {
-    toolCount = importPackTools(toolsDir, name);
+    toolCount = await importPackTools(toolsDir, name);
   }
 
   // Import skills
   const skillsDir = resolve(packDir, 'skills');
   let skillCount = 0;
   if (existsSync(skillsDir)) {
-    skillCount = importPackSkills(skillsDir, name);
+    skillCount = await importPackSkills(skillsDir, name);
   }
 
   // Discover templates
@@ -604,7 +632,7 @@ export async function loadLevel3Pack(
 
 // ── Tool/Skill Import (mirrors forge/auto-import.ts) ───────
 
-function importPackTools(toolsDir: string, packName: string): number {
+async function importPackTools(toolsDir: string, packName: string): Promise<number> {
   const files = readdirSync(toolsDir).filter((f) => f.endsWith('.md'));
   let imported = 0;
 
@@ -618,7 +646,7 @@ function importPackTools(toolsDir: string, packName: string): number {
         continue;
       }
 
-      const existing = getUserToolByName(parsed.name);
+      const existing = await getUserToolByName(parsed.name);
       if (existing) {
         logger.debug({ tool: parsed.name, pack: packName }, 'Tool already exists, skipping');
         continue;
@@ -639,8 +667,8 @@ function importPackTools(toolsDir: string, packName: string): number {
         code: parsed.code,
       });
 
-      createUserTool(id, parsed.name, parsed.description, parsed.type, config, `packs/${packName}/tools/${file}`);
-      insertToolRevision(id, config, `Auto-imported from pack: ${packName}`);
+      await createUserTool(id, parsed.name, parsed.description, parsed.type, config, `packs/${packName}/tools/${file}`);
+      await insertToolRevision(id, config, `Auto-imported from pack: ${packName}`);
       imported++;
       logger.info({ tool: parsed.name, pack: packName }, 'Imported pack tool');
     } catch (err) {
@@ -651,7 +679,7 @@ function importPackTools(toolsDir: string, packName: string): number {
   return imported;
 }
 
-function importPackSkills(skillsDir: string, packName: string): number {
+async function importPackSkills(skillsDir: string, packName: string): Promise<number> {
   const files = readdirSync(skillsDir).filter((f) => f.endsWith('.md'));
   let imported = 0;
 
@@ -665,15 +693,15 @@ function importPackSkills(skillsDir: string, packName: string): number {
         continue;
       }
 
-      const existing = getSkillByName(parsed.name);
+      const existing = await getSkillByName(parsed.name);
       if (existing) {
         logger.debug({ skill: parsed.name, pack: packName }, 'Skill already exists, skipping');
         continue;
       }
 
       const id = `pack-${packName}-${parsed.name}`;
-      createSkill(id, parsed.name, parsed.description, parsed.systemPrompt, parsed.tools, false, `packs/${packName}/skills/${file}`);
-      insertSkillRevision(id, parsed.systemPrompt, `Auto-imported from pack: ${packName}`);
+      await createSkill(id, parsed.name, parsed.description, parsed.systemPrompt, parsed.tools, false, `packs/${packName}/skills/${file}`);
+      await insertSkillRevision(id, parsed.systemPrompt, `Auto-imported from pack: ${packName}`);
       imported++;
       logger.info({ skill: parsed.name, pack: packName }, 'Imported pack skill');
     } catch (err) {

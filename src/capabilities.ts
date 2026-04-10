@@ -276,12 +276,12 @@ IMPORTANT: Never pretend you can build web dashboards or UIs conversationally. T
  * - 31-60: Problem emerging — educate and mention capabilities available
  * - 61-100: Active problem with data — suggest specific tool/feature
  */
-export function scoreMfgIntent(message: string): {
+export async function scoreMfgIntent(message: string): Promise<{
   score: number;
   phase: 'educate' | 'suggest' | 'activate';
   suggestedTools: string[];
   suggestedWebApps: string[];
-} {
+}> {
   const lower = message.toLowerCase();
   let score = 0;
   const tools: string[] = [];
@@ -494,7 +494,7 @@ export function scoreMfgIntent(message: string): {
   }
 
   // ── Domain Pack patterns (dynamically loaded) ──
-  const packResult = scorePackIntent(message);
+  const packResult = await scorePackIntent(message);
   score += packResult.score;
   tools.push(...packResult.tools);
   webApps.push(...packResult.webApps);
@@ -525,8 +525,8 @@ export function scoreMfgIntent(message: string): {
  * Only produces a hint when there's a genuine problem to solve (suggest/activate phase).
  * Covers all domains: manufacturing, voice, learning, documents, research, tasks.
  */
-export function generateMfgContextHint(message: string): string | null {
-  const intent = scoreMfgIntent(message);
+export async function generateMfgContextHint(message: string): Promise<string | null> {
+  const intent = await scoreMfgIntent(message);
 
   if (intent.phase === 'educate') {
     return null; // No hint — just answer the question naturally

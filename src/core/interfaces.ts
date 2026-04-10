@@ -163,13 +163,13 @@ export interface IntentMatch {
  */
 export interface PackProvider {
   /** Load all packs from the packs/ directory */
-  loadAll(): unknown[];
+  loadAll(): Promise<unknown[]>;
   /** Get a loaded pack by name */
   getByName(name: string): unknown | undefined;
   /** Get aggregated capability descriptions for the AI system prompt */
   getAggregatedCapabilities(): string;
   /** Score a user message against all loaded pack intent patterns */
-  scoreIntent(message: string): IntentMatch;
+  scoreIntent(message: string): Promise<IntentMatch>;
 }
 
 // ── Platform ────────────────────────────────────────────────

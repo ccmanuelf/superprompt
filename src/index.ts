@@ -145,7 +145,7 @@ async function main(): Promise<void> {
 
   app.registerSubsystem({
     name: 'tools',
-    init: () => {
+    init: async () => {
       registerBuiltinTools();
       // Register manufacturing pack tools (SA5 — Level 3 pack)
       manufacturingPack.registerTools();
@@ -156,7 +156,7 @@ async function main(): Promise<void> {
       loadUserTools(); // reload after auto-import
 
       // Load domain packs
-      const packList = loadAllPacks();
+      const packList = await loadAllPacks();
       if (packList.length > 0) {
         logger.info({ packs: packList.map((p) => p.name) }, 'Domain packs loaded');
         loadUserTools(); // reload after pack import

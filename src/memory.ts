@@ -62,7 +62,7 @@ export async function buildMemoryContext(
   let guardrailsCtx = '';
   try {
     const { buildGuardrailsContext } = await import('./guardrails.js');
-    guardrailsCtx = buildGuardrailsContext(chatId);
+    guardrailsCtx = await buildGuardrailsContext(chatId);
   } catch {
     // Guardrails module not available — skip
   }

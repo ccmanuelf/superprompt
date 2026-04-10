@@ -441,7 +441,7 @@ async function prefetchDataForClaude(chatId: string, message: string): Promise<s
   if (BOARD_INTENT.test(message)) {
     try {
       const { formatBoard } = await import('../kanban.js');
-      let boardData = formatBoard(chatId);
+      let boardData = await formatBoard(chatId);
       if (boardData.length > 2000) {
         boardData = boardData.slice(0, 2000) + '\n... (board truncated — open /board for full view)';
       }
@@ -640,7 +640,7 @@ export class ProviderRouter {
 
     // Inject capabilities, document generation, quality rules, command list, and kanban prompt
     // Manufacturing context hint is generated per-message based on conversational intent
-    const mfgHint = generateMfgContextHint(params.message);
+    const mfgHint = await generateMfgContextHint(params.message);
     // Compose full capabilities: base (manufacturing) + domain packs
     const packCaps = getAggregatedCapabilities();
     const webAppsPrompt = buildWebAppsPrompt();

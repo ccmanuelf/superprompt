@@ -260,7 +260,7 @@ describe('Pack Scaffold', () => {
 describe('Pack Intent Scoring', () => {
   it('scorePackIntent returns empty result when no packs loaded', async () => {
     const { scorePackIntent } = await import('../src/packs.js');
-    const result = scorePackIntent('hello world');
+    const result = await scorePackIntent('hello world');
     expect(result.score).toBe(0);
     expect(result.tools).toHaveLength(0);
     expect(result.webApps).toHaveLength(0);

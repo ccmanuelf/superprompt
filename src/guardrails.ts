@@ -14,7 +14,7 @@
  * 4. Manual: User or admin adds a guardrail via /guardrail command
  */
 
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import type { TableInitializer } from './core/interfaces.js';
 
@@ -31,19 +31,20 @@ export interface Guardrail {
 
 // ── Table Initialization ─────────────────────────────────────
 
-export function initGuardrailsTables(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS guardrails (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      source TEXT NOT NULL CHECK(source IN ('tool_failure', 'user_correction', 'quality_issue', 'manual')),
-      context TEXT NOT NULL DEFAULT '',
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_guardrails_chat ON guardrails(chat_id);
-  `);
+export async function initGuardrailsTables(): Promise<void> {
+  const db = getKnex();
+  const exists = await db.schema.hasTable('guardrails');
+  if (!exists) {
+    await db.schema.createTable('guardrails', (t) => {
+      t.increments('id').primary();
+      t.text('chat_id').notNullable();
+      t.text('content').notNullable();
+      t.text('source').notNullable();
+      t.text('context').notNullable().defaultTo('');
+      t.integer('created_at').notNullable();
+      t.index(['chat_id'], 'idx_guardrails_chat');
+    });
+  }
 }
 
 export const guardrailsTableInit: TableInitializer = {
@@ -56,65 +57,85 @@ export const guardrailsTableInit: TableInitializer = {
 /**
  * Add a guardrail for a chat. Deduplicates by content (won't add if identical exists).
  */
-export function addGuardrail(
+export async function addGuardrail(
   chatId: string,
   content: string,
   source: Guardrail['source'],
   context: string = '',
-): number | null {
-  const db = getDatabase();
+): Promise<number | null> {
+  const db = getKnex();
 
   // Deduplicate — don't add if very similar guardrail exists
-  const existing = db.prepare(
-    'SELECT id FROM guardrails WHERE chat_id = ? AND content = ?',
-  ).get(chatId, content) as { id: number } | undefined;
+  const existing = await db('guardrails')
+    .where({ chat_id: chatId, content })
+    .select('id')
+    .first();
 
   if (existing) return null;
 
-  const result = db.prepare(
-    'INSERT INTO guardrails (chat_id, content, source, context, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(chatId, content, source, context, Date.now());
+  const [result] = await db('guardrails').insert({
+    chat_id: chatId,
+    content,
+    source,
+    context,
+    created_at: Date.now(),
+  });
 
   logger.info({ chatId, source, content: content.slice(0, 80) }, 'Guardrail added');
-  return result.lastInsertRowid as number;
+  return result as number;
 }
 
 /**
  * Get all guardrails for a chat.
  */
-export function getGuardrails(chatId: string): Guardrail[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT id, chat_id as chatId, content, source, context, created_at as createdAt FROM guardrails WHERE chat_id = ? ORDER BY created_at ASC',
-  ).all(chatId) as Guardrail[];
+export async function getGuardrails(chatId: string): Promise<Guardrail[]> {
+  const db = getKnex();
+  return db('guardrails')
+    .where('chat_id', chatId)
+    .orderBy('created_at', 'asc')
+    .select(
+      'id',
+      db.ref('chat_id').as('chatId'),
+      'content',
+      'source',
+      'context',
+      db.ref('created_at').as('createdAt'),
+    ) as Promise<Guardrail[]>;
 }
 
 /**
  * Get global guardrails (chat_id = 'global' — apply to ALL chats).
  */
-export function getGlobalGuardrails(): Guardrail[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT id, chat_id as chatId, content, source, context, created_at as createdAt FROM guardrails WHERE chat_id = ? ORDER BY created_at ASC',
-  ).all('global') as Guardrail[];
+export async function getGlobalGuardrails(): Promise<Guardrail[]> {
+  const db = getKnex();
+  return db('guardrails')
+    .where('chat_id', 'global')
+    .orderBy('created_at', 'asc')
+    .select(
+      'id',
+      db.ref('chat_id').as('chatId'),
+      'content',
+      'source',
+      'context',
+      db.ref('created_at').as('createdAt'),
+    ) as Promise<Guardrail[]>;
 }
 
 /**
  * Remove a guardrail by ID.
  */
-export function removeGuardrail(id: number): boolean {
-  const db = getDatabase();
-  const result = db.prepare('DELETE FROM guardrails WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function removeGuardrail(id: number): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('guardrails').where('id', id).del();
+  return count > 0;
 }
 
 /**
  * Clear all guardrails for a chat.
  */
-export function clearGuardrails(chatId: string): number {
-  const db = getDatabase();
-  const result = db.prepare('DELETE FROM guardrails WHERE chat_id = ?').run(chatId);
-  return result.changes;
+export async function clearGuardrails(chatId: string): Promise<number> {
+  const db = getKnex();
+  return db('guardrails').where('chat_id', chatId).del();
 }
 
 // ── Context Building ─────────────────────────────────────────
@@ -124,9 +145,9 @@ export function clearGuardrails(chatId: string): number {
  * Combines chat-specific + global guardrails.
  * Injected at HIGHEST priority — before memory, before skills.
  */
-export function buildGuardrailsContext(chatId: string): string {
-  const chatGuardrails = getGuardrails(chatId);
-  const globalGuardrails = getGlobalGuardrails();
+export async function buildGuardrailsContext(chatId: string): Promise<string> {
+  const chatGuardrails = await getGuardrails(chatId);
+  const globalGuardrails = await getGlobalGuardrails();
   const all = [...globalGuardrails, ...chatGuardrails];
 
   if (all.length === 0) return '';
@@ -150,55 +171,59 @@ export function buildGuardrailsContext(chatId: string): string {
  * Detect guardrail-worthy events from tool execution results.
  * Called after tool execution — learns from failures.
  */
-export function detectToolFailureGuardrail(
+export async function detectToolFailureGuardrail(
   chatId: string,
   toolName: string,
   args: Record<string, unknown>,
   error: string,
-): void {
+): Promise<void> {
   // Only create guardrail after 2+ failures with same tool in this session
   // (prevents one-off errors from becoming permanent constraints)
-  const db = getDatabase();
-  const recentFailures = db.prepare(
-    "SELECT COUNT(*) as cnt FROM guardrails WHERE chat_id = ? AND source = 'tool_failure' AND content LIKE ? AND created_at > ?",
-  ).get(chatId, `%${toolName}%`, Date.now() - 3600000) as { cnt: number };
+  const db = getKnex();
+  const result = await db('guardrails')
+    .where('chat_id', chatId)
+    .where('source', 'tool_failure')
+    .where('content', 'like', `%${toolName}%`)
+    .where('created_at', '>', Date.now() - 3600000)
+    .count('* as cnt')
+    .first() as { cnt: number } | undefined;
 
-  if (recentFailures.cnt > 0) return; // Already have a guardrail for this tool recently
+  if (result && result.cnt > 0) return; // Already have a guardrail for this tool recently
 
   // Create a concise guardrail
   const argsPreview = JSON.stringify(args).slice(0, 100);
   const content = `Tool "${toolName}" failed with args like ${argsPreview}. Error: ${error.slice(0, 150)}. Consider alternative approaches.`;
 
-  addGuardrail(chatId, content, 'tool_failure', `Tool: ${toolName}`);
+  await addGuardrail(chatId, content, 'tool_failure', `Tool: ${toolName}`);
 }
 
 /**
  * Detect guardrail from user correction (when user says "no, that's wrong").
  * Called from auto-skills correction detection.
  */
-export function detectCorrectionGuardrail(
+export async function detectCorrectionGuardrail(
   chatId: string,
   userMessage: string,
   context: string,
-): void {
+): Promise<void> {
   const content = `User corrected: "${userMessage.slice(0, 200)}". Adjust approach for similar requests.`;
-  addGuardrail(chatId, content, 'user_correction', context);
+  await addGuardrail(chatId, content, 'user_correction', context);
 }
 
 /**
  * Detect guardrail from low quality response.
  * Called when self-monitor detects quality < 50.
  */
-export function detectQualityGuardrail(
+export async function detectQualityGuardrail(
   chatId: string,
   topic: string,
   qualityScore: number,
   issues: string,
-): void {
+): Promise<void> {
   if (qualityScore >= 50) return; // Only learn from significant failures
 
   const content = `Responses about "${topic.slice(0, 100)}" scored low (${qualityScore}/100): ${issues.slice(0, 150)}. Use tools for data-driven answers.`;
-  addGuardrail(chatId, content, 'quality_issue', `Score: ${qualityScore}`);
+  await addGuardrail(chatId, content, 'quality_issue', `Score: ${qualityScore}`);
 }
 
 // ── Formatting ───────────────────────────────────────────────

@@ -5,14 +5,24 @@
  * Provider-agnostic: tuning is based on tool outcomes, not AI provider.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Database from 'better-sqlite3';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 
-let db: Database.Database;
-vi.mock('../src/db.js', async (importOriginal) => {
-  const original = await importOriginal() as any;
-  return { ...original, getDatabase: () => db };
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
 });
+
+vi.mock('../src/logger.js', () => ({
+  logger: {
+    info: () => {},
+    warn: () => {},
+    debug: () => {},
+    error: () => {},
+  },
+}));
 
 import {
   recordPackToolOutcome,
@@ -22,127 +32,134 @@ import {
   resetPackWeights,
   formatPackWeights,
   getToolPackName,
-  initPackTunerTables,
+  packTunerTableInit,
 } from '../src/pack-tuner.js';
 
-function setupDb(): void {
-  db = new Database(':memory:');
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  // Create user_tools table for getToolPackName
-  db.exec(`CREATE TABLE IF NOT EXISTS user_tools (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT,
-    tool_type TEXT, config TEXT, enabled INTEGER DEFAULT 1, locked INTEGER DEFAULT 0,
-    source_file TEXT, created_at INTEGER, updated_at INTEGER
-  )`);
-  initPackTunerTables();
-}
-
 describe('pack-tuner — real execution', () => {
-  beforeEach(() => setupDb());
-  afterEach(() => db.close());
+  beforeEach(async () => {
+    if (testKnex) await testKnex.destroy();
+    testKnex = createTestKnex();
+    // Create user_tools table for getToolPackName
+    await testKnex.schema.createTable('user_tools', (t) => {
+      t.text('id').primary();
+      t.text('name').notNullable().unique();
+      t.text('description');
+      t.text('tool_type');
+      t.text('config');
+      t.integer('enabled').defaultTo(1);
+      t.integer('locked').defaultTo(0);
+      t.text('source_file');
+      t.integer('created_at');
+      t.integer('updated_at');
+    });
+    await packTunerTableInit.initTables();
+  });
+
+  afterAll(async () => {
+    if (testKnex) await testKnex.destroy();
+  });
 
   // ── Weight adjustment ──────────────────────────────────────
 
   describe('weight adjustment', () => {
-    it('starts at default weight 1.0', () => {
-      expect(getPackWeight('manufacturing', 'chat-1')).toBe(1.0);
+    it('starts at default weight 1.0', async () => {
+      expect(await getPackWeight('manufacturing', 'chat-1')).toBe(1.0);
     });
 
-    it('weight stays at 1.0 below minimum calls threshold', () => {
+    it('weight stays at 1.0 below minimum calls threshold', async () => {
       for (let i = 0; i < 4; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-1', true);
+        await recordPackToolOutcome('manufacturing', 'chat-1', true);
       }
-      expect(getPackWeight('manufacturing', 'chat-1')).toBe(1.0); // 4 < 5 minimum
+      expect(await getPackWeight('manufacturing', 'chat-1')).toBe(1.0); // 4 < 5 minimum
     });
 
-    it('weight increases after successful calls above threshold', () => {
+    it('weight increases after successful calls above threshold', async () => {
       for (let i = 0; i < 6; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-1', true);
+        await recordPackToolOutcome('manufacturing', 'chat-1', true);
       }
-      const weight = getPackWeight('manufacturing', 'chat-1');
+      const weight = await getPackWeight('manufacturing', 'chat-1');
       expect(weight).toBeGreaterThan(1.0);
     });
 
-    it('weight decreases after failed calls above threshold', () => {
+    it('weight decreases after failed calls above threshold', async () => {
       // 5 successes to reach threshold, then failures
       for (let i = 0; i < 5; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-1', true);
+        await recordPackToolOutcome('manufacturing', 'chat-1', true);
       }
       for (let i = 0; i < 5; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-1', false);
+        await recordPackToolOutcome('manufacturing', 'chat-1', false);
       }
-      const weight = getPackWeight('manufacturing', 'chat-1');
+      const weight = await getPackWeight('manufacturing', 'chat-1');
       expect(weight).toBeLessThan(1.0);
     });
 
-    it('weight never goes below 0.5', () => {
+    it('weight never goes below 0.5', async () => {
       for (let i = 0; i < 5; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-1', true);
+        await recordPackToolOutcome('manufacturing', 'chat-1', true);
       }
       // Many failures
       for (let i = 0; i < 50; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-1', false);
+        await recordPackToolOutcome('manufacturing', 'chat-1', false);
       }
-      expect(getPackWeight('manufacturing', 'chat-1')).toBeGreaterThanOrEqual(0.5);
+      expect(await getPackWeight('manufacturing', 'chat-1')).toBeGreaterThanOrEqual(0.5);
     });
 
-    it('weight never goes above 2.0', () => {
+    it('weight never goes above 2.0', async () => {
       for (let i = 0; i < 100; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-1', true);
+        await recordPackToolOutcome('manufacturing', 'chat-1', true);
       }
-      expect(getPackWeight('manufacturing', 'chat-1')).toBeLessThanOrEqual(2.0);
+      expect(await getPackWeight('manufacturing', 'chat-1')).toBeLessThanOrEqual(2.0);
     });
   });
 
   // ── Per-user isolation ─────────────────────────────────────
 
   describe('per-user isolation', () => {
-    it('different chats have independent weights', () => {
+    it('different chats have independent weights', async () => {
       // Chat A: all successes
       for (let i = 0; i < 10; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-a', true);
+        await recordPackToolOutcome('manufacturing', 'chat-a', true);
       }
       // Chat B: all failures
       for (let i = 0; i < 10; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-b', false);
+        await recordPackToolOutcome('manufacturing', 'chat-b', false);
       }
 
-      expect(getPackWeight('manufacturing', 'chat-a')).toBeGreaterThan(1.0);
-      expect(getPackWeight('manufacturing', 'chat-b')).toBeLessThan(1.0);
+      expect(await getPackWeight('manufacturing', 'chat-a')).toBeGreaterThan(1.0);
+      expect(await getPackWeight('manufacturing', 'chat-b')).toBeLessThan(1.0);
     });
 
-    it('different packs have independent weights', () => {
+    it('different packs have independent weights', async () => {
       for (let i = 0; i < 10; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-1', true);
-        recordPackToolOutcome('finance', 'chat-1', false);
+        await recordPackToolOutcome('manufacturing', 'chat-1', true);
+        await recordPackToolOutcome('finance', 'chat-1', false);
       }
 
-      expect(getPackWeight('manufacturing', 'chat-1')).toBeGreaterThan(1.0);
-      expect(getPackWeight('finance', 'chat-1')).toBeLessThan(1.0);
+      expect(await getPackWeight('manufacturing', 'chat-1')).toBeGreaterThan(1.0);
+      expect(await getPackWeight('finance', 'chat-1')).toBeLessThan(1.0);
     });
   });
 
   // ── applyTunedWeight ───────────────────────────────────────
 
   describe('applyTunedWeight', () => {
-    it('returns base score when no data', () => {
-      expect(applyTunedWeight(10, 'unknown-pack', 'chat-1')).toBe(10);
+    it('returns base score when no data', async () => {
+      expect(await applyTunedWeight(10, 'unknown-pack', 'chat-1')).toBe(10);
     });
 
-    it('boosts score for successful packs', () => {
+    it('boosts score for successful packs', async () => {
       for (let i = 0; i < 10; i++) {
-        recordPackToolOutcome('manufacturing', 'chat-1', true);
+        await recordPackToolOutcome('manufacturing', 'chat-1', true);
       }
-      const boosted = applyTunedWeight(10, 'manufacturing', 'chat-1');
+      const boosted = await applyTunedWeight(10, 'manufacturing', 'chat-1');
       expect(boosted).toBeGreaterThan(10);
     });
 
-    it('dampens score for failing packs', () => {
-      for (let i = 0; i < 5; i++) recordPackToolOutcome('failing-pack', 'chat-1', true);
-      for (let i = 0; i < 10; i++) recordPackToolOutcome('failing-pack', 'chat-1', false);
+    it('dampens score for failing packs', async () => {
+      for (let i = 0; i < 5; i++) await recordPackToolOutcome('failing-pack', 'chat-1', true);
+      for (let i = 0; i < 10; i++) await recordPackToolOutcome('failing-pack', 'chat-1', false);
 
-      const dampened = applyTunedWeight(10, 'failing-pack', 'chat-1');
+      const dampened = await applyTunedWeight(10, 'failing-pack', 'chat-1');
       expect(dampened).toBeLessThan(10);
     });
   });
@@ -150,48 +167,55 @@ describe('pack-tuner — real execution', () => {
   // ── Tool → Pack mapping ────────────────────────────────────
 
   describe('getToolPackName', () => {
-    it('maps tools via explicit packName parameter', () => {
+    it('maps tools via explicit packName parameter', async () => {
       // rc.30: packName is now passed explicitly from ToolEntry, not hardcoded
-      expect(getToolPackName('line_balance', 'manufacturing')).toBe('manufacturing');
-      expect(getToolPackName('sigma_analysis', 'manufacturing')).toBe('manufacturing');
-      expect(getToolPackName('any_tool', 'finance')).toBe('finance');
-      expect(getToolPackName('custom_tool', 'hr')).toBe('hr');
+      expect(await getToolPackName('line_balance', 'manufacturing')).toBe('manufacturing');
+      expect(await getToolPackName('sigma_analysis', 'manufacturing')).toBe('manufacturing');
+      expect(await getToolPackName('any_tool', 'finance')).toBe('finance');
+      expect(await getToolPackName('custom_tool', 'hr')).toBe('hr');
     });
 
-    it('returns null for core tools without packName', () => {
-      expect(getToolPackName('web_search')).toBeNull();
-      expect(getToolPackName('get_time')).toBeNull();
-      expect(getToolPackName('query_memory')).toBeNull();
+    it('returns null for core tools without packName', async () => {
+      expect(await getToolPackName('web_search')).toBeNull();
+      expect(await getToolPackName('get_time')).toBeNull();
+      expect(await getToolPackName('query_memory')).toBeNull();
     });
 
-    it('maps user tools from packs via source_file', () => {
-      db.prepare(
-        'INSERT INTO user_tools (id, name, description, tool_type, config, source_file, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      ).run('pack-finance-npv', 'calculate_npv', 'NPV calc', 'generated_code', '{}', 'packs/finance/tools/npv.md', Date.now(), Date.now());
+    it('maps user tools from packs via source_file', async () => {
+      await testKnex('user_tools').insert({
+        id: 'pack-finance-npv',
+        name: 'calculate_npv',
+        description: 'NPV calc',
+        tool_type: 'generated_code',
+        config: '{}',
+        source_file: 'packs/finance/tools/npv.md',
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      });
 
-      expect(getToolPackName('calculate_npv')).toBe('finance');
+      expect(await getToolPackName('calculate_npv')).toBe('finance');
     });
   });
 
   // ── Reset ──────────────────────────────────────────────────
 
   describe('reset', () => {
-    it('resets specific pack weights', () => {
-      for (let i = 0; i < 10; i++) recordPackToolOutcome('mfg', 'chat-1', true);
-      for (let i = 0; i < 10; i++) recordPackToolOutcome('fin', 'chat-1', true);
+    it('resets specific pack weights', async () => {
+      for (let i = 0; i < 10; i++) await recordPackToolOutcome('mfg', 'chat-1', true);
+      for (let i = 0; i < 10; i++) await recordPackToolOutcome('fin', 'chat-1', true);
 
-      resetPackWeights('chat-1', 'mfg');
-      expect(getPackWeight('mfg', 'chat-1')).toBe(1.0); // reset
-      expect(getPackWeight('fin', 'chat-1')).toBeGreaterThan(1.0); // untouched
+      await resetPackWeights('chat-1', 'mfg');
+      expect(await getPackWeight('mfg', 'chat-1')).toBe(1.0); // reset
+      expect(await getPackWeight('fin', 'chat-1')).toBeGreaterThan(1.0); // untouched
     });
 
-    it('resets all weights for a chat', () => {
-      for (let i = 0; i < 10; i++) recordPackToolOutcome('mfg', 'chat-1', true);
-      for (let i = 0; i < 10; i++) recordPackToolOutcome('fin', 'chat-1', true);
+    it('resets all weights for a chat', async () => {
+      for (let i = 0; i < 10; i++) await recordPackToolOutcome('mfg', 'chat-1', true);
+      for (let i = 0; i < 10; i++) await recordPackToolOutcome('fin', 'chat-1', true);
 
-      const cleared = resetPackWeights('chat-1');
+      const cleared = await resetPackWeights('chat-1');
       expect(cleared).toBe(2);
-      expect(getAllPackWeights('chat-1')).toHaveLength(0);
+      expect(await getAllPackWeights('chat-1')).toHaveLength(0);
     });
   });
 
@@ -205,12 +229,12 @@ describe('pack-tuner — real execution', () => {
       expect(msg).toContain('No pack usage');
     });
 
-    it('formatPackWeights shows entries with trend emojis', () => {
-      for (let i = 0; i < 10; i++) recordPackToolOutcome('manufacturing', 'chat-1', true);
-      for (let i = 0; i < 5; i++) recordPackToolOutcome('finance', 'chat-1', true);
-      for (let i = 0; i < 10; i++) recordPackToolOutcome('finance', 'chat-1', false);
+    it('formatPackWeights shows entries with trend emojis', async () => {
+      for (let i = 0; i < 10; i++) await recordPackToolOutcome('manufacturing', 'chat-1', true);
+      for (let i = 0; i < 5; i++) await recordPackToolOutcome('finance', 'chat-1', true);
+      for (let i = 0; i < 10; i++) await recordPackToolOutcome('finance', 'chat-1', false);
 
-      const weights = getAllPackWeights('chat-1');
+      const weights = await getAllPackWeights('chat-1');
       const msg = formatPackWeights(weights);
       expect(msg).toContain('📈'); // manufacturing boosted
       expect(msg).toContain('📉'); // finance dampened
@@ -222,20 +246,20 @@ describe('pack-tuner — real execution', () => {
   // ── Provider-agnostic ──────────────────────────────────────
 
   describe('provider-agnostic', () => {
-    it('same weight tracking regardless of AI provider', () => {
+    it('same weight tracking regardless of AI provider', async () => {
       // Weights track tool outcomes, not which provider was used
       // Both Claude and Ollama tool calls go through the same recordPackToolOutcome
-      recordPackToolOutcome('manufacturing', 'claude-chat', true);
-      recordPackToolOutcome('manufacturing', 'ollama-chat', true);
+      await recordPackToolOutcome('manufacturing', 'claude-chat', true);
+      await recordPackToolOutcome('manufacturing', 'ollama-chat', true);
 
       for (let i = 0; i < 5; i++) {
-        recordPackToolOutcome('manufacturing', 'claude-chat', true);
-        recordPackToolOutcome('manufacturing', 'ollama-chat', false);
+        await recordPackToolOutcome('manufacturing', 'claude-chat', true);
+        await recordPackToolOutcome('manufacturing', 'ollama-chat', false);
       }
 
       // Different outcomes for different chats — provider doesn't matter
-      expect(getPackWeight('manufacturing', 'claude-chat')).toBeGreaterThan(1.0);
-      expect(getPackWeight('manufacturing', 'ollama-chat')).toBeLessThan(1.0);
+      expect(await getPackWeight('manufacturing', 'claude-chat')).toBeGreaterThan(1.0);
+      expect(await getPackWeight('manufacturing', 'ollama-chat')).toBeLessThan(1.0);
     });
   });
 });

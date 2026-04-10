@@ -92,7 +92,7 @@ Be PROACTIVE about capturing items. Be CONSERVATIVE about assigning them.`,
   },
 };
 
-export function kanbanManage(
+export async function kanbanManage(
   args: {
     action: string;
     title?: string;
@@ -106,7 +106,7 @@ export function kanbanManage(
     scheduled_for?: string;
   },
   chatId: string,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   switch (args.action) {
     case 'create': {
       if (!args.title) return { error: 'Title is required for create action.' };
@@ -115,7 +115,7 @@ export function kanbanManage(
       const dueDate = args.due_date ? parseDateHint(args.due_date) : undefined;
       const scheduledFor = args.scheduled_for ? parseDateHint(args.scheduled_for) : undefined;
 
-      const card = createCard(chatId, args.title, {
+      const card = await createCard(chatId, args.title, {
         description: args.description,
         assignee: (args.assignee as CardAssignee) || 'noted',
         priority: args.priority || 3,
@@ -134,7 +134,7 @@ export function kanbanManage(
 
     case 'list': {
       const status = args.status as CardStatus | undefined;
-      const cards = listCards(chatId, status);
+      const cards = await listCards(chatId, status);
 
       if (cards.length === 0) {
         return { message: status ? `No cards with status "${status}".` : 'Board is empty.' };
@@ -155,10 +155,10 @@ export function kanbanManage(
       if (!args.cardId) return { error: 'cardId is required for move action.' };
       if (!args.status) return { error: 'status is required for move action.' };
 
-      const card = getCardByPrefix(chatId, args.cardId);
+      const card = await getCardByPrefix(chatId, args.cardId);
       if (!card) return { error: `Card "${args.cardId}" not found.` };
 
-      const updated = moveCard(card.id, args.status as CardStatus);
+      const updated = await moveCard(card.id, args.status as CardStatus);
       if (!updated) return { error: `Invalid status: ${args.status}` };
 
       return {
@@ -171,10 +171,10 @@ export function kanbanManage(
       if (!args.cardId) return { error: 'cardId is required for assign action.' };
       if (!args.assignee) return { error: 'assignee is required for assign action.' };
 
-      const card = getCardByPrefix(chatId, args.cardId);
+      const card = await getCardByPrefix(chatId, args.cardId);
       if (!card) return { error: `Card "${args.cardId}" not found.` };
 
-      const updated = assignCard(card.id, args.assignee as CardAssignee);
+      const updated = await assignCard(card.id, args.assignee as CardAssignee);
       if (!updated) return { error: `Invalid assignee: ${args.assignee}` };
 
       return {
@@ -186,7 +186,7 @@ export function kanbanManage(
     case 'update': {
       if (!args.cardId) return { error: 'cardId is required for update action.' };
 
-      const card = getCardByPrefix(chatId, args.cardId);
+      const card = await getCardByPrefix(chatId, args.cardId);
       if (!card) return { error: `Card "${args.cardId}" not found.` };
 
       const updates: Record<string, unknown> = {};
@@ -198,7 +198,7 @@ export function kanbanManage(
         return { error: 'Nothing to update. Provide priority, due_date, or scheduled_for.' };
       }
 
-      const updated = updateCard(card.id, updates);
+      const updated = await updateCard(card.id, updates);
       if (!updated) return { error: 'Update failed.' };
 
       const changes: string[] = [];
@@ -213,7 +213,7 @@ export function kanbanManage(
     }
 
     case 'summary': {
-      const summary = getBoardSummary(chatId);
+      const summary = await getBoardSummary(chatId);
       return { summary };
     }
 

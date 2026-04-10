@@ -12,7 +12,7 @@
  * not which AI provider was used.
  */
 
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import type { TableInitializer } from './core/interfaces.js';
 
@@ -44,20 +44,21 @@ const FAILURE_DAMPEN = 0.08; // Failures penalize more than successes reward
 
 // ── Table Initialization ─────────────────────────────────────
 
-export function initPackTunerTables(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS pack_weights (
-      pack_name TEXT NOT NULL,
-      chat_id TEXT NOT NULL,
-      success_count INTEGER NOT NULL DEFAULT 0,
-      failure_count INTEGER NOT NULL DEFAULT 0,
-      total_calls INTEGER NOT NULL DEFAULT 0,
-      weight REAL NOT NULL DEFAULT 1.0,
-      last_updated INTEGER NOT NULL,
-      PRIMARY KEY (pack_name, chat_id)
-    );
-  `);
+export async function initPackTunerTables(): Promise<void> {
+  const db = getKnex();
+  const exists = await db.schema.hasTable('pack_weights');
+  if (!exists) {
+    await db.schema.createTable('pack_weights', (t) => {
+      t.text('pack_name').notNullable();
+      t.text('chat_id').notNullable();
+      t.integer('success_count').notNullable().defaultTo(0);
+      t.integer('failure_count').notNullable().defaultTo(0);
+      t.integer('total_calls').notNullable().defaultTo(0);
+      t.float('weight').notNullable().defaultTo(1.0);
+      t.integer('last_updated').notNullable();
+      t.primary(['pack_name', 'chat_id']);
+    });
+  }
 }
 
 export const packTunerTableInit: TableInitializer = {
@@ -71,22 +72,29 @@ export const packTunerTableInit: TableInitializer = {
  * Record a tool execution outcome for a pack.
  * Called after tool execution — success or failure.
  */
-export function recordPackToolOutcome(
+export async function recordPackToolOutcome(
   packName: string,
   chatId: string,
   success: boolean,
-): void {
-  const db = getDatabase();
+): Promise<void> {
+  const db = getKnex();
   const now = Date.now();
 
-  const existing = db.prepare(
-    'SELECT success_count, failure_count, total_calls, weight FROM pack_weights WHERE pack_name = ? AND chat_id = ?',
-  ).get(packName, chatId) as { success_count: number; failure_count: number; total_calls: number; weight: number } | undefined;
+  const existing = await db('pack_weights')
+    .where({ pack_name: packName, chat_id: chatId })
+    .select('success_count', 'failure_count', 'total_calls', 'weight')
+    .first() as { success_count: number; failure_count: number; total_calls: number; weight: number } | undefined;
 
   if (!existing) {
-    db.prepare(
-      'INSERT INTO pack_weights (pack_name, chat_id, success_count, failure_count, total_calls, weight, last_updated) VALUES (?, ?, ?, ?, 1, ?, ?)',
-    ).run(packName, chatId, success ? 1 : 0, success ? 0 : 1, DEFAULT_WEIGHT, now);
+    await db('pack_weights').insert({
+      pack_name: packName,
+      chat_id: chatId,
+      success_count: success ? 1 : 0,
+      failure_count: success ? 0 : 1,
+      total_calls: 1,
+      weight: DEFAULT_WEIGHT,
+      last_updated: now,
+    });
     return;
   }
 
@@ -104,9 +112,15 @@ export function recordPackToolOutcome(
     }
   }
 
-  db.prepare(
-    'UPDATE pack_weights SET success_count = ?, failure_count = ?, total_calls = ?, weight = ?, last_updated = ? WHERE pack_name = ? AND chat_id = ?',
-  ).run(newSuccess, newFailure, newTotal, newWeight, now, packName, chatId);
+  await db('pack_weights')
+    .where({ pack_name: packName, chat_id: chatId })
+    .update({
+      success_count: newSuccess,
+      failure_count: newFailure,
+      total_calls: newTotal,
+      weight: newWeight,
+      last_updated: now,
+    });
 
   if (newWeight !== existing.weight) {
     logger.debug(
@@ -120,12 +134,13 @@ export function recordPackToolOutcome(
  * Get the tuned weight for a pack + chat.
  * Returns 1.0 (default) if no data or insufficient calls.
  */
-export function getPackWeight(packName: string, chatId: string): number {
+export async function getPackWeight(packName: string, chatId: string): Promise<number> {
   try {
-    const db = getDatabase();
-    const row = db.prepare(
-      'SELECT weight, total_calls FROM pack_weights WHERE pack_name = ? AND chat_id = ?',
-    ).get(packName, chatId) as { weight: number; total_calls: number } | undefined;
+    const db = getKnex();
+    const row = await db('pack_weights')
+      .where({ pack_name: packName, chat_id: chatId })
+      .select('weight', 'total_calls')
+      .first() as { weight: number; total_calls: number } | undefined;
 
     if (!row || row.total_calls < MIN_CALLS_FOR_ADJUSTMENT) return DEFAULT_WEIGHT;
     return row.weight;
@@ -137,12 +152,21 @@ export function getPackWeight(packName: string, chatId: string): number {
 /**
  * Get all pack weights for a chat.
  */
-export function getAllPackWeights(chatId: string): PackWeight[] {
+export async function getAllPackWeights(chatId: string): Promise<PackWeight[]> {
   try {
-    const db = getDatabase();
-    return db.prepare(
-      'SELECT pack_name as packName, chat_id as chatId, success_count as successCount, failure_count as failureCount, total_calls as totalCalls, weight, last_updated as lastUpdated FROM pack_weights WHERE chat_id = ? ORDER BY weight DESC',
-    ).all(chatId) as PackWeight[];
+    const db = getKnex();
+    return await db('pack_weights')
+      .where('chat_id', chatId)
+      .orderBy('weight', 'desc')
+      .select(
+        db.ref('pack_name').as('packName'),
+        db.ref('chat_id').as('chatId'),
+        db.ref('success_count').as('successCount'),
+        db.ref('failure_count').as('failureCount'),
+        db.ref('total_calls').as('totalCalls'),
+        'weight',
+        db.ref('last_updated').as('lastUpdated'),
+      ) as PackWeight[];
   } catch {
     return [];
   }
@@ -152,22 +176,20 @@ export function getAllPackWeights(chatId: string): PackWeight[] {
  * Apply tuned weights to pack intent scores.
  * Called by scorePackIntent() to boost/dampen packs based on history.
  */
-export function applyTunedWeight(baseScore: number, packName: string, chatId: string): number {
-  const weight = getPackWeight(packName, chatId);
+export async function applyTunedWeight(baseScore: number, packName: string, chatId: string): Promise<number> {
+  const weight = await getPackWeight(packName, chatId);
   return Math.round(baseScore * weight);
 }
 
 /**
  * Reset weights for a pack + chat (or all packs for a chat).
  */
-export function resetPackWeights(chatId: string, packName?: string): number {
-  const db = getDatabase();
+export async function resetPackWeights(chatId: string, packName?: string): Promise<number> {
+  const db = getKnex();
   if (packName) {
-    const result = db.prepare('DELETE FROM pack_weights WHERE chat_id = ? AND pack_name = ?').run(chatId, packName);
-    return result.changes;
+    return db('pack_weights').where({ chat_id: chatId, pack_name: packName }).del();
   }
-  const result = db.prepare('DELETE FROM pack_weights WHERE chat_id = ?').run(chatId);
-  return result.changes;
+  return db('pack_weights').where('chat_id', chatId).del();
 }
 
 /**
@@ -204,16 +226,17 @@ export function formatPackWeights(weights: PackWeight[]): string {
  * CTO feedback (rc.29): replaced hardcoded manufacturing tool set with
  * explicit packName field to prevent drift as packs evolve.
  */
-export function getToolPackName(toolName: string, explicitPackName?: string): string | null {
+export async function getToolPackName(toolName: string, explicitPackName?: string): Promise<string | null> {
   // 1. Explicit packName from ToolEntry (set during pack registration)
   if (explicitPackName) return explicitPackName;
 
   // 2. Check DB for user tools from packs (source_file path)
   try {
-    const db = getDatabase();
-    const tool = db.prepare(
-      'SELECT source_file FROM user_tools WHERE name = ?',
-    ).get(toolName) as { source_file: string | null } | undefined;
+    const db = getKnex();
+    const tool = await db('user_tools')
+      .where('name', toolName)
+      .select('source_file')
+      .first() as { source_file: string | null } | undefined;
 
     if (tool?.source_file?.includes('packs/')) {
       const match = tool.source_file.match(/packs\/([^/]+)\//);

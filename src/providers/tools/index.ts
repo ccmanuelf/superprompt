@@ -309,7 +309,7 @@ export async function executeTool(
   logger.debug({ tool: name, args }, 'Executing tool');
 
   // SA4: Policy enforcement — check before execution
-  const policyDecision = evaluatePolicy(name, chatId);
+  const policyDecision = await evaluatePolicy(name, chatId);
   if (!policyDecision.allowed) {
     return { error: policyDecision.reason || 'Tool execution blocked by policy' };
   }
@@ -345,9 +345,9 @@ export async function executeTool(
   // Pack tuner: record outcome for BOTH providers (Claude + Ollama)
   try {
     const { getToolPackName, recordPackToolOutcome } = await import('../../pack-tuner.js');
-    const packName = getToolPackName(name, entry?.packName);
+    const packName = await getToolPackName(name, entry?.packName);
     if (packName) {
-      recordPackToolOutcome(packName, chatId, !('error' in result));
+      await recordPackToolOutcome(packName, chatId, !('error' in result));
     }
   } catch { /* pack tuner not loaded */ }
 

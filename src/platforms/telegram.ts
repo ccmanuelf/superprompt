@@ -1856,7 +1856,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
     switch (subcommand) {
       case 'list': {
-        const citations = pc.citations.get(chatId);
+        const citations = await pc.citations.get(chatId);
         await ctx.reply(formatForTelegram(pc.citations.formatList(citations)), { parse_mode: 'HTML' });
         return;
       }
@@ -1866,7 +1866,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /cite export <bibtex|apa|chicago>');
           return;
         }
-        const exported = pc.citations.export(chatId, format);
+        const exported = await pc.citations.export(chatId, format);
         if (exported === 'No citations to export.') {
           await ctx.reply(exported);
           return;
@@ -1877,7 +1877,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         return;
       }
       case 'clear': {
-        const count = pc.citations.clear(chatId);
+        const count = await pc.citations.clear(chatId);
         await ctx.reply(`Cleared ${count} citation(s).`);
         return;
       }

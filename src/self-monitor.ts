@@ -1,6 +1,6 @@
 import type { AIResponse } from './providers/types.js';
 import { logger } from './logger.js';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 
 /**
  * Self-monitoring system for AI response quality.
@@ -175,31 +175,36 @@ export function detectRepetition(text: string): number {
 /**
  * Log a quality check result to the database for analysis.
  */
-export function logQualityCheck(
+export async function logQualityCheck(
   chatId: string,
   provider: string,
   score: number,
   issues: QualityIssue[],
-): void {
+): Promise<void> {
   if (issues.length === 0) return;
 
-  const db = getDatabase();
+  const db = getKnex();
 
   // Ensure table exists (lazy migration)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS quality_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      score INTEGER NOT NULL,
-      issues TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-  `);
+  const exists = await db.schema.hasTable('quality_log');
+  if (!exists) {
+    await db.schema.createTable('quality_log', (t) => {
+      t.increments('id').primary();
+      t.text('chat_id').notNullable();
+      t.text('provider').notNullable();
+      t.integer('score').notNullable();
+      t.text('issues').notNullable();
+      t.integer('created_at').notNullable();
+    });
+  }
 
-  db.prepare(
-    'INSERT INTO quality_log (chat_id, provider, score, issues, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(chatId, provider, score, JSON.stringify(issues), Date.now());
+  await db('quality_log').insert({
+    chat_id: chatId,
+    provider,
+    score,
+    issues: JSON.stringify(issues),
+    created_at: Date.now(),
+  });
 
   if (score < 50) {
     logger.warn(
@@ -219,28 +224,30 @@ export function logQualityCheck(
  *
  * Exported for testing.
  */
-export function getQualityStats(
+export async function getQualityStats(
   chatId: string,
   periodMs: number,
-): { avgScore: number; totalChecks: number; issueBreakdown: Record<string, number> } {
-  const db = getDatabase();
+): Promise<{ avgScore: number; totalChecks: number; issueBreakdown: Record<string, number> }> {
+  const db = getKnex();
   const since = Date.now() - periodMs;
 
   // Ensure table exists
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS quality_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      score INTEGER NOT NULL,
-      issues TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-  `);
+  const exists = await db.schema.hasTable('quality_log');
+  if (!exists) {
+    await db.schema.createTable('quality_log', (t) => {
+      t.increments('id').primary();
+      t.text('chat_id').notNullable();
+      t.text('provider').notNullable();
+      t.integer('score').notNullable();
+      t.text('issues').notNullable();
+      t.integer('created_at').notNullable();
+    });
+  }
 
-  const rows = db.prepare(
-    'SELECT score, issues FROM quality_log WHERE chat_id = ? AND created_at > ?',
-  ).all(chatId, since) as Array<{ score: number; issues: string }>;
+  const rows = await db('quality_log')
+    .where('chat_id', chatId)
+    .where('created_at', '>', since)
+    .select('score', 'issues') as Array<{ score: number; issues: string }>;
 
   if (rows.length === 0) {
     return { avgScore: 100, totalChecks: 0, issueBreakdown: {} };

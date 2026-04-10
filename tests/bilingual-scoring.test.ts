@@ -3,14 +3,14 @@ import { scoreMfgIntent } from '../src/capabilities.js';
 
 describe('scoreMfgIntent — Bilingual EN/ES', () => {
   // Helper: check that a message scores above threshold and suggests expected tool
-  function expectToolSuggested(message: string, tool: string) {
-    const result = scoreMfgIntent(message);
+  async function expectToolSuggested(message: string, tool: string) {
+    const result = await scoreMfgIntent(message);
     expect(result.suggestedTools, `"${message}" should suggest ${tool}`).toContain(tool);
     expect(result.score, `"${message}" should score > 0`).toBeGreaterThan(0);
   }
 
-  function expectScoreAbove(message: string, minScore: number) {
-    const result = scoreMfgIntent(message);
+  async function expectScoreAbove(message: string, minScore: number) {
+    const result = await scoreMfgIntent(message);
     expect(result.score, `"${message}" should score >= ${minScore}`).toBeGreaterThanOrEqual(minScore);
   }
 
@@ -64,13 +64,13 @@ describe('scoreMfgIntent — Bilingual EN/ES', () => {
   });
 
   describe('Spanish — Knowledge signals reduce score', () => {
-    it('qué es', () => {
-      const result = scoreMfgIntent('Qué es un diagrama de Ishikawa?');
+    it('qué es', async () => {
+      const result = await scoreMfgIntent('Qué es un diagrama de Ishikawa?');
       // Should have negative contribution from knowledge signal
       expect(result.score).toBeLessThan(20);
     });
-    it('explica (pure knowledge question)', () => {
-      const result = scoreMfgIntent('Explica qué es el lean manufacturing');
+    it('explica (pure knowledge question)', async () => {
+      const result = await scoreMfgIntent('Explica qué es el lean manufacturing');
       // Knowledge signal (-20) should keep score low even with some keyword matches
       expect(result.score).toBeLessThan(30);
     });
@@ -86,9 +86,9 @@ describe('scoreMfgIntent — Bilingual EN/ES', () => {
     ] as const;
 
     for (const [en, es, tool] of pairs) {
-      it(`EN: "${en}" ↔ ES: "${es}" → ${tool}`, () => {
-        const enResult = scoreMfgIntent(en);
-        const esResult = scoreMfgIntent(es);
+      it(`EN: "${en}" ↔ ES: "${es}" → ${tool}`, async () => {
+        const enResult = await scoreMfgIntent(en);
+        const esResult = await scoreMfgIntent(es);
         expect(enResult.suggestedTools, `EN should suggest ${tool}`).toContain(tool);
         expect(esResult.suggestedTools, `ES should suggest ${tool}`).toContain(tool);
       });

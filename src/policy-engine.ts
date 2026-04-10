@@ -9,25 +9,26 @@
  * "Flipping to least-privilege defaults would reduce accidental overexposure." — CTO
  */
 
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import type { ToolPolicy, PolicyDecision, ToolEntry } from './core/interfaces.js';
 import type { TableInitializer } from './core/interfaces.js';
 
 // ── Table Initialization ─────────────────────────────────────
 
-export function initPolicyTables(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS tool_trust (
-      chat_id TEXT NOT NULL,
-      tool_name TEXT NOT NULL,
-      decision TEXT NOT NULL CHECK(decision IN ('allow', 'block')),
-      trusted_at INTEGER NOT NULL,
-      expires_at INTEGER,
-      PRIMARY KEY (chat_id, tool_name)
-    );
-  `);
+export async function initPolicyTables(): Promise<void> {
+  const db = getKnex();
+  const exists = await db.schema.hasTable('tool_trust');
+  if (!exists) {
+    await db.schema.createTable('tool_trust', (t) => {
+      t.text('chat_id').notNullable();
+      t.text('tool_name').notNullable();
+      t.text('decision').notNullable();
+      t.integer('trusted_at').notNullable();
+      t.integer('expires_at');
+      t.primary(['chat_id', 'tool_name']);
+    });
+  }
 }
 
 export const policyTableInit: TableInitializer = {
@@ -47,52 +48,63 @@ export interface TrustEntry {
   expiresAt: number | null;
 }
 
-export function getTrustDecision(chatId: string, toolName: string): TrustDecision | null {
-  const db = getDatabase();
-  const row = db.prepare(
-    'SELECT decision, expires_at FROM tool_trust WHERE chat_id = ? AND tool_name = ?',
-  ).get(chatId, toolName) as { decision: string; expires_at: number | null } | undefined;
+export async function getTrustDecision(chatId: string, toolName: string): Promise<TrustDecision | null> {
+  const db = getKnex();
+  const row = await db('tool_trust')
+    .where({ chat_id: chatId, tool_name: toolName })
+    .select('decision', 'expires_at')
+    .first() as { decision: string; expires_at: number | null } | undefined;
 
   if (!row) return null;
 
   // Check expiration
   if (row.expires_at && row.expires_at < Date.now()) {
-    db.prepare('DELETE FROM tool_trust WHERE chat_id = ? AND tool_name = ?').run(chatId, toolName);
+    await db('tool_trust').where({ chat_id: chatId, tool_name: toolName }).del();
     return null;
   }
 
   return row.decision as TrustDecision;
 }
 
-export function setTrustDecision(
+export async function setTrustDecision(
   chatId: string,
   toolName: string,
   decision: TrustDecision,
   expiresAt?: number | null,
-): void {
-  const db = getDatabase();
-  db.prepare(
-    'INSERT OR REPLACE INTO tool_trust (chat_id, tool_name, decision, trusted_at, expires_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(chatId, toolName, decision, Date.now(), expiresAt ?? null);
+): Promise<void> {
+  const db = getKnex();
+  await db('tool_trust')
+    .insert({
+      chat_id: chatId,
+      tool_name: toolName,
+      decision,
+      trusted_at: Date.now(),
+      expires_at: expiresAt ?? null,
+    })
+    .onConflict(['chat_id', 'tool_name'])
+    .merge({
+      decision,
+      trusted_at: Date.now(),
+      expires_at: expiresAt ?? null,
+    });
 }
 
-export function revokeTrust(chatId: string, toolName: string): boolean {
-  const db = getDatabase();
-  const result = db.prepare('DELETE FROM tool_trust WHERE chat_id = ? AND tool_name = ?').run(chatId, toolName);
-  return result.changes > 0;
+export async function revokeTrust(chatId: string, toolName: string): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('tool_trust').where({ chat_id: chatId, tool_name: toolName }).del();
+  return count > 0;
 }
 
-export function clearAllTrust(chatId: string): number {
-  const db = getDatabase();
-  const result = db.prepare('DELETE FROM tool_trust WHERE chat_id = ?').run(chatId);
-  return result.changes;
+export async function clearAllTrust(chatId: string): Promise<number> {
+  const db = getKnex();
+  return db('tool_trust').where('chat_id', chatId).del();
 }
 
-export function listTrustEntries(chatId: string): TrustEntry[] {
-  const db = getDatabase();
-  const rows = db.prepare(
-    'SELECT chat_id, tool_name, decision, trusted_at, expires_at FROM tool_trust WHERE chat_id = ?',
-  ).all(chatId) as Array<{ chat_id: string; tool_name: string; decision: string; trusted_at: number; expires_at: number | null }>;
+export async function listTrustEntries(chatId: string): Promise<TrustEntry[]> {
+  const db = getKnex();
+  const rows = await db('tool_trust')
+    .where('chat_id', chatId)
+    .select('chat_id', 'tool_name', 'decision', 'trusted_at', 'expires_at') as Array<{ chat_id: string; tool_name: string; decision: string; trusted_at: number; expires_at: number | null }>;
 
   return rows.map((r) => ({
     chatId: r.chat_id,
@@ -141,10 +153,10 @@ const DEFAULT_POLICY: ToolPolicy = {
  * 2. Check tool policy (risk level, confirmation requirements)
  * 3. Return decision with optional confirmation prompt
  */
-export function evaluatePolicy(toolName: string, chatId: string): PolicyDecision {
+export async function evaluatePolicy(toolName: string, chatId: string): Promise<PolicyDecision> {
   // 1. Check trust memory first
   try {
-    const trust = getTrustDecision(chatId, toolName);
+    const trust = await getTrustDecision(chatId, toolName);
 
     if (trust === 'block') {
       return {
@@ -323,7 +335,7 @@ export async function handleToolConfirmation(
   clearPendingConfirmation(chatId);
 
   if (response === 'never') {
-    setTrustDecision(chatId, pending.toolName, 'block');
+    await setTrustDecision(chatId, pending.toolName, 'block');
     return {
       executed: false,
       result: null,
@@ -333,7 +345,7 @@ export async function handleToolConfirmation(
   }
 
   if (response === 'always') {
-    setTrustDecision(chatId, pending.toolName, 'allow');
+    await setTrustDecision(chatId, pending.toolName, 'allow');
     logger.info({ chatId, tool: pending.toolName }, 'User granted permanent trust');
   }
 

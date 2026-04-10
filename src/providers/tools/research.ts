@@ -258,8 +258,8 @@ export async function searchPapers(
   // Auto-save as citations
   let saved = 0;
   for (const paper of limited) {
-    if (!citationExists(chatId, paper.title)) {
-      addCitation(chatId, {
+    if (!await citationExists(chatId, paper.title)) {
+      await addCitation(chatId, {
         title: paper.title,
         authors: paper.authors,
         url: paper.url,
@@ -289,13 +289,13 @@ export async function searchPapers(
   };
 }
 
-export function manageCitations(
+export async function manageCitations(
   args: { action: string; format?: string },
   chatId: string,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   switch (args.action) {
     case 'list': {
-      const citations = getCitations(chatId);
+      const citations = await getCitations(chatId);
       return { citations: formatCitationList(citations), count: citations.length };
     }
 
@@ -304,7 +304,7 @@ export function manageCitations(
       if (!['bibtex', 'apa', 'chicago'].includes(format)) {
         return { error: `Invalid format: ${format}. Use bibtex, apa, or chicago.` };
       }
-      const exported = exportCitations(chatId, format);
+      const exported = await exportCitations(chatId, format);
       if (exported === 'No citations to export.') {
         return { message: exported };
       }
@@ -316,14 +316,14 @@ export function manageCitations(
       writeFileSync(filePath, exported, 'utf-8');
 
       return {
-        message: `Exported ${getCitations(chatId).length} citations in ${format.toUpperCase()} format.`,
+        message: `Exported ${(await getCitations(chatId)).length} citations in ${format.toUpperCase()} format.`,
         file_path: filePath,
         content: exported,
       };
     }
 
     case 'clear': {
-      const count = clearCitations(chatId);
+      const count = await clearCitations(chatId);
       return { message: `Cleared ${count} citation(s).` };
     }
 
