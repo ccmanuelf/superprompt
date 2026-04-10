@@ -599,9 +599,9 @@ export class ProviderRouter {
 
     // Check for auto-trigger before resolving skill (skip for orchestrator step calls)
     let autoTriggerNotice: string | undefined;
-    const triggerResult = params.skipAutoTrigger ? null : detectSkillTrigger(params.message, chatId);
+    const triggerResult = params.skipAutoTrigger ? null : await detectSkillTrigger(params.message, chatId);
     if (triggerResult) {
-      autoTriggerNotice = applyAutoTrigger(chatId, triggerResult);
+      autoTriggerNotice = await applyAutoTrigger(chatId, triggerResult);
       logger.info(
         { chatId, skill: triggerResult.skill.name, mode: triggerResult.mode },
         'Skill auto-triggered',
@@ -609,8 +609,8 @@ export class ProviderRouter {
     }
 
     // Resolve active skill for this chat (may now include auto-triggered skill)
-    const skillPrompt = getSkillSystemPrompt(chatId);
-    const allowedTools = getSkillAllowedTools(chatId);
+    const skillPrompt = await getSkillSystemPrompt(chatId);
+    const allowedTools = await getSkillAllowedTools(chatId);
 
     // ── Claude data pre-fetch ──────────────────────────────────────────
     // Claude CLI cannot call our tools (kanban_manage, query_memory, etc.)

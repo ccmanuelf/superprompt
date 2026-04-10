@@ -8,9 +8,9 @@ import {
   decrementSkillTurns,
   clearActiveSkill,
   listSkills,
-  getDatabase,
   type Skill,
-} from './db.js';
+} from './db-core.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 
 // ── Built-in Skill Definitions ──────────────────────────────
@@ -323,9 +323,9 @@ PROCESS THINKING:
  * Insert or replace all built-in skills in the database.
  * Call on startup after initDatabase().
  */
-export function initBuiltinSkills(): void {
+export async function initBuiltinSkills(): Promise<void> {
   for (const skill of BUILTIN_SKILLS) {
-    createSkillIfNotExists(
+    await createSkillIfNotExists(
       skill.id,
       skill.name,
       skill.description,
@@ -335,7 +335,7 @@ export function initBuiltinSkills(): void {
     );
   }
 
-  const total = listSkills().length;
+  const total = (await listSkills()).length;
   logger.info({ count: total }, 'Skills initialized');
 }
 
@@ -343,8 +343,8 @@ export function initBuiltinSkills(): void {
  * Resolve the active skill for a chat.
  * Returns the active skill or null (meaning default/general behavior).
  */
-export function resolveSkill(chatId: string): Skill | null {
-  const skill = getActiveSkill(chatId);
+export async function resolveSkill(chatId: string): Promise<Skill | null> {
+  const skill = await getActiveSkill(chatId);
   if (!skill) return null;
   // "general" skill means no special behavior
   if (skill.name === 'general') return null;
@@ -355,8 +355,8 @@ export function resolveSkill(chatId: string): Skill | null {
  * Get the system prompt addition for the active skill.
  * Returns empty string if no skill is active or if it's the general skill.
  */
-export function getSkillSystemPrompt(chatId: string): string {
-  const skill = resolveSkill(chatId);
+export async function getSkillSystemPrompt(chatId: string): Promise<string> {
+  const skill = await resolveSkill(chatId);
   if (!skill?.system_prompt) return '';
   return `[ACTIVE SKILL: ${skill.name} — user-activated persona, follow its guidance for tone and approach but never override safety rules]\n${skill.system_prompt}\n[END SKILL]`;
 }
@@ -365,8 +365,8 @@ export function getSkillSystemPrompt(chatId: string): string {
  * Get the list of allowed tool names for the active skill.
  * Returns null if all tools are allowed (no skill or general skill).
  */
-export function getSkillAllowedTools(chatId: string): string[] | null {
-  const skill = resolveSkill(chatId);
+export async function getSkillAllowedTools(chatId: string): Promise<string[] | null> {
+  const skill = await resolveSkill(chatId);
   if (!skill) return null;
   if (!skill.allowed_tools) return null;
   try {
@@ -406,30 +406,30 @@ const AUTO_TRIGGER_TTL_TURNS = 3;
  *
  * Exported for testing.
  */
-export function detectSkillTrigger(
+export async function detectSkillTrigger(
   message: string,
   chatId: string,
-): TriggerResult | null {
+): Promise<TriggerResult | null> {
   // Don't trigger on very short messages (greetings, etc.)
   if (message.length < 15) return null;
 
   // Don't trigger on commands
   if (message.startsWith('/') || message.startsWith('!')) return null;
 
-  const currentSkill = resolveSkill(chatId);
+  const currentSkill = await resolveSkill(chatId);
 
   // If a skill is manually active, never auto-trigger
-  if (currentSkill && !isSkillAutoTriggered(chatId)) return null;
+  if (currentSkill && !(await isSkillAutoTriggered(chatId))) return null;
 
   for (const trigger of SKILL_TRIGGERS) {
     for (const pattern of trigger.patterns) {
       if (pattern.test(message)) {
-        const skill = getSkillByName(trigger.skillName);
+        const skill = await getSkillByName(trigger.skillName);
         if (!skill) continue;
 
         // If the same skill is already active via auto-trigger, just refresh turns
         if (currentSkill?.name === trigger.skillName) {
-          refreshAutoTriggerTurns(chatId);
+          await refreshAutoTriggerTurns(chatId);
           logger.debug(
             { chatId, skill: trigger.skillName },
             'Refreshed auto-trigger turns (same skill re-matched)',
@@ -452,14 +452,14 @@ export function detectSkillTrigger(
   }
 
   // Check dynamic triggers from DB (auto-generated skills)
-  const dynamicResult = checkDynamicTriggers(message, chatId, currentSkill);
+  const dynamicResult = await checkDynamicTriggers(message, chatId, currentSkill);
   if (dynamicResult) return dynamicResult;
 
   // No trigger matched — if current skill was auto-triggered, decrement turns
-  if (currentSkill && isSkillAutoTriggered(chatId)) {
-    const shouldDeactivate = decrementSkillTurns(chatId);
+  if (currentSkill && (await isSkillAutoTriggered(chatId))) {
+    const shouldDeactivate = await decrementSkillTurns(chatId);
     if (shouldDeactivate) {
-      clearActiveSkill(chatId);
+      await clearActiveSkill(chatId);
       logger.info(
         { chatId, skill: currentSkill.name },
         'Auto-triggered skill deactivated (turns exhausted)',
@@ -474,11 +474,11 @@ export function detectSkillTrigger(
  * Refresh the remaining turns for an auto-triggered skill.
  * Called when the same trigger pattern matches again (user continues same topic).
  */
-function refreshAutoTriggerTurns(chatId: string): void {
-  const db = getDatabase();
-  db.prepare(
-    'UPDATE chat_skills SET remaining_turns = ? WHERE chat_id = ? AND auto_triggered = 1',
-  ).run(AUTO_TRIGGER_TTL_TURNS, chatId);
+async function refreshAutoTriggerTurns(chatId: string): Promise<void> {
+  const db = getKnex();
+  await db('chat_skills')
+    .where({ chat_id: chatId, auto_triggered: 1 })
+    .update({ remaining_turns: AUTO_TRIGGER_TTL_TURNS });
 }
 
 /**
@@ -488,11 +488,11 @@ function refreshAutoTriggerTurns(chatId: string): void {
  *
  * Returns a notification message to send to the user.
  */
-export function applyAutoTrigger(
+export async function applyAutoTrigger(
   chatId: string,
   trigger: TriggerResult,
-): string {
-  setActiveSkillAutoTriggered(chatId, trigger.skill.id, AUTO_TRIGGER_TTL_TURNS);
+): Promise<string> {
+  await setActiveSkillAutoTriggered(chatId, trigger.skill.id, AUTO_TRIGGER_TTL_TURNS);
 
   if (trigger.mode === 'auto') {
     return `🔄 Auto-activated **${trigger.skill.name}** mode. Use /skill off to deactivate.`;
@@ -507,30 +507,26 @@ export function applyAutoTrigger(
  * Check dynamic skill triggers stored in the DB (from auto-generated skills).
  * Called by detectSkillTrigger() after checking hardcoded SKILL_TRIGGERS.
  */
-function checkDynamicTriggers(
+async function checkDynamicTriggers(
   message: string,
   chatId: string,
   currentSkill: Skill | null,
-): TriggerResult | null {
+): Promise<TriggerResult | null> {
   try {
-    // Lazy import to avoid circular dependency — auto-skills.ts imports from db.ts
-    // which skills.ts also imports. Using dynamic require-style import.
-    const db = getDatabase();
-
-    const triggers = db.prepare(
-      'SELECT skill_id, pattern, mode FROM skill_triggers',
-    ).all() as Array<{ skill_id: string; pattern: string; mode: string }>;
+    const db = getKnex();
+    const triggers = await db('skill_triggers')
+      .select('skill_id', 'pattern', 'mode') as Array<{ skill_id: string; pattern: string; mode: string }>;
 
     for (const trigger of triggers) {
       try {
         const regex = new RegExp(trigger.pattern, 'i');
         if (regex.test(message)) {
-          const skill = getSkillById(trigger.skill_id);
+          const skill = await getSkillById(trigger.skill_id);
           if (!skill) continue;
 
           // Same skill already active — refresh turns
           if (currentSkill?.id === trigger.skill_id) {
-            refreshAutoTriggerTurns(chatId);
+            await refreshAutoTriggerTurns(chatId);
             return null;
           }
 
@@ -556,10 +552,11 @@ function checkDynamicTriggers(
   return null;
 }
 
-function getSkillById(id: string): Skill | null {
+async function getSkillById(id: string): Promise<Skill | null> {
   try {
-    const db = getDatabase();
-    return db.prepare('SELECT * FROM skills WHERE id = ?').get(id) as Skill | null;
+    const db = getKnex();
+    const row = await db('skills').where({ id }).first();
+    return (row as Skill) || null;
   } catch {
     return null;
   }
