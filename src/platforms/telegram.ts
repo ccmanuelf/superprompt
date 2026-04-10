@@ -1270,7 +1270,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
   bot.command(['newchat', 'forget'], async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
-    router.newChat(String(ctx.chat.id));
+    await router.newChat(String(ctx.chat.id));
     await ctx.reply('Session cleared. Starting fresh.');
   });
 
@@ -1315,7 +1315,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
   bot.command('claude', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
-    const result = router.switchProvider(String(ctx.chat.id), 'claude');
+    const result = await router.switchProvider(String(ctx.chat.id), 'claude');
     await ctx.reply(`Switched to <b>${result}</b> provider.`, {
       parse_mode: 'HTML',
     });
@@ -1323,8 +1323,8 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
   bot.command('ollama', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
-    const result = router.switchProvider(String(ctx.chat.id), 'ollama');
-    const model = router.getOllamaModel(String(ctx.chat.id));
+    const result = await router.switchProvider(String(ctx.chat.id), 'ollama');
+    const model = await router.getOllamaModel(String(ctx.chat.id));
     await ctx.reply(`Switched to <b>${result}</b> provider.\nModel: <code>${escapeHtml(model)}</code>`, {
       parse_mode: 'HTML',
     });
@@ -1332,7 +1332,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
   bot.command('auto', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
-    const enabled = router.toggleAutoRoute(String(ctx.chat.id));
+    const enabled = await router.toggleAutoRoute(String(ctx.chat.id));
     const emoji = enabled ? '🟢' : '🔴';
     await ctx.reply(
       `${emoji} Auto-routing <b>${enabled ? 'enabled' : 'disabled'}</b>.\n` +
@@ -1345,7 +1345,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
   bot.command('provider', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
-    const status = router.getProviderStatus(String(ctx.chat.id));
+    const status = await router.getProviderStatus(String(ctx.chat.id));
     const modeLabel = status.mode === 'auto' ? '🟢 auto' : '🔵 manual';
     let msg = `Provider: <b>${status.provider}</b>\nRouting: ${modeLabel}`;
     if (status.model) {
@@ -1385,7 +1385,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         await ctx.reply('No Ollama models found. Is Ollama running?');
         return;
       }
-      const currentModel = router.getOllamaModel(String(ctx.chat.id));
+      const currentModel = await router.getOllamaModel(String(ctx.chat.id));
       const lines = models.map((m, i) => {
         const active = m.name === currentModel ? ' ✓' : '';
         return `${i + 1}. <code>${escapeHtml(m.name)}</code> (${escapeHtml(m.size)}, ${escapeHtml(m.family)})${active}`;
@@ -1407,7 +1407,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     const modelName = text.replace(/^\/model(@\w+)?/, '').trim();
 
     if (!modelName) {
-      const current = router.getOllamaModel(chatId);
+      const current = await router.getOllamaModel(chatId);
       await ctx.reply(
         `Current Ollama model: <code>${escapeHtml(current)}</code>\n\nUsage: /model &lt;name&gt;\nList models: /models`,
         { parse_mode: 'HTML' },
@@ -1419,7 +1419,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       const result = await router.switchOllamaModel(chatId, modelName);
       if (result === modelName) {
         // Also switch to ollama provider if not already
-        router.switchProvider(chatId, 'ollama');
+        await router.switchProvider(chatId, 'ollama');
         await ctx.reply(
           `Switched to model: <code>${escapeHtml(modelName)}</code>`,
           { parse_mode: 'HTML' },
@@ -3333,7 +3333,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       logger.info({ chatId: ctx.chat.id, path: localPath }, 'Photo downloaded');
 
       // Branch based on provider: Ollama gets base64 images, Claude gets file path
-      const providerName = router.getProviderName(String(ctx.chat.id));
+      const providerName = await router.getProviderName(String(ctx.chat.id));
 
       if (providerName === 'ollama') {
         // Ollama vision: pass image as base64 via images param

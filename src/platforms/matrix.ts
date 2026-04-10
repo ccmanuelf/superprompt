@@ -464,7 +464,7 @@ async function handleCommand(
 
     case '!newchat':
     case '!forget':
-      router.newChat(roomId);
+      await router.newChat(roomId);
       await sendNotice(client, roomId, 'Session cleared. Starting fresh.');
       return true;
 
@@ -507,19 +507,19 @@ async function handleCommand(
     }
 
     case '!claude': {
-      const result = router.switchProvider(roomId, 'claude');
+      const result = await router.switchProvider(roomId, 'claude');
       await sendNotice(client, roomId, `Switched to ${result} provider.`);
       return true;
     }
 
     case '!ollama': {
-      const result = router.switchProvider(roomId, 'ollama');
+      const result = await router.switchProvider(roomId, 'ollama');
       await sendNotice(client, roomId, `Switched to ${result} provider.`);
       return true;
     }
 
     case '!auto': {
-      const enabled = router.toggleAutoRoute(roomId);
+      const enabled = await router.toggleAutoRoute(roomId);
       await sendNotice(
         client,
         roomId,
@@ -532,7 +532,7 @@ async function handleCommand(
     }
 
     case '!provider': {
-      const status = router.getProviderStatus(roomId);
+      const status = await router.getProviderStatus(roomId);
       const modeLabel = status.mode === 'auto' ? 'auto' : 'manual';
       let msg = `Provider: ${status.provider}\nRouting: ${modeLabel}`;
       if (status.model) {

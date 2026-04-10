@@ -11,7 +11,7 @@ import {
   clearSession,
   setAutoRoute,
   isAutoRouteEnabled,
-} from '../db.js';
+} from '../db-core.js';
 import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAutoTrigger } from '../skills.js';
 import { CAPABILITIES_PROMPT, generateMfgContextHint } from '../capabilities.js';
 import { getAggregatedCapabilities, buildWebAppsPrompt } from '../packs.js';
@@ -455,8 +455,8 @@ async function prefetchDataForClaude(chatId: string, message: string): Promise<s
   // Schedule / Reminder data
   if (SCHEDULE_INTENT.test(message)) {
     try {
-      const { getTasksByChat } = await import('../db.js');
-      const tasks = getTasksByChat(chatId);
+      const { getTasksByChat } = await import('../db-core.js');
+      const tasks = await getTasksByChat(chatId);
       if (tasks.length > 0) {
         const formatted = tasks.map((t) =>
           `  ${t.status === 'active' ? '▶' : '⏸'} ID:${t.id} — "${t.prompt}" (${t.schedule})`,
@@ -474,8 +474,8 @@ async function prefetchDataForClaude(chatId: string, message: string): Promise<s
   // Memory data
   if (MEMORY_INTENT.test(message)) {
     try {
-      const { getRecentMemories } = await import('../db.js');
-      const memories = getRecentMemories(chatId, 10);
+      const { getRecentMemories } = await import('../db-core.js');
+      const memories = await getRecentMemories(chatId, 10);
       if (memories.length > 0) {
         const formatted = memories.map((m) =>
           `  [${m.sector || 'general'}] ${m.content.slice(0, 200)}${m.content.length > 200 ? '...' : ''}`,
@@ -493,8 +493,8 @@ async function prefetchDataForClaude(chatId: string, message: string): Promise<s
   // Skills data
   if (SKILL_INTENT.test(message)) {
     try {
-      const { listSkills } = await import('../db.js');
-      const skills = listSkills();
+      const { listSkills } = await import('../db-core.js');
+      const skills = await listSkills();
       if (skills.length > 0) {
         const formatted = skills.map((s) =>
           `  ${s.locked ? '🔒' : '📝'} ${s.name} — ${(s.description || 'No description').slice(0, 100)}`,
@@ -536,8 +536,8 @@ export class ProviderRouter {
    * Auto-routing has stickiness: if the last message used a provider, prefer it
    * unless the classifier strongly disagrees (prevents mid-conversation switching).
    */
-  private getProviderForChat(chatId: string, message?: string): AIProvider {
-    const session = getSession(chatId);
+  private async getProviderForChat(chatId: string, message?: string): Promise<AIProvider> {
+    const session = await getSession(chatId);
 
     // Auto-routing: classify message and pick provider
     if (session?.auto_route && message) {
@@ -574,7 +574,7 @@ export class ProviderRouter {
    */
   async sendMessage(params: SendMessageParams): Promise<AIResponse> {
     const { chatId } = params;
-    const provider = this.getProviderForChat(chatId, params.message);
+    const provider = await this.getProviderForChat(chatId, params.message);
 
     // Rate limiting — check before sending to provider
     const { getRateLimiter } = await import('../rate-limiter.js');
@@ -588,7 +588,7 @@ export class ProviderRouter {
     }
 
     // Load existing session ID for Claude
-    const session = getSession(chatId);
+    const session = await getSession(chatId);
     const sessionId =
       provider.name === 'claude' ? session?.session_id : undefined;
 
@@ -675,7 +675,7 @@ export class ProviderRouter {
     // Handle stale Claude session — clear and retry without --resume
     if (response.staleSession && sessionId) {
       logger.warn({ chatId, sessionId }, 'Stale Claude session detected, retrying without --resume');
-      clearSession(chatId);
+      await clearSession(chatId);
 
       const retryResponse = await provider.sendMessage({
         ...params,
@@ -686,7 +686,7 @@ export class ProviderRouter {
 
       // Persist new session ID from retry
       if (retryResponse.newSessionId) {
-        setSession(chatId, retryResponse.newSessionId, provider.name);
+        await setSession(chatId, retryResponse.newSessionId, provider.name);
       }
 
       if (autoTriggerNotice) retryResponse.autoTriggerNotice = autoTriggerNotice;
@@ -695,7 +695,7 @@ export class ProviderRouter {
 
     // Persist new session ID for Claude
     if (response.newSessionId) {
-      setSession(chatId, response.newSessionId, provider.name);
+      await setSession(chatId, response.newSessionId, provider.name);
     }
 
     if (autoTriggerNotice) response.autoTriggerNotice = autoTriggerNotice;
@@ -719,22 +719,22 @@ export class ProviderRouter {
    * Switch the provider for a chat.
    * Returns the new provider name.
    */
-  switchProvider(chatId: string, providerName: string): string {
+  async switchProvider(chatId: string, providerName: string): Promise<string> {
     const normalized = providerName.toLowerCase().trim();
 
     if (normalized !== 'claude' && normalized !== 'ollama') {
       return `Unknown provider "${providerName}". Use "claude" or "ollama".`;
     }
 
-    const session = getSession(chatId);
+    const session = await getSession(chatId);
     if (session) {
-      updateSessionProvider(chatId, normalized);
+      await updateSessionProvider(chatId, normalized);
     } else {
-      setSession(chatId, '', normalized);
+      await setSession(chatId, '', normalized);
     }
 
     // Explicit provider switch disables auto-routing
-    setAutoRoute(chatId, false);
+    await setAutoRoute(chatId, false);
 
     logger.info({ chatId, provider: normalized }, 'Switched provider (auto-route OFF)');
     return normalized;
@@ -744,10 +744,10 @@ export class ProviderRouter {
    * Toggle auto-routing for a chat.
    * Returns true if auto-routing is now enabled.
    */
-  toggleAutoRoute(chatId: string): boolean {
-    const current = isAutoRouteEnabled(chatId);
+  async toggleAutoRoute(chatId: string): Promise<boolean> {
+    const current = await isAutoRouteEnabled(chatId);
     const newState = !current;
-    setAutoRoute(chatId, newState);
+    await setAutoRoute(chatId, newState);
     this.lastUsedProvider.delete(chatId); // Reset stickiness on toggle
     logger.info({ chatId, autoRoute: newState }, 'Toggled auto-routing');
     return newState;
@@ -758,8 +758,8 @@ export class ProviderRouter {
    * Returns provider name and routing mode.
    * In auto mode, shows the last provider actually used (not the fallback).
    */
-  getProviderStatus(chatId: string): { provider: string; mode: 'manual' | 'auto'; model?: string } {
-    const session = getSession(chatId);
+  async getProviderStatus(chatId: string): Promise<{ provider: string; mode: 'manual' | 'auto'; model?: string }> {
+    const session = await getSession(chatId);
     const autoRoute = session?.auto_route === 1;
 
     // In auto mode, show the last-used provider (what actually ran)
@@ -783,8 +783,8 @@ export class ProviderRouter {
    * Start a new chat session.
    * Clears the session from DB and Ollama history.
    */
-  newChat(chatId: string): void {
-    clearSession(chatId);
+  async newChat(chatId: string): Promise<void> {
+    await clearSession(chatId);
     clearOllamaHistory(chatId);
     this.lastUsedProvider.delete(chatId); // Reset auto-routing stickiness
     logger.info({ chatId }, 'New chat started');
@@ -793,8 +793,8 @@ export class ProviderRouter {
   /**
    * Get the current provider name for a chat.
    */
-  getProviderName(chatId: string): string {
-    const session = getSession(chatId);
+  async getProviderName(chatId: string): Promise<string> {
+    const session = await getSession(chatId);
     return session?.provider || config.AI_PROVIDER;
   }
 
@@ -815,12 +815,12 @@ export class ProviderRouter {
       return `Model "${model}" not found locally. Use /models to see available models.`;
     }
 
-    const session = getSession(chatId);
+    const session = await getSession(chatId);
     if (session) {
-      updateSessionOllamaModel(chatId, model);
+      await updateSessionOllamaModel(chatId, model);
     } else {
-      setSession(chatId, '', 'ollama');
-      updateSessionOllamaModel(chatId, model);
+      await setSession(chatId, '', 'ollama');
+      await updateSessionOllamaModel(chatId, model);
     }
 
     logger.info({ chatId, model }, 'Switched Ollama model');
@@ -830,8 +830,8 @@ export class ProviderRouter {
   /**
    * Get the active Ollama model for a chat (per-chat override or config default).
    */
-  getOllamaModel(chatId: string): string {
-    const session = getSession(chatId);
+  async getOllamaModel(chatId: string): Promise<string> {
+    const session = await getSession(chatId);
     return session?.ollama_model || config.OLLAMA_CHAT_MODEL;
   }
 }
