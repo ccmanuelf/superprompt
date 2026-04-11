@@ -17,8 +17,7 @@ import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from '
 import { resolve } from 'node:path';
 import { config, PROJECT_ROOT, STORE_DIR } from './config.js';
 import { logger } from './logger.js';
-import { createStorageProvider } from './db.js';
-import { getUnembeddedMemoryCount } from './db-core.js';
+import { createStorageProvider, getUnembeddedMemoryCount } from './db-core.js';
 import { Application } from './core/app.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -84,19 +83,17 @@ async function main(): Promise<void> {
   // 4. Create Application and register all components
   const app = new Application();
 
-  // ── Storage ──────────────────────────────────────────────
+  // ── Storage (Knex — supports SQLite/MariaDB/PostgreSQL via DB_DRIVER) ──
   const storage = createStorageProvider();
   app.registerStorage(storage);
 
-  // Initialize Knex alongside SQLite (for migrated modules)
-  const { initKnex, readDbConfig } = await import('./db-knex.js');
-  initKnex(readDbConfig());
-
   // ── Table initializers (core subsystems) ──
+  const { coreTableInit } = await import('./db-core.js');
   const { learningTableInit } = await import('./learning/db.js');
   const { citationTableInit } = await import('./citations.js');
   const { kanbanTableInit } = await import('./kanban.js');
 
+  storage.registerTables(coreTableInit); // sessions, memories, episodes, skills, tools, tasks
   storage.registerTables(learningTableInit);
   storage.registerTables(citationTableInit);
   storage.registerTables(kanbanTableInit);

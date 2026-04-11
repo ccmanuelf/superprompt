@@ -11,7 +11,7 @@
 import { mkdirSync } from 'node:fs';
 import { STORE_DIR } from './config.js';
 import { logger } from './logger.js';
-import { initKnex, getKnex, destroyKnex } from './db-knex.js';
+import { initKnex, getKnex, destroyKnex, readDbConfig } from './db-knex.js';
 import { createFullTextSearch, createVectorTable, columnExists } from './db-dialect.js';
 import type { StorageProvider, TableInitializer } from './core/interfaces.js';
 import type { Knex } from 'knex';
@@ -295,6 +295,41 @@ export const coreTableInit: TableInitializer = {
     await createCoreTables(db);
   },
 };
+
+/**
+ * Create a StorageProvider backed by Knex.
+ * Replaces db.js createStorageProvider() — works with SQLite, MariaDB, PostgreSQL.
+ */
+export function createStorageProvider(): StorageProvider {
+  const tableInitializers: TableInitializer[] = [];
+
+  return {
+    init(): void {
+      // Ensure store directory exists (for SQLite file)
+      mkdirSync(STORE_DIR, { recursive: true });
+      // Initialize Knex (reads DB_DRIVER from config)
+      initKnex(readDbConfig());
+    },
+    getDb() {
+      // Legacy compat — returns the Knex instance typed as any
+      // Modules should use getKnex() directly instead
+      return getKnex() as unknown as import('better-sqlite3').Database;
+    },
+    registerTables(initializer: TableInitializer): void {
+      tableInitializers.push(initializer);
+    },
+    async initAllTables(): Promise<void> {
+      for (const init of tableInitializers) {
+        await init.initTables();
+        logger.debug({ table: init.name }, 'Table initializer executed');
+      }
+      logger.info({ count: tableInitializers.length }, 'All table initializers executed');
+    },
+    close(): void {
+      destroyKnex().catch((err) => logger.warn({ err }, 'Error closing database'));
+    },
+  };
+}
 
 // ── Sessions CRUD ───────────────────────────────────────────
 

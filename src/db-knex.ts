@@ -15,7 +15,18 @@
 import Knex from 'knex';
 import type { Knex as KnexType } from 'knex';
 import { resolve } from 'node:path';
+import { mkdirSync } from 'node:fs';
 import { logger } from './logger.js';
+
+// sqlite-vec extension — loaded into SQLite connections for vector search
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let sqliteVecModule: { load: (db: any) => void } | null = null;
+try {
+  const mod = await import('sqlite-vec');
+  sqliteVecModule = mod;
+} catch {
+  // sqlite-vec not available (MariaDB/PostgreSQL don't need it)
+}
 
 // ── Configuration ──────────────────────────────────────────
 
@@ -80,10 +91,17 @@ export function buildKnexConfig(config: DbConfig): KnexType.Config {
           // SQLite: single connection, no pool
           min: 1,
           max: 1,
-          // Enable WAL mode and foreign keys on connection create
+          // Enable WAL mode, foreign keys, and sqlite-vec on connection create
           afterCreate: (conn: { pragma: (sql: string) => void }, done: (err: Error | null, conn: unknown) => void) => {
             conn.pragma('journal_mode = WAL');
             conn.pragma('foreign_keys = ON');
+            if (sqliteVecModule) {
+              try {
+                sqliteVecModule.load(conn);
+              } catch {
+                // sqlite-vec load failed — vector search will be unavailable
+              }
+            }
             done(null, conn);
           },
         },
