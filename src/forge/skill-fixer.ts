@@ -1,4 +1,4 @@
-import { getSkill, getSkillRevisions, updateSkill, insertSkillRevision, type Skill } from '../db.js';
+import { getSkill, getSkillRevisions, updateSkill, insertSkillRevision, type Skill } from '../db-core.js';
 import { logger } from '../logger.js';
 import type { ProviderRouter } from '../providers/router.js';
 
@@ -12,12 +12,12 @@ export async function fixSkill(
   chatId: string,
   router: ProviderRouter,
 ): Promise<{ newPrompt: string; summary: string } | { error: string }> {
-  const skill = getSkill(skillId);
+  const skill = await getSkill(skillId);
   if (!skill) return { error: 'Skill not found' };
   if (skill.locked) return { error: 'Skill is locked. Unlock it first.' };
 
   // Get recent revisions for context
-  const revisions = getSkillRevisions(skillId, 3);
+  const revisions = await getSkillRevisions(skillId, 3);
   const revisionContext = revisions.length > 0
     ? `\n\nPrevious revisions (most recent first):\n${revisions.map((r, i) => `${i + 1}. [${r.revision_note || 'no note'}] ${r.system_prompt.slice(0, 200)}...`).join('\n')}`
     : '';
@@ -72,8 +72,8 @@ Respond with ONLY the new system prompt text. No explanations, no markdown forma
     const newPrompt = response.text.trim();
 
     // Update the skill
-    updateSkill(skillId, { systemPrompt: newPrompt });
-    insertSkillRevision(skillId, newPrompt, `Fix: ${userFeedback.slice(0, 100)}`);
+    await updateSkill(skillId, { systemPrompt: newPrompt });
+    await insertSkillRevision(skillId, newPrompt, `Fix: ${userFeedback.slice(0, 100)}`);
 
     logger.info({ skillId, skillName: skill.name }, 'Skill prompt rewritten via AI fix');
 

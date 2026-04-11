@@ -68,7 +68,7 @@ export async function inventoryPlan(
           ? args.demand_history.split(',').map((s) => parseFloat(s.trim())).filter((n) => !isNaN(n))
           : undefined;
 
-        const { project, plans, abc, forecast, stockoutRisks } = executeInventoryAnalysis(
+        const { project, plans, abc, forecast, stockoutRisks } = await executeInventoryAnalysis(
           args.csv_content, args.project_name, demandHistory,
         );
 
@@ -92,10 +92,10 @@ export async function inventoryPlan(
 
       case 'abc': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getInventoryProjectByName(args.project_name);
+        const project = await getInventoryProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const results = getInventoryResults(project.id);
+        const results = await getInventoryResults(project.id);
         const abcResult = results.find((r) => r.result_type === 'abc');
         if (!abcResult) return { error: 'No ABC data. Run plan analysis first.' };
 
@@ -131,11 +131,11 @@ export async function inventoryPlan(
 
       case 'status': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getInventoryProjectByName(args.project_name);
+        const project = await getInventoryProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const items = getInventoryItems(project.id);
-        const results = getInventoryResults(project.id);
+        const items = await getInventoryItems(project.id);
+        const results = await getInventoryResults(project.id);
 
         return {
           project: { name: project.name, items: items.length, analyses: results.length },
@@ -143,7 +143,7 @@ export async function inventoryPlan(
       }
 
       case 'list': {
-        const projects = listInventoryProjects();
+        const projects = await listInventoryProjects();
         if (projects.length === 0) return { message: 'No inventory projects found.' };
         return {
           projects: projects.map((p) => ({

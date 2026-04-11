@@ -62,7 +62,7 @@ export async function capacityPlanning(
 
         // Auto-save
         if (config.name) {
-          savePlan(config.name, config, result);
+          await savePlan(config.name, config, result);
         }
 
         // Generate chart
@@ -150,7 +150,7 @@ export async function capacityPlanning(
       }
 
       case 'list': {
-        const plans = listPlans();
+        const plans = await listPlans();
         if (plans.length === 0) return { success: true, message: 'No saved plans.' };
         return {
           success: true,
@@ -165,7 +165,7 @@ export async function capacityPlanning(
       case 'load': {
         const name = args.plan_name as string;
         if (!name) return { error: 'plan_name is required.' };
-        const plan = getPlan(name);
+        const plan = await getPlan(name);
         if (!plan) return { error: `Plan "${name}" not found.` };
 
         const config = JSON.parse(plan.config_json);

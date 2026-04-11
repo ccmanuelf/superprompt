@@ -33,12 +33,12 @@ export async function handleTocApi(
   const route = urlPath.replace('/api/toc', '') || '/';
 
   try {
-    if (req.method === 'GET') return handleGet(route, res, chatId);
+    if (req.method === 'GET') return await handleGet(route, res, chatId);
     if (req.method === 'POST') {
       const body = await readBody(req);
       return await handlePost(route, body, res, chatId);
     }
-    if (req.method === 'DELETE') return handleDelete(route, res, chatId);
+    if (req.method === 'DELETE') return await handleDelete(route, res, chatId);
     jsonResponse(res, 405, { error: 'Method not allowed' });
     return true;
   } catch (err) {
@@ -49,7 +49,7 @@ export async function handleTocApi(
   }
 }
 
-function handleGet(route: string, res: ServerResponse, chatId: string): boolean {
+async function handleGet(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   switch (route) {
     case '/':
     case '/info':
@@ -60,7 +60,7 @@ function handleGet(route: string, res: ServerResponse, chatId: string): boolean 
       });
       return true;
     case '/configs': {
-      const configs = listTOCs(chatId);
+      const configs = await listTOCs(chatId);
       jsonResponse(res, 200, {
         configs: configs.map((c) => ({
           id: c.id, name: c.name, has_result: !!c.result_json,
@@ -72,7 +72,7 @@ function handleGet(route: string, res: ServerResponse, chatId: string): boolean 
     default: {
       const match = route.match(/^\/configs\/(.+)$/);
       if (match) {
-        const toc = getTOC(match[1], chatId);
+        const toc = await getTOC(match[1], chatId);
         if (!toc) { jsonResponse(res, 404, { error: 'Config not found' }); return true; }
         jsonResponse(res, 200, {
           ...toc, config: JSON.parse(toc.config_json),
@@ -107,7 +107,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         wipChart = await generateWIPChart(result.wip_gauges, `${config.name} — WIP Levels`);
       } catch (err) { logger.warn({ err }, 'TOC chart generation failed'); }
 
-      if (config.name) saveTOC(config.name, config, result, chatId);
+      if (config.name) await saveTOC(config.name, config, result, chatId);
 
       jsonResponse(res, 200, {
         success: true, result,
@@ -122,7 +122,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
       const config = data.config as TOCConfig;
       const name = (data.name as string) || config?.name;
       if (!name || !config) { jsonResponse(res, 400, { error: 'name and config required' }); return true; }
-      const saved = saveTOC(name, config, undefined, chatId);
+      const saved = await saveTOC(name, config, undefined, chatId);
       jsonResponse(res, 201, { success: true, config: { id: saved.id, name: saved.name } });
       return true;
     }
@@ -133,10 +133,10 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
   }
 }
 
-function handleDelete(route: string, res: ServerResponse, chatId: string): boolean {
+async function handleDelete(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   const match = route.match(/^\/configs\/(.+)$/);
   if (match) {
-    const deleted = deleteTOC(match[1], chatId);
+    const deleted = await deleteTOC(match[1], chatId);
     jsonResponse(res, deleted ? 200 : 404, deleted ? { success: true } : { error: 'Not found' });
     return true;
   }

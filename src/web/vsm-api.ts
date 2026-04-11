@@ -36,12 +36,12 @@ export async function handleVsmApi(
   const route = urlPath.replace('/api/vsm', '') || '/';
 
   try {
-    if (req.method === 'GET') return handleGet(route, res, chatId);
+    if (req.method === 'GET') return await handleGet(route, res, chatId);
     if (req.method === 'POST') {
       const body = await readBody(req);
       return await handlePost(route, body, res, chatId);
     }
-    if (req.method === 'DELETE') return handleDelete(route, res, chatId);
+    if (req.method === 'DELETE') return await handleDelete(route, res, chatId);
     jsonResponse(res, 405, { error: 'Method not allowed' });
     return true;
   } catch (err) {
@@ -52,7 +52,7 @@ export async function handleVsmApi(
   }
 }
 
-function handleGet(route: string, res: ServerResponse, chatId: string): boolean {
+async function handleGet(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   switch (route) {
     case '/':
     case '/info':
@@ -64,7 +64,7 @@ function handleGet(route: string, res: ServerResponse, chatId: string): boolean 
       return true;
 
     case '/maps': {
-      const maps = listVSMs(chatId);
+      const maps = await listVSMs(chatId);
       jsonResponse(res, 200, {
         maps: maps.map((m) => ({
           id: m.id, name: m.name, has_result: !!m.result_json,
@@ -77,7 +77,7 @@ function handleGet(route: string, res: ServerResponse, chatId: string): boolean 
     default: {
       const match = route.match(/^\/maps\/(.+)$/);
       if (match) {
-        const vsm = getVSM(match[1], chatId);
+        const vsm = await getVSM(match[1], chatId);
         if (!vsm) { jsonResponse(res, 404, { error: 'Map not found' }); return true; }
         jsonResponse(res, 200, {
           ...vsm,
@@ -113,7 +113,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         }
       } catch (err) { logger.warn({ err }, 'VSM chart generation failed'); }
 
-      if (config.name) saveVSM(config.name, config, result, chatId);
+      if (config.name) await saveVSM(config.name, config, result, chatId);
 
       jsonResponse(res, 200, {
         success: true,
@@ -153,7 +153,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         jsonResponse(res, 400, { error: 'name and config required' });
         return true;
       }
-      const saved = saveVSM(name, config, undefined, chatId);
+      const saved = await saveVSM(name, config, undefined, chatId);
       jsonResponse(res, 201, { success: true, map: { id: saved.id, name: saved.name } });
       return true;
     }
@@ -164,10 +164,10 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
   }
 }
 
-function handleDelete(route: string, res: ServerResponse, chatId: string): boolean {
+async function handleDelete(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   const match = route.match(/^\/maps\/(.+)$/);
   if (match) {
-    const deleted = deleteVSM(match[1], chatId);
+    const deleted = await deleteVSM(match[1], chatId);
     jsonResponse(res, deleted ? 200 : 404, deleted ? { success: true } : { error: 'Not found' });
     return true;
   }

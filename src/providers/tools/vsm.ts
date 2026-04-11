@@ -51,7 +51,7 @@ export async function valueStreamMap(
         if (!args.config_json) return { error: 'config_json is required.' };
         const config = JSON.parse(args.config_json as string) as VSMConfig;
         const result = analyzeVSM(config);
-        if (config.name) saveVSM(config.name, config, result);
+        if (config.name) await saveVSM(config.name, config, result);
 
         return {
           success: true,
@@ -82,7 +82,7 @@ export async function valueStreamMap(
       }
 
       case 'list': {
-        const maps = listVSMs();
+        const maps = await listVSMs();
         if (maps.length === 0) return { success: true, message: 'No saved VSM maps.' };
         return { success: true, maps: maps.map((m) => ({ name: m.name, updated: new Date(m.updated_at).toISOString() })) };
       }
@@ -90,7 +90,7 @@ export async function valueStreamMap(
       case 'load': {
         const name = args.map_name as string;
         if (!name) return { error: 'map_name is required.' };
-        const vsm = getVSM(name);
+        const vsm = await getVSM(name);
         if (!vsm) return { error: `Map "${name}" not found.` };
         const config = JSON.parse(vsm.config_json);
         const result = vsm.result_json ? JSON.parse(vsm.result_json) : null;

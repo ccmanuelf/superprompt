@@ -66,11 +66,11 @@ export async function rcaManage(
         const name = args.doc_name as string;
         if (!name || !args.problem || !args.whys) return { error: 'doc_name, problem, and whys are required.' };
         const whys = JSON.parse(args.whys as string) as string[];
-        const existing = getRcaDocByName(name);
-        if (existing) deleteRcaDoc(existing.id);
-        const doc = createRcaDoc(name, '5why', args.problem as string);
-        build5Whys(doc.id, args.problem as string, whys);
-        const nodes = getRcaNodes(doc.id);
+        const existing = await getRcaDocByName(name);
+        if (existing) await deleteRcaDoc(existing.id);
+        const doc = await createRcaDoc(name, '5why', args.problem as string);
+        await build5Whys(doc.id, args.problem as string, whys);
+        const nodes = await getRcaNodes(doc.id);
         const filePath = await render5WhysPng(nodes, name);
         return { success: true, diagram: filePath, text: formatRcaDocument(doc, nodes, false), mermaid: generateMermaidSyntax(doc, nodes) };
       }
@@ -79,11 +79,11 @@ export async function rcaManage(
         const name = args.doc_name as string;
         if (!name || !args.problem || !args.causes) return { error: 'doc_name, problem, and causes are required.' };
         const causes = JSON.parse(args.causes as string) as Array<{ category: FishboneCategory; cause: string; sub_causes?: string[] }>;
-        const existing = getRcaDocByName(name);
-        if (existing) deleteRcaDoc(existing.id);
-        const doc = createRcaDoc(name, 'fishbone', args.problem as string);
-        buildFishbone(doc.id, args.problem as string, causes);
-        const nodes = getRcaNodes(doc.id);
+        const existing = await getRcaDocByName(name);
+        if (existing) await deleteRcaDoc(existing.id);
+        const doc = await createRcaDoc(name, 'fishbone', args.problem as string);
+        await buildFishbone(doc.id, args.problem as string, causes);
+        const nodes = await getRcaNodes(doc.id);
         const filePath = await renderFishbonePng(nodes, name);
         return { success: true, diagram: filePath, text: formatRcaDocument(doc, nodes, false), mermaid: generateMermaidSyntax(doc, nodes) };
       }
@@ -97,11 +97,11 @@ export async function rcaManage(
           check: JSON.parse((args.check as string) || '[]'),
           act: JSON.parse((args.act as string) || '[]'),
         };
-        const existing = getRcaDocByName(name);
-        if (existing) deleteRcaDoc(existing.id);
-        const doc = createRcaDoc(name, 'pdca');
-        buildPdca(doc.id, cycle);
-        const nodes = getRcaNodes(doc.id);
+        const existing = await getRcaDocByName(name);
+        if (existing) await deleteRcaDoc(existing.id);
+        const doc = await createRcaDoc(name, 'pdca');
+        await buildPdca(doc.id, cycle);
+        const nodes = await getRcaNodes(doc.id);
         const filePath = await renderPdcaPng(nodes, name);
         return { success: true, diagram: filePath, text: formatRcaDocument(doc, nodes, false), mermaid: generateMermaidSyntax(doc, nodes) };
       }
@@ -110,11 +110,11 @@ export async function rcaManage(
         const name = args.doc_name as string;
         if (!name || !args.top_event || !args.gates) return { error: 'doc_name, top_event, and gates are required.' };
         const gates = JSON.parse(args.gates as string) as Array<{ gate_type: 'and' | 'or'; label: string; parent_label?: string; events: string[] }>;
-        const existing = getRcaDocByName(name);
-        if (existing) deleteRcaDoc(existing.id);
-        const doc = createRcaDoc(name, 'fta', args.top_event as string);
-        buildFaultTree(doc.id, args.top_event as string, gates);
-        const nodes = getRcaNodes(doc.id);
+        const existing = await getRcaDocByName(name);
+        if (existing) await deleteRcaDoc(existing.id);
+        const doc = await createRcaDoc(name, 'fta', args.top_event as string);
+        await buildFaultTree(doc.id, args.top_event as string, gates);
+        const nodes = await getRcaNodes(doc.id);
         const filePath = await renderFtaPng(nodes, name);
         return { success: true, diagram: filePath, text: formatRcaDocument(doc, nodes, false), mermaid: generateMermaidSyntax(doc, nodes) };
       }
@@ -123,11 +123,11 @@ export async function rcaManage(
         const name = args.doc_name as string;
         if (!name || !args.central_topic || !args.branches) return { error: 'doc_name, central_topic, and branches are required.' };
         const branches = JSON.parse(args.branches as string) as Array<{ topic: string; subtopics: string[] }>;
-        const existing = getRcaDocByName(name);
-        if (existing) deleteRcaDoc(existing.id);
-        const doc = createRcaDoc(name, 'mindmap');
-        buildMindMap(doc.id, args.central_topic as string, branches);
-        const nodes = getRcaNodes(doc.id);
+        const existing = await getRcaDocByName(name);
+        if (existing) await deleteRcaDoc(existing.id);
+        const doc = await createRcaDoc(name, 'mindmap');
+        await buildMindMap(doc.id, args.central_topic as string, branches);
+        const nodes = await getRcaNodes(doc.id);
         const filePath = await renderMindMapPng(nodes, name);
         return { success: true, diagram: filePath, text: formatRcaDocument(doc, nodes, false), mermaid: generateMermaidSyntax(doc, nodes) };
       }
@@ -150,27 +150,27 @@ export async function rcaManage(
       case 'view': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        const doc = getRcaDocByName(name);
+        const doc = await getRcaDocByName(name);
         if (!doc) return { error: `RCA "${name}" not found.` };
-        const nodes = getRcaNodes(doc.id);
+        const nodes = await getRcaNodes(doc.id);
         return { text: formatRcaDocument(doc, nodes, false) };
       }
 
       case 'mermaid': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        const doc = getRcaDocByName(name);
+        const doc = await getRcaDocByName(name);
         if (!doc) return { error: `RCA "${name}" not found.` };
-        const nodes = getRcaNodes(doc.id);
+        const nodes = await getRcaNodes(doc.id);
         return { mermaid: generateMermaidSyntax(doc, nodes) };
       }
 
       case 'diagram': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        const doc = getRcaDocByName(name);
+        const doc = await getRcaDocByName(name);
         if (!doc) return { error: `RCA "${name}" not found.` };
-        const nodes = getRcaNodes(doc.id);
+        const nodes = await getRcaNodes(doc.id);
         const renderers: Record<string, (n: typeof nodes, name: string) => Promise<string>> = {
           '5why': render5WhysPng, fishbone: renderFishbonePng, pdca: renderPdcaPng,
           fta: renderFtaPng, mindmap: renderMindMapPng,
@@ -182,7 +182,7 @@ export async function rcaManage(
       }
 
       case 'list': {
-        const docs = listRcaDocs();
+        const docs = await listRcaDocs();
         if (docs.length === 0) return { message: 'No RCA documents.' };
         return { documents: docs.map((d) => ({ name: d.name, method: d.method, problem: d.problem_statement, updated: new Date(d.updated_at).toLocaleString() })) };
       }

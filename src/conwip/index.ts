@@ -3,7 +3,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from '../db.js';
+import { getKnex } from '../db-knex.js';
 import type { SavedConwip, StageUtilization, HeijunkaAnalysis, ProductMix } from './models.js';
 
 export * from './models.js';
@@ -13,26 +13,29 @@ import type { TableInitializer } from '../core/interfaces.js';
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initConwipTables(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS conwip_configs (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL DEFAULT '',
-      name TEXT NOT NULL,
-      config_json TEXT NOT NULL,
-      result_json TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_conwip_configs_name ON conwip_configs(name);
-  `);
+export async function initConwipTables(): Promise<void> {
+  const db = getKnex();
+
+  if (!(await db.schema.hasTable('conwip_configs'))) {
+    await db.schema.createTable('conwip_configs', (t) => {
+      t.text('id').primary();
+      t.text('chat_id').notNullable().defaultTo('');
+      t.text('name').notNullable();
+      t.text('config_json').notNullable();
+      t.text('result_json');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
+
+  await db.raw('CREATE INDEX IF NOT EXISTS idx_conwip_configs_name ON conwip_configs(name)');
 
   // Migration: add chat_id column if missing (for existing databases)
-  const cols = db.prepare("PRAGMA table_info(conwip_configs)").all() as Array<{ name: string }>;
-  if (!cols.some(c => c.name === 'chat_id')) {
-    db.exec("ALTER TABLE conwip_configs ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
-    db.exec('CREATE INDEX IF NOT EXISTS idx_conwip_configs_chat ON conwip_configs(chat_id, name)');
+  if (!(await db.schema.hasColumn('conwip_configs', 'chat_id'))) {
+    await db.schema.alterTable('conwip_configs', (t) => {
+      t.text('chat_id').notNullable().defaultTo('');
+    });
+    await db.raw('CREATE INDEX IF NOT EXISTS idx_conwip_configs_chat ON conwip_configs(chat_id, name)');
   }
 }
 
@@ -40,35 +43,53 @@ export const conwipTableInit: TableInitializer = { name: 'conwip', initTables: i
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 
-export function saveConwip(name: string, config: unknown, result?: unknown, chatId: string = ''): SavedConwip {
-  const db = getDatabase();
+export async function saveConwip(name: string, config: unknown, result?: unknown, chatId: string = ''): Promise<SavedConwip> {
+  const db = getKnex();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
-  const existing = db.prepare('SELECT * FROM conwip_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SavedConwip | undefined;
+
+  const existing = await db('conwip_configs')
+    .whereRaw('LOWER(name) = LOWER(?)', [name])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedConwip | undefined;
+
   if (existing) {
-    db.prepare('UPDATE conwip_configs SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?')
-      .run(configJson, resultJson, Date.now(), existing.id);
-    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: Date.now() };
+    const now = Date.now();
+    await db('conwip_configs')
+      .where({ id: existing.id })
+      .update({ config_json: configJson, result_json: resultJson, updated_at: now });
+    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: now };
   }
+
   const id = genId();
   const now = Date.now();
-  db.prepare('INSERT INTO conwip_configs (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, chatId, name, configJson, resultJson, now, now);
+  await db('conwip_configs').insert({
+    id, chat_id: chatId, name, config_json: configJson, result_json: resultJson, created_at: now, updated_at: now,
+  });
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getConwip(nameOrId: string, chatId: string = ''): SavedConwip | undefined {
-  const db = getDatabase();
-  return (db.prepare('SELECT * FROM conwip_configs WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM conwip_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)) as SavedConwip | undefined;
+export async function getConwip(nameOrId: string, chatId: string = ''): Promise<SavedConwip | undefined> {
+  const db = getKnex();
+  const byId = await db('conwip_configs').where({ id: nameOrId }).first();
+  if (byId) return byId as SavedConwip;
+  return await db('conwip_configs')
+    .whereRaw('LOWER(name) = LOWER(?)', [nameOrId])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedConwip | undefined;
 }
 
-export function listConwips(chatId: string = ''): SavedConwip[] {
-  return getDatabase().prepare('SELECT * FROM conwip_configs WHERE chat_id = ? ORDER BY updated_at DESC').all(chatId) as SavedConwip[];
+export async function listConwips(chatId: string = ''): Promise<SavedConwip[]> {
+  const db = getKnex();
+  return await db('conwip_configs')
+    .where({ chat_id: chatId })
+    .orderBy('updated_at', 'desc') as SavedConwip[];
 }
 
-export function deleteConwip(id: string, chatId: string = ''): boolean {
-  return getDatabase().prepare('DELETE FROM conwip_configs WHERE id = ? AND chat_id = ?').run(id, chatId).changes > 0;
+export async function deleteConwip(id: string, chatId: string = ''): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('conwip_configs').where({ id, chat_id: chatId }).del();
+  return count > 0;
 }
 
 // ── Charts ───────────────────────────────────────────────────

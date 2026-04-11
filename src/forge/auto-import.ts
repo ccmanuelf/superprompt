@@ -11,7 +11,7 @@ import {
   getUserToolByName,
   createUserTool,
   insertToolRevision,
-} from '../db.js';
+} from '../db-core.js';
 import { scanToolCode } from './safety-scanner.js';
 
 const FORGE_DIR = resolve(PROJECT_ROOT, 'forge');
@@ -23,12 +23,12 @@ const TOOLS_DIR = resolve(FORGE_DIR, 'tools');
  * Uses INSERT OR IGNORE semantics — existing DB entries are not overwritten.
  * Call after initDatabase() and initBuiltinSkills().
  */
-export function autoImportForge(): { skills: number; tools: number } {
+export async function autoImportForge(): Promise<{ skills: number; tools: number }> {
   let skills = 0;
   let tools = 0;
 
-  skills = importSkills();
-  tools = importTools();
+  skills = await importSkills();
+  tools = await importTools();
 
   if (skills > 0 || tools > 0) {
     logger.info({ skills, tools }, 'Auto-imported from forge/ directory');
@@ -37,7 +37,7 @@ export function autoImportForge(): { skills: number; tools: number } {
   return { skills, tools };
 }
 
-function importSkills(): number {
+async function importSkills(): Promise<number> {
   if (!existsSync(SKILLS_DIR)) return 0;
 
   const files = readdirSync(SKILLS_DIR).filter((f) => f.endsWith('.md'));
@@ -54,14 +54,14 @@ function importSkills(): number {
       }
 
       // Skip if already exists in DB
-      const existing = getSkillByName(parsed.name);
+      const existing = await getSkillByName(parsed.name);
       if (existing) {
         logger.debug({ skill: parsed.name }, 'Skill already exists, skipping import');
         continue;
       }
 
       const id = `custom-${parsed.name}`;
-      createSkill(
+      await createSkill(
         id,
         parsed.name,
         parsed.description,
@@ -71,7 +71,7 @@ function importSkills(): number {
         file,
       );
 
-      insertSkillRevision(id, parsed.systemPrompt, 'Auto-imported from forge/skills/');
+      await insertSkillRevision(id, parsed.systemPrompt, 'Auto-imported from forge/skills/');
       imported++;
       logger.info({ skill: parsed.name, file }, 'Imported skill from forge/');
     } catch (err) {
@@ -82,7 +82,7 @@ function importSkills(): number {
   return imported;
 }
 
-function importTools(): number {
+async function importTools(): Promise<number> {
   if (!existsSync(TOOLS_DIR)) return 0;
 
   const files = readdirSync(TOOLS_DIR).filter((f) => f.endsWith('.md'));
@@ -99,7 +99,7 @@ function importTools(): number {
       }
 
       // Skip if already exists in DB
-      const existing = getUserToolByName(parsed.name);
+      const existing = await getUserToolByName(parsed.name);
       if (existing) {
         logger.debug({ tool: parsed.name }, 'Tool already exists, skipping import');
         continue;
@@ -124,7 +124,7 @@ function importTools(): number {
         code: parsed.code,
       });
 
-      createUserTool(
+      await createUserTool(
         id,
         parsed.name,
         parsed.description,
@@ -133,7 +133,7 @@ function importTools(): number {
         file,
       );
 
-      insertToolRevision(id, config, 'Auto-imported from forge/tools/');
+      await insertToolRevision(id, config, 'Auto-imported from forge/tools/');
       imported++;
       logger.info({ tool: parsed.name, file }, 'Imported tool from forge/');
     } catch (err) {

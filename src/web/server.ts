@@ -611,11 +611,11 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
         switch (msg.type) {
           case 'learn_list_plans': {
             // Scope plans to authenticated user; fall back to all plans if no chatId
-            const plans = learnChatId ? getPlansByChat(learnChatId) : getAllPlans();
-            const enriched = plans.map((p) => {
-              const topics = getTopicsByPlan(p.id);
+            const plans = learnChatId ? await getPlansByChat(learnChatId) : await getAllPlans();
+            const enriched = await Promise.all(plans.map(async (p) => {
+              const topics = await getTopicsByPlan(p.id);
               const summary = getMasterySummary(topics);
-              const sessions = getSessionsByPlan(p.id, 1);
+              const sessions = await getSessionsByPlan(p.id, 1);
               return {
                 ...p,
                 completedCount: summary.completedCount,
@@ -624,19 +624,19 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
                 dueReviews: summary.dueReviews,
                 lastSessionAt: sessions[0]?.started_at ?? null,
               };
-            });
+            }));
             ws.send(JSON.stringify({ type: 'learn_plans', plans: enriched }));
             break;
           }
           case 'learn_get_plan': {
-            const plan = getPlan(msg.planId);
+            const plan = await getPlan(msg.planId);
             if (!plan) { ws.send(JSON.stringify({ type: 'error', message: 'Plan not found' })); break; }
             // Ownership check — prevent accessing other users' plans
             if (learnChatId && plan.chat_id !== learnChatId) {
               ws.send(JSON.stringify({ type: 'error', message: 'Plan not found' }));
               break;
             }
-            const topics = getTopicsByPlan(plan.id).map((t) => ({
+            const topics = (await getTopicsByPlan(plan.id)).map((t) => ({
               ...t,
               effectiveMastery: getEffectiveMastery(t),
             }));
@@ -645,11 +645,11 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
           }
           case 'learn_time': {
             const todayStr = new Date().toISOString().slice(0, 10);
-            const week = learnChatId ? getWeeklyTime(learnChatId) : getAllWeeklyTime(7);
+            const week = learnChatId ? await getWeeklyTime(learnChatId) : await getAllWeeklyTime(7);
             const todayData = week.find((d) => d.date === todayStr);
             const todaySeconds = todayData?.total_seconds ?? 0;
             const todaySessions = todayData?.session_count ?? 0;
-            const streak = calculateStreak(learnChatId || undefined);
+            const streak = await calculateStreak(learnChatId || undefined);
             ws.send(JSON.stringify({
               type: 'learn_time_data',
               today: { seconds: todaySeconds, sessions: todaySessions, goalMet: todaySeconds >= 600 },
@@ -662,14 +662,14 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
             let sessions;
             if (msg.planId) {
               // Ownership check — verify plan belongs to user
-              const sessionPlan = getPlan(msg.planId);
+              const sessionPlan = await getPlan(msg.planId);
               if (learnChatId && (!sessionPlan || sessionPlan.chat_id !== learnChatId)) {
                 ws.send(JSON.stringify({ type: 'learn_session_history', sessions: [] }));
                 break;
               }
-              sessions = getSessionsByPlan(msg.planId, msg.limit ?? 20);
+              sessions = await getSessionsByPlan(msg.planId, msg.limit ?? 20);
             } else {
-              sessions = learnChatId ? getRecentSessionsByChat(learnChatId, msg.limit ?? 20) : getAllRecentSessions(msg.limit ?? 20);
+              sessions = learnChatId ? await getRecentSessionsByChat(learnChatId, msg.limit ?? 20) : await getAllRecentSessions(msg.limit ?? 20);
             }
             ws.send(JSON.stringify({ type: 'learn_session_history', sessions }));
             break;
@@ -677,21 +677,21 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
           case 'learn_reorder': {
             // Ownership check before mutation — verify topic belongs to user's plan
             if (learnChatId) {
-              const topicToReorder = getTopic(msg.topicId);
+              const topicToReorder = await getTopic(msg.topicId);
               if (topicToReorder) {
-                const ownerPlan = getPlan(topicToReorder.plan_id);
+                const ownerPlan = await getPlan(topicToReorder.plan_id);
                 if (ownerPlan && ownerPlan.chat_id !== learnChatId) {
                   ws.send(JSON.stringify({ type: 'error', message: 'Reorder failed' }));
                   break;
                 }
               }
             }
-            const success = reorderTopic(msg.topicId, msg.newPosition);
+            const success = await reorderTopic(msg.topicId, msg.newPosition);
             if (!success) { ws.send(JSON.stringify({ type: 'error', message: 'Reorder failed' })); break; }
             // Scope to user's plans only
-            const reorderPlans = learnChatId ? getPlansByChat(learnChatId) : getAllPlans();
+            const reorderPlans = learnChatId ? await getPlansByChat(learnChatId) : await getAllPlans();
             for (const p of reorderPlans) {
-              const topics = getTopicsByPlan(p.id);
+              const topics = await getTopicsByPlan(p.id);
               if (topics.some((t) => t.id === msg.topicId)) {
                 const enrichedTopics = topics.map((t) => ({ ...t, effectiveMastery: getEffectiveMastery(t) }));
                 ws.send(JSON.stringify({ type: 'learn_plan_detail', plan: p, topics: enrichedTopics }));
@@ -702,7 +702,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
           }
           case 'learn_update_plan': {
             // Ownership check before modification
-            const planToUpdate = getPlan(msg.planId);
+            const planToUpdate = await getPlan(msg.planId);
             if (!planToUpdate || (learnChatId && planToUpdate.chat_id !== learnChatId)) {
               ws.send(JSON.stringify({ type: 'error', message: 'Plan not found' }));
               break;
@@ -710,9 +710,9 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
             const updates: Partial<{ persona: string; status: PlanStatus }> = {};
             if (msg.persona) updates.persona = msg.persona;
             if (msg.status) updates.status = msg.status as PlanStatus;
-            const updated = updatePlan(msg.planId, updates);
+            const updated = await updatePlan(msg.planId, updates);
             if (!updated) { ws.send(JSON.stringify({ type: 'error', message: 'Update failed' })); break; }
-            const topics = getTopicsByPlan(updated.id).map((t) => ({ ...t, effectiveMastery: getEffectiveMastery(t) }));
+            const topics = (await getTopicsByPlan(updated.id)).map((t) => ({ ...t, effectiveMastery: getEffectiveMastery(t) }));
             ws.send(JSON.stringify({ type: 'learn_plan_detail', plan: updated, topics }));
             break;
           }

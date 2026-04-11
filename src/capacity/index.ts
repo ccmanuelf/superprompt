@@ -6,7 +6,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from '../db.js';
+import { getKnex } from '../db-knex.js';
 import { logger } from '../logger.js';
 
 import type {
@@ -30,41 +30,40 @@ import type { TableInitializer } from '../core/interfaces.js';
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initCapacityTables(): void {
-  const db = getDatabase();
+export async function initCapacityTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS capacity_plans (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL DEFAULT '',
-      name TEXT NOT NULL,
-      config_json TEXT NOT NULL,
-      result_json TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  if (!(await db.schema.hasTable('capacity_plans'))) {
+    await db.schema.createTable('capacity_plans', (t) => {
+      t.text('id').primary();
+      t.text('chat_id').notNullable().defaultTo('');
+      t.text('name').notNullable();
+      t.text('config_json').notNullable();
+      t.text('result_json');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
 
-    CREATE INDEX IF NOT EXISTS idx_capacity_plans_name
-      ON capacity_plans(name);
+  await db.raw('CREATE INDEX IF NOT EXISTS idx_capacity_plans_name ON capacity_plans(name)');
 
-    CREATE TABLE IF NOT EXISTS capacity_results (
-      id TEXT PRIMARY KEY,
-      plan_id TEXT NOT NULL,
-      result_type TEXT NOT NULL,
-      result_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (plan_id) REFERENCES capacity_plans(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_capacity_results_plan
-      ON capacity_results(plan_id);
-  `);
+  if (!(await db.schema.hasTable('capacity_results'))) {
+    await db.schema.createTable('capacity_results', (t) => {
+      t.text('id').primary();
+      t.text('plan_id').notNullable().references('id').inTable('capacity_plans').onDelete('CASCADE');
+      t.text('result_type').notNullable();
+      t.text('result_json').notNullable();
+      t.integer('created_at').notNullable();
+      t.index(['plan_id'], 'idx_capacity_results_plan');
+    });
+  }
 
   // Migration: add chat_id column if missing (for existing databases)
-  const cols = db.prepare("PRAGMA table_info(capacity_plans)").all() as Array<{ name: string }>;
-  if (!cols.some(c => c.name === 'chat_id')) {
-    db.exec("ALTER TABLE capacity_plans ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
-    db.exec('CREATE INDEX IF NOT EXISTS idx_capacity_plans_chat ON capacity_plans(chat_id, name)');
+  if (!(await db.schema.hasColumn('capacity_plans', 'chat_id'))) {
+    await db.schema.alterTable('capacity_plans', (t) => {
+      t.text('chat_id').notNullable().defaultTo('');
+    });
+    await db.raw('CREATE INDEX IF NOT EXISTS idx_capacity_plans_chat ON capacity_plans(chat_id, name)');
   }
 }
 
@@ -76,80 +75,87 @@ function genId(): string {
   return randomBytes(16).toString('hex');
 }
 
-export function savePlan(
+export async function savePlan(
   name: string,
   config: CapacityPlanConfig,
   result?: CapacityAnalysisResult,
   chatId: string = '',
-): CapacityPlan {
-  const db = getDatabase();
+): Promise<CapacityPlan> {
+  const db = getKnex();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
 
-  const existing = db.prepare(
-    'SELECT * FROM capacity_plans WHERE name = ? COLLATE NOCASE AND chat_id = ?',
-  ).get(name, chatId) as CapacityPlan | undefined;
+  const existing = await db('capacity_plans')
+    .whereRaw('LOWER(name) = LOWER(?)', [name])
+    .andWhere({ chat_id: chatId })
+    .first() as CapacityPlan | undefined;
 
   if (existing) {
-    db.prepare(
-      'UPDATE capacity_plans SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?',
-    ).run(configJson, resultJson, Date.now(), existing.id);
-    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: Date.now() };
+    const now = Date.now();
+    await db('capacity_plans')
+      .where({ id: existing.id })
+      .update({ config_json: configJson, result_json: resultJson, updated_at: now });
+    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: now };
   }
 
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    'INSERT INTO capacity_plans (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, chatId, name, configJson, resultJson, now, now);
+  await db('capacity_plans').insert({
+    id, chat_id: chatId, name, config_json: configJson, result_json: resultJson, created_at: now, updated_at: now,
+  });
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, updated_at: now, created_at: now };
 }
 
-export function getPlan(nameOrId: string, chatId: string = ''): CapacityPlan | undefined {
-  const db = getDatabase();
-  return (
-    db.prepare('SELECT * FROM capacity_plans WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM capacity_plans WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)
-  ) as CapacityPlan | undefined;
+export async function getPlan(nameOrId: string, chatId: string = ''): Promise<CapacityPlan | undefined> {
+  const db = getKnex();
+  const byId = await db('capacity_plans').where({ id: nameOrId }).first();
+  if (byId) return byId as CapacityPlan;
+  return await db('capacity_plans')
+    .whereRaw('LOWER(name) = LOWER(?)', [nameOrId])
+    .andWhere({ chat_id: chatId })
+    .first() as CapacityPlan | undefined;
 }
 
-export function listPlans(chatId: string = ''): CapacityPlan[] {
-  return getDatabase()
-    .prepare('SELECT * FROM capacity_plans WHERE chat_id = ? ORDER BY updated_at DESC')
-    .all(chatId) as CapacityPlan[];
+export async function listPlans(chatId: string = ''): Promise<CapacityPlan[]> {
+  const db = getKnex();
+  return await db('capacity_plans')
+    .where({ chat_id: chatId })
+    .orderBy('updated_at', 'desc') as CapacityPlan[];
 }
 
-export function deletePlan(id: string, chatId: string = ''): boolean {
-  return getDatabase()
-    .prepare('DELETE FROM capacity_plans WHERE id = ? AND chat_id = ?')
-    .run(id, chatId).changes > 0;
+export async function deletePlan(id: string, chatId: string = ''): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('capacity_plans').where({ id, chat_id: chatId }).del();
+  return count > 0;
 }
 
-export function saveResult(
+export async function saveResult(
   planId: string,
   resultType: string,
   data: unknown,
-): string {
-  const db = getDatabase();
+): Promise<string> {
+  const db = getKnex();
   const id = genId();
-  db.prepare(
-    'INSERT INTO capacity_results (id, plan_id, result_type, result_json, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(id, planId, resultType, JSON.stringify(data), Date.now());
-  db.prepare('UPDATE capacity_plans SET updated_at = ? WHERE id = ?').run(Date.now(), planId);
+  const now = Date.now();
+  await db('capacity_results').insert({
+    id, plan_id: planId, result_type: resultType, result_json: JSON.stringify(data), created_at: now,
+  });
+  await db('capacity_plans').where({ id: planId }).update({ updated_at: now });
   return id;
 }
 
-export function getResults(planId: string): Array<{ id: string; plan_id: string; result_type: string; result_json: string; created_at: number }> {
-  return getDatabase()
-    .prepare('SELECT * FROM capacity_results WHERE plan_id = ? ORDER BY created_at DESC')
-    .all(planId) as Array<{ id: string; plan_id: string; result_type: string; result_json: string; created_at: number }>;
+export async function getResults(planId: string): Promise<Array<{ id: string; plan_id: string; result_type: string; result_json: string; created_at: number }>> {
+  const db = getKnex();
+  return await db('capacity_results')
+    .where({ plan_id: planId })
+    .orderBy('created_at', 'desc') as Array<{ id: string; plan_id: string; result_type: string; result_json: string; created_at: number }>;
 }
 
 // ── Chart Generation ─────────────────────────────────────────
 
 /**
  * Generate line utilization bar chart.
- * Color-coded: red=critical(≥95%), orange=warning(≥80%), green=ok.
+ * Color-coded: red=critical(>=95%), orange=warning(>=80%), green=ok.
  */
 export async function generateCapacityUtilizationChart(
   lines: LineCapacityResult[],

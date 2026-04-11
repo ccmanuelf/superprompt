@@ -39,7 +39,7 @@ export async function designOfExperiments(args: Record<string, unknown>): Promis
         if (!args.config_json) return { error: 'config_json required.' };
         const config = JSON.parse(args.config_json as string) as DOEConfig;
         const matrix = generateMatrix(config);
-        if (config.name) saveDOE(config.name, { config, matrix });
+        if (config.name) await saveDOE(config.name, { config, matrix });
         return {
           success: true,
           design: DESIGN_LABELS[config.design_type],
@@ -54,7 +54,7 @@ export async function designOfExperiments(args: Record<string, unknown>): Promis
         const config = JSON.parse(args.config_json as string) as DOEConfig;
         const matrix = JSON.parse(args.matrix_json as string);
         const analysis = analyzeDOE(config, matrix);
-        if (config.name) saveDOE(config.name, { config, matrix }, analysis);
+        if (config.name) await saveDOE(config.name, { config, matrix }, analysis);
         return {
           success: true,
           anova: analysis.anova.map((a) => ({
@@ -67,13 +67,13 @@ export async function designOfExperiments(args: Record<string, unknown>): Promis
         };
       }
       case 'list': {
-        const exps = listDOEs();
+        const exps = await listDOEs();
         return { success: true, experiments: exps.map((e) => ({ name: e.name, updated: new Date(e.updated_at).toISOString() })) };
       }
       case 'load': {
         const name = args.experiment_name as string;
         if (!name) return { error: 'experiment_name required.' };
-        const exp = getDOE(name);
+        const exp = await getDOE(name);
         if (!exp) return { error: `"${name}" not found.` };
         return { success: true, name: exp.name, has_result: !!exp.result_json };
       }

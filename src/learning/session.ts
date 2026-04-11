@@ -61,7 +61,7 @@ export function getActiveSessions(): Map<string, ActiveSession> {
 /**
  * Start a new learning session.
  */
-export function startSession(
+export async function startSession(
   chatId: string,
   plan: LearningPlan,
   options?: {
@@ -69,13 +69,13 @@ export function startSession(
     type?: SessionType;
     assessmentTarget?: string;
   },
-): { session: ActiveSession; openingPrompt: string } {
+): Promise<{ session: ActiveSession; openingPrompt: string }> {
   // End any existing session first
   if (activeSessions.has(chatId)) {
-    endSession(chatId, 'new_session');
+    await endSession(chatId, 'new_session');
   }
 
-  const topics = getTopicsByPlan(plan.id);
+  const topics = await getTopicsByPlan(plan.id);
   const type = options?.type ?? 'lesson';
 
   // Select topic
@@ -91,13 +91,13 @@ export function startSession(
   const topicTitle = topic?.title ?? plan.subject;
 
   // Create DB record
-  const dbSession = createDbSession(
+  const dbSession = await createDbSession(
     plan.id, chatId, plan.persona, type, topic?.id,
   );
 
   // Mark topic as in_progress if pending
   if (topic && topic.status === 'pending') {
-    updateTopic(topic.id, { status: 'in_progress' });
+    await updateTopic(topic.id, { status: 'in_progress' });
   }
 
   const session: ActiveSession = {
@@ -173,7 +173,7 @@ export const FALLBACK_INCORRECT_PATTERNS = [
  * Process AI response during a learning session.
  * Detects assessment markers (exact or fuzzy) and updates mastery.
  */
-export function processSessionResponse(chatId: string, aiResponse: string): SessionProcessResult {
+export async function processSessionResponse(chatId: string, aiResponse: string): Promise<SessionProcessResult> {
   const session = activeSessions.get(chatId);
   const result: SessionProcessResult = {
     correct: 0,
@@ -216,14 +216,14 @@ export function processSessionResponse(chatId: string, aiResponse: string): Sess
 
   // Update topic mastery for each answer
   if (session.topicId && (result.correct > 0 || result.incorrect > 0)) {
-    const topics = getTopicsByPlan(session.planId);
+    const topics = await getTopicsByPlan(session.planId);
     const topic = topics.find((t) => t.id === session.topicId);
     if (topic) {
       let mastery = topic.mastery;
       for (let i = 0; i < result.correct; i++) mastery = computeMasteryDelta(mastery, true);
       for (let i = 0; i < result.incorrect; i++) mastery = computeMasteryDelta(mastery, false);
 
-      updateTopic(topic.id, {
+      await updateTopic(topic.id, {
         mastery,
         last_reviewed_at: Date.now(),
         review_count: topic.review_count + 1,
@@ -233,7 +233,7 @@ export function processSessionResponse(chatId: string, aiResponse: string): Sess
 
   // Handle topic completion
   if (topicComplete && session.topicId) {
-    updateTopic(session.topicId, { status: 'completed' });
+    await updateTopic(session.topicId, { status: 'completed' });
   }
 
   return result;
@@ -258,7 +258,7 @@ export function stripMarkers(text: string): string {
  * End a learning session.
  * Returns whether curriculum expansion is needed.
  */
-export function endSession(chatId: string, reason: string): { needsExpand: boolean; durationSeconds: number } {
+export async function endSession(chatId: string, reason: string): Promise<{ needsExpand: boolean; durationSeconds: number }> {
   const session = activeSessions.get(chatId);
   if (!session) return { needsExpand: false, durationSeconds: 0 };
 
@@ -266,7 +266,7 @@ export function endSession(chatId: string, reason: string): { needsExpand: boole
   const durationSeconds = Math.round((now - session.startedAt) / 1000);
 
   // Update DB session record
-  updateSession(session.sessionId, {
+  await updateSession(session.sessionId, {
     ended_at: now,
     duration_seconds: durationSeconds,
     questions_asked: session.questionsAsked,
@@ -275,14 +275,14 @@ export function endSession(chatId: string, reason: string): { needsExpand: boole
 
   // Track daily time
   if (durationSeconds > 0) {
-    addDailyTime(chatId, durationSeconds);
+    await addDailyTime(chatId, durationSeconds);
   }
 
   // Remove from active sessions
   activeSessions.delete(chatId);
 
   // Check rolling horizon
-  const shouldExpand = needsExpansion(session.planId);
+  const shouldExpand = await needsExpansion(session.planId);
 
   logger.info(
     {
@@ -299,12 +299,12 @@ export function endSession(chatId: string, reason: string): { needsExpand: boole
 /**
  * Dismiss a session without recording stats (snooze).
  */
-export function dismissSession(chatId: string): void {
+export async function dismissSession(chatId: string): Promise<void> {
   const session = activeSessions.get(chatId);
   if (!session) return;
 
   // Still record the session in DB but with minimal data
-  updateSession(session.sessionId, {
+  await updateSession(session.sessionId, {
     ended_at: Date.now(),
     duration_seconds: 0,
     notes: 'dismissed',
@@ -319,14 +319,14 @@ export function dismissSession(chatId: string): void {
 /**
  * Build the session-aware system prompt for the AI provider.
  */
-export function getSessionSystemPrompt(chatId: string): string | null {
+export async function getSessionSystemPrompt(chatId: string): Promise<string | null> {
   const session = activeSessions.get(chatId);
   if (!session) return null;
 
-  const plan = getPlan(session.planId);
+  const plan = await getPlan(session.planId);
   if (!plan) return null;
 
-  const topics = getTopicsByPlan(session.planId);
+  const topics = await getTopicsByPlan(session.planId);
   const topic = topics.find((t) => t.id === session.topicId);
   const summary = getMasterySummary(topics);
 
@@ -401,12 +401,12 @@ function buildOpeningPrompt(
 
 // ── Timeout Cleanup ─────────────────────────────────────────
 
-function cleanupStaleSessions(): void {
+async function cleanupStaleSessions(): Promise<void> {
   const now = Date.now();
   for (const [chatId, session] of activeSessions.entries()) {
     if (now - session.lastActivityAt > SESSION_TIMEOUT_MS) {
       logger.info({ chatId, sessionId: session.sessionId }, 'Session timed out (15 min inactivity)');
-      endSession(chatId, 'timeout');
+      await endSession(chatId, 'timeout');
     }
   }
 }

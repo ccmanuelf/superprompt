@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import { inverseNormal } from './sigma.js';
@@ -72,49 +72,47 @@ export interface InventoryResultRow {
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initInventoryTables(): void {
-  const db = getDatabase();
+export async function initInventoryTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS inventory_projects (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  if (!(await db.schema.hasTable('inventory_projects'))) {
+    await db.schema.createTable('inventory_projects', (t) => {
+      t.text('id').primary();
+      t.text('name').notNullable();
+      t.text('description').notNullable().defaultTo('');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
 
-    CREATE TABLE IF NOT EXISTS inventory_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      project_id TEXT NOT NULL,
-      item_id TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      annual_demand REAL NOT NULL,
-      unit_cost REAL NOT NULL,
-      order_cost REAL NOT NULL,
-      holding_cost_pct REAL NOT NULL,
-      lead_time_days REAL NOT NULL,
-      service_level REAL NOT NULL DEFAULT 0.95,
-      demand_stddev REAL,
-      FOREIGN KEY (project_id) REFERENCES inventory_projects(id) ON DELETE CASCADE,
-      UNIQUE(project_id, item_id)
-    );
+  if (!(await db.schema.hasTable('inventory_items'))) {
+    await db.schema.createTable('inventory_items', (t) => {
+      t.increments('id').primary();
+      t.text('project_id').notNullable().references('id').inTable('inventory_projects').onDelete('CASCADE');
+      t.text('item_id').notNullable();
+      t.text('description').notNullable().defaultTo('');
+      t.float('annual_demand').notNullable();
+      t.float('unit_cost').notNullable();
+      t.float('order_cost').notNullable();
+      t.float('holding_cost_pct').notNullable();
+      t.float('lead_time_days').notNullable();
+      t.float('service_level').notNullable().defaultTo(0.95);
+      t.float('demand_stddev');
+      t.unique(['project_id', 'item_id']);
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_inventory_items_project ON inventory_items(project_id)');
+  }
 
-    CREATE TABLE IF NOT EXISTS inventory_results (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      result_type TEXT NOT NULL,
-      result_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (project_id) REFERENCES inventory_projects(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_inventory_items_project
-      ON inventory_items(project_id);
-
-    CREATE INDEX IF NOT EXISTS idx_inventory_results_project
-      ON inventory_results(project_id);
-  `);
+  if (!(await db.schema.hasTable('inventory_results'))) {
+    await db.schema.createTable('inventory_results', (t) => {
+      t.text('id').primary();
+      t.text('project_id').notNullable().references('id').inTable('inventory_projects').onDelete('CASCADE');
+      t.text('result_type').notNullable();
+      t.text('result_json').notNullable();
+      t.integer('created_at').notNullable();
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_inventory_results_project ON inventory_results(project_id)');
+  }
 }
 
 export const inventoryTableInit: TableInitializer = { name: 'inventory', initTables: initInventoryTables };
@@ -123,52 +121,50 @@ function genId(): string {
   return randomBytes(16).toString('hex');
 }
 
-export function createInventoryProject(name: string, description: string = ''): InventoryProject {
-  const db = getDatabase();
+export async function createInventoryProject(name: string, description: string = ''): Promise<InventoryProject> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    'INSERT INTO inventory_projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(id, name, description, now, now);
+  await db('inventory_projects').insert({
+    id, name, description, created_at: now, updated_at: now,
+  });
   return { id, name, description, created_at: now, updated_at: now };
 }
 
-export function getInventoryProjectByName(name: string): InventoryProject | undefined {
-  return getDatabase().prepare(
-    'SELECT * FROM inventory_projects WHERE name = ? COLLATE NOCASE',
-  ).get(name) as InventoryProject | undefined;
+export async function getInventoryProjectByName(name: string): Promise<InventoryProject | undefined> {
+  return await getKnex()('inventory_projects')
+    .whereRaw('LOWER(name) = LOWER(?)', [name]).first() as InventoryProject | undefined;
 }
 
-export function listInventoryProjects(): InventoryProject[] {
-  return getDatabase().prepare(
-    'SELECT * FROM inventory_projects ORDER BY updated_at DESC',
-  ).all() as InventoryProject[];
+export async function listInventoryProjects(): Promise<InventoryProject[]> {
+  return await getKnex()('inventory_projects')
+    .orderBy('updated_at', 'desc') as InventoryProject[];
 }
 
-export function deleteInventoryProject(id: string): boolean {
-  return getDatabase().prepare('DELETE FROM inventory_projects WHERE id = ?').run(id).changes > 0;
+export async function deleteInventoryProject(id: string): Promise<boolean> {
+  const count = await getKnex()('inventory_projects').where({ id }).del();
+  return count > 0;
 }
 
-export function insertInventoryItems(projectId: string, items: InventoryItem[]): void {
-  const db = getDatabase();
-  const stmt = db.prepare(
-    `INSERT INTO inventory_items (project_id, item_id, description, annual_demand, unit_cost, order_cost, holding_cost_pct, lead_time_days, service_level, demand_stddev)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const tx = db.transaction(() => {
+export async function insertInventoryItems(projectId: string, items: InventoryItem[]): Promise<void> {
+  const db = getKnex();
+  await db.transaction(async (trx) => {
     for (const item of items) {
-      stmt.run(projectId, item.item_id, item.description, item.annual_demand, item.unit_cost,
-        item.order_cost, item.holding_cost_pct, item.lead_time_days, item.service_level,
-        item.demand_stddev ?? null);
+      await trx('inventory_items').insert({
+        project_id: projectId, item_id: item.item_id, description: item.description,
+        annual_demand: item.annual_demand, unit_cost: item.unit_cost,
+        order_cost: item.order_cost, holding_cost_pct: item.holding_cost_pct,
+        lead_time_days: item.lead_time_days, service_level: item.service_level,
+        demand_stddev: item.demand_stddev ?? null,
+      });
     }
   });
-  tx();
 }
 
-export function getInventoryItems(projectId: string): InventoryItem[] {
-  const rows = getDatabase().prepare(
-    'SELECT * FROM inventory_items WHERE project_id = ? ORDER BY item_id',
-  ).all(projectId) as Array<Record<string, unknown>>;
+export async function getInventoryItems(projectId: string): Promise<InventoryItem[]> {
+  const rows = await getKnex()('inventory_items')
+    .where({ project_id: projectId })
+    .orderBy('item_id') as Array<Record<string, unknown>>;
 
   return rows.map((r) => ({
     item_id: r.item_id as string,
@@ -183,20 +179,22 @@ export function getInventoryItems(projectId: string): InventoryItem[] {
   }));
 }
 
-export function saveInventoryResult(projectId: string, resultType: string, data: unknown): string {
-  const db = getDatabase();
+export async function saveInventoryResult(projectId: string, resultType: string, data: unknown): Promise<string> {
+  const db = getKnex();
   const id = genId();
-  db.prepare(
-    'INSERT INTO inventory_results (id, project_id, result_type, result_json, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(id, projectId, resultType, JSON.stringify(data), Date.now());
-  db.prepare('UPDATE inventory_projects SET updated_at = ? WHERE id = ?').run(Date.now(), projectId);
+  const now = Date.now();
+  await db('inventory_results').insert({
+    id, project_id: projectId, result_type: resultType,
+    result_json: JSON.stringify(data), created_at: now,
+  });
+  await db('inventory_projects').where({ id: projectId }).update({ updated_at: now });
   return id;
 }
 
-export function getInventoryResults(projectId: string): InventoryResultRow[] {
-  return getDatabase().prepare(
-    'SELECT * FROM inventory_results WHERE project_id = ? ORDER BY created_at DESC',
-  ).all(projectId) as InventoryResultRow[];
+export async function getInventoryResults(projectId: string): Promise<InventoryResultRow[]> {
+  return await getKnex()('inventory_results')
+    .where({ project_id: projectId })
+    .orderBy('created_at', 'desc') as InventoryResultRow[];
 }
 
 // ── CSV Parsing ──────────────────────────────────────────────
@@ -625,17 +623,17 @@ export async function generateForecastChart(forecast: ForecastResult, projectNam
 /**
  * Execute full inventory analysis: parse CSV, compute plans, classify, save.
  */
-export function executeInventoryAnalysis(
+export async function executeInventoryAnalysis(
   csvContent: string,
   projectName: string,
   demandHistory?: number[],
-): {
+): Promise<{
   project: InventoryProject;
   plans: ReplenishmentPlan[];
   abc: AbcItem[];
   forecast: ForecastResult | null;
   stockoutRisks: string[];
-} {
+}> {
   const items = parseInventoryCsv(csvContent);
 
   const plans = generateReplenishmentPlan(items);
@@ -656,19 +654,19 @@ export function executeInventoryAnalysis(
   }
 
   // DB: reuse or create project
-  let project = getInventoryProjectByName(projectName);
+  let project = await getInventoryProjectByName(projectName);
   if (project) {
-    const db = getDatabase();
-    db.prepare('DELETE FROM inventory_items WHERE project_id = ?').run(project.id);
-    db.prepare('UPDATE inventory_projects SET updated_at = ? WHERE id = ?').run(Date.now(), project.id);
+    const db = getKnex();
+    await db('inventory_items').where({ project_id: project.id }).del();
+    await db('inventory_projects').where({ id: project.id }).update({ updated_at: Date.now() });
   } else {
-    project = createInventoryProject(projectName);
+    project = await createInventoryProject(projectName);
   }
 
-  insertInventoryItems(project.id, items);
-  saveInventoryResult(project.id, 'replenishment', plans);
-  saveInventoryResult(project.id, 'abc', abc);
-  if (forecast) saveInventoryResult(project.id, 'forecast', forecast);
+  await insertInventoryItems(project.id, items);
+  await saveInventoryResult(project.id, 'replenishment', plans);
+  await saveInventoryResult(project.id, 'abc', abc);
+  if (forecast) await saveInventoryResult(project.id, 'forecast', forecast);
 
   logger.info(
     { projectName, items: items.length, aItems: abc.filter((i) => i.classification === 'A').length },

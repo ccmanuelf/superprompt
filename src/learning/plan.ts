@@ -178,19 +178,19 @@ export function buildPlanPrompt(subject: string, goal: string): string {
  * Create a plan from parsed topic definitions.
  * This is the DB-only step (AI call happens in the command handler).
  */
-export function createPlanFromTopics(
+export async function createPlanFromTopics(
   chatId: string,
   subject: string,
   goal: string,
   topics: TopicDefinition[],
-): PlanGenerationResult {
+): Promise<PlanGenerationResult> {
   const persona = selectPersonaForSubject(subject);
-  const plan = createPlan(chatId, subject, goal, persona);
+  const plan = await createPlan(chatId, subject, goal, persona);
 
   const createdTopics: LearningTopic[] = [];
   for (let i = 0; i < topics.length; i++) {
     const t = topics[i];
-    const topic = createTopic(plan.id, t.title, {
+    const topic = await createTopic(plan.id, t.title, {
       description: t.description,
       sortOrder: i,
       difficulty: t.difficulty,
@@ -214,17 +214,17 @@ const PENDING_THRESHOLD = 2; // Expand when ≤2 pending topics remain
 /**
  * Check if a plan needs curriculum expansion.
  */
-export function needsExpansion(planId: string): boolean {
-  const pending = getPendingTopics(planId);
+export async function needsExpansion(planId: string): Promise<boolean> {
+  const pending = await getPendingTopics(planId);
   return pending.length <= PENDING_THRESHOLD;
 }
 
 /**
  * Build the prompt for curriculum expansion.
  */
-export function buildExpandPrompt(plan: LearningPlan): string {
-  const completed = getCompletedTopics(plan.id);
-  const pending = getPendingTopics(plan.id);
+export async function buildExpandPrompt(plan: LearningPlan): Promise<string> {
+  const completed = await getCompletedTopics(plan.id);
+  const pending = await getPendingTopics(plan.id);
 
   const completedList = completed.map((t) => `- ${t.title}`).join('\n') || '(none yet)';
   const pendingList = pending.map((t) => `- ${t.title}`).join('\n') || '(none)';
@@ -239,10 +239,10 @@ export function buildExpandPrompt(plan: LearningPlan): string {
 /**
  * Add new topics from expansion to the plan.
  */
-export function addExpansionTopics(planId: string, topics: TopicDefinition[]): LearningTopic[] {
+export async function addExpansionTopics(planId: string, topics: TopicDefinition[]): Promise<LearningTopic[]> {
   const created: LearningTopic[] = [];
   for (const t of topics) {
-    const topic = createTopic(planId, t.title, {
+    const topic = await createTopic(planId, t.title, {
       description: t.description,
       difficulty: t.difficulty,
       estimatedMinutes: t.estimated_minutes,
@@ -264,8 +264,8 @@ export function addExpansionTopics(planId: string, topics: TopicDefinition[]): L
  * Handle a topic add request.
  * Returns the prompt for the AI to generate topic details + placement.
  */
-export function buildAddTopicPrompt(plan: LearningPlan, topicTitle: string): string {
-  const topics = getTopicsByPlan(plan.id);
+export async function buildAddTopicPrompt(plan: LearningPlan, topicTitle: string): Promise<string> {
+  const topics = await getTopicsByPlan(plan.id);
   const planList = topics.map((t, i) => `${i}. ${t.title} [${t.status}]`).join('\n');
 
   return TOPIC_PLACEMENT_PROMPT
@@ -299,15 +299,15 @@ export function parseTopicPlacement(aiResponse: string): (TopicDefinition & { po
 /**
  * Move a topic before another topic.
  */
-export function moveTopicBefore(planId: string, topicTitle: string, beforeTitle: string): NegotiationResult {
-  const topic = getTopicByTitle(planId, topicTitle);
+export async function moveTopicBefore(planId: string, topicTitle: string, beforeTitle: string): Promise<NegotiationResult> {
+  const topic = await getTopicByTitle(planId, topicTitle);
   if (!topic) return { success: false, message: `Topic "${topicTitle}" not found in this plan.` };
 
-  const beforeTopic = getTopicByTitle(planId, beforeTitle);
+  const beforeTopic = await getTopicByTitle(planId, beforeTitle);
   if (!beforeTopic) return { success: false, message: `Topic "${beforeTitle}" not found in this plan.` };
 
   const targetPosition = beforeTopic.sort_order;
-  const success = reorderTopic(topic.id, targetPosition);
+  const success = await reorderTopic(topic.id, targetPosition);
 
   if (!success) return { success: false, message: 'Failed to reorder topics.' };
 
@@ -321,8 +321,8 @@ export function moveTopicBefore(planId: string, topicTitle: string, beforeTitle:
  * Handle a topic removal request.
  * Returns requiresAssessment=true — the caller must run an assessment quiz.
  */
-export function requestTopicRemoval(planId: string, topicTitle: string): NegotiationResult {
-  const topic = getTopicByTitle(planId, topicTitle);
+export async function requestTopicRemoval(planId: string, topicTitle: string): Promise<NegotiationResult> {
+  const topic = await getTopicByTitle(planId, topicTitle);
   if (!topic) return { success: false, message: `Topic "${topicTitle}" not found in this plan.` };
 
   if (topic.status === 'deferred') {
@@ -331,7 +331,7 @@ export function requestTopicRemoval(planId: string, topicTitle: string): Negotia
 
   if (topic.status === 'completed' && topic.mastery >= 0.8) {
     // Already demonstrated competence — allow direct deferral
-    updateTopic(topic.id, { status: 'deferred' });
+    await updateTopic(topic.id, { status: 'deferred' });
     return {
       success: true,
       message: `**${topic.title}** deferred — you've already demonstrated mastery (${Math.round(topic.mastery * 100)}%).`,
@@ -350,11 +350,11 @@ export function requestTopicRemoval(planId: string, topicTitle: string): Negotia
 /**
  * Complete topic removal after successful assessment.
  */
-export function completeTopicRemoval(planId: string, topicTitle: string): NegotiationResult {
-  const topic = getTopicByTitle(planId, topicTitle);
+export async function completeTopicRemoval(planId: string, topicTitle: string): Promise<NegotiationResult> {
+  const topic = await getTopicByTitle(planId, topicTitle);
   if (!topic) return { success: false, message: `Topic "${topicTitle}" not found.` };
 
-  updateTopic(topic.id, { status: 'deferred', mastery: 0.8 });
+  await updateTopic(topic.id, { status: 'deferred', mastery: 0.8 });
   return {
     success: true,
     message: `**${topic.title}** deferred — assessment passed. You've demonstrated sufficient knowledge.`,
@@ -419,12 +419,12 @@ export function formatPlan(plan: LearningPlan, topics: LearningTopic[]): string 
 /**
  * Format a compact plan list (for /learn plans).
  */
-export function formatPlanList(plans: LearningPlan[]): string {
+export async function formatPlanList(plans: LearningPlan[]): Promise<string> {
   if (plans.length === 0) return 'No learning plans yet. Start one with `/learn start <goal>`.';
 
   const lines = ['**Your Learning Plans:**', ''];
   for (const p of plans) {
-    const topics = getTopicsByPlan(p.id);
+    const topics = await getTopicsByPlan(p.id);
     const summary = getMasterySummary(topics);
     const statusIcon = p.status === 'active' ? 'ACTIVE' : p.status === 'paused' ? 'PAUSED' : 'DONE';
     lines.push(`[${statusIcon}] **${p.subject}** — ${summary.completedCount}/${summary.totalCount} topics, ${Math.round(summary.avgMastery * 100)}% mastery (id: ${p.id})`);

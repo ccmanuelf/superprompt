@@ -74,8 +74,8 @@ export async function fmeaManage(
       case 'create': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        if (getFmeaDocByName(name)) return { error: `FMEA "${name}" already exists.` };
-        const doc = createFmeaDoc(name, (args.fmea_type as FmeaType) || 'pfmea', (args.product as string) || '', (args.process as string) || '');
+        if (await getFmeaDocByName(name)) return { error: `FMEA "${name}" already exists.` };
+        const doc = await createFmeaDoc(name, (args.fmea_type as FmeaType) || 'pfmea', (args.product as string) || '', (args.process as string) || '');
         return { success: true, doc_id: doc.id, message: `FMEA "${name}" created (${doc.fmea_type.toUpperCase()}). Add failure modes with add action.` };
       }
 
@@ -83,10 +83,10 @@ export async function fmeaManage(
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
         if (!args.process_step || !args.failure_mode) return { error: 'process_step and failure_mode are required.' };
-        const doc = getFmeaDocByName(name);
+        const doc = await getFmeaDocByName(name);
         if (!doc) return { error: `FMEA "${name}" not found.` };
 
-        const fm = addFailureMode(doc.id, {
+        const fm = await addFailureMode(doc.id, {
           process_step: args.process_step as string,
           failure_mode: args.failure_mode as string,
           effect: args.effect as string,
@@ -112,14 +112,14 @@ export async function fmeaManage(
         if (!actionText || actionText === 'add_action') return { error: 'action_text is required.' };
         if (!args.failure_mode) return { error: 'failure_mode is required to link action.' };
 
-        const doc = getFmeaDocByName(name);
+        const doc = await getFmeaDocByName(name);
         if (!doc) return { error: `FMEA "${name}" not found.` };
 
-        const fms = getFailureModes(doc.id);
+        const fms = await getFailureModes(doc.id);
         const fm = fms.find((f) => f.failure_mode.toLowerCase().includes((args.failure_mode as string).toLowerCase()));
         if (!fm) return { error: `No failure mode matching "${args.failure_mode}".` };
 
-        const act = addAction(fm.id, doc.id, actionText, (args.owner as string) || '', (args.deadline as string) || '', fm.rpn);
+        const act = await addAction(fm.id, doc.id, actionText, (args.owner as string) || '', (args.deadline as string) || '', fm.rpn);
         return { success: true, action_id: act.id, message: `Action added for "${fm.failure_mode}": ${actionText}` };
       }
 
@@ -128,7 +128,7 @@ export async function fmeaManage(
         if (args.severity_after === undefined || args.occurrence_after === undefined || args.detection_after === undefined) {
           return { error: 'severity_after, occurrence_after, and detection_after are required.' };
         }
-        const result = completeAction(args.action_id as string, args.severity_after as number, args.occurrence_after as number, args.detection_after as number);
+        const result = await completeAction(args.action_id as string, args.severity_after as number, args.occurrence_after as number, args.detection_after as number);
         if (!result) return { error: 'Action not found.' };
         return {
           success: true,
@@ -141,7 +141,7 @@ export async function fmeaManage(
       case 'import': {
         if (!args.csv_content) return { error: 'csv_content is required.' };
         if (!args.doc_name) return { error: 'doc_name is required.' };
-        const { doc, failureModes, actions } = executeFmeaFromCsv(
+        const { doc, failureModes, actions } = await executeFmeaFromCsv(
           args.csv_content as string, args.doc_name as string,
           (args.fmea_type as FmeaType) || 'pfmea', (args.product as string) || '', (args.process as string) || '',
         );
@@ -156,9 +156,9 @@ export async function fmeaManage(
       case 'risk': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        const doc = getFmeaDocByName(name);
+        const doc = await getFmeaDocByName(name);
         if (!doc) return { error: `FMEA "${name}" not found.` };
-        const fms = getFailureModes(doc.id);
+        const fms = await getFailureModes(doc.id);
         const matrix = buildRiskMatrix(fms);
         const top5 = fms.slice(0, 5).map((fm) => ({ step: fm.process_step, mode: fm.failure_mode, rpn: fm.rpn, ap: fm.action_priority }));
         return { top_risks: top5, matrix: matrix.slice(0, 10) };
@@ -167,9 +167,9 @@ export async function fmeaManage(
       case 'actions': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        const doc = getFmeaDocByName(name);
+        const doc = await getFmeaDocByName(name);
         if (!doc) return { error: `FMEA "${name}" not found.` };
-        const acts = getActions(doc.id);
+        const acts = await getActions(doc.id);
         return {
           actions: acts.map((a) => ({
             id: a.id.slice(0, 8), action: a.action, owner: a.owner, deadline: a.deadline,
@@ -182,19 +182,19 @@ export async function fmeaManage(
       case 'report': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        const doc = getFmeaDocByName(name);
+        const doc = await getFmeaDocByName(name);
         if (!doc) return { error: `FMEA "${name}" not found.` };
-        const fms = getFailureModes(doc.id);
-        const acts = getActions(doc.id);
+        const fms = await getFailureModes(doc.id);
+        const acts = await getActions(doc.id);
         return { report: formatFmeaWorksheet(doc, fms, acts, false) };
       }
 
       case 'heatmap': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        const doc = getFmeaDocByName(name);
+        const doc = await getFmeaDocByName(name);
         if (!doc) return { error: `FMEA "${name}" not found.` };
-        const fms = getFailureModes(doc.id);
+        const fms = await getFailureModes(doc.id);
         if (fms.length === 0) return { error: 'No failure modes to chart.' };
         const filePath = await generateRiskHeatmap(fms, name);
         return { success: true, file: filePath };
@@ -203,9 +203,9 @@ export async function fmeaManage(
       case 'pareto': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        const doc = getFmeaDocByName(name);
+        const doc = await getFmeaDocByName(name);
         if (!doc) return { error: `FMEA "${name}" not found.` };
-        const fms = getFailureModes(doc.id);
+        const fms = await getFailureModes(doc.id);
         if (fms.length === 0) return { error: 'No failure modes to chart.' };
         const filePath = await generateRpnPareto(fms, name);
         return { success: true, file: filePath };
@@ -214,9 +214,9 @@ export async function fmeaManage(
       case 'trend': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        const doc = getFmeaDocByName(name);
+        const doc = await getFmeaDocByName(name);
         if (!doc) return { error: `FMEA "${name}" not found.` };
-        const acts = getActions(doc.id);
+        const acts = await getActions(doc.id);
         const filePath = await generateRpnTrend(acts, name);
         return { success: true, file: filePath };
       }
@@ -224,15 +224,15 @@ export async function fmeaManage(
       case 'export': {
         const name = args.doc_name as string;
         if (!name) return { error: 'doc_name is required.' };
-        const doc = getFmeaDocByName(name);
+        const doc = await getFmeaDocByName(name);
         if (!doc) return { error: `FMEA "${name}" not found.` };
-        const fms = getFailureModes(doc.id);
-        const acts = getActions(doc.id);
+        const fms = await getFailureModes(doc.id);
+        const acts = await getActions(doc.id);
         return { csv: exportFmeaCsv(doc, fms, acts) };
       }
 
       case 'list': {
-        const docs = listFmeaDocs();
+        const docs = await listFmeaDocs();
         if (docs.length === 0) return { message: 'No FMEA documents. Create one with create action.' };
         return { documents: docs.map((d) => ({ name: d.name, type: d.fmea_type, product: d.product, updated: new Date(d.updated_at).toLocaleString() })) };
       }

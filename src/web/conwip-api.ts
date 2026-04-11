@@ -18,9 +18,9 @@ export async function handleConwipApi(req: IncomingMessage, res: ServerResponse,
 
   const route = urlPath.replace('/api/conwip', '') || '/';
   try {
-    if (req.method === 'GET') return handleGet(route, res, chatId);
+    if (req.method === 'GET') return await handleGet(route, res, chatId);
     if (req.method === 'POST') { const body = await readBody(req); return await handlePost(route, body, res, chatId); }
-    if (req.method === 'DELETE') return handleDelete(route, res, chatId);
+    if (req.method === 'DELETE') return await handleDelete(route, res, chatId);
     json(res, 405, { error: 'Method not allowed' }); return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -29,18 +29,18 @@ export async function handleConwipApi(req: IncomingMessage, res: ServerResponse,
   }
 }
 
-function handleGet(route: string, res: ServerResponse, chatId: string): boolean {
+async function handleGet(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   if (route === '/' || route === '/info') {
     json(res, 200, { engine: 'CONWIP & Heijunka v1.0', features: ['CONWIP token board', 'Heijunka box', 'Pitch calculation', 'Leveling score', 'Changeover analysis'] });
     return true;
   }
   if (route === '/configs') {
-    json(res, 200, { configs: listConwips(chatId).map((c) => ({ id: c.id, name: c.name, has_result: !!c.result_json, created_at: c.created_at, updated_at: c.updated_at })) });
+    json(res, 200, { configs: (await listConwips(chatId)).map((c) => ({ id: c.id, name: c.name, has_result: !!c.result_json, created_at: c.created_at, updated_at: c.updated_at })) });
     return true;
   }
   const match = route.match(/^\/configs\/(.+)$/);
   if (match) {
-    const c = getConwip(match[1], chatId);
+    const c = await getConwip(match[1], chatId);
     if (!c) { json(res, 404, { error: 'Not found' }); return true; }
     json(res, 200, { ...c, config: JSON.parse(c.config_json), result: c.result_json ? JSON.parse(c.result_json) : null });
     return true;
@@ -57,7 +57,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
       const result = analyzeCONWIP(config);
       let chart: string | undefined;
       try { chart = await generateStageUtilChart(result.stage_utilization, `${config.name} — CONWIP`); } catch { /* */ }
-      if (config.name) saveConwip(config.name + '_conwip', config, result, chatId);
+      if (config.name) await saveConwip(config.name + '_conwip', config, result, chatId);
       json(res, 200, { success: true, result, chart: chart ? `data:image/png;base64,${chart}` : undefined });
       return true;
     }
@@ -67,14 +67,14 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
       const result = analyzeHeijunka(config);
       let chart: string | undefined;
       try { chart = await generateMixChart(result.actual_mix, `${config.name} — Product Mix`); } catch { /* */ }
-      if (config.name) saveConwip(config.name + '_heijunka', config, result, chatId);
+      if (config.name) await saveConwip(config.name + '_heijunka', config, result, chatId);
       json(res, 200, { success: true, result, chart: chart ? `data:image/png;base64,${chart}` : undefined });
       return true;
     }
     case '/configs': {
       const config = data.config; const name = (data.name as string) || (config as Record<string, unknown>)?.name as string;
       if (!name || !config) { json(res, 400, { error: 'name and config required' }); return true; }
-      const saved = saveConwip(name, config, undefined, chatId);
+      const saved = await saveConwip(name, config, undefined, chatId);
       json(res, 201, { success: true, config: { id: saved.id, name: saved.name } });
       return true;
     }
@@ -82,9 +82,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
   }
 }
 
-function handleDelete(route: string, res: ServerResponse, chatId: string): boolean {
+async function handleDelete(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   const match = route.match(/^\/configs\/(.+)$/);
-  if (match) { const d = deleteConwip(match[1], chatId); json(res, d ? 200 : 404, d ? { success: true } : { error: 'Not found' }); return true; }
+  if (match) { const d = await deleteConwip(match[1], chatId); json(res, d ? 200 : 404, d ? { success: true } : { error: 'Not found' }); return true; }
   json(res, 404, { error: 'Not found' }); return true;
 }
 

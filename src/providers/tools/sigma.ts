@@ -99,7 +99,7 @@ export async function sigmaAnalysis(
         if (args.usl === undefined || args.lsl === undefined) return { error: 'usl and lsl are required.' };
         if (!args.project_name) return { error: 'project_name is required.' };
 
-        const { project, capability, controlChart } = executeCapabilityAnalysis(
+        const { project, capability, controlChart } = await executeCapabilityAnalysis(
           args.csv_content, args.usl, args.lsl, args.project_name, args.target,
         );
 
@@ -145,13 +145,13 @@ export async function sigmaAnalysis(
 
       case 'chart': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getSigmaProjectByName(args.project_name);
+        const project = await getSigmaProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const measurements = getMeasurements(project.id);
+        const measurements = await getMeasurements(project.id);
         if (measurements.length < 2) return { error: 'Need at least 2 measurements for control chart.' };
 
-        const results = getSigmaResults(project.id);
+        const results = await getSigmaResults(project.id);
         const chartResult = results.find((r) => r.result_type === 'control_chart');
         if (!chartResult) return { error: 'No control chart data. Run capability analysis first.' };
 
@@ -163,10 +163,10 @@ export async function sigmaAnalysis(
 
       case 'pareto': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getSigmaProjectByName(args.project_name);
+        const project = await getSigmaProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const measurements = getMeasurements(project.id);
+        const measurements = await getMeasurements(project.id);
         const hasDefectTypes = measurements.some((m) => m.defect_type);
         if (!hasDefectTypes) return { error: 'No defect_type data. CSV must include a defect_type column.' };
 
@@ -183,11 +183,11 @@ export async function sigmaAnalysis(
 
       case 'status': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getSigmaProjectByName(args.project_name);
+        const project = await getSigmaProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const measurements = getMeasurements(project.id);
-        const results = getSigmaResults(project.id);
+        const measurements = await getMeasurements(project.id);
+        const results = await getSigmaResults(project.id);
         const capResult = results.find((r) => r.result_type === 'capability');
 
         return {
@@ -204,7 +204,7 @@ export async function sigmaAnalysis(
       }
 
       case 'list': {
-        const projects = listSigmaProjects();
+        const projects = await listSigmaProjects();
         if (projects.length === 0) return { message: 'No sigma projects found.' };
         return {
           projects: projects.map((p) => ({

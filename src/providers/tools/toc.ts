@@ -38,7 +38,7 @@ export async function tocAnalysis(args: Record<string, unknown>): Promise<Record
         if (!args.config_json) return { error: 'config_json required.' };
         const config = JSON.parse(args.config_json as string) as TOCConfig;
         const result = analyzeTOC(config);
-        if (config.name) saveTOC(config.name, config, result);
+        if (config.name) await saveTOC(config.name, config, result);
         return {
           success: true,
           ccr: `${result.constraint.ccr_name} at ${result.constraint.ccr_utilization_pct.toFixed(1)}%`,
@@ -50,14 +50,14 @@ export async function tocAnalysis(args: Record<string, unknown>): Promise<Record
         };
       }
       case 'list': {
-        const configs = listTOCs();
+        const configs = await listTOCs();
         if (configs.length === 0) return { success: true, message: 'No saved TOC configs.' };
         return { success: true, configs: configs.map((c) => ({ name: c.name, updated: new Date(c.updated_at).toISOString() })) };
       }
       case 'load': {
         const name = args.config_name as string;
         if (!name) return { error: 'config_name required.' };
-        const toc = getTOC(name);
+        const toc = await getTOC(name);
         if (!toc) return { error: `"${name}" not found.` };
         return { success: true, name: toc.name, work_centers: JSON.parse(toc.config_json).work_centers?.length ?? 0 };
       }

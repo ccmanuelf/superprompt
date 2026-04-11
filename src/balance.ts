@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
@@ -66,49 +66,47 @@ export interface BalanceResultRow {
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initBalanceTables(): void {
-  const db = getDatabase();
+export async function initBalanceTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS balance_projects (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      takt_time REAL NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  if (!(await db.schema.hasTable('balance_projects'))) {
+    await db.schema.createTable('balance_projects', (t) => {
+      t.text('id').primary();
+      t.text('name').notNullable();
+      t.text('description').notNullable().defaultTo('');
+      t.float('takt_time').notNullable();
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
 
-    CREATE TABLE IF NOT EXISTS balance_tasks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      project_id TEXT NOT NULL,
-      task_id TEXT NOT NULL,
-      task_name TEXT NOT NULL,
-      time_seconds REAL NOT NULL,
-      predecessors TEXT NOT NULL DEFAULT '',
-      station_requirement TEXT,
-      FOREIGN KEY (project_id) REFERENCES balance_projects(id) ON DELETE CASCADE,
-      UNIQUE(project_id, task_id)
-    );
+  if (!(await db.schema.hasTable('balance_tasks'))) {
+    await db.schema.createTable('balance_tasks', (t) => {
+      t.increments('id').primary();
+      t.text('project_id').notNullable().references('id').inTable('balance_projects').onDelete('CASCADE');
+      t.text('task_id').notNullable();
+      t.text('task_name').notNullable();
+      t.float('time_seconds').notNullable();
+      t.text('predecessors').notNullable().defaultTo('');
+      t.text('station_requirement');
+      t.unique(['project_id', 'task_id']);
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_balance_tasks_project ON balance_tasks(project_id)');
+  }
 
-    CREATE TABLE IF NOT EXISTS balance_results (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      takt_time REAL NOT NULL,
-      efficiency REAL NOT NULL,
-      smoothness_index REAL NOT NULL,
-      num_stations INTEGER NOT NULL,
-      assignments_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (project_id) REFERENCES balance_projects(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_balance_tasks_project
-      ON balance_tasks(project_id);
-
-    CREATE INDEX IF NOT EXISTS idx_balance_results_project
-      ON balance_results(project_id);
-  `);
+  if (!(await db.schema.hasTable('balance_results'))) {
+    await db.schema.createTable('balance_results', (t) => {
+      t.text('id').primary();
+      t.text('project_id').notNullable().references('id').inTable('balance_projects').onDelete('CASCADE');
+      t.float('takt_time').notNullable();
+      t.float('efficiency').notNullable();
+      t.float('smoothness_index').notNullable();
+      t.integer('num_stations').notNullable();
+      t.text('assignments_json').notNullable();
+      t.integer('created_at').notNullable();
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_balance_results_project ON balance_results(project_id)');
+  }
 }
 
 export const balanceTableInit: TableInitializer = { name: 'balance', initTables: initBalanceTables };
@@ -117,56 +115,56 @@ function genId(): string {
   return randomBytes(16).toString('hex');
 }
 
-export function createProject(name: string, description: string, taktTime: number): BalanceProject {
-  const db = getDatabase();
+export async function createProject(name: string, description: string, taktTime: number): Promise<BalanceProject> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    `INSERT INTO balance_projects (id, name, description, takt_time, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, name, description, taktTime, now, now);
+  await db('balance_projects').insert({
+    id, name, description, takt_time: taktTime, created_at: now, updated_at: now,
+  });
   return { id, name, description, takt_time: taktTime, created_at: now, updated_at: now };
 }
 
-export function getProject(id: string): BalanceProject | undefined {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM balance_projects WHERE id = ?').get(id) as BalanceProject | undefined;
+export async function getProject(id: string): Promise<BalanceProject | undefined> {
+  const db = getKnex();
+  return await db('balance_projects').where({ id }).first() as BalanceProject | undefined;
 }
 
-export function getProjectByName(name: string): BalanceProject | undefined {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM balance_projects WHERE name = ? COLLATE NOCASE').get(name) as BalanceProject | undefined;
+export async function getProjectByName(name: string): Promise<BalanceProject | undefined> {
+  const db = getKnex();
+  return await db('balance_projects').whereRaw('LOWER(name) = LOWER(?)', [name]).first() as BalanceProject | undefined;
 }
 
-export function listProjects(): BalanceProject[] {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM balance_projects ORDER BY updated_at DESC').all() as BalanceProject[];
+export async function listProjects(): Promise<BalanceProject[]> {
+  const db = getKnex();
+  return await db('balance_projects').orderBy('updated_at', 'desc') as BalanceProject[];
 }
 
-export function deleteProject(id: string): boolean {
-  const db = getDatabase();
-  const result = db.prepare('DELETE FROM balance_projects WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deleteProject(id: string): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('balance_projects').where({ id }).del();
+  return count > 0;
 }
 
-export function insertTasks(projectId: string, tasks: BalanceTask[]): void {
-  const db = getDatabase();
-  const stmt = db.prepare(
-    `INSERT INTO balance_tasks (project_id, task_id, task_name, time_seconds, predecessors, station_requirement)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  );
-
-  const transaction = db.transaction(() => {
+export async function insertTasks(projectId: string, tasks: BalanceTask[]): Promise<void> {
+  const db = getKnex();
+  await db.transaction(async (trx) => {
     for (const t of tasks) {
-      stmt.run(projectId, t.task_id, t.task_name, t.time_seconds, t.predecessors.join(','), t.station_requirement ?? null);
+      await trx('balance_tasks').insert({
+        project_id: projectId,
+        task_id: t.task_id,
+        task_name: t.task_name,
+        time_seconds: t.time_seconds,
+        predecessors: t.predecessors.join(','),
+        station_requirement: t.station_requirement ?? null,
+      });
     }
   });
-  transaction();
 }
 
-export function getProjectTasks(projectId: string): BalanceTask[] {
-  const db = getDatabase();
-  const rows = db.prepare('SELECT * FROM balance_tasks WHERE project_id = ?').all(projectId) as Array<{
+export async function getProjectTasks(projectId: string): Promise<BalanceTask[]> {
+  const db = getKnex();
+  const rows = await db('balance_tasks').where({ project_id: projectId }) as Array<{
     task_id: string;
     task_name: string;
     time_seconds: number;
@@ -183,26 +181,28 @@ export function getProjectTasks(projectId: string): BalanceTask[] {
   }));
 }
 
-export function saveResult(result: BalanceResult): string {
-  const db = getDatabase();
+export async function saveResult(result: BalanceResult): Promise<string> {
+  const db = getKnex();
   const id = genId();
-  db.prepare(
-    `INSERT INTO balance_results (id, project_id, takt_time, efficiency, smoothness_index, num_stations, assignments_json, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, result.project_id, result.takt_time, result.efficiency, result.smoothness_index, result.num_stations, JSON.stringify(result.assignments), Date.now());
-
-  db.prepare('UPDATE balance_projects SET updated_at = ? WHERE id = ?').run(Date.now(), result.project_id);
+  const now = Date.now();
+  await db('balance_results').insert({
+    id, project_id: result.project_id, takt_time: result.takt_time,
+    efficiency: result.efficiency, smoothness_index: result.smoothness_index,
+    num_stations: result.num_stations, assignments_json: JSON.stringify(result.assignments),
+    created_at: now,
+  });
+  await db('balance_projects').where({ id: result.project_id }).update({ updated_at: now });
   return id;
 }
 
-export function getResultsForProject(projectId: string): BalanceResultRow[] {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM balance_results WHERE project_id = ? ORDER BY created_at DESC').all(projectId) as BalanceResultRow[];
+export async function getResultsForProject(projectId: string): Promise<BalanceResultRow[]> {
+  const db = getKnex();
+  return await db('balance_results').where({ project_id: projectId }).orderBy('created_at', 'desc') as BalanceResultRow[];
 }
 
-export function getResult(id: string): BalanceResultRow | undefined {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM balance_results WHERE id = ?').get(id) as BalanceResultRow | undefined;
+export async function getResult(id: string): Promise<BalanceResultRow | undefined> {
+  const db = getKnex();
+  return await db('balance_results').where({ id }).first() as BalanceResultRow | undefined;
 }
 
 // ── CSV Parsing ──────────────────────────────────────────────
@@ -662,31 +662,30 @@ export function runBalance(tasks: BalanceTask[], taktTime: number, projectName: 
 /**
  * Execute the full balance pipeline: parse CSV, create project, run algorithm, save results.
  */
-export function executeBalance(
+export async function executeBalance(
   csvContent: string,
   taktTime: number,
   projectName: string,
   description: string = '',
-): BalanceResult {
+): Promise<BalanceResult> {
   const tasks = parseBalanceCsv(csvContent);
   const result = runBalance(tasks, taktTime, projectName);
 
   // Reuse existing project or create new one
-  let project = getProjectByName(projectName);
+  let project = await getProjectByName(projectName);
   if (project) {
     // Update takt time and clear old tasks for fresh run
-    const db = getDatabase();
-    db.prepare('DELETE FROM balance_tasks WHERE project_id = ?').run(project.id);
-    db.prepare('UPDATE balance_projects SET takt_time = ?, updated_at = ? WHERE id = ?')
-      .run(taktTime, Date.now(), project.id);
+    const db = getKnex();
+    await db('balance_tasks').where({ project_id: project.id }).del();
+    await db('balance_projects').where({ id: project.id }).update({ takt_time: taktTime, updated_at: Date.now() });
     project.takt_time = taktTime;
   } else {
-    project = createProject(projectName, description, taktTime);
+    project = await createProject(projectName, description, taktTime);
   }
 
-  insertTasks(project.id, tasks);
+  await insertTasks(project.id, tasks);
   result.project_id = project.id;
-  saveResult(result);
+  await saveResult(result);
 
   logger.info(
     { projectName, numTasks: tasks.length, numStations: result.num_stations, efficiency: result.efficiency },

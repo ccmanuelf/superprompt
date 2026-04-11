@@ -8,7 +8,7 @@
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { getDatabase } from '../db.js';
+import { getKnex } from '../db-knex.js';
 import { logger } from '../logger.js';
 import { STORE_DIR } from '../config.js';
 
@@ -34,37 +34,40 @@ import type { TableInitializer } from '../core/interfaces.js';
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initSimulationTables(): void {
-  const db = getDatabase();
+export async function initSimulationTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sim_scenarios (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL DEFAULT '',
-      name TEXT NOT NULL,
-      config_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  if (!(await db.schema.hasTable('sim_scenarios'))) {
+    await db.schema.createTable('sim_scenarios', (t) => {
+      t.text('id').primary();
+      t.text('chat_id').notNullable().defaultTo('');
+      t.text('name').notNullable();
+      t.text('config_json').notNullable();
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
 
-    CREATE TABLE IF NOT EXISTS sim_results (
-      id TEXT PRIMARY KEY,
-      scenario_id TEXT NOT NULL,
-      result_type TEXT NOT NULL,
-      result_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (scenario_id) REFERENCES sim_scenarios(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_sim_results_scenario ON sim_results(scenario_id);
-  `);
+  if (!(await db.schema.hasTable('sim_results'))) {
+    await db.schema.createTable('sim_results', (t) => {
+      t.text('id').primary();
+      t.text('scenario_id').notNullable().references('id').inTable('sim_scenarios').onDelete('CASCADE');
+      t.text('result_type').notNullable();
+      t.text('result_json').notNullable();
+      t.integer('created_at').notNullable();
+      t.index(['scenario_id'], 'idx_sim_results_scenario');
+    });
+  }
 
   // Migration: add chat_id column if missing (for existing databases)
-  const cols = db.prepare("PRAGMA table_info(sim_scenarios)").all() as Array<{ name: string }>;
-  if (!cols.some(c => c.name === 'chat_id')) {
-    db.exec("ALTER TABLE sim_scenarios ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
+  if (!(await db.schema.hasColumn('sim_scenarios', 'chat_id'))) {
+    await db.schema.alterTable('sim_scenarios', (t) => {
+      t.text('chat_id').notNullable().defaultTo('');
+    });
   }
-  db.exec('CREATE INDEX IF NOT EXISTS idx_sim_scenarios_chat ON sim_scenarios(chat_id, name)');
+
+  // Ensure index exists (idempotent via raw)
+  await db.raw('CREATE INDEX IF NOT EXISTS idx_sim_scenarios_chat ON sim_scenarios(chat_id, name)');
 }
 
 export const simulationTableInit: TableInitializer = { name: 'simulation', initTables: initSimulationTables };
@@ -73,47 +76,68 @@ function genId(): string {
   return randomBytes(16).toString('hex');
 }
 
-export function saveScenario(name: string, config: SimulationConfig, chatId: string = ''): SimScenario {
-  const db = getDatabase();
+export async function saveScenario(name: string, config: SimulationConfig, chatId: string = ''): Promise<SimScenario> {
+  const db = getKnex();
 
   // Reuse existing (scoped to user) or create new
-  const existing = db.prepare('SELECT * FROM sim_scenarios WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SimScenario | undefined;
+  const existing = await db('sim_scenarios')
+    .whereRaw('LOWER(name) = LOWER(?)', [name])
+    .andWhere({ chat_id: chatId })
+    .first() as SimScenario | undefined;
+
   if (existing) {
-    db.prepare('UPDATE sim_scenarios SET config_json = ?, updated_at = ? WHERE id = ?')
-      .run(JSON.stringify(config), Date.now(), existing.id);
-    return { ...existing, config_json: JSON.stringify(config), updated_at: Date.now() };
+    const now = Date.now();
+    await db('sim_scenarios')
+      .where({ id: existing.id })
+      .update({ config_json: JSON.stringify(config), updated_at: now });
+    return { ...existing, config_json: JSON.stringify(config), updated_at: now };
   }
 
   const id = genId();
   const now = Date.now();
-  db.prepare('INSERT INTO sim_scenarios (id, chat_id, name, config_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, chatId, name, JSON.stringify(config), now, now);
+  await db('sim_scenarios').insert({
+    id, chat_id: chatId, name, config_json: JSON.stringify(config), created_at: now, updated_at: now,
+  });
   return { id, name, config_json: JSON.stringify(config), created_at: now, updated_at: now };
 }
 
-export function getScenarioByName(name: string, chatId: string = ''): SimScenario | undefined {
-  return getDatabase().prepare('SELECT * FROM sim_scenarios WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SimScenario | undefined;
+export async function getScenarioByName(name: string, chatId: string = ''): Promise<SimScenario | undefined> {
+  const db = getKnex();
+  return await db('sim_scenarios')
+    .whereRaw('LOWER(name) = LOWER(?)', [name])
+    .andWhere({ chat_id: chatId })
+    .first() as SimScenario | undefined;
 }
 
-export function listScenarios(chatId: string = ''): SimScenario[] {
-  return getDatabase().prepare('SELECT * FROM sim_scenarios WHERE chat_id = ? ORDER BY updated_at DESC').all(chatId) as SimScenario[];
+export async function listScenarios(chatId: string = ''): Promise<SimScenario[]> {
+  const db = getKnex();
+  return await db('sim_scenarios')
+    .where({ chat_id: chatId })
+    .orderBy('updated_at', 'desc') as SimScenario[];
 }
 
-export function deleteScenario(id: string, chatId: string = ''): boolean {
-  return getDatabase().prepare('DELETE FROM sim_scenarios WHERE id = ? AND chat_id = ?').run(id, chatId).changes > 0;
+export async function deleteScenario(id: string, chatId: string = ''): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('sim_scenarios').where({ id, chat_id: chatId }).del();
+  return count > 0;
 }
 
-export function saveSimResult(scenarioId: string, resultType: string, data: unknown): string {
-  const db = getDatabase();
+export async function saveSimResult(scenarioId: string, resultType: string, data: unknown): Promise<string> {
+  const db = getKnex();
   const id = genId();
-  db.prepare('INSERT INTO sim_results (id, scenario_id, result_type, result_json, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(id, scenarioId, resultType, JSON.stringify(data), Date.now());
-  db.prepare('UPDATE sim_scenarios SET updated_at = ? WHERE id = ?').run(Date.now(), scenarioId);
+  const now = Date.now();
+  await db('sim_results').insert({
+    id, scenario_id: scenarioId, result_type: resultType, result_json: JSON.stringify(data), created_at: now,
+  });
+  await db('sim_scenarios').where({ id: scenarioId }).update({ updated_at: now });
   return id;
 }
 
-export function getSimResults(scenarioId: string): SimResultRow[] {
-  return getDatabase().prepare('SELECT * FROM sim_results WHERE scenario_id = ? ORDER BY created_at DESC').all(scenarioId) as SimResultRow[];
+export async function getSimResults(scenarioId: string): Promise<SimResultRow[]> {
+  const db = getKnex();
+  return await db('sim_results')
+    .where({ scenario_id: scenarioId })
+    .orderBy('created_at', 'desc') as SimResultRow[];
 }
 
 // ── Chart Generation ─────────────────────────────────────────

@@ -17,7 +17,8 @@ import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from '
 import { resolve } from 'node:path';
 import { config, PROJECT_ROOT, STORE_DIR } from './config.js';
 import { logger } from './logger.js';
-import { createStorageProvider, getUnembeddedMemoryCount } from './db.js';
+import { createStorageProvider } from './db.js';
+import { getUnembeddedMemoryCount } from './db-core.js';
 import { Application } from './core/app.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -86,6 +87,10 @@ async function main(): Promise<void> {
   // ── Storage ──────────────────────────────────────────────
   const storage = createStorageProvider();
   app.registerStorage(storage);
+
+  // Initialize Knex alongside SQLite (for migrated modules)
+  const { initKnex, readDbConfig } = await import('./db-knex.js');
+  initKnex(readDbConfig());
 
   // ── Table initializers (core subsystems) ──
   const { learningTableInit } = await import('./learning/db.js');
@@ -174,9 +179,9 @@ async function main(): Promise<void> {
 
   app.registerSubsystem({
     name: 'memory',
-    init: () => {
+    init: async () => {
       // Check for unembedded memories
-      const unembedded = getUnembeddedMemoryCount();
+      const unembedded = await getUnembeddedMemoryCount();
       if (unembedded > 0) {
         logger.warn(
           { count: unembedded },

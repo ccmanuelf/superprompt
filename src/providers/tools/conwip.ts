@@ -35,7 +35,7 @@ export async function conwipHeijunka(args: Record<string, unknown>): Promise<Rec
         if (!args.config_json) return { error: 'config_json required.' };
         const config = JSON.parse(args.config_json as string) as CONWIPConfig;
         const result = analyzeCONWIP(config);
-        if (config.name) saveConwip(config.name, config, result);
+        if (config.name) await saveConwip(config.name, config, result);
         return {
           success: true, wip_limit: result.wip_limit,
           throughput: `${result.throughput_per_hour.toFixed(1)} u/hr`,
@@ -48,7 +48,7 @@ export async function conwipHeijunka(args: Record<string, unknown>): Promise<Rec
         if (!args.config_json) return { error: 'config_json required.' };
         const config = JSON.parse(args.config_json as string) as HeijunkaConfig;
         const result = analyzeHeijunka(config);
-        if (config.name) saveConwip(config.name, config, result);
+        if (config.name) await saveConwip(config.name, config, result);
         return {
           success: true, leveling_score: result.leveling_score,
           takt: `${result.takt_time.toFixed(1)} min`, pitch: `${result.pitch.toFixed(1)} min`,
@@ -58,7 +58,7 @@ export async function conwipHeijunka(args: Record<string, unknown>): Promise<Rec
         };
       }
       case 'list': {
-        const configs = listConwips();
+        const configs = await listConwips();
         return { success: true, configs: configs.map((c) => ({ name: c.name, updated: new Date(c.updated_at).toISOString() })) };
       }
       default: return { error: `Unknown action: ${args.action}` };

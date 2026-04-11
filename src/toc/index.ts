@@ -3,7 +3,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from '../db.js';
+import { getKnex } from '../db-knex.js';
 import type {
   TOCConfig,
   TOCAnalysis,
@@ -23,38 +23,44 @@ import type { TableInitializer } from '../core/interfaces.js';
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initTocTables(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS toc_configs (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL DEFAULT '',
-      name TEXT NOT NULL,
-      config_json TEXT NOT NULL,
-      result_json TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_toc_configs_name ON toc_configs(name);
+export async function initTocTables(): Promise<void> {
+  const db = getKnex();
 
-    CREATE TABLE IF NOT EXISTS toc_throughput_history (
-      id TEXT PRIMARY KEY,
-      config_name TEXT NOT NULL,
-      period TEXT NOT NULL,
-      throughput_units REAL NOT NULL,
-      throughput_dollars REAL NOT NULL,
-      constraint_utilization_pct REAL NOT NULL,
-      wip_units REAL NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_toc_history_config ON toc_throughput_history(config_name, period);
-  `);
+  if (!(await db.schema.hasTable('toc_configs'))) {
+    await db.schema.createTable('toc_configs', (t) => {
+      t.text('id').primary();
+      t.text('chat_id').notNullable().defaultTo('');
+      t.text('name').notNullable();
+      t.text('config_json').notNullable();
+      t.text('result_json');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
+
+  await db.raw('CREATE INDEX IF NOT EXISTS idx_toc_configs_name ON toc_configs(name)');
+
+  if (!(await db.schema.hasTable('toc_throughput_history'))) {
+    await db.schema.createTable('toc_throughput_history', (t) => {
+      t.text('id').primary();
+      t.text('config_name').notNullable();
+      t.text('period').notNullable();
+      t.float('throughput_units').notNullable();
+      t.float('throughput_dollars').notNullable();
+      t.float('constraint_utilization_pct').notNullable();
+      t.float('wip_units').notNullable().defaultTo(0);
+      t.integer('created_at').notNullable();
+    });
+  }
+
+  await db.raw('CREATE INDEX IF NOT EXISTS idx_toc_history_config ON toc_throughput_history(config_name, period)');
 
   // Migration: add chat_id column if missing (for existing databases)
-  const cols = db.prepare("PRAGMA table_info(toc_configs)").all() as Array<{ name: string }>;
-  if (!cols.some(c => c.name === 'chat_id')) {
-    db.exec("ALTER TABLE toc_configs ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
-    db.exec('CREATE INDEX IF NOT EXISTS idx_toc_configs_chat ON toc_configs(chat_id, name)');
+  if (!(await db.schema.hasColumn('toc_configs', 'chat_id'))) {
+    await db.schema.alterTable('toc_configs', (t) => {
+      t.text('chat_id').notNullable().defaultTo('');
+    });
+    await db.raw('CREATE INDEX IF NOT EXISTS idx_toc_configs_chat ON toc_configs(chat_id, name)');
   }
 }
 
@@ -64,35 +70,53 @@ export const tocTableInit: TableInitializer = { name: 'toc', initTables: initToc
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 
-export function saveTOC(name: string, config: TOCConfig, result?: TOCAnalysis, chatId: string = ''): SavedTOC {
-  const db = getDatabase();
+export async function saveTOC(name: string, config: TOCConfig, result?: TOCAnalysis, chatId: string = ''): Promise<SavedTOC> {
+  const db = getKnex();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
-  const existing = db.prepare('SELECT * FROM toc_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SavedTOC | undefined;
+
+  const existing = await db('toc_configs')
+    .whereRaw('LOWER(name) = LOWER(?)', [name])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedTOC | undefined;
+
   if (existing) {
-    db.prepare('UPDATE toc_configs SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?')
-      .run(configJson, resultJson, Date.now(), existing.id);
-    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: Date.now() };
+    const now = Date.now();
+    await db('toc_configs')
+      .where({ id: existing.id })
+      .update({ config_json: configJson, result_json: resultJson, updated_at: now });
+    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: now };
   }
+
   const id = genId();
   const now = Date.now();
-  db.prepare('INSERT INTO toc_configs (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, chatId, name, configJson, resultJson, now, now);
+  await db('toc_configs').insert({
+    id, chat_id: chatId, name, config_json: configJson, result_json: resultJson, created_at: now, updated_at: now,
+  });
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getTOC(nameOrId: string, chatId: string = ''): SavedTOC | undefined {
-  const db = getDatabase();
-  return (db.prepare('SELECT * FROM toc_configs WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM toc_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)) as SavedTOC | undefined;
+export async function getTOC(nameOrId: string, chatId: string = ''): Promise<SavedTOC | undefined> {
+  const db = getKnex();
+  const byId = await db('toc_configs').where({ id: nameOrId }).first();
+  if (byId) return byId as SavedTOC;
+  return await db('toc_configs')
+    .whereRaw('LOWER(name) = LOWER(?)', [nameOrId])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedTOC | undefined;
 }
 
-export function listTOCs(chatId: string = ''): SavedTOC[] {
-  return getDatabase().prepare('SELECT * FROM toc_configs WHERE chat_id = ? ORDER BY updated_at DESC').all(chatId) as SavedTOC[];
+export async function listTOCs(chatId: string = ''): Promise<SavedTOC[]> {
+  const db = getKnex();
+  return await db('toc_configs')
+    .where({ chat_id: chatId })
+    .orderBy('updated_at', 'desc') as SavedTOC[];
 }
 
-export function deleteTOC(id: string, chatId: string = ''): boolean {
-  return getDatabase().prepare('DELETE FROM toc_configs WHERE id = ? AND chat_id = ?').run(id, chatId).changes > 0;
+export async function deleteTOC(id: string, chatId: string = ''): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('toc_configs').where({ id, chat_id: chatId }).del();
+  return count > 0;
 }
 
 // ── Throughput History ───────────────────────────────────────
@@ -111,29 +135,33 @@ export interface ThroughputHistoryRow {
 /**
  * Record a throughput data point for trend tracking.
  */
-export function recordThroughput(
+export async function recordThroughput(
   configName: string,
   period: string,
   throughputUnits: number,
   throughputDollars: number,
   constraintUtilPct: number,
   wipUnits: number = 0,
-): string {
-  const db = getDatabase();
+): Promise<string> {
+  const db = getKnex();
   const id = genId();
-  db.prepare(
-    'INSERT INTO toc_throughput_history (id, config_name, period, throughput_units, throughput_dollars, constraint_utilization_pct, wip_units, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, configName, period, throughputUnits, throughputDollars, constraintUtilPct, wipUnits, Date.now());
+  await db('toc_throughput_history').insert({
+    id, config_name: configName, period, throughput_units: throughputUnits,
+    throughput_dollars: throughputDollars, constraint_utilization_pct: constraintUtilPct,
+    wip_units: wipUnits, created_at: Date.now(),
+  });
   return id;
 }
 
 /**
  * Get throughput history for a config, sorted by period.
  */
-export function getThroughputHistory(configName: string, limit: number = 100): ThroughputHistoryRow[] {
-  return getDatabase()
-    .prepare('SELECT * FROM toc_throughput_history WHERE config_name = ? COLLATE NOCASE ORDER BY period DESC LIMIT ?')
-    .all(configName, limit) as ThroughputHistoryRow[];
+export async function getThroughputHistory(configName: string, limit: number = 100): Promise<ThroughputHistoryRow[]> {
+  const db = getKnex();
+  return await db('toc_throughput_history')
+    .whereRaw('LOWER(config_name) = LOWER(?)', [configName])
+    .orderBy('period', 'desc')
+    .limit(limit) as ThroughputHistoryRow[];
 }
 
 // ── Chart Generation ─────────────────────────────────────────

@@ -54,7 +54,7 @@ export async function jobSequencer(
         const config = JSON.parse(args.config_json as string) as SequencerConfig;
         const rule = (args.rule as DispatchRule) ?? 'SPT';
         const result = dispatch(config, rule);
-        if (config.name) saveSchedule(config.name + '_' + rule, config, result);
+        if (config.name) await saveSchedule(config.name + '_' + rule, config, result);
         return {
           success: true,
           rule,
@@ -70,7 +70,7 @@ export async function jobSequencer(
         if (!args.config_json) return { error: 'config_json is required.' };
         const config = JSON.parse(args.config_json as string) as SequencerConfig;
         const comp = compareAllRules(config);
-        if (config.name) saveSchedule(config.name, config, comp);
+        if (config.name) await saveSchedule(config.name, config, comp);
         return {
           success: true,
           best_overall: comp.best_overall,
@@ -91,7 +91,7 @@ export async function jobSequencer(
         const config = JSON.parse(args.config_json as string) as SequencerConfig;
         const gaConfig = args.ga_config_json ? JSON.parse(args.ga_config_json as string) as Partial<GAConfig> : undefined;
         const result = runGA(config, gaConfig);
-        if (config.name) saveSchedule(config.name + '_GA', config, result);
+        if (config.name) await saveSchedule(config.name + '_GA', config, result);
         return {
           success: true,
           makespan: `${result.metrics.makespan.toFixed(0)} min`,
@@ -103,7 +103,7 @@ export async function jobSequencer(
       }
 
       case 'list': {
-        const schedules = listSchedules();
+        const schedules = await listSchedules();
         if (schedules.length === 0) return { success: true, message: 'No saved schedules.' };
         return {
           success: true,
@@ -114,7 +114,7 @@ export async function jobSequencer(
       case 'load': {
         const name = args.schedule_name as string;
         if (!name) return { error: 'schedule_name is required.' };
-        const sched = getSchedule(name);
+        const sched = await getSchedule(name);
         if (!sched) return { error: `Schedule "${name}" not found.` };
         const config = JSON.parse(sched.config_json);
         return {

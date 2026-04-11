@@ -3,7 +3,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from '../db.js';
+import { getKnex } from '../db-knex.js';
 import type {
   SavedDOE,
   ANOVATable,
@@ -19,26 +19,29 @@ import type { TableInitializer } from '../core/interfaces.js';
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initDoeTables(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS doe_experiments (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL DEFAULT '',
-      name TEXT NOT NULL,
-      config_json TEXT NOT NULL,
-      result_json TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_doe_experiments_name ON doe_experiments(name);
-  `);
+export async function initDoeTables(): Promise<void> {
+  const db = getKnex();
+
+  if (!(await db.schema.hasTable('doe_experiments'))) {
+    await db.schema.createTable('doe_experiments', (t) => {
+      t.text('id').primary();
+      t.text('chat_id').notNullable().defaultTo('');
+      t.text('name').notNullable();
+      t.text('config_json').notNullable();
+      t.text('result_json');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
+
+  await db.raw('CREATE INDEX IF NOT EXISTS idx_doe_experiments_name ON doe_experiments(name)');
 
   // Migration: add chat_id column if missing (for existing databases)
-  const cols = db.prepare("PRAGMA table_info(doe_experiments)").all() as Array<{ name: string }>;
-  if (!cols.some(c => c.name === 'chat_id')) {
-    db.exec("ALTER TABLE doe_experiments ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
-    db.exec('CREATE INDEX IF NOT EXISTS idx_doe_experiments_chat ON doe_experiments(chat_id, name)');
+  if (!(await db.schema.hasColumn('doe_experiments', 'chat_id'))) {
+    await db.schema.alterTable('doe_experiments', (t) => {
+      t.text('chat_id').notNullable().defaultTo('');
+    });
+    await db.raw('CREATE INDEX IF NOT EXISTS idx_doe_experiments_chat ON doe_experiments(chat_id, name)');
   }
 }
 
@@ -46,35 +49,53 @@ export const doeTableInit: TableInitializer = { name: 'doe', initTables: initDoe
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 
-export function saveDOE(name: string, config: unknown, result?: unknown, chatId: string = ''): SavedDOE {
-  const db = getDatabase();
+export async function saveDOE(name: string, config: unknown, result?: unknown, chatId: string = ''): Promise<SavedDOE> {
+  const db = getKnex();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
-  const existing = db.prepare('SELECT * FROM doe_experiments WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SavedDOE | undefined;
+
+  const existing = await db('doe_experiments')
+    .whereRaw('LOWER(name) = LOWER(?)', [name])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedDOE | undefined;
+
   if (existing) {
-    db.prepare('UPDATE doe_experiments SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?')
-      .run(configJson, resultJson, Date.now(), existing.id);
-    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: Date.now() };
+    const now = Date.now();
+    await db('doe_experiments')
+      .where({ id: existing.id })
+      .update({ config_json: configJson, result_json: resultJson, updated_at: now });
+    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: now };
   }
+
   const id = genId();
   const now = Date.now();
-  db.prepare('INSERT INTO doe_experiments (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, chatId, name, configJson, resultJson, now, now);
+  await db('doe_experiments').insert({
+    id, chat_id: chatId, name, config_json: configJson, result_json: resultJson, created_at: now, updated_at: now,
+  });
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getDOE(nameOrId: string, chatId: string = ''): SavedDOE | undefined {
-  const db = getDatabase();
-  return (db.prepare('SELECT * FROM doe_experiments WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM doe_experiments WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)) as SavedDOE | undefined;
+export async function getDOE(nameOrId: string, chatId: string = ''): Promise<SavedDOE | undefined> {
+  const db = getKnex();
+  const byId = await db('doe_experiments').where({ id: nameOrId }).first();
+  if (byId) return byId as SavedDOE;
+  return await db('doe_experiments')
+    .whereRaw('LOWER(name) = LOWER(?)', [nameOrId])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedDOE | undefined;
 }
 
-export function listDOEs(chatId: string = ''): SavedDOE[] {
-  return getDatabase().prepare('SELECT * FROM doe_experiments WHERE chat_id = ? ORDER BY updated_at DESC').all(chatId) as SavedDOE[];
+export async function listDOEs(chatId: string = ''): Promise<SavedDOE[]> {
+  const db = getKnex();
+  return await db('doe_experiments')
+    .where({ chat_id: chatId })
+    .orderBy('updated_at', 'desc') as SavedDOE[];
 }
 
-export function deleteDOE(id: string, chatId: string = ''): boolean {
-  return getDatabase().prepare('DELETE FROM doe_experiments WHERE id = ? AND chat_id = ?').run(id, chatId).changes > 0;
+export async function deleteDOE(id: string, chatId: string = ''): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('doe_experiments').where({ id, chat_id: chatId }).del();
+  return count > 0;
 }
 
 // ── Charts ───────────────────────────────────────────────────

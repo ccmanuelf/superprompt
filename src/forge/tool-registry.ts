@@ -1,6 +1,6 @@
 import type { Tool } from 'ollama';
 import { logger } from '../logger.js';
-import { listUserTools, type UserTool } from '../db.js';
+import { listUserTools, type UserTool } from '../db-core.js';
 import { executeDeclarativeHttp } from './declarative-http.js';
 import { executeInWorker } from './worker-sandbox.js';
 import type { DeclarativeHttpEndpoint, ToolParameter } from './tool-parser.js';
@@ -83,7 +83,7 @@ export function listRegisteredTools(): Array<{ name: string; description: string
  * Load user tools from DB and register them.
  * Call on startup and after /reload.
  */
-export function loadUserTools(envVars?: Record<string, string>): number {
+export async function loadUserTools(envVars?: Record<string, string>): Promise<number> {
   // Remove all existing user tools first
   for (const [name, entry] of registry.entries()) {
     if (entry.source === 'user') {
@@ -91,7 +91,7 @@ export function loadUserTools(envVars?: Record<string, string>): number {
     }
   }
 
-  const userTools = listUserTools();
+  const userTools = await listUserTools();
   let loaded = 0;
 
   for (const tool of userTools) {

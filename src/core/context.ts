@@ -20,7 +20,7 @@ import type {
   listUserTools, getUserToolByName, createUserTool, updateUserTool, deleteUserTool,
   enableUserTool, disableUserTool, lockUserTool, unlockUserTool, insertToolRevision,
   createTask, getTasksByChat, getTask, pauseTask, resumeTask, deleteTask,
-} from '../db.js';
+} from '../db-core.js';
 import type { transcribeAudio, synthesizeSpeech, voiceCapabilities } from '../voice.js';
 import type { computeNextRun, validateCron } from '../scheduler.js';
 import type { parseFile } from '../files.js';
@@ -339,7 +339,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
     selfMonitorMod, researchMod, guardrailsMod, contextHealthMod, webUIMod, packTunerMod, learningMod, autoSkillsMod, policyMod, packsMod, packBuilderMod,
   ] = await Promise.all([
     import('../memory.js'),
-    import('../db.js'),
+    import('../db-core.js'),
     import('../voice.js'),
     import('../scheduler.js'),
     import('../files.js'),

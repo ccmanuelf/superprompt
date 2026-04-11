@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
@@ -66,61 +66,61 @@ export interface RiskMatrixCell {
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initFmeaTables(): void {
-  const db = getDatabase();
+export async function initFmeaTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS fmea_documents (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      fmea_type TEXT NOT NULL DEFAULT 'pfmea' CHECK(fmea_type IN ('pfmea', 'dfmea')),
-      product TEXT NOT NULL DEFAULT '',
-      process TEXT NOT NULL DEFAULT '',
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  if (!(await db.schema.hasTable('fmea_documents'))) {
+    await db.schema.createTable('fmea_documents', (t) => {
+      t.text('id').primary();
+      t.text('name').notNullable();
+      t.text('fmea_type').notNullable().defaultTo('pfmea');
+      t.text('product').notNullable().defaultTo('');
+      t.text('process').notNullable().defaultTo('');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
 
-    CREATE TABLE IF NOT EXISTS fmea_failure_modes (
-      id TEXT PRIMARY KEY,
-      doc_id TEXT NOT NULL,
-      process_step TEXT NOT NULL,
-      failure_mode TEXT NOT NULL,
-      effect TEXT NOT NULL DEFAULT '',
-      severity INTEGER NOT NULL DEFAULT 5,
-      cause TEXT NOT NULL DEFAULT '',
-      occurrence INTEGER NOT NULL DEFAULT 5,
-      detection_method TEXT NOT NULL DEFAULT '',
-      detection INTEGER NOT NULL DEFAULT 5,
-      rpn INTEGER NOT NULL DEFAULT 125,
-      action_priority TEXT NOT NULL DEFAULT 'M',
-      current_controls TEXT NOT NULL DEFAULT '',
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (doc_id) REFERENCES fmea_documents(id) ON DELETE CASCADE
-    );
+  if (!(await db.schema.hasTable('fmea_failure_modes'))) {
+    await db.schema.createTable('fmea_failure_modes', (t) => {
+      t.text('id').primary();
+      t.text('doc_id').notNullable().references('id').inTable('fmea_documents').onDelete('CASCADE');
+      t.text('process_step').notNullable();
+      t.text('failure_mode').notNullable();
+      t.text('effect').notNullable().defaultTo('');
+      t.integer('severity').notNullable().defaultTo(5);
+      t.text('cause').notNullable().defaultTo('');
+      t.integer('occurrence').notNullable().defaultTo(5);
+      t.text('detection_method').notNullable().defaultTo('');
+      t.integer('detection').notNullable().defaultTo(5);
+      t.integer('rpn').notNullable().defaultTo(125);
+      t.text('action_priority').notNullable().defaultTo('M');
+      t.text('current_controls').notNullable().defaultTo('');
+      t.integer('created_at').notNullable();
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_fmea_fm_doc ON fmea_failure_modes(doc_id)');
+  }
 
-    CREATE TABLE IF NOT EXISTS fmea_action_items (
-      id TEXT PRIMARY KEY,
-      failure_mode_id TEXT NOT NULL,
-      doc_id TEXT NOT NULL,
-      action TEXT NOT NULL,
-      owner TEXT NOT NULL DEFAULT '',
-      deadline TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'in_progress', 'completed', 'verified')),
-      rpn_before INTEGER NOT NULL,
-      rpn_after INTEGER,
-      severity_after INTEGER,
-      occurrence_after INTEGER,
-      detection_after INTEGER,
-      completed_at INTEGER,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (failure_mode_id) REFERENCES fmea_failure_modes(id) ON DELETE CASCADE,
-      FOREIGN KEY (doc_id) REFERENCES fmea_documents(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_fmea_fm_doc ON fmea_failure_modes(doc_id);
-    CREATE INDEX IF NOT EXISTS idx_fmea_actions_doc ON fmea_action_items(doc_id);
-    CREATE INDEX IF NOT EXISTS idx_fmea_actions_fm ON fmea_action_items(failure_mode_id);
-  `);
+  if (!(await db.schema.hasTable('fmea_action_items'))) {
+    await db.schema.createTable('fmea_action_items', (t) => {
+      t.text('id').primary();
+      t.text('failure_mode_id').notNullable().references('id').inTable('fmea_failure_modes').onDelete('CASCADE');
+      t.text('doc_id').notNullable().references('id').inTable('fmea_documents').onDelete('CASCADE');
+      t.text('action').notNullable();
+      t.text('owner').notNullable().defaultTo('');
+      t.text('deadline').notNullable().defaultTo('');
+      t.text('status').notNullable().defaultTo('open');
+      t.integer('rpn_before').notNullable();
+      t.integer('rpn_after');
+      t.integer('severity_after');
+      t.integer('occurrence_after');
+      t.integer('detection_after');
+      t.integer('completed_at');
+      t.integer('created_at').notNullable();
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_fmea_actions_doc ON fmea_action_items(doc_id)');
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_fmea_actions_fm ON fmea_action_items(failure_mode_id)');
+  }
 }
 
 export const fmeaTableInit: TableInitializer = { name: 'fmea', initTables: initFmeaTables };
@@ -131,31 +131,32 @@ function genId(): string {
 
 // ── CRUD ─────────────────────────────────────────────────────
 
-export function createFmeaDoc(
+export async function createFmeaDoc(
   name: string, fmeaType: FmeaType = 'pfmea', product: string = '', process: string = '',
-): FmeaDocument {
-  const db = getDatabase();
+): Promise<FmeaDocument> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    'INSERT INTO fmea_documents (id, name, fmea_type, product, process, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, name, fmeaType, product, process, now, now);
+  await db('fmea_documents').insert({
+    id, name, fmea_type: fmeaType, product, process, created_at: now, updated_at: now,
+  });
   return { id, name, fmea_type: fmeaType, product, process, created_at: now, updated_at: now };
 }
 
-export function getFmeaDocByName(name: string): FmeaDocument | undefined {
-  return getDatabase().prepare('SELECT * FROM fmea_documents WHERE name = ? COLLATE NOCASE').get(name) as FmeaDocument | undefined;
+export async function getFmeaDocByName(name: string): Promise<FmeaDocument | undefined> {
+  return await getKnex()('fmea_documents').whereRaw('LOWER(name) = LOWER(?)', [name]).first() as FmeaDocument | undefined;
 }
 
-export function listFmeaDocs(): FmeaDocument[] {
-  return getDatabase().prepare('SELECT * FROM fmea_documents ORDER BY updated_at DESC').all() as FmeaDocument[];
+export async function listFmeaDocs(): Promise<FmeaDocument[]> {
+  return await getKnex()('fmea_documents').orderBy('updated_at', 'desc') as FmeaDocument[];
 }
 
-export function deleteFmeaDoc(id: string): boolean {
-  return getDatabase().prepare('DELETE FROM fmea_documents WHERE id = ?').run(id).changes > 0;
+export async function deleteFmeaDoc(id: string): Promise<boolean> {
+  const count = await getKnex()('fmea_documents').where({ id }).del();
+  return count > 0;
 }
 
-export function addFailureMode(
+export async function addFailureMode(
   docId: string,
   fm: {
     process_step: string;
@@ -168,8 +169,8 @@ export function addFailureMode(
     detection?: number;
     current_controls?: string;
   },
-): FailureMode {
-  const db = getDatabase();
+): Promise<FailureMode> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
 
@@ -179,13 +180,13 @@ export function addFailureMode(
   const rpn = severity * occurrence * detection;
   const ap = calculateActionPriority(severity, occurrence, detection);
 
-  db.prepare(
-    `INSERT INTO fmea_failure_modes (id, doc_id, process_step, failure_mode, effect, severity, cause, occurrence, detection_method, detection, rpn, action_priority, current_controls, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, docId, fm.process_step, fm.failure_mode, fm.effect || '', severity,
-    fm.cause || '', occurrence, fm.detection_method || '', detection, rpn, ap,
-    fm.current_controls || '', now);
-  db.prepare('UPDATE fmea_documents SET updated_at = ? WHERE id = ?').run(now, docId);
+  await db('fmea_failure_modes').insert({
+    id, doc_id: docId, process_step: fm.process_step, failure_mode: fm.failure_mode,
+    effect: fm.effect || '', severity, cause: fm.cause || '', occurrence,
+    detection_method: fm.detection_method || '', detection, rpn, action_priority: ap,
+    current_controls: fm.current_controls || '', created_at: now,
+  });
+  await db('fmea_documents').where({ id: docId }).update({ updated_at: now });
 
   return {
     id, doc_id: docId, process_step: fm.process_step, failure_mode: fm.failure_mode,
@@ -195,24 +196,23 @@ export function addFailureMode(
   };
 }
 
-export function getFailureModes(docId: string): FailureMode[] {
-  return getDatabase().prepare(
-    'SELECT * FROM fmea_failure_modes WHERE doc_id = ? ORDER BY rpn DESC',
-  ).all(docId) as FailureMode[];
+export async function getFailureModes(docId: string): Promise<FailureMode[]> {
+  return await getKnex()('fmea_failure_modes')
+    .where({ doc_id: docId }).orderBy('rpn', 'desc') as FailureMode[];
 }
 
-export function addAction(
+export async function addAction(
   fmId: string, docId: string,
   action: string, owner: string = '', deadline: string = '', rpnBefore: number,
-): ActionItem {
-  const db = getDatabase();
+): Promise<ActionItem> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    `INSERT INTO fmea_action_items (id, failure_mode_id, doc_id, action, owner, deadline, status, rpn_before, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
-  ).run(id, fmId, docId, action, owner, deadline, rpnBefore, now);
-  db.prepare('UPDATE fmea_documents SET updated_at = ? WHERE id = ?').run(now, docId);
+  await db('fmea_action_items').insert({
+    id, failure_mode_id: fmId, doc_id: docId, action, owner, deadline,
+    status: 'open', rpn_before: rpnBefore, created_at: now,
+  });
+  await db('fmea_documents').where({ id: docId }).update({ updated_at: now });
 
   return {
     id, failure_mode_id: fmId, doc_id: docId, action, owner, deadline,
@@ -222,24 +222,22 @@ export function addAction(
   };
 }
 
-export function getActions(docId: string): ActionItem[] {
-  return getDatabase().prepare(
-    'SELECT * FROM fmea_action_items WHERE doc_id = ? ORDER BY rpn_before DESC',
-  ).all(docId) as ActionItem[];
+export async function getActions(docId: string): Promise<ActionItem[]> {
+  return await getKnex()('fmea_action_items')
+    .where({ doc_id: docId }).orderBy('rpn_before', 'desc') as ActionItem[];
 }
 
-export function getActionsForFailureMode(fmId: string): ActionItem[] {
-  return getDatabase().prepare(
-    'SELECT * FROM fmea_action_items WHERE failure_mode_id = ? ORDER BY created_at',
-  ).all(fmId) as ActionItem[];
+export async function getActionsForFailureMode(fmId: string): Promise<ActionItem[]> {
+  return await getKnex()('fmea_action_items')
+    .where({ failure_mode_id: fmId }).orderBy('created_at') as ActionItem[];
 }
 
-export function completeAction(
+export async function completeAction(
   actionId: string,
   severityAfter: number, occurrenceAfter: number, detectionAfter: number,
-): ActionItem | null {
-  const db = getDatabase();
-  const action = db.prepare('SELECT * FROM fmea_action_items WHERE id = ?').get(actionId) as ActionItem | undefined;
+): Promise<ActionItem | null> {
+  const db = getKnex();
+  const action = await db('fmea_action_items').where({ id: actionId }).first() as ActionItem | undefined;
   if (!action) return null;
 
   const s = clamp(severityAfter, 1, 10);
@@ -248,16 +246,16 @@ export function completeAction(
   const rpnAfter = s * o * d;
   const now = Date.now();
 
-  db.prepare(
-    `UPDATE fmea_action_items SET status = 'completed', rpn_after = ?, severity_after = ?, occurrence_after = ?, detection_after = ?, completed_at = ?
-     WHERE id = ?`,
-  ).run(rpnAfter, s, o, d, now, actionId);
+  await db('fmea_action_items').where({ id: actionId }).update({
+    status: 'completed', rpn_after: rpnAfter, severity_after: s,
+    occurrence_after: o, detection_after: d, completed_at: now,
+  });
 
   // Update the failure mode's RPN to the new values
-  db.prepare(
-    `UPDATE fmea_failure_modes SET severity = ?, occurrence = ?, detection = ?, rpn = ?, action_priority = ?
-     WHERE id = ?`,
-  ).run(s, o, d, rpnAfter, calculateActionPriority(s, o, d), action.failure_mode_id);
+  await db('fmea_failure_modes').where({ id: action.failure_mode_id }).update({
+    severity: s, occurrence: o, detection: d, rpn: rpnAfter,
+    action_priority: calculateActionPriority(s, o, d),
+  });
 
   return {
     ...action, status: 'completed', rpn_after: rpnAfter,
@@ -646,34 +644,35 @@ export function exportFmeaCsv(doc: FmeaDocument, failureModes: FailureMode[], ac
 /**
  * Execute full FMEA from CSV: parse, create doc, add failure modes, auto-generate actions for HIGH.
  */
-export function executeFmeaFromCsv(
+export async function executeFmeaFromCsv(
   csvContent: string, docName: string,
   fmeaType: FmeaType = 'pfmea', product: string = '', process: string = '',
-): { doc: FmeaDocument; failureModes: FailureMode[]; actions: ActionItem[] } {
+): Promise<{ doc: FmeaDocument; failureModes: FailureMode[]; actions: ActionItem[] }> {
   const rows = parseFmeaCsv(csvContent);
 
   // Reuse or create doc
-  let doc = getFmeaDocByName(docName);
+  let doc = await getFmeaDocByName(docName);
   if (doc) {
-    const db = getDatabase();
-    db.prepare('DELETE FROM fmea_failure_modes WHERE doc_id = ?').run(doc.id);
-    db.prepare('DELETE FROM fmea_action_items WHERE doc_id = ?').run(doc.id);
-    db.prepare('UPDATE fmea_documents SET updated_at = ?, fmea_type = ?, product = ?, process = ? WHERE id = ?')
-      .run(Date.now(), fmeaType, product, process, doc.id);
+    const db = getKnex();
+    await db('fmea_failure_modes').where({ doc_id: doc.id }).del();
+    await db('fmea_action_items').where({ doc_id: doc.id }).del();
+    await db('fmea_documents').where({ id: doc.id }).update({
+      updated_at: Date.now(), fmea_type: fmeaType, product, process,
+    });
   } else {
-    doc = createFmeaDoc(docName, fmeaType, product, process);
+    doc = await createFmeaDoc(docName, fmeaType, product, process);
   }
 
   const failureModes: FailureMode[] = [];
   const actions: ActionItem[] = [];
 
   for (const row of rows) {
-    const fm = addFailureMode(doc.id, row);
+    const fm = await addFailureMode(doc.id, row);
     failureModes.push(fm);
 
     // Auto-generate action items for HIGH priority
     if (fm.action_priority === 'H') {
-      const action = addAction(fm.id, doc.id,
+      const action = await addAction(fm.id, doc.id,
         `Investigate and reduce risk for: ${fm.failure_mode}`, '', '', fm.rpn);
       actions.push(action);
     }

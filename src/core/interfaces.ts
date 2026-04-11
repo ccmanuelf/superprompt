@@ -143,7 +143,7 @@ export interface ToolProvider {
   /** List all registered tools with metadata */
   list(): Array<{ name: string; description: string; source: string }>;
   /** Load user tools from database and register them */
-  loadUserTools(envVars?: Record<string, string>): number;
+  loadUserTools(envVars?: Record<string, string>): Promise<number>;
 }
 
 // ── Packs ───────────────────────────────────────────────────

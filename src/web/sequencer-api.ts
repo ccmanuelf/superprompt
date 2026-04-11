@@ -51,12 +51,12 @@ export async function handleSequencerApi(
   const route = urlPath.replace('/api/sequence', '') || '/';
 
   try {
-    if (req.method === 'GET') return handleGet(route, res, chatId);
+    if (req.method === 'GET') return await handleGet(route, res, chatId);
     if (req.method === 'POST') {
       const body = await readBody(req);
       return await handlePost(route, body, res, chatId);
     }
-    if (req.method === 'DELETE') return handleDelete(route, res, chatId);
+    if (req.method === 'DELETE') return await handleDelete(route, res, chatId);
 
     jsonResponse(res, 405, { error: 'Method not allowed' });
     return true;
@@ -70,7 +70,7 @@ export async function handleSequencerApi(
 
 // ── GET Routes ───────────────────────────────────────────────
 
-function handleGet(route: string, res: ServerResponse, chatId: string): boolean {
+async function handleGet(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   switch (route) {
     case '/':
     case '/info': {
@@ -84,7 +84,7 @@ function handleGet(route: string, res: ServerResponse, chatId: string): boolean 
     }
 
     case '/schedules': {
-      const schedules = listSchedules(chatId);
+      const schedules = await listSchedules(chatId);
       jsonResponse(res, 200, {
         schedules: schedules.map((s) => ({
           id: s.id,
@@ -100,7 +100,7 @@ function handleGet(route: string, res: ServerResponse, chatId: string): boolean 
     default: {
       const match = route.match(/^\/schedules\/(.+)$/);
       if (match) {
-        const sched = getSchedule(match[1], chatId);
+        const sched = await getSchedule(match[1], chatId);
         if (!sched) { jsonResponse(res, 404, { error: 'Schedule not found' }); return true; }
         jsonResponse(res, 200, {
           ...sched,
@@ -140,7 +140,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         logger.warn({ err }, 'Gantt chart generation failed');
       }
 
-      if (config.name) saveSchedule(config.name + '_' + rule, config, result, chatId);
+      if (config.name) await saveSchedule(config.name + '_' + rule, config, result, chatId);
 
       jsonResponse(res, 200, {
         success: true,
@@ -178,7 +178,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         } catch { /* optional */ }
       }
 
-      if (config.name) saveSchedule(config.name, config, comparison, chatId);
+      if (config.name) await saveSchedule(config.name, config, comparison, chatId);
 
       jsonResponse(res, 200, {
         success: true,
@@ -208,7 +208,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         logger.warn({ err }, 'GA Gantt chart generation failed');
       }
 
-      if (config.name) saveSchedule(config.name + '_GA', config, result, chatId);
+      if (config.name) await saveSchedule(config.name + '_GA', config, result, chatId);
 
       jsonResponse(res, 200, {
         success: true,
@@ -239,7 +239,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         jsonResponse(res, 400, { error: 'name and config required' });
         return true;
       }
-      const sched = saveSchedule(name, config, undefined, chatId);
+      const sched = await saveSchedule(name, config, undefined, chatId);
       jsonResponse(res, 201, { success: true, schedule: { id: sched.id, name: sched.name } });
       return true;
     }
@@ -270,10 +270,10 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
 
 // ── DELETE Routes ────────────────────────────────────────────
 
-function handleDelete(route: string, res: ServerResponse, chatId: string): boolean {
+async function handleDelete(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   const match = route.match(/^\/schedules\/(.+)$/);
   if (match) {
-    const deleted = deleteSchedule(match[1], chatId);
+    const deleted = await deleteSchedule(match[1], chatId);
     jsonResponse(res, deleted ? 200 : 404, deleted ? { success: true } : { error: 'Not found' });
     return true;
   }

@@ -3,7 +3,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from '../db.js';
+import { getKnex } from '../db-knex.js';
 import { logger } from '../logger.js';
 
 import type {
@@ -35,29 +35,29 @@ import type { TableInitializer } from '../core/interfaces.js';
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initSequencerTables(): void {
-  const db = getDatabase();
+export async function initSequencerTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS seq_schedules (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL DEFAULT '',
-      name TEXT NOT NULL,
-      config_json TEXT NOT NULL,
-      result_json TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  if (!(await db.schema.hasTable('seq_schedules'))) {
+    await db.schema.createTable('seq_schedules', (t) => {
+      t.text('id').primary();
+      t.text('chat_id').notNullable().defaultTo('');
+      t.text('name').notNullable();
+      t.text('config_json').notNullable();
+      t.text('result_json');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
 
-    CREATE INDEX IF NOT EXISTS idx_seq_schedules_name
-      ON seq_schedules(name);
-  `);
+  await db.raw('CREATE INDEX IF NOT EXISTS idx_seq_schedules_name ON seq_schedules(name)');
 
   // Migration: add chat_id column if missing (for existing databases)
-  const cols = db.prepare("PRAGMA table_info(seq_schedules)").all() as Array<{ name: string }>;
-  if (!cols.some(c => c.name === 'chat_id')) {
-    db.exec("ALTER TABLE seq_schedules ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
-    db.exec('CREATE INDEX IF NOT EXISTS idx_seq_schedules_chat ON seq_schedules(chat_id, name)');
+  if (!(await db.schema.hasColumn('seq_schedules', 'chat_id'))) {
+    await db.schema.alterTable('seq_schedules', (t) => {
+      t.text('chat_id').notNullable().defaultTo('');
+    });
+    await db.raw('CREATE INDEX IF NOT EXISTS idx_seq_schedules_chat ON seq_schedules(chat_id, name)');
   }
 }
 
@@ -69,53 +69,58 @@ function genId(): string {
   return randomBytes(16).toString('hex');
 }
 
-export function saveSchedule(
+export async function saveSchedule(
   name: string,
   config: SequencerConfig,
   result?: ScheduleResult | RuleComparison,
   chatId: string = '',
-): SavedSchedule {
-  const db = getDatabase();
+): Promise<SavedSchedule> {
+  const db = getKnex();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
 
-  const existing = db.prepare(
-    'SELECT * FROM seq_schedules WHERE name = ? COLLATE NOCASE AND chat_id = ?',
-  ).get(name, chatId) as SavedSchedule | undefined;
+  const existing = await db('seq_schedules')
+    .whereRaw('LOWER(name) = LOWER(?)', [name])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedSchedule | undefined;
 
   if (existing) {
-    db.prepare(
-      'UPDATE seq_schedules SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?',
-    ).run(configJson, resultJson, Date.now(), existing.id);
-    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: Date.now() };
+    const now = Date.now();
+    await db('seq_schedules')
+      .where({ id: existing.id })
+      .update({ config_json: configJson, result_json: resultJson, updated_at: now });
+    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: now };
   }
 
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    'INSERT INTO seq_schedules (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, chatId, name, configJson, resultJson, now, now);
+  await db('seq_schedules').insert({
+    id, chat_id: chatId, name, config_json: configJson, result_json: resultJson, created_at: now, updated_at: now,
+  });
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getSchedule(nameOrId: string, chatId: string = ''): SavedSchedule | undefined {
-  const db = getDatabase();
-  return (
-    db.prepare('SELECT * FROM seq_schedules WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM seq_schedules WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)
-  ) as SavedSchedule | undefined;
+export async function getSchedule(nameOrId: string, chatId: string = ''): Promise<SavedSchedule | undefined> {
+  const db = getKnex();
+  const byId = await db('seq_schedules').where({ id: nameOrId }).first();
+  if (byId) return byId as SavedSchedule;
+  return await db('seq_schedules')
+    .whereRaw('LOWER(name) = LOWER(?)', [nameOrId])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedSchedule | undefined;
 }
 
-export function listSchedules(chatId: string = ''): SavedSchedule[] {
-  return getDatabase()
-    .prepare('SELECT * FROM seq_schedules WHERE chat_id = ? ORDER BY updated_at DESC')
-    .all(chatId) as SavedSchedule[];
+export async function listSchedules(chatId: string = ''): Promise<SavedSchedule[]> {
+  const db = getKnex();
+  return await db('seq_schedules')
+    .where({ chat_id: chatId })
+    .orderBy('updated_at', 'desc') as SavedSchedule[];
 }
 
-export function deleteSchedule(id: string, chatId: string = ''): boolean {
-  return getDatabase()
-    .prepare('DELETE FROM seq_schedules WHERE id = ? AND chat_id = ?')
-    .run(id, chatId).changes > 0;
+export async function deleteSchedule(id: string, chatId: string = ''): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('seq_schedules').where({ id, chat_id: chatId }).del();
+  return count > 0;
 }
 
 // ── Chart Generation ─────────────────────────────────────────

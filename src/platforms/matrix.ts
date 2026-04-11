@@ -118,11 +118,11 @@ async function handleMessage(
   const router = ctx.router;
 
   // 0. Check for pending auto-skill proposal response
-  const pendingProposal = ctx.autoSkills.getPending(roomId);
+  const pendingProposal = await ctx.autoSkills.getPending(roomId);
   if (pendingProposal) {
     const proposalAction = ctx.autoSkills.detectResponse(body);
     if (proposalAction) {
-      const confirmation = ctx.autoSkills.handleResponse(roomId, proposalAction === 'approve');
+      const confirmation = await ctx.autoSkills.handleResponse(roomId, proposalAction === 'approve');
       await client.sendMessage(roomId, {
         msgtype: 'm.notice',
         body: confirmation,
@@ -167,7 +167,7 @@ async function handleMessage(
   }
 
   // 0b. Skill self-healing: detect user corrections when a skill is active
-  const activeSkillForHealing = ctx.skills.getActive(roomId);
+  const activeSkillForHealing = await ctx.skills.getActive(roomId);
   if (activeSkillForHealing && ctx.autoSkills.detectCorrection(body)) {
     try {
       const healResult = await ctx.autoSkills.heal(
@@ -247,7 +247,7 @@ async function handleMessage(
     }
 
     // 2b. Skill self-healing: if a skill was active and quality was low, patch it
-    const currentSkillForHealing = ctx.skills.getActive(roomId);
+    const currentSkillForHealing = await ctx.skills.getActive(roomId);
     if (currentSkillForHealing && ctx.autoSkills.shouldHeal(currentSkillForHealing, quality.score ?? (quality.passed ? 80 : 40))) {
       try {
         const healResult = await ctx.autoSkills.heal(
@@ -273,7 +273,7 @@ async function handleMessage(
     // 2c. Auto-skill detection for single-turn tool chains (3+ distinct tools)
     if (response.toolsUsed && response.toolsUsed.length >= 3) {
       try {
-        const candidate = ctx.autoSkills.detectCandidate({
+        const candidate = await ctx.autoSkills.detectCandidate({
           toolsUsed: response.toolsUsed,
           qualityScore: quality.passed ? 80 : quality.score ?? 0,
           chatId: roomId,
@@ -469,7 +469,7 @@ async function handleCommand(
       return true;
 
     case '!memory': {
-      const memories = ctx.memory.getMemoriesByChatId(roomId);
+      const memories = await ctx.memory.getMemoriesByChatId(roomId);
       if (memories.length === 0) {
         await sendNotice(client, roomId, 'No memories stored yet.');
         return true;
@@ -544,17 +544,17 @@ async function handleCommand(
 
     case '!careful':
     case '!safe': {
-      const skill = ctx.skills.getByName('careful');
+      const skill = await ctx.skills.getByName('careful');
       if (!skill) {
         await sendNotice(client, roomId, 'Safety skill not found.');
         return true;
       }
-      const currentSkill = ctx.skills.getActive(roomId);
+      const currentSkill = await ctx.skills.getActive(roomId);
       if (currentSkill?.name === 'careful') {
-        ctx.skills.clearActive(roomId);
+        await ctx.skills.clearActive(roomId);
         await sendNotice(client, roomId, 'Safety mode disabled.');
       } else {
-        ctx.skills.setActive(roomId, skill.id);
+        await ctx.skills.setActive(roomId, skill.id);
         await sendNotice(client, roomId, 'Safety mode enabled. I will warn before destructive actions and verify results.');
       }
       return true;
@@ -626,7 +626,7 @@ async function handleCommand(
 
       switch (subcommand) {
         case 'list': {
-          const tasks = ctx.tasks.getByChat(roomId);
+          const tasks = await ctx.tasks.getByChat(roomId);
           if (tasks.length === 0) {
             await sendNotice(client, roomId, 'No scheduled tasks.');
             return true;
@@ -645,7 +645,7 @@ async function handleCommand(
             await sendNotice(client, roomId, 'Usage: !schedule show <id>');
             return true;
           }
-          const tasks = ctx.tasks.getByChat(roomId);
+          const tasks = await ctx.tasks.getByChat(roomId);
           const task = tasks.find((t) => t.id.startsWith(taskId));
           if (!task) {
             await sendNotice(client, roomId, 'Task not found.');
@@ -680,7 +680,7 @@ async function handleCommand(
           }
           const id = randomBytes(8).toString('hex');
           const nextRun = ctx.tasks.computeNextRun(cron);
-          ctx.tasks.create(id, roomId, prompt, cron, nextRun);
+          await ctx.tasks.create(id, roomId, prompt, cron, nextRun);
           await sendNotice(
             client,
             roomId,
@@ -695,13 +695,13 @@ async function handleCommand(
             await sendNotice(client, roomId, 'Usage: !schedule pause <id>');
             return true;
           }
-          const tasks = ctx.tasks.getByChat(roomId);
+          const tasks = await ctx.tasks.getByChat(roomId);
           const task = tasks.find((t) => t.id.startsWith(taskId));
           if (!task) {
             await sendNotice(client, roomId, 'Task not found.');
             return true;
           }
-          ctx.tasks.pause(task.id);
+          await ctx.tasks.pause(task.id);
           await sendNotice(client, roomId, `Task ${task.id.slice(0, 8)} paused.`);
           return true;
         }
@@ -712,14 +712,14 @@ async function handleCommand(
             await sendNotice(client, roomId, 'Usage: !schedule resume <id>');
             return true;
           }
-          const tasks = ctx.tasks.getByChat(roomId);
+          const tasks = await ctx.tasks.getByChat(roomId);
           const task = tasks.find((t) => t.id.startsWith(taskId));
           if (!task) {
             await sendNotice(client, roomId, 'Task not found.');
             return true;
           }
           const nextRun = ctx.tasks.computeNextRun(task.schedule);
-          ctx.tasks.resume(task.id);
+          await ctx.tasks.resume(task.id);
           await sendNotice(
             client,
             roomId,
@@ -734,13 +734,13 @@ async function handleCommand(
             await sendNotice(client, roomId, 'Usage: !schedule delete <id>');
             return true;
           }
-          const tasks = ctx.tasks.getByChat(roomId);
+          const tasks = await ctx.tasks.getByChat(roomId);
           const task = tasks.find((t) => t.id.startsWith(taskId));
           if (!task) {
             await sendNotice(client, roomId, 'Task not found.');
             return true;
           }
-          ctx.tasks.delete(task.id);
+          await ctx.tasks.delete(task.id);
           await sendNotice(client, roomId, `Task ${task.id.slice(0, 8)} deleted.`);
           return true;
         }
@@ -772,7 +772,7 @@ async function handleCommand(
 
       switch (skillSub) {
         case 'list': {
-          const skills = ctx.skills.list();
+          const skills = await ctx.skills.list();
           const lines = skills.map((s) => {
             const builtin = s.is_builtin ? ' (built-in)' : '';
             return `${s.name}${builtin} — ${s.description}`;
@@ -787,7 +787,7 @@ async function handleCommand(
             await sendNotice(client, roomId, 'Usage: !skill show <name>');
             return true;
           }
-          const skill = ctx.skills.getByName(name.toLowerCase());
+          const skill = await ctx.skills.getByName(name.toLowerCase());
           if (!skill) {
             await sendNotice(client, roomId, 'Skill not found.');
             return true;
@@ -809,23 +809,23 @@ async function handleCommand(
             await sendNotice(client, roomId, 'Usage: !skill use <name>');
             return true;
           }
-          const skill = ctx.skills.getByName(name.toLowerCase());
+          const skill = await ctx.skills.getByName(name.toLowerCase());
           if (!skill) {
             await sendNotice(client, roomId, 'Skill not found. Use !skill list to see available skills.');
             return true;
           }
-          ctx.skills.setActive(roomId, skill.id);
+          await ctx.skills.setActive(roomId, skill.id);
           await sendNotice(client, roomId, `Skill activated: ${skill.name}\n${skill.description}`);
           return true;
         }
 
         case 'off':
-          ctx.skills.clearActive(roomId);
+          await ctx.skills.clearActive(roomId);
           await sendNotice(client, roomId, 'Skill deactivated. Back to default behavior.');
           return true;
 
         case 'current': {
-          const active = ctx.skills.getActive(roomId);
+          const active = await ctx.skills.getActive(roomId);
           if (!active) {
             await sendNotice(client, roomId, 'No skill active (using default).');
           } else {
@@ -845,13 +845,13 @@ async function handleCommand(
             return true;
           }
           const [, skillName, desc, prompt] = match;
-          const existing = ctx.skills.getByName(skillName.toLowerCase());
+          const existing = await ctx.skills.getByName(skillName.toLowerCase());
           if (existing) {
             await sendNotice(client, roomId, `Skill "${skillName}" already exists.`);
             return true;
           }
           const id = `custom-${skillName.toLowerCase()}`;
-          ctx.skills.create(id, skillName.toLowerCase(), desc, prompt, null, false);
+          await ctx.skills.create(id, skillName.toLowerCase(), desc, prompt, null, false);
           await sendNotice(client, roomId, `Custom skill created: ${skillName}\nActivate with: !skill use ${skillName}`);
           return true;
         }
@@ -862,13 +862,13 @@ async function handleCommand(
             await sendNotice(client, roomId, 'Usage: !skill delete <name>');
             return true;
           }
-          const skill = ctx.skills.getByName(name.toLowerCase());
+          const skill = await ctx.skills.getByName(name.toLowerCase());
           if (!skill) {
             await sendNotice(client, roomId, 'Skill not found.');
             return true;
           }
           try {
-            ctx.skills.delete(skill.id);
+            await ctx.skills.delete(skill.id);
             await sendNotice(client, roomId, `Skill "${name}" deleted.`);
           } catch (err) {
             await sendNotice(client, roomId, err instanceof Error ? err.message : 'Failed to delete skill.');
@@ -882,7 +882,7 @@ async function handleCommand(
             await sendNotice(client, roomId, 'Usage: !skill fix <name> <feedback>');
             return true;
           }
-          const fixSkillObj = ctx.skills.getByName(fixName.toLowerCase());
+          const fixSkillObj = await ctx.skills.getByName(fixName.toLowerCase());
           if (!fixSkillObj) {
             await sendNotice(client, roomId, 'Skill not found.');
             return true;
@@ -905,7 +905,7 @@ async function handleCommand(
         case 'lock': {
           const name = skillParts[1];
           if (!name) { await sendNotice(client, roomId, 'Usage: !skill lock <name>'); return true; }
-          const skill = ctx.skills.getByName(name.toLowerCase());
+          const skill = await ctx.skills.getByName(name.toLowerCase());
           if (!skill) { await sendNotice(client, roomId, 'Skill not found.'); return true; }
           ctx.skills.lock(skill.id);
           await sendNotice(client, roomId, `Skill "${name}" locked.`);
@@ -915,7 +915,7 @@ async function handleCommand(
         case 'unlock': {
           const name = skillParts[1];
           if (!name) { await sendNotice(client, roomId, 'Usage: !skill unlock <name>'); return true; }
-          const skill = ctx.skills.getByName(name.toLowerCase());
+          const skill = await ctx.skills.getByName(name.toLowerCase());
           if (!skill) { await sendNotice(client, roomId, 'Skill not found.'); return true; }
           ctx.skills.unlock(skill.id);
           await sendNotice(client, roomId, `Skill "${name}" unlocked.`);
@@ -925,7 +925,7 @@ async function handleCommand(
         case 'export': {
           const name = skillParts[1];
           if (!name) { await sendNotice(client, roomId, 'Usage: !skill export <name>'); return true; }
-          const skill = ctx.skills.getByName(name.toLowerCase());
+          const skill = await ctx.skills.getByName(name.toLowerCase());
           if (!skill) { await sendNotice(client, roomId, 'Skill not found.'); return true; }
           const filepath = ctx.forge.exportSkillToMarkdown(skill);
           await sendNotice(client, roomId, `Skill "${name}" exported to: ${filepath}`);
@@ -961,7 +961,7 @@ async function handleCommand(
       switch (toolSub) {
         case 'list': {
           const allTools = ctx.tools.listRegistered();
-          const userTools = ctx.tools.listUserTools();
+          const userTools = await ctx.tools.listUserTools();
           const lines: string[] = [];
           for (const t of allTools) {
             const userInfo = userTools.find((u) => u.name === t.name);
@@ -984,7 +984,7 @@ async function handleCommand(
         case 'show': {
           const name = toolParts[1];
           if (!name) { await sendNotice(client, roomId, 'Usage: !tool show <name>'); return true; }
-          const userTool = ctx.tools.getByName(name.toLowerCase());
+          const userTool = await ctx.tools.getByName(name.toLowerCase());
           if (userTool) {
             await sendNotice(client, roomId,
               `Tool: ${userTool.name}\nType: ${userTool.tool_type}\nDescription: ${userTool.description}\nEnabled: ${userTool.enabled ? 'Yes' : 'No'}\nLocked: ${userTool.locked ? 'Yes' : 'No'}`);
@@ -1002,9 +1002,9 @@ async function handleCommand(
         case 'enable': {
           const name = toolParts[1];
           if (!name) { await sendNotice(client, roomId, 'Usage: !tool enable <name>'); return true; }
-          const tool = ctx.tools.getByName(name.toLowerCase());
+          const tool = await ctx.tools.getByName(name.toLowerCase());
           if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
-          ctx.tools.enable(tool.id);
+          await ctx.tools.enable(tool.id);
           ctx.tools.loadUserTools();
           await sendNotice(client, roomId, `Tool "${name}" enabled.`);
           return true;
@@ -1013,9 +1013,9 @@ async function handleCommand(
         case 'disable': {
           const name = toolParts[1];
           if (!name) { await sendNotice(client, roomId, 'Usage: !tool disable <name>'); return true; }
-          const tool = ctx.tools.getByName(name.toLowerCase());
+          const tool = await ctx.tools.getByName(name.toLowerCase());
           if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
-          ctx.tools.disable(tool.id);
+          await ctx.tools.disable(tool.id);
           ctx.tools.loadUserTools();
           await sendNotice(client, roomId, `Tool "${name}" disabled.`);
           return true;
@@ -1024,9 +1024,9 @@ async function handleCommand(
         case 'lock': {
           const name = toolParts[1];
           if (!name) { await sendNotice(client, roomId, 'Usage: !tool lock <name>'); return true; }
-          const tool = ctx.tools.getByName(name.toLowerCase());
+          const tool = await ctx.tools.getByName(name.toLowerCase());
           if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
-          ctx.tools.lock(tool.id);
+          await ctx.tools.lock(tool.id);
           await sendNotice(client, roomId, `Tool "${name}" locked.`);
           return true;
         }
@@ -1034,9 +1034,9 @@ async function handleCommand(
         case 'unlock': {
           const name = toolParts[1];
           if (!name) { await sendNotice(client, roomId, 'Usage: !tool unlock <name>'); return true; }
-          const tool = ctx.tools.getByName(name.toLowerCase());
+          const tool = await ctx.tools.getByName(name.toLowerCase());
           if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
-          ctx.tools.unlock(tool.id);
+          await ctx.tools.unlock(tool.id);
           await sendNotice(client, roomId, `Tool "${name}" unlocked.`);
           return true;
         }
@@ -1044,7 +1044,7 @@ async function handleCommand(
         case 'fix': {
           const fixName = toolParts[1];
           if (!fixName) { await sendNotice(client, roomId, 'Usage: !tool fix <name> <feedback>'); return true; }
-          const tool = ctx.tools.getByName(fixName.toLowerCase());
+          const tool = await ctx.tools.getByName(fixName.toLowerCase());
           if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
           const feedback = toolParts.slice(2).join(' ');
           if (!feedback) { await sendNotice(client, roomId, 'Please provide feedback.'); return true; }
@@ -1061,10 +1061,10 @@ async function handleCommand(
         case 'delete': {
           const name = toolParts[1];
           if (!name) { await sendNotice(client, roomId, 'Usage: !tool delete <name>'); return true; }
-          const tool = ctx.tools.getByName(name.toLowerCase());
+          const tool = await ctx.tools.getByName(name.toLowerCase());
           if (!tool) { await sendNotice(client, roomId, 'User tool not found.'); return true; }
           if (tool.locked) { await sendNotice(client, roomId, 'Tool is locked. Unlock it first.'); return true; }
-          ctx.tools.delete(tool.id);
+          await ctx.tools.delete(tool.id);
           ctx.tools.loadUserTools();
           await sendNotice(client, roomId, `Tool "${name}" deleted.`);
           return true;
@@ -1073,7 +1073,7 @@ async function handleCommand(
         case 'export': {
           const name = toolParts[1];
           if (!name) { await sendNotice(client, roomId, 'Usage: !tool export <name>'); return true; }
-          const tool = ctx.tools.getByName(name.toLowerCase());
+          const tool = await ctx.tools.getByName(name.toLowerCase());
           if (!tool) { await sendNotice(client, roomId, 'User tool not found. Only user-created tools can be exported.'); return true; }
           const filepath = ctx.forge.exportToolToMarkdown(tool);
           await sendNotice(client, roomId, `Tool "${name}" exported to: ${filepath}`);

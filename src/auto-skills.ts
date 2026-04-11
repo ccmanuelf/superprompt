@@ -12,12 +12,12 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import type { ProviderRouter } from './providers/router.js';
 import type { StepResult } from './orchestrator.js';
 import type { TableInitializer } from './core/interfaces.js';
-import type { Skill } from './db.js';
+import type { Skill } from './db-core.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -61,38 +61,38 @@ const DEDUP_OVERLAP_THRESHOLD = 0.8;
 
 // ── Table Initialization ─────────────────────────────────────
 
-export function initAutoSkillsTables(): void {
-  const db = getDatabase();
+export async function initAutoSkillsTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS skill_triggers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      skill_id TEXT NOT NULL,
-      pattern TEXT NOT NULL,
-      mode TEXT NOT NULL DEFAULT 'suggest',
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
-    );
+  if (!(await db.schema.hasTable('skill_triggers'))) {
+    await db.schema.createTable('skill_triggers', (t) => {
+      t.increments('id').primary();
+      t.string('skill_id').notNullable();
+      t.string('pattern').notNullable();
+      t.string('mode').notNullable().defaultTo('suggest');
+      t.bigInteger('created_at').notNullable();
+      t.foreign('skill_id').references('skills.id').onDelete('CASCADE');
+      t.index(['skill_id']);
+    });
+  }
 
-    CREATE INDEX IF NOT EXISTS idx_skill_triggers_skill ON skill_triggers(skill_id);
-
-    CREATE TABLE IF NOT EXISTS skill_proposals (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL,
-      proposed_name TEXT NOT NULL,
-      proposed_description TEXT NOT NULL,
-      proposed_prompt TEXT NOT NULL,
-      proposed_tools TEXT,
-      proposed_triggers TEXT,
-      source_type TEXT NOT NULL,
-      source_summary TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending'
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_skill_proposals_chat ON skill_proposals(chat_id);
-    CREATE INDEX IF NOT EXISTS idx_skill_proposals_status ON skill_proposals(status);
-  `);
+  if (!(await db.schema.hasTable('skill_proposals'))) {
+    await db.schema.createTable('skill_proposals', (t) => {
+      t.string('id').primary();
+      t.string('chat_id').notNullable();
+      t.string('proposed_name').notNullable();
+      t.text('proposed_description').notNullable();
+      t.text('proposed_prompt').notNullable();
+      t.text('proposed_tools').nullable();
+      t.text('proposed_triggers').nullable();
+      t.string('source_type').notNullable();
+      t.text('source_summary').notNullable();
+      t.bigInteger('created_at').notNullable();
+      t.string('status').notNullable().defaultTo('pending');
+      t.index(['chat_id']);
+      t.index(['status']);
+    });
+  }
 }
 
 export const autoSkillsTableInit: TableInitializer = {
@@ -102,41 +102,46 @@ export const autoSkillsTableInit: TableInitializer = {
 
 // ── DB Accessors ─────────────────────────────────────────────
 
-export function insertSkillTrigger(skillId: string, pattern: string, mode: string = 'suggest'): void {
-  const db = getDatabase();
-  db.prepare(
-    'INSERT INTO skill_triggers (skill_id, pattern, mode, created_at) VALUES (?, ?, ?, ?)',
-  ).run(skillId, pattern, mode, Date.now());
+export async function insertSkillTrigger(skillId: string, pattern: string, mode: string = 'suggest'): Promise<void> {
+  const db = getKnex();
+  await db('skill_triggers').insert({
+    skill_id: skillId, pattern, mode, created_at: Date.now(),
+  });
 }
 
-export function getSkillTriggers(): Array<{ id: number; skill_id: string; pattern: string; mode: string }> {
-  const db = getDatabase();
-  return db.prepare('SELECT id, skill_id, pattern, mode FROM skill_triggers').all() as any[];
+export async function getSkillTriggers(): Promise<Array<{ id: number; skill_id: string; pattern: string; mode: string }>> {
+  const db = getKnex();
+  return db('skill_triggers').select('id', 'skill_id', 'pattern', 'mode');
 }
 
-export function getSkillTriggersForSkill(skillId: string): Array<{ pattern: string; mode: string }> {
-  const db = getDatabase();
-  return db.prepare('SELECT pattern, mode FROM skill_triggers WHERE skill_id = ?').all(skillId) as any[];
+export async function getSkillTriggersForSkill(skillId: string): Promise<Array<{ pattern: string; mode: string }>> {
+  const db = getKnex();
+  return db('skill_triggers').where({ skill_id: skillId }).select('pattern', 'mode');
 }
 
-export function insertSkillProposal(proposal: SkillProposal): void {
-  const db = getDatabase();
-  db.prepare(
-    `INSERT INTO skill_proposals (id, chat_id, proposed_name, proposed_description, proposed_prompt,
-     proposed_tools, proposed_triggers, source_type, source_summary, created_at, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-  ).run(
-    proposal.id, proposal.chatId, proposal.name, proposal.description, proposal.systemPrompt,
-    JSON.stringify(proposal.allowedTools), JSON.stringify(proposal.triggerPatterns),
-    proposal.sourceType, proposal.sourceSummary, Date.now(),
-  );
+export async function insertSkillProposal(proposal: SkillProposal): Promise<void> {
+  const db = getKnex();
+  await db('skill_proposals').insert({
+    id: proposal.id,
+    chat_id: proposal.chatId,
+    proposed_name: proposal.name,
+    proposed_description: proposal.description,
+    proposed_prompt: proposal.systemPrompt,
+    proposed_tools: JSON.stringify(proposal.allowedTools),
+    proposed_triggers: JSON.stringify(proposal.triggerPatterns),
+    source_type: proposal.sourceType,
+    source_summary: proposal.sourceSummary,
+    created_at: Date.now(),
+    status: 'pending',
+  });
 }
 
-export function getPendingProposal(chatId: string): SkillProposal | null {
-  const db = getDatabase();
-  const row = db.prepare(
-    "SELECT * FROM skill_proposals WHERE chat_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1",
-  ).get(chatId) as any;
+export async function getPendingProposal(chatId: string): Promise<SkillProposal | null> {
+  const db = getKnex();
+  const row = await db('skill_proposals')
+    .where({ chat_id: chatId, status: 'pending' })
+    .orderBy('created_at', 'desc')
+    .first() as any;
   if (!row) return null;
   return {
     id: row.id,
@@ -151,18 +156,20 @@ export function getPendingProposal(chatId: string): SkillProposal | null {
   };
 }
 
-export function updateProposalStatus(id: string, status: 'approved' | 'rejected' | 'expired'): void {
-  const db = getDatabase();
-  db.prepare('UPDATE skill_proposals SET status = ? WHERE id = ?').run(status, id);
+export async function updateProposalStatus(id: string, status: 'approved' | 'rejected' | 'expired'): Promise<void> {
+  const db = getKnex();
+  await db('skill_proposals').where({ id }).update({ status });
 }
 
-function getRecentProposalCount(chatId: string, windowMs: number): number {
-  const db = getDatabase();
+async function getRecentProposalCount(chatId: string, windowMs: number): Promise<number> {
+  const db = getKnex();
   const since = Date.now() - windowMs;
-  const row = db.prepare(
-    'SELECT COUNT(*) as cnt FROM skill_proposals WHERE chat_id = ? AND created_at > ?',
-  ).get(chatId, since) as { cnt: number };
-  return row.cnt;
+  const row = await db('skill_proposals')
+    .where({ chat_id: chatId })
+    .where('created_at', '>', since)
+    .count('* as cnt')
+    .first() as { cnt: number };
+  return row?.cnt ?? 0;
 }
 
 // ── Detection ────────────────────────────────────────────────
@@ -177,13 +184,13 @@ function getRecentProposalCount(chatId: string, windowMs: number): number {
  * - Cooldown: max 1 proposal per chat per hour
  * - Deduplication: skip if existing skill uses ≥80% same tools
  */
-export function detectSkillCandidate(params: {
+export async function detectSkillCandidate(params: {
   toolsUsed: string[];
   stepResults?: StepResult[];
   qualityScore: number;
   chatId: string;
   originalRequest: string;
-}): SkillCandidate | null {
+}): Promise<SkillCandidate | null> {
   const { toolsUsed, stepResults, qualityScore, chatId, originalRequest } = params;
 
   // Quality threshold
@@ -203,14 +210,14 @@ export function detectSkillCandidate(params: {
   }
 
   // Cooldown check
-  const recentCount = getRecentProposalCount(chatId, PROPOSAL_COOLDOWN_MS);
+  const recentCount = await getRecentProposalCount(chatId, PROPOSAL_COOLDOWN_MS);
   if (recentCount > 0) {
     logger.debug({ chatId, recentCount }, 'Skill proposal cooldown active');
     return null;
   }
 
   // Deduplication: check if existing skills overlap significantly
-  if (isDuplicateSkill(toolsUsed)) {
+  if (await isDuplicateSkill(toolsUsed)) {
     logger.debug({ chatId, toolsUsed }, 'Skill candidate too similar to existing skill');
     return null;
   }
@@ -225,9 +232,9 @@ export function detectSkillCandidate(params: {
   };
 }
 
-function isDuplicateSkill(toolsUsed: string[]): boolean {
-  const db = getDatabase();
-  const skills = db.prepare('SELECT allowed_tools FROM skills WHERE allowed_tools IS NOT NULL').all() as Array<{ allowed_tools: string }>;
+async function isDuplicateSkill(toolsUsed: string[]): Promise<boolean> {
+  const db = getKnex();
+  const skills = await db('skills').whereNotNull('allowed_tools').select('allowed_tools') as Array<{ allowed_tools: string }>;
 
   const candidateTools = new Set(toolsUsed);
 
@@ -370,21 +377,21 @@ export function detectProposalResponse(message: string): 'approve' | 'reject' | 
  * Handle user's response to a pending skill proposal.
  * Returns a bilingual confirmation message.
  */
-export function handleProposalResponse(chatId: string, approved: boolean): string {
-  const proposal = getPendingProposal(chatId);
+export async function handleProposalResponse(chatId: string, approved: boolean): Promise<string> {
+  const proposal = await getPendingProposal(chatId);
   if (!proposal) {
     return '[EN] No pending skill proposal found. [ES] No se encontro una propuesta de habilidad pendiente.';
   }
 
   if (approved) {
-    const skillId = createAutoSkill(proposal);
-    updateProposalStatus(proposal.id, 'approved');
+    const skillId = await createAutoSkill(proposal);
+    await updateProposalStatus(proposal.id, 'approved');
     return [
       `[EN] Skill "${proposal.name}" created! It will activate when similar tasks are detected.`,
       `[ES] Habilidad "${proposal.name}" creada! Se activara cuando se detecten tareas similares.`,
     ].join('\n');
   } else {
-    updateProposalStatus(proposal.id, 'rejected');
+    await updateProposalStatus(proposal.id, 'rejected');
     return [
       `[EN] Skill proposal skipped. I'll remember not to suggest this pattern again.`,
       `[ES] Propuesta de habilidad omitida. Recordare no sugerir este patron de nuevo.`,
@@ -395,11 +402,11 @@ export function handleProposalResponse(chatId: string, approved: boolean): strin
 /**
  * Expire any pending proposals for a chat (when user sends a normal message without responding).
  */
-export function expirePendingProposals(chatId: string): void {
-  const db = getDatabase();
-  db.prepare(
-    "UPDATE skill_proposals SET status = 'expired' WHERE chat_id = ? AND status = 'pending'",
-  ).run(chatId);
+export async function expirePendingProposals(chatId: string): Promise<void> {
+  const db = getKnex();
+  await db('skill_proposals')
+    .where({ chat_id: chatId, status: 'pending' })
+    .update({ status: 'expired' });
 }
 
 // ── Skill Creation ───────────────────────────────────────────
@@ -408,35 +415,41 @@ export function expirePendingProposals(chatId: string): void {
  * Create an auto-generated skill from an approved proposal.
  * Stores the skill + dynamic trigger patterns + revision.
  */
-export function createAutoSkill(proposal: SkillProposal): string {
-  const db = getDatabase();
+export async function createAutoSkill(proposal: SkillProposal): Promise<string> {
+  const db = getKnex();
   const skillId = `auto-${proposal.name}`;
   const now = Date.now();
 
   // Create the skill
-  db.prepare(
-    `INSERT OR REPLACE INTO skills (id, name, description, system_prompt, allowed_tools, is_builtin, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
-  ).run(
-    skillId, proposal.name, proposal.description, proposal.systemPrompt,
-    JSON.stringify(proposal.allowedTools), now, now,
-  );
+  await db('skills')
+    .insert({
+      id: skillId, name: proposal.name, description: proposal.description,
+      system_prompt: proposal.systemPrompt, allowed_tools: JSON.stringify(proposal.allowedTools),
+      is_builtin: 0, source_file: null, locked: 0, created_at: now, updated_at: now,
+    })
+    .onConflict('id')
+    .merge({
+      name: proposal.name, description: proposal.description,
+      system_prompt: proposal.systemPrompt, allowed_tools: JSON.stringify(proposal.allowedTools),
+      updated_at: now,
+    });
 
   // Register dynamic trigger patterns
   for (const pattern of proposal.triggerPatterns) {
     try {
       // Validate the regex before storing
       new RegExp(pattern, 'i');
-      insertSkillTrigger(skillId, pattern, 'suggest');
+      await insertSkillTrigger(skillId, pattern, 'suggest');
     } catch {
       logger.warn({ pattern }, 'Invalid trigger pattern — skipped');
     }
   }
 
   // Store revision
-  db.prepare(
-    'INSERT INTO skill_revisions (skill_id, system_prompt, revision_note, created_at) VALUES (?, ?, ?, ?)',
-  ).run(skillId, proposal.systemPrompt, 'Auto-generated from workflow', now);
+  await db('skill_revisions').insert({
+    skill_id: skillId, system_prompt: proposal.systemPrompt,
+    revision_note: 'Auto-generated from workflow', created_at: now,
+  });
 
   logger.info(
     { skillId, name: proposal.name, triggers: proposal.triggerPatterns.length },
@@ -543,17 +556,17 @@ Return ONLY the updated system prompt text (no JSON wrapper, no markdown code bl
     }
 
     const newPrompt = response.text.trim();
-    const db = getDatabase();
+    const db = getKnex();
     const now = Date.now();
 
     // Update the skill
-    db.prepare('UPDATE skills SET system_prompt = ?, updated_at = ? WHERE id = ?')
-      .run(newPrompt, now, skill.id);
+    await db('skills').where({ id: skill.id }).update({ system_prompt: newPrompt, updated_at: now });
 
     // Store revision
-    db.prepare(
-      'INSERT INTO skill_revisions (skill_id, system_prompt, revision_note, created_at) VALUES (?, ?, ?, ?)',
-    ).run(skill.id, newPrompt, `Self-healed: ${issue.slice(0, 200)}`, now);
+    await db('skill_revisions').insert({
+      skill_id: skill.id, system_prompt: newPrompt,
+      revision_note: `Self-healed: ${issue.slice(0, 200)}`, created_at: now,
+    });
 
     logger.info(
       { skillId: skill.id, skillName: skill.name, issue: issue.slice(0, 100) },

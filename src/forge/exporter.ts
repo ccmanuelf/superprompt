@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PROJECT_ROOT } from '../config.js';
-import type { Skill, UserTool } from '../db.js';
+import type { Skill, UserTool } from '../db-core.js';
 
 const FORGE_DIR = resolve(PROJECT_ROOT, 'forge');
 const SKILLS_DIR = resolve(FORGE_DIR, 'skills');

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
@@ -91,47 +91,45 @@ export interface SigmaResultRow {
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initSigmaTables(): void {
-  const db = getDatabase();
+export async function initSigmaTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sigma_projects (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      usl REAL NOT NULL,
-      lsl REAL NOT NULL,
-      target REAL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  if (!(await db.schema.hasTable('sigma_projects'))) {
+    await db.schema.createTable('sigma_projects', (t) => {
+      t.text('id').primary();
+      t.text('name').notNullable();
+      t.text('description').notNullable().defaultTo('');
+      t.float('usl').notNullable();
+      t.float('lsl').notNullable();
+      t.float('target');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
 
-    CREATE TABLE IF NOT EXISTS sigma_measurements (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      project_id TEXT NOT NULL,
-      value REAL NOT NULL,
-      subgroup TEXT,
-      timestamp TEXT,
-      defect_type TEXT,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (project_id) REFERENCES sigma_projects(id) ON DELETE CASCADE
-    );
+  if (!(await db.schema.hasTable('sigma_measurements'))) {
+    await db.schema.createTable('sigma_measurements', (t) => {
+      t.increments('id').primary();
+      t.text('project_id').notNullable().references('id').inTable('sigma_projects').onDelete('CASCADE');
+      t.float('value').notNullable();
+      t.text('subgroup');
+      t.text('timestamp');
+      t.text('defect_type');
+      t.integer('created_at').notNullable();
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_sigma_measurements_project ON sigma_measurements(project_id)');
+  }
 
-    CREATE TABLE IF NOT EXISTS sigma_results (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      result_type TEXT NOT NULL,
-      result_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (project_id) REFERENCES sigma_projects(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_sigma_measurements_project
-      ON sigma_measurements(project_id);
-
-    CREATE INDEX IF NOT EXISTS idx_sigma_results_project
-      ON sigma_results(project_id);
-  `);
+  if (!(await db.schema.hasTable('sigma_results'))) {
+    await db.schema.createTable('sigma_results', (t) => {
+      t.text('id').primary();
+      t.text('project_id').notNullable().references('id').inTable('sigma_projects').onDelete('CASCADE');
+      t.text('result_type').notNullable();
+      t.text('result_json').notNullable();
+      t.integer('created_at').notNullable();
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_sigma_results_project ON sigma_results(project_id)');
+  }
 }
 
 export const sigmaTableInit: TableInitializer = { name: 'sigma', initTables: initSigmaTables };
@@ -140,54 +138,54 @@ function genId(): string {
   return randomBytes(16).toString('hex');
 }
 
-export function createSigmaProject(
+export async function createSigmaProject(
   name: string, usl: number, lsl: number, target?: number, description: string = '',
-): SigmaProject {
-  const db = getDatabase();
+): Promise<SigmaProject> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    `INSERT INTO sigma_projects (id, name, description, usl, lsl, target, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, name, description, usl, lsl, target ?? null, now, now);
+  await db('sigma_projects').insert({
+    id, name, description, usl, lsl, target: target ?? null, created_at: now, updated_at: now,
+  });
   return { id, name, description, usl, lsl, target: target ?? null, created_at: now, updated_at: now };
 }
 
-export function getSigmaProject(id: string): SigmaProject | undefined {
-  return getDatabase().prepare('SELECT * FROM sigma_projects WHERE id = ?').get(id) as SigmaProject | undefined;
+export async function getSigmaProject(id: string): Promise<SigmaProject | undefined> {
+  return await getKnex()('sigma_projects').where({ id }).first() as SigmaProject | undefined;
 }
 
-export function getSigmaProjectByName(name: string): SigmaProject | undefined {
-  return getDatabase().prepare('SELECT * FROM sigma_projects WHERE name = ? COLLATE NOCASE').get(name) as SigmaProject | undefined;
+export async function getSigmaProjectByName(name: string): Promise<SigmaProject | undefined> {
+  return await getKnex()('sigma_projects').whereRaw('LOWER(name) = LOWER(?)', [name]).first() as SigmaProject | undefined;
 }
 
-export function listSigmaProjects(): SigmaProject[] {
-  return getDatabase().prepare('SELECT * FROM sigma_projects ORDER BY updated_at DESC').all() as SigmaProject[];
+export async function listSigmaProjects(): Promise<SigmaProject[]> {
+  return await getKnex()('sigma_projects').orderBy('updated_at', 'desc') as SigmaProject[];
 }
 
-export function deleteSigmaProject(id: string): boolean {
-  return getDatabase().prepare('DELETE FROM sigma_projects WHERE id = ?').run(id).changes > 0;
+export async function deleteSigmaProject(id: string): Promise<boolean> {
+  const count = await getKnex()('sigma_projects').where({ id }).del();
+  return count > 0;
 }
 
-export function insertMeasurements(projectId: string, rows: MeasurementRow[]): void {
-  const db = getDatabase();
-  const stmt = db.prepare(
-    `INSERT INTO sigma_measurements (project_id, value, subgroup, timestamp, defect_type, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  );
+export async function insertMeasurements(projectId: string, rows: MeasurementRow[]): Promise<void> {
+  const db = getKnex();
   const now = Date.now();
-  const tx = db.transaction(() => {
+  await db.transaction(async (trx) => {
     for (const r of rows) {
-      stmt.run(projectId, r.value, r.subgroup ?? null, r.timestamp ?? null, r.defect_type ?? null, now);
+      await trx('sigma_measurements').insert({
+        project_id: projectId, value: r.value,
+        subgroup: r.subgroup ?? null, timestamp: r.timestamp ?? null,
+        defect_type: r.defect_type ?? null, created_at: now,
+      });
     }
   });
-  tx();
 }
 
-export function getMeasurements(projectId: string): MeasurementRow[] {
-  const rows = getDatabase().prepare(
-    'SELECT value, subgroup, timestamp, defect_type FROM sigma_measurements WHERE project_id = ? ORDER BY id',
-  ).all(projectId) as Array<{ value: number; subgroup: string | null; timestamp: string | null; defect_type: string | null }>;
+export async function getMeasurements(projectId: string): Promise<MeasurementRow[]> {
+  const rows = await getKnex()('sigma_measurements')
+    .select('value', 'subgroup', 'timestamp', 'defect_type')
+    .where({ project_id: projectId })
+    .orderBy('id') as Array<{ value: number; subgroup: string | null; timestamp: string | null; defect_type: string | null }>;
 
   return rows.map((r) => ({
     value: r.value,
@@ -197,21 +195,22 @@ export function getMeasurements(projectId: string): MeasurementRow[] {
   }));
 }
 
-export function saveSigmaResult(projectId: string, resultType: string, data: unknown): string {
-  const db = getDatabase();
+export async function saveSigmaResult(projectId: string, resultType: string, data: unknown): Promise<string> {
+  const db = getKnex();
   const id = genId();
-  db.prepare(
-    `INSERT INTO sigma_results (id, project_id, result_type, result_json, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).run(id, projectId, resultType, JSON.stringify(data), Date.now());
-  db.prepare('UPDATE sigma_projects SET updated_at = ? WHERE id = ?').run(Date.now(), projectId);
+  const now = Date.now();
+  await db('sigma_results').insert({
+    id, project_id: projectId, result_type: resultType,
+    result_json: JSON.stringify(data), created_at: now,
+  });
+  await db('sigma_projects').where({ id: projectId }).update({ updated_at: now });
   return id;
 }
 
-export function getSigmaResults(projectId: string): SigmaResultRow[] {
-  return getDatabase().prepare(
-    'SELECT * FROM sigma_results WHERE project_id = ? ORDER BY created_at DESC',
-  ).all(projectId) as SigmaResultRow[];
+export async function getSigmaResults(projectId: string): Promise<SigmaResultRow[]> {
+  return await getKnex()('sigma_results')
+    .where({ project_id: projectId })
+    .orderBy('created_at', 'desc') as SigmaResultRow[];
 }
 
 // ── CSV Parsing ──────────────────────────────────────────────
@@ -1774,13 +1773,13 @@ export async function generateCapabilityChart(
 /**
  * Execute full capability analysis: parse CSV, compute metrics, save to DB.
  */
-export function executeCapabilityAnalysis(
+export async function executeCapabilityAnalysis(
   csvContent: string,
   usl: number,
   lsl: number,
   projectName: string,
   target?: number,
-): { project: SigmaProject; capability: CapabilityResult; controlChart: ControlChartData } {
+): Promise<{ project: SigmaProject; capability: CapabilityResult; controlChart: ControlChartData }> {
   if (usl <= lsl) throw new Error('USL must be greater than LSL.');
 
   const rows = parseSigmaCsv(csvContent);
@@ -1804,22 +1803,23 @@ export function executeCapabilityAnalysis(
   }
 
   // DB: reuse or create project
-  let project = getSigmaProjectByName(projectName);
+  let project = await getSigmaProjectByName(projectName);
   if (project) {
-    const db = getDatabase();
-    db.prepare('DELETE FROM sigma_measurements WHERE project_id = ?').run(project.id);
-    db.prepare('UPDATE sigma_projects SET usl = ?, lsl = ?, target = ?, updated_at = ? WHERE id = ?')
-      .run(usl, lsl, target ?? null, Date.now(), project.id);
+    const db = getKnex();
+    await db('sigma_measurements').where({ project_id: project.id }).del();
+    await db('sigma_projects').where({ id: project.id }).update({
+      usl, lsl, target: target ?? null, updated_at: Date.now(),
+    });
     project.usl = usl;
     project.lsl = lsl;
     project.target = target ?? null;
   } else {
-    project = createSigmaProject(projectName, usl, lsl, target);
+    project = await createSigmaProject(projectName, usl, lsl, target);
   }
 
-  insertMeasurements(project.id, rows);
-  saveSigmaResult(project.id, 'capability', capability);
-  saveSigmaResult(project.id, 'control_chart', controlChart);
+  await insertMeasurements(project.id, rows);
+  await saveSigmaResult(project.id, 'capability', capability);
+  await saveSigmaResult(project.id, 'control_chart', controlChart);
 
   logger.info(
     { projectName, samples: values.length, cpk: capability.cpk, violations: controlChart.violations.length },

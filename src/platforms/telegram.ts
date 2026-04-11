@@ -151,11 +151,11 @@ async function handleMessage(
   const chatId = String(ctx.chat!.id);
 
   // 0. Check for pending auto-skill proposal response
-  const pendingProposal = pc.autoSkills.getPending(chatId);
+  const pendingProposal = await pc.autoSkills.getPending(chatId);
   if (pendingProposal) {
     const proposalAction = pc.autoSkills.detectResponse(rawText);
     if (proposalAction) {
-      const confirmation = pc.autoSkills.handleResponse(chatId, proposalAction === 'approve');
+      const confirmation = await pc.autoSkills.handleResponse(chatId, proposalAction === 'approve');
       await ctx.reply(formatForTelegram(confirmation), { parse_mode: 'HTML' });
       return;
     }
@@ -196,7 +196,7 @@ async function handleMessage(
   }
 
   // 0b. Skill self-healing: detect user corrections when a skill is active
-  const activeSkillForHealing = pc.skills.getActive(chatId);
+  const activeSkillForHealing = await pc.skills.getActive(chatId);
   if (activeSkillForHealing && pc.autoSkills.detectCorrection(rawText)) {
     try {
       const healResult = await pc.autoSkills.heal(
@@ -242,15 +242,15 @@ async function handleMessage(
         clearInterval(typingInterval);
         typingInterval = undefined;
         const activeSession = pc.learning.getActiveSession(chatId)!;
-        const { durationSeconds, needsExpand } = pc.learning.endSession(chatId, 'user_ended');
+        const { durationSeconds, needsExpand } = await pc.learning.endSession(chatId, 'user_ended');
         const summary = pc.learning.formatSessionSummary(durationSeconds, activeSession.questionsAsked, activeSession.correctAnswers);
         await ctx.reply(formatForTelegram(summary), { parse_mode: 'HTML' });
 
         // Rolling horizon: expand curriculum if needed
         if (needsExpand) {
-          const plan = pc.learning.getPlan(activeSession.planId);
+          const plan = await pc.learning.getPlan(activeSession.planId);
           if (plan) {
-            const expandPrompt = pc.learning.buildExpandPrompt(plan);
+            const expandPrompt = await pc.learning.buildExpandPrompt(plan);
             const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true, platform: 'telegram' });
             const newTopics = pc.learning.parsePlanResponse(expandResponse.text || '');
             if (newTopics.length > 0) {
@@ -272,7 +272,7 @@ async function handleMessage(
 
       // Active session: send message through AI with session system prompt
       pc.learning.touchSession(chatId);
-      const sessionPrompt = pc.learning.getSessionSystemPrompt(chatId);
+      const sessionPrompt = await pc.learning.getSessionSystemPrompt(chatId);
       const response = await pc.router.sendMessage({
         chatId,
         message: fullMessage,
@@ -283,17 +283,17 @@ async function handleMessage(
 
       if (response.text) {
         // Process assessment markers
-        const result = pc.learning.processSessionResponse(chatId, response.text);
+        const result = await pc.learning.processSessionResponse(chatId, response.text);
         const cleanText = pc.learning.stripMarkers(response.text);
 
         // Handle assessment results
         const activeSession = pc.learning.getActiveSession(chatId);
         if (result.assessmentPassed && activeSession?.assessmentTarget) {
-          const plan = pc.learning.getPlan(activeSession.planId);
+          const plan = await pc.learning.getPlan(activeSession.planId);
           if (plan) {
             pc.learning.completeTopicRemoval(plan.id, activeSession.assessmentTarget);
           }
-          pc.learning.endSession(chatId, 'assessment_passed');
+          await pc.learning.endSession(chatId, 'assessment_passed');
           clearInterval(typingInterval);
           typingInterval = undefined;
           await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
@@ -303,7 +303,7 @@ async function handleMessage(
 
         if (result.assessmentFailed && activeSession?.assessmentTarget) {
           const rejectMsg = pc.learning.rejectTopicRemoval(activeSession.assessmentTarget);
-          pc.learning.endSession(chatId, 'assessment_failed');
+          await pc.learning.endSession(chatId, 'assessment_failed');
           clearInterval(typingInterval);
           typingInterval = undefined;
           await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
@@ -315,7 +315,7 @@ async function handleMessage(
         if (result.topicComplete) {
           const session = pc.learning.getActiveSession(chatId);
           if (session) {
-            const { durationSeconds, needsExpand } = pc.learning.endSession(chatId, 'topic_complete');
+            const { durationSeconds, needsExpand } = await pc.learning.endSession(chatId, 'topic_complete');
             const summary = pc.learning.formatSessionSummary(durationSeconds, session.questionsAsked, session.correctAnswers);
             clearInterval(typingInterval);
             typingInterval = undefined;
@@ -323,9 +323,9 @@ async function handleMessage(
             await ctx.reply(formatForTelegram(summary), { parse_mode: 'HTML' });
 
             if (needsExpand) {
-              const plan = pc.learning.getPlan(session.planId);
+              const plan = await pc.learning.getPlan(session.planId);
               if (plan) {
-                const expandPrompt = pc.learning.buildExpandPrompt(plan);
+                const expandPrompt = await pc.learning.buildExpandPrompt(plan);
                 const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true, platform: 'telegram' });
                 const newTopics = pc.learning.parsePlanResponse(expandResponse.text || '');
                 if (newTopics.length > 0) {
@@ -389,7 +389,7 @@ async function handleMessage(
         // Auto-skill detection for orchestrated tasks
         try {
           const quality = pc.selfMonitor.checkQuality(response, rawText);
-          const candidate = pc.autoSkills.detectCandidate({
+          const candidate = await pc.autoSkills.detectCandidate({
             toolsUsed: response.toolsUsed || [],
             stepResults: undefined, // orchestrator doesn't expose step results here, but toolsUsed is tracked
             qualityScore: quality.passed ? 80 : quality.score ?? 0,
@@ -442,7 +442,7 @@ async function handleMessage(
     }
 
     // 4b. Skill self-healing: if a skill was active and quality was low, patch it
-    const currentSkillForHealing = pc.skills.getActive(chatId);
+    const currentSkillForHealing = await pc.skills.getActive(chatId);
     if (currentSkillForHealing && pc.autoSkills.shouldHeal(currentSkillForHealing, quality.score ?? (quality.passed ? 80 : 40))) {
       try {
         const healResult = await pc.autoSkills.heal(
@@ -463,7 +463,7 @@ async function handleMessage(
     // 4c. Auto-skill detection for single-turn tool chains (3+ distinct tools)
     if (response.toolsUsed && response.toolsUsed.length >= 3) {
       try {
-        const candidate = pc.autoSkills.detectCandidate({
+        const candidate = await pc.autoSkills.detectCandidate({
           toolsUsed: response.toolsUsed,
           qualityScore: quality.passed ? 80 : quality.score ?? 0,
           chatId,
@@ -593,7 +593,7 @@ async function handleFmeaCsv(ctx: Context, caption: string): Promise<void> {
     await ctx.reply(`Running FMEA analysis for "${docName}"...`);
 
     const { executeFmeaFromCsv, formatFmeaWorksheet, generateRiskHeatmap, generateRpnPareto } = await import('../fmea.js');
-    const { doc: fmeaDoc, failureModes, actions } = executeFmeaFromCsv(csvContent, docName);
+    const { doc: fmeaDoc, failureModes, actions } = await executeFmeaFromCsv(csvContent, docName);
 
     // Send formatted worksheet
     const formatted = formatFmeaWorksheet(fmeaDoc, failureModes, actions, true);
@@ -646,7 +646,7 @@ async function handleInventoryCsv(ctx: Context, caption: string): Promise<void> 
     await ctx.reply(`Running inventory analysis for "${projectName}"...`);
 
     const { executeInventoryAnalysis, formatReplenishmentPlan, generateAbcChart } = await import('../inventory.js');
-    const { plans, abc, stockoutRisks } = executeInventoryAnalysis(csvContent, projectName);
+    const { plans, abc, stockoutRisks } = await executeInventoryAnalysis(csvContent, projectName);
 
     // Send text result
     const formatted = formatReplenishmentPlan(plans, abc, true);
@@ -722,7 +722,7 @@ async function handleSigmaCsv(ctx: Context, caption: string): Promise<void> {
       paretoAnalysis, getMeasurements,
     } = await import('../sigma.js');
 
-    const { project, capability, controlChart } = executeCapabilityAnalysis(csvContent, usl, lsl, projectName, target);
+    const { project, capability, controlChart } = await executeCapabilityAnalysis(csvContent, usl, lsl, projectName, target);
 
     // Send text result
     const formatted = formatCapabilityResult(capability, controlChart, projectName, true);
@@ -730,7 +730,7 @@ async function handleSigmaCsv(ctx: Context, caption: string): Promise<void> {
 
     // Send capability histogram
     try {
-      const measurements = getMeasurements(project.id);
+      const measurements = await getMeasurements(project.id);
       const values = measurements.map((m) => m.value);
       const capChartPath = await generateCapabilityChart(values, { usl, lsl, target }, capability, projectName);
       await ctx.replyWithPhoto(new InputFile(capChartPath), { caption: `Capability Histogram — ${projectName}` });
@@ -746,7 +746,7 @@ async function handleSigmaCsv(ctx: Context, caption: string): Promise<void> {
 
     // Send Pareto if defect types exist
     try {
-      const measurements = getMeasurements(project.id);
+      const measurements = await getMeasurements(project.id);
       if (measurements.some((m) => m.defect_type)) {
         const pareto = paretoAnalysis(measurements);
         const paretoPath = await generateParetoChart(pareto, projectName);
@@ -802,7 +802,7 @@ async function handleBalanceCsv(ctx: Context, caption: string): Promise<void> {
     await ctx.reply(`Running balance for "${projectName}" with takt time ${taktTime}s...`);
 
     const { executeBalance, formatBalanceResult, generateYamazumiChart, generateGanttChart, exportAssignmentsCsv } = await import('../balance.js');
-    const result = executeBalance(csvContent, taktTime, projectName);
+    const result = await executeBalance(csvContent, taktTime, projectName);
 
     // Send text result
     const formatted = formatBalanceResult(result, true);
@@ -884,19 +884,19 @@ async function handleSkillUpload(ctx: Context, pc: PlatformContext): Promise<voi
     }
 
     // Check if skill already exists
-    const existing = pc.skills.getByName(parsed.name);
+    const existing = await pc.skills.getByName(parsed.name);
     if (existing) {
       if (existing.locked) {
         await ctx.reply(`Skill "${parsed.name}" is locked. Unlock it first.`);
         return;
       }
       // Update existing skill
-      pc.skills.update(existing.id, {
+      await pc.skills.update(existing.id, {
         description: parsed.description,
         systemPrompt: parsed.systemPrompt,
         allowedTools: parsed.tools,
       });
-      pc.skills.insertRevision(existing.id, parsed.systemPrompt, `Updated from file: ${fileName}`);
+      await pc.skills.insertRevision(existing.id, parsed.systemPrompt, `Updated from file: ${fileName}`);
       await ctx.reply(
         `Skill <b>${escapeHtml(parsed.name)}</b> updated from ${escapeHtml(fileName)}.`,
         { parse_mode: 'HTML' },
@@ -904,8 +904,8 @@ async function handleSkillUpload(ctx: Context, pc: PlatformContext): Promise<voi
     } else {
       // Create new skill
       const id = `custom-${parsed.name}`;
-      pc.skills.create(id, parsed.name, parsed.description, parsed.systemPrompt, parsed.tools, false, fileName);
-      pc.skills.insertRevision(id, parsed.systemPrompt, `Created from file: ${fileName}`);
+      await pc.skills.create(id, parsed.name, parsed.description, parsed.systemPrompt, parsed.tools, false, fileName);
+      await pc.skills.insertRevision(id, parsed.systemPrompt, `Created from file: ${fileName}`);
       await ctx.reply(
         `Skill <b>${escapeHtml(parsed.name)}</b> created from ${escapeHtml(fileName)}.\nActivate with: /skill use ${escapeHtml(parsed.name)}`,
         { parse_mode: 'HTML' },
@@ -984,15 +984,15 @@ async function handleToolUpload(ctx: Context, pc: PlatformContext): Promise<void
     });
 
     // Check existing
-    const existing = pc.tools.getByName(parsed.name);
+    const existing = await pc.tools.getByName(parsed.name);
     if (existing) {
       if (existing.locked) {
         await ctx.reply(`Tool "${parsed.name}" is locked. Unlock it first.`);
         return;
       }
       // Update
-      pc.tools.update(existing.id, { description: parsed.description, config: toolConfig });
-      pc.tools.insertRevision(existing.id, toolConfig, `Updated from file: ${fileName}`);
+      await pc.tools.update(existing.id, { description: parsed.description, config: toolConfig });
+      await pc.tools.insertRevision(existing.id, toolConfig, `Updated from file: ${fileName}`);
       pc.tools.loadUserTools();
       await ctx.reply(
         `Tool <b>${escapeHtml(parsed.name)}</b> updated from ${escapeHtml(fileName)}.`,
@@ -1000,8 +1000,8 @@ async function handleToolUpload(ctx: Context, pc: PlatformContext): Promise<void
       );
     } else {
       const id = `user-tool-${parsed.name}`;
-      pc.tools.create(id, parsed.name, parsed.description, parsed.type, toolConfig, fileName);
-      pc.tools.insertRevision(id, toolConfig, `Created from file: ${fileName}`);
+      await pc.tools.create(id, parsed.name, parsed.description, parsed.type, toolConfig, fileName);
+      await pc.tools.insertRevision(id, toolConfig, `Created from file: ${fileName}`);
       pc.tools.loadUserTools();
       await ctx.reply(
         `Tool <b>${escapeHtml(parsed.name)}</b> created from ${escapeHtml(fileName)}.`,
@@ -1276,7 +1276,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
   bot.command('memory', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
-    const memories = pc.memory.getMemoriesByChatId(String(ctx.chat.id));
+    const memories = await pc.memory.getMemoriesByChatId(String(ctx.chat.id));
     if (memories.length === 0) {
       await ctx.reply('No memories stored yet.');
       return;
@@ -1357,17 +1357,17 @@ export function createTelegramBot(pc: PlatformContext): Bot {
   bot.command(['careful', 'safe'], async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
     const chatId = String(ctx.chat.id);
-    const skill = pc.skills.getByName('careful');
+    const skill = await pc.skills.getByName('careful');
     if (!skill) {
       await ctx.reply('Safety skill not found. Run /reload to refresh skills.');
       return;
     }
-    const currentSkill = pc.skills.getActive(chatId);
+    const currentSkill = await pc.skills.getActive(chatId);
     if (currentSkill?.name === 'careful') {
-      pc.skills.clearActive(chatId);
+      await pc.skills.clearActive(chatId);
       await ctx.reply('Safety mode <b>disabled</b>.', { parse_mode: 'HTML' });
     } else {
-      pc.skills.setActive(chatId, skill.id);
+      await pc.skills.setActive(chatId, skill.id);
       await ctx.reply(
         '🛡️ Safety mode <b>enabled</b>.\n' +
           'I will warn before destructive actions, verify results, and ask for confirmation.\n' +
@@ -1445,7 +1445,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
     switch (subcommand) {
       case 'list': {
-        const tasks = pc.tasks.getByChat(chatId);
+        const tasks = await pc.tasks.getByChat(chatId);
         if (tasks.length === 0) {
           await ctx.reply('No scheduled tasks.');
           return;
@@ -1469,7 +1469,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
         // Match by prefix
-        const tasks = pc.tasks.getByChat(chatId);
+        const tasks = await pc.tasks.getByChat(chatId);
         const task = tasks.find((t) => t.id.startsWith(taskId));
         if (!task) {
           await ctx.reply('Task not found.');
@@ -1512,7 +1512,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         }
         const id = randomBytes(8).toString('hex');
         const nextRun = pc.tasks.computeNextRun(cron);
-        pc.tasks.create(id, chatId, prompt, cron, nextRun);
+        await pc.tasks.create(id, chatId, prompt, cron, nextRun);
         await ctx.reply(
           `Task created: <code>${id.slice(0, 8)}</code>\n` +
             `Prompt: ${escapeHtml(prompt)}\n` +
@@ -1529,13 +1529,13 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /schedule pause &lt;id&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const tasks = pc.tasks.getByChat(chatId);
+        const tasks = await pc.tasks.getByChat(chatId);
         const task = tasks.find((t) => t.id.startsWith(taskId));
         if (!task) {
           await ctx.reply('Task not found.');
           return;
         }
-        pc.tasks.pause(task.id);
+        await pc.tasks.pause(task.id);
         await ctx.reply(`Task <code>${task.id.slice(0, 8)}</code> paused.`, { parse_mode: 'HTML' });
         return;
       }
@@ -1546,14 +1546,14 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /schedule resume &lt;id&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const tasks = pc.tasks.getByChat(chatId);
+        const tasks = await pc.tasks.getByChat(chatId);
         const task = tasks.find((t) => t.id.startsWith(taskId));
         if (!task) {
           await ctx.reply('Task not found.');
           return;
         }
         const nextRun = pc.tasks.computeNextRun(task.schedule);
-        pc.tasks.resume(task.id);
+        await pc.tasks.resume(task.id);
         await ctx.reply(
           `Task <code>${task.id.slice(0, 8)}</code> resumed.\nNext run: ${new Date(nextRun).toLocaleString()}`,
           { parse_mode: 'HTML' },
@@ -1567,13 +1567,13 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /schedule delete &lt;id&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const tasks = pc.tasks.getByChat(chatId);
+        const tasks = await pc.tasks.getByChat(chatId);
         const task = tasks.find((t) => t.id.startsWith(taskId));
         if (!task) {
           await ctx.reply('Task not found.');
           return;
         }
-        pc.tasks.delete(task.id);
+        await pc.tasks.delete(task.id);
         await ctx.reply(`Task <code>${task.id.slice(0, 8)}</code> deleted.`, { parse_mode: 'HTML' });
         return;
       }
@@ -1608,7 +1608,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
     switch (subcommand) {
       case 'list': {
-        const skills = pc.skills.list();
+        const skills = await pc.skills.list();
         const lines = skills.map((s) => {
           const builtin = s.is_builtin ? ' (built-in)' : '';
           return `<code>${s.name}</code>${builtin} — ${escapeHtml(s.description)}`;
@@ -1626,7 +1626,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /skill show &lt;name&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const skill = pc.skills.getByName(name.toLowerCase());
+        const skill = await pc.skills.getByName(name.toLowerCase());
         if (!skill) {
           await ctx.reply('Skill not found.');
           return;
@@ -1652,12 +1652,12 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /skill use &lt;name&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const skill = pc.skills.getByName(name.toLowerCase());
+        const skill = await pc.skills.getByName(name.toLowerCase());
         if (!skill) {
           await ctx.reply('Skill not found. Use /skill list to see available skills.');
           return;
         }
-        pc.skills.setActive(chatId, skill.id);
+        await pc.skills.setActive(chatId, skill.id);
         await ctx.reply(
           `Skill activated: <b>${escapeHtml(skill.name)}</b>\n${escapeHtml(skill.description)}`,
           { parse_mode: 'HTML' },
@@ -1666,13 +1666,13 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       }
 
       case 'off': {
-        pc.skills.clearActive(chatId);
+        await pc.skills.clearActive(chatId);
         await ctx.reply('Skill deactivated. Back to default behavior.');
         return;
       }
 
       case 'current': {
-        const active = pc.skills.getActive(chatId);
+        const active = await pc.skills.getActive(chatId);
         if (!active) {
           await ctx.reply('No skill active (using default).');
         } else {
@@ -1695,13 +1695,13 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
         const [, skillName, desc, prompt] = match;
-        const existing = pc.skills.getByName(skillName.toLowerCase());
+        const existing = await pc.skills.getByName(skillName.toLowerCase());
         if (existing) {
           await ctx.reply(`Skill "${skillName}" already exists.`);
           return;
         }
         const id = `custom-${skillName.toLowerCase()}`;
-        pc.skills.create(id, skillName.toLowerCase(), desc, prompt, null, false);
+        await pc.skills.create(id, skillName.toLowerCase(), desc, prompt, null, false);
         await ctx.reply(
           `Custom skill created: <b>${escapeHtml(skillName)}</b>\nActivate with: /skill use ${escapeHtml(skillName)}`,
           { parse_mode: 'HTML' },
@@ -1715,13 +1715,13 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /skill delete &lt;name&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const skill = pc.skills.getByName(name.toLowerCase());
+        const skill = await pc.skills.getByName(name.toLowerCase());
         if (!skill) {
           await ctx.reply('Skill not found.');
           return;
         }
         try {
-          pc.skills.delete(skill.id);
+          await pc.skills.delete(skill.id);
           await ctx.reply(`Skill "${name}" deleted.`);
         } catch (err) {
           await ctx.reply(err instanceof Error ? err.message : 'Failed to delete skill.');
@@ -1736,7 +1736,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /skill fix &lt;name&gt; &lt;feedback&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const fixSkillObj = pc.skills.getByName(fixName.toLowerCase());
+        const fixSkillObj = await pc.skills.getByName(fixName.toLowerCase());
         if (!fixSkillObj) {
           await ctx.reply('Skill not found.');
           return;
@@ -1772,7 +1772,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /skill lock &lt;name&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const skill = pc.skills.getByName(name.toLowerCase());
+        const skill = await pc.skills.getByName(name.toLowerCase());
         if (!skill) {
           await ctx.reply('Skill not found.');
           return;
@@ -1788,7 +1788,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /skill unlock &lt;name&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const skill = pc.skills.getByName(name.toLowerCase());
+        const skill = await pc.skills.getByName(name.toLowerCase());
         if (!skill) {
           await ctx.reply('Skill not found.');
           return;
@@ -1804,7 +1804,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /skill export &lt;name&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const skill = pc.skills.getByName(name);
+        const skill = await pc.skills.getByName(name);
         if (!skill) {
           await ctx.reply(`Skill "${name}" not found.`);
           return;
@@ -1974,7 +1974,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         }
 
         // Check max plans
-        const activePlans = pc.learning.getActivePlansByChat(chatId);
+        const activePlans = await pc.learning.getActivePlansByChat(chatId);
         if (activePlans.length >= 5) {
           await ctx.reply(formatForTelegram(
             `You have **${activePlans.length}** active plans (max 5). Complete or pause one before starting another:\n` +
@@ -1997,8 +1997,8 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         }
 
         try {
-          const { plan } = pc.learning.createPlanFromTopics(chatId, subject, goal, topics);
-          const allTopics = pc.learning.getTopicsByPlan(plan.id);
+          const { plan } = await pc.learning.createPlanFromTopics(chatId, subject, goal, topics);
+          const allTopics = await pc.learning.getTopicsByPlan(plan.id);
           const planText = pc.learning.formatPlan(plan, allTopics);
           await ctx.reply(formatForTelegram(planText), { parse_mode: 'HTML' });
           await ctx.reply(formatForTelegram('Start learning with `/learn session` or modify with `/learn move`, `/learn add`, `/learn remove`.'), { parse_mode: 'HTML' });
@@ -2013,23 +2013,23 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const planId = parts[1];
         let plan;
         if (planId) {
-          plan = pc.learning.getPlan(planId);
+          plan = await pc.learning.getPlan(planId);
         } else {
-          const plans = pc.learning.getActivePlansByChat(chatId);
+          const plans = await pc.learning.getActivePlansByChat(chatId);
           plan = plans[0];
         }
         if (!plan) {
           await ctx.reply('No active learning plan. Start one with `/learn start <goal>`.');
           return;
         }
-        const topics = pc.learning.getTopicsByPlan(plan.id);
+        const topics = await pc.learning.getTopicsByPlan(plan.id);
         await ctx.reply(formatForTelegram(pc.learning.formatPlan(plan, topics)), { parse_mode: 'HTML' });
         return;
       }
 
       case 'plans': {
-        const plans = pc.learning.getPlansByChat(chatId);
-        await ctx.reply(formatForTelegram(pc.learning.formatPlanList(plans)), { parse_mode: 'HTML' });
+        const plans = await pc.learning.getPlansByChat(chatId);
+        await ctx.reply(formatForTelegram(await pc.learning.formatPlanList(plans)), { parse_mode: 'HTML' });
         return;
       }
 
@@ -2037,10 +2037,10 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const planRef = parts[1];
         let plan;
         if (planRef) {
-          plan = pc.learning.getPlan(planRef) ?? pc.learning.getPlanBySubject(chatId, planRef);
+          plan = await pc.learning.getPlan(planRef) ?? await pc.learning.getPlanBySubject(chatId, planRef);
         } else {
           // Smart selection: most overdue reviews, then least recently studied
-          plan = pc.learning.getMostOverduePlan(chatId) ?? pc.learning.getLeastRecentPlan(chatId);
+          plan = await pc.learning.getMostOverduePlan(chatId) ?? await pc.learning.getLeastRecentPlan(chatId);
         }
 
         if (!plan) {
@@ -2048,11 +2048,11 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const { session, openingPrompt } = pc.learning.startSession(chatId, plan);
+        const { session, openingPrompt } = await pc.learning.startSession(chatId, plan);
 
         // Send opening prompt through AI for a natural start
         await ctx.replyWithChatAction('typing');
-        const sessionPrompt = pc.learning.getSessionSystemPrompt(chatId);
+        const sessionPrompt = await pc.learning.getSessionSystemPrompt(chatId);
         const response = await router.sendMessage({
           chatId,
           message: openingPrompt,
@@ -2063,23 +2063,23 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
         if (response.text) {
           const cleanText = pc.learning.stripMarkers(response.text);
-          pc.learning.processSessionResponse(chatId, response.text);
+          await pc.learning.processSessionResponse(chatId, response.text);
           await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
         }
         return;
       }
 
       case 'review': {
-        const plan = pc.learning.getMostOverduePlan(chatId) ?? pc.learning.getLeastRecentPlan(chatId);
+        const plan = await pc.learning.getMostOverduePlan(chatId) ?? await pc.learning.getLeastRecentPlan(chatId);
         if (!plan) {
           await ctx.reply('No active learning plan. Start one with `/learn start <goal>`.');
           return;
         }
 
-        const { session, openingPrompt } = pc.learning.startSession(chatId, plan, { type: 'review' });
+        const { session, openingPrompt } = await pc.learning.startSession(chatId, plan, { type: 'review' });
 
         await ctx.replyWithChatAction('typing');
-        const sessionPrompt = pc.learning.getSessionSystemPrompt(chatId);
+        const sessionPrompt = await pc.learning.getSessionSystemPrompt(chatId);
         const response = await router.sendMessage({
           chatId,
           message: openingPrompt,
@@ -2090,7 +2090,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
         if (response.text) {
           const cleanText = pc.learning.stripMarkers(response.text);
-          pc.learning.processSessionResponse(chatId, response.text);
+          await pc.learning.processSessionResponse(chatId, response.text);
           await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
         }
         return;
@@ -2105,13 +2105,13 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const plan = pc.learning.getActivePlansByChat(chatId)[0];
+        const plan = (await pc.learning.getActivePlansByChat(chatId))[0];
         if (!plan) {
           await ctx.reply('No active learning plan.');
           return;
         }
 
-        const result = pc.learning.moveTopicBefore(plan.id, beforeMatch[1].trim(), beforeMatch[2].trim());
+        const result = await pc.learning.moveTopicBefore(plan.id, beforeMatch[1].trim(), beforeMatch[2].trim());
         await ctx.reply(formatForTelegram(result.message), { parse_mode: 'HTML' });
         return;
       }
@@ -2123,19 +2123,19 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const plan = pc.learning.getActivePlansByChat(chatId)[0];
+        const plan = (await pc.learning.getActivePlansByChat(chatId))[0];
         if (!plan) {
           await ctx.reply('No active learning plan.');
           return;
         }
 
         await ctx.replyWithChatAction('typing');
-        const addPrompt = pc.learning.buildAddTopicPrompt(plan, topicTitle);
+        const addPrompt = await pc.learning.buildAddTopicPrompt(plan, topicTitle);
         const addResponse = await router.sendMessage({ chatId, message: addPrompt, skipAutoTrigger: true });
         const placement = pc.learning.parseTopicPlacement(addResponse.text || '');
 
         if (placement) {
-          pc.learning.createTopic(plan.id, placement.title, {
+          await pc.learning.createTopic(plan.id, placement.title, {
             description: placement.description,
             sortOrder: placement.position,
             difficulty: placement.difficulty,
@@ -2144,7 +2144,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply(formatForTelegram(`Added **${placement.title}** at position ${placement.position + 1} in your plan.`), { parse_mode: 'HTML' });
         } else {
           // Fallback: append at end
-          pc.learning.createTopic(plan.id, topicTitle);
+          await pc.learning.createTopic(plan.id, topicTitle);
           await ctx.reply(formatForTelegram(`Added **${topicTitle}** to the end of your plan.`), { parse_mode: 'HTML' });
         }
         return;
@@ -2157,25 +2157,25 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const plan = pc.learning.getActivePlansByChat(chatId)[0];
+        const plan = (await pc.learning.getActivePlansByChat(chatId))[0];
         if (!plan) {
           await ctx.reply('No active learning plan.');
           return;
         }
 
-        const result = pc.learning.requestTopicRemoval(plan.id, topicTitle);
+        const result = await pc.learning.requestTopicRemoval(plan.id, topicTitle);
         if (result.requiresAssessment && result.topicTitle) {
           // Start assessment session
-          const topic = pc.learning.getTopicByTitle(plan.id, result.topicTitle);
-          const assessPrompt = pc.learning.buildAssessmentPrompt(plan.subject, result.topicTitle, topic?.description ?? null);
-          const { session } = pc.learning.startSession(chatId, plan, {
+          const topic = await pc.learning.getTopicByTitle(plan.id, result.topicTitle);
+          const assessPrompt = await pc.learning.buildAssessmentPrompt(plan.subject, result.topicTitle, topic?.description ?? null);
+          const { session } = await pc.learning.startSession(chatId, plan, {
             topicId: topic?.id,
             type: 'assessment',
             assessmentTarget: result.topicTitle,
           });
 
           await ctx.replyWithChatAction('typing');
-          const sessionPrompt = pc.learning.getSessionSystemPrompt(chatId);
+          const sessionPrompt = await pc.learning.getSessionSystemPrompt(chatId);
           const response = await router.sendMessage({
             chatId,
             message: assessPrompt,
@@ -2186,7 +2186,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
           if (response.text) {
             const cleanText = pc.learning.stripMarkers(response.text);
-            pc.learning.processSessionResponse(chatId, response.text);
+            await pc.learning.processSessionResponse(chatId, response.text);
             await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
           }
         } else {
@@ -2199,7 +2199,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const personaId = parts[1]?.toLowerCase();
         if (!personaId) {
           const personas = pc.learning.listPersonas();
-          const plan = pc.learning.getActivePlansByChat(chatId)[0];
+          const plan = (await pc.learning.getActivePlansByChat(chatId))[0];
           const current = plan ? plan.persona : '(no active plan)';
           const list = personas.map((p) => `- **${p.id}** — ${p.tone}. ${p.bestFor}`).join('\n');
           await ctx.reply(formatForTelegram(`**Current persona:** ${current}\n\n**Available personas:**\n${list}\n\nUsage: \`/learn persona <id>\``), { parse_mode: 'HTML' });
@@ -2212,20 +2212,20 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const plan = pc.learning.getActivePlansByChat(chatId)[0];
+        const plan = (await pc.learning.getActivePlansByChat(chatId))[0];
         if (!plan) {
           await ctx.reply('No active learning plan.');
           return;
         }
 
-        pc.learning.updatePlan(plan.id, { persona: persona.id });
+        await pc.learning.updatePlan(plan.id, { persona: persona.id });
         await ctx.reply(formatForTelegram(`Persona updated to **${persona.name}** for ${plan.subject}.`), { parse_mode: 'HTML' });
         return;
       }
 
       case 'time': {
-        const today = pc.learning.getDailyTime(chatId);
-        const week = pc.learning.getWeeklyTime(chatId);
+        const today = await pc.learning.getDailyTime(chatId);
+        const week = await pc.learning.getWeeklyTime(chatId);
 
         const todayMins = today ? Math.round(today.total_seconds / 60) : 0;
         const todaySessions = today?.session_count ?? 0;
@@ -2263,26 +2263,26 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const plan = pc.learning.getActivePlansByChat(chatId)[0];
+        const plan = (await pc.learning.getActivePlansByChat(chatId))[0];
         if (!plan) {
           await ctx.reply('No active learning plan.');
           return;
         }
 
         const cron = `${minutes} ${hours} * * *`;
-        pc.learning.updatePlan(plan.id, { preferred_time: cron });
+        await pc.learning.updatePlan(plan.id, { preferred_time: cron });
         await ctx.reply(formatForTelegram(`Proactive sessions for **${plan.subject}** set to ${timeStr} daily.`), { parse_mode: 'HTML' });
         return;
       }
 
       case 'complete': {
-        const plan = pc.learning.getActivePlansByChat(chatId)[0];
+        const plan = (await pc.learning.getActivePlansByChat(chatId))[0];
         if (!plan) {
           await ctx.reply('No active learning plan.');
           return;
         }
 
-        const topics = pc.learning.getTopicsByPlan(plan.id);
+        const topics = await pc.learning.getTopicsByPlan(plan.id);
         const pending = topics.filter((t) => t.status === 'pending' || t.status === 'in_progress');
         if (pending.length > 0) {
           await ctx.reply(formatForTelegram(
@@ -2293,16 +2293,16 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        pc.learning.updatePlan(plan.id, { status: 'completed' });
+        await pc.learning.updatePlan(plan.id, { status: 'completed' });
         await ctx.reply(formatForTelegram(`Congratulations! **${plan.subject}** plan marked as complete.`), { parse_mode: 'HTML' });
         return;
       }
 
       case 'pause': {
         const planId = parts[1];
-        const plan = planId ? pc.learning.getPlan(planId) : pc.learning.getActivePlansByChat(chatId)[0];
+        const plan = planId ? await pc.learning.getPlan(planId) : (await pc.learning.getActivePlansByChat(chatId))[0];
         if (!plan) { await ctx.reply('No active plan to pause.'); return; }
-        pc.learning.updatePlan(plan.id, { status: 'paused' });
+        await pc.learning.updatePlan(plan.id, { status: 'paused' });
         await ctx.reply(formatForTelegram(`**${plan.subject}** paused. Resume with \`/learn resume ${plan.id}\`.`), { parse_mode: 'HTML' });
         return;
       }
@@ -2310,9 +2310,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'resume': {
         const planId = parts[1];
         if (!planId) { await ctx.reply('Usage: /learn resume <plan-id>'); return; }
-        const plan = pc.learning.getPlan(planId);
+        const plan = await pc.learning.getPlan(planId);
         if (!plan || plan.status !== 'paused') { await ctx.reply('Plan not found or not paused.'); return; }
-        pc.learning.updatePlan(plan.id, { status: 'active' });
+        await pc.learning.updatePlan(plan.id, { status: 'active' });
         await ctx.reply(formatForTelegram(`**${plan.subject}** resumed! Start a session with \`/learn session\`.`), { parse_mode: 'HTML' });
         return;
       }
@@ -2321,7 +2321,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'stop': {
         if (pc.learning.isSessionActive(chatId)) {
           const activeSession = pc.learning.getActiveSession(chatId)!;
-          const { durationSeconds } = pc.learning.endSession(chatId, 'user_ended');
+          const { durationSeconds } = await pc.learning.endSession(chatId, 'user_ended');
           const summary = pc.learning.formatSessionSummary(durationSeconds, activeSession.questionsAsked, activeSession.correctAnswers);
           await ctx.reply(formatForTelegram(summary), { parse_mode: 'HTML' });
         } else {
@@ -2333,10 +2333,10 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'delete': {
         const planId = parts[1];
         if (!planId) { await ctx.reply('Usage: /learn delete <plan-id>'); return; }
-        const plan = pc.learning.getPlan(planId);
+        const plan = await pc.learning.getPlan(planId);
         if (!plan) { await ctx.reply('Plan not found.'); return; }
 
-        const topics = pc.learning.getTopicsByPlan(plan.id);
+        const topics = await pc.learning.getTopicsByPlan(plan.id);
         const completed = topics.filter((t) => t.status === 'completed');
         if (completed.length > 0 && plan.status !== 'completed') {
           await ctx.reply(formatForTelegram(
@@ -2548,7 +2548,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listScenarios } = await import('../simulation/index.js');
-        const scenarios = listScenarios();
+        const scenarios = await listScenarios();
         if (scenarios.length === 0) { await ctx.reply('No simulation scenarios. Use the web UI at /sim or ask the AI.'); return; }
         const lines = scenarios.map((s) =>
           `<b>${escapeHtml(s.name)}</b> — ${new Date(s.updated_at).toLocaleDateString()}`
@@ -2561,9 +2561,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const name = parts.slice(1).join(' ');
         if (!name) { await ctx.reply('Usage: /sim delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getScenarioByName, deleteScenario } = await import('../simulation/index.js');
-        const scenario = getScenarioByName(name);
+        const scenario = await getScenarioByName(name);
         if (!scenario) { await ctx.reply(`Scenario "${name}" not found.`); return; }
-        deleteScenario(scenario.id);
+        await deleteScenario(scenario.id);
         await ctx.reply(`Deleted simulation scenario "${name}".`);
         return;
       }
@@ -2593,7 +2593,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listRcaDocs } = await import('../rca.js');
-        const docs = listRcaDocs();
+        const docs = await listRcaDocs();
         if (docs.length === 0) { await ctx.reply('No RCA documents. Ask the AI to create one.'); return; }
         const methodNames: Record<string, string> = { '5why': '5 Whys', fishbone: 'Fishbone', pdca: 'PDCA', fta: 'FTA', mindmap: 'Mind Map' };
         const lines = docs.map((d) =>
@@ -2607,9 +2607,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const docName = parts.slice(1).join(' ');
         if (!docName) { await ctx.reply('Usage: /rca view &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getRcaDocByName, getRcaNodes, formatRcaDocument } = await import('../rca.js');
-        const doc = getRcaDocByName(docName);
+        const doc = await getRcaDocByName(docName);
         if (!doc) { await ctx.reply(`RCA "${docName}" not found.`); return; }
-        const nodes = getRcaNodes(doc.id);
+        const nodes = await getRcaNodes(doc.id);
         await ctx.reply(formatRcaDocument(doc, nodes, true), { parse_mode: 'HTML' });
         return;
       }
@@ -2618,9 +2618,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const docName = parts.slice(1).join(' ');
         if (!docName) { await ctx.reply('Usage: /rca delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getRcaDocByName, deleteRcaDoc } = await import('../rca.js');
-        const doc = getRcaDocByName(docName);
+        const doc = await getRcaDocByName(docName);
         if (!doc) { await ctx.reply(`RCA "${docName}" not found.`); return; }
-        deleteRcaDoc(doc.id);
+        await deleteRcaDoc(doc.id);
         await ctx.reply(`Deleted RCA "${docName}".`);
         return;
       }
@@ -2650,7 +2650,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listFmeaDocs } = await import('../fmea.js');
-        const docs = listFmeaDocs();
+        const docs = await listFmeaDocs();
         if (docs.length === 0) { await ctx.reply('No FMEA documents. Send a CSV with /fmea to start, or ask the AI to create one.'); return; }
         const lines = docs.map((d) =>
           `<b>${escapeHtml(d.name)}</b> — ${d.fmea_type.toUpperCase()} — ${d.product || 'no product'} — ${new Date(d.updated_at).toLocaleDateString()}`
@@ -2663,10 +2663,10 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const docName = parts.slice(1).join(' ');
         if (!docName) { await ctx.reply('Usage: /fmea report &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getFmeaDocByName, getFailureModes, getActions, formatFmeaWorksheet } = await import('../fmea.js');
-        const doc = getFmeaDocByName(docName);
+        const doc = await getFmeaDocByName(docName);
         if (!doc) { await ctx.reply(`FMEA "${docName}" not found.`); return; }
-        const fms = getFailureModes(doc.id);
-        const acts = getActions(doc.id);
+        const fms = await getFailureModes(doc.id);
+        const acts = await getActions(doc.id);
         await ctx.reply(formatFmeaWorksheet(doc, fms, acts, true), { parse_mode: 'HTML' });
         return;
       }
@@ -2675,9 +2675,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const docName = parts.slice(1).join(' ');
         if (!docName) { await ctx.reply('Usage: /fmea delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getFmeaDocByName, deleteFmeaDoc } = await import('../fmea.js');
-        const doc = getFmeaDocByName(docName);
+        const doc = await getFmeaDocByName(docName);
         if (!doc) { await ctx.reply(`FMEA "${docName}" not found.`); return; }
-        deleteFmeaDoc(doc.id);
+        await deleteFmeaDoc(doc.id);
         await ctx.reply(`Deleted FMEA "${docName}".`);
         return;
       }
@@ -2707,7 +2707,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listControlPlans } = await import('../control-plan.js');
-        const plans = listControlPlans();
+        const plans = await listControlPlans();
         if (plans.length === 0) { await ctx.reply('No control plans. Use /spc create to start.'); return; }
         const lines = plans.map((p) =>
           `<b>${escapeHtml(p.name)}</b> — ${p.process_type} — ${p.product || 'no product'} — ${new Date(p.updated_at).toLocaleDateString()}`
@@ -2720,9 +2720,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const planName = parts.slice(1).join(' ');
         if (!planName) { await ctx.reply('Usage: /spc summary &lt;plan name&gt;', { parse_mode: 'HTML' }); return; }
         const { getControlPlanByName, buildControlPlanSummary, formatControlPlan } = await import('../control-plan.js');
-        const plan = getControlPlanByName(planName);
+        const plan = await getControlPlanByName(planName);
         if (!plan) { await ctx.reply(`Plan "${planName}" not found.`); return; }
-        const summary = buildControlPlanSummary(plan.id);
+        const summary = await buildControlPlanSummary(plan.id);
         await ctx.reply(formatControlPlan(summary, true), { parse_mode: 'HTML' });
         return;
       }
@@ -2731,9 +2731,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const planName = parts.slice(1).join(' ');
         if (!planName) { await ctx.reply('Usage: /spc delete &lt;plan name&gt;', { parse_mode: 'HTML' }); return; }
         const { getControlPlanByName, deleteControlPlan } = await import('../control-plan.js');
-        const plan = getControlPlanByName(planName);
+        const plan = await getControlPlanByName(planName);
         if (!plan) { await ctx.reply(`Plan "${planName}" not found.`); return; }
-        deleteControlPlan(plan.id);
+        await deleteControlPlan(plan.id);
         await ctx.reply(`Deleted control plan "${planName}".`);
         return;
       }
@@ -2763,7 +2763,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listInventoryProjects } = await import('../inventory.js');
-        const projects = listInventoryProjects();
+        const projects = await listInventoryProjects();
         if (projects.length === 0) {
           await ctx.reply('No inventory projects. Send a CSV with /inventory to start.');
           return;
@@ -2779,9 +2779,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const projectName = parts.slice(1).join(' ');
         if (!projectName) { await ctx.reply('Usage: /inventory status &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getInventoryProjectByName, getInventoryItems, getInventoryResults, formatReplenishmentPlan } = await import('../inventory.js');
-        const project = getInventoryProjectByName(projectName);
+        const project = await getInventoryProjectByName(projectName);
         if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
-        const results = getInventoryResults(project.id);
+        const results = await getInventoryResults(project.id);
         const planResult = results.find((r) => r.result_type === 'replenishment');
         const abcResult = results.find((r) => r.result_type === 'abc');
         if (!planResult || !abcResult) { await ctx.reply('No analysis results. Upload a CSV first.'); return; }
@@ -2795,9 +2795,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const projectName = parts.slice(1).join(' ');
         if (!projectName) { await ctx.reply('Usage: /inventory delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getInventoryProjectByName, deleteInventoryProject } = await import('../inventory.js');
-        const project = getInventoryProjectByName(projectName);
+        const project = await getInventoryProjectByName(projectName);
         if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
-        deleteInventoryProject(project.id);
+        await deleteInventoryProject(project.id);
         await ctx.reply(`Deleted inventory project "${projectName}".`);
         return;
       }
@@ -2826,7 +2826,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listSigmaProjects } = await import('../sigma.js');
-        const projects = listSigmaProjects();
+        const projects = await listSigmaProjects();
         if (projects.length === 0) {
           await ctx.reply('No sigma projects. Send a CSV with /sigma to start.');
           return;
@@ -2842,9 +2842,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const projectName = parts.slice(1).join(' ');
         if (!projectName) { await ctx.reply('Usage: /sigma status &lt;project name&gt;', { parse_mode: 'HTML' }); return; }
         const { getSigmaProjectByName, getMeasurements, getSigmaResults, formatCapabilityResult } = await import('../sigma.js');
-        const project = getSigmaProjectByName(projectName);
+        const project = await getSigmaProjectByName(projectName);
         if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
-        const results = getSigmaResults(project.id);
+        const results = await getSigmaResults(project.id);
         const capResult = results.find((r) => r.result_type === 'capability');
         const chartResult = results.find((r) => r.result_type === 'control_chart');
         if (!capResult || !chartResult) { await ctx.reply('No analysis results yet. Upload a CSV first.'); return; }
@@ -2858,9 +2858,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const projectName = parts.slice(1).join(' ');
         if (!projectName) { await ctx.reply('Usage: /sigma delete &lt;project name&gt;', { parse_mode: 'HTML' }); return; }
         const { getSigmaProjectByName, deleteSigmaProject } = await import('../sigma.js');
-        const project = getSigmaProjectByName(projectName);
+        const project = await getSigmaProjectByName(projectName);
         if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
-        deleteSigmaProject(project.id);
+        await deleteSigmaProject(project.id);
         await ctx.reply(`Deleted sigma project "${projectName}".`);
         return;
       }
@@ -2890,7 +2890,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listProjects } = await import('../balance.js');
-        const projects = listProjects();
+        const projects = await listProjects();
         if (projects.length === 0) {
           await ctx.reply('No balance projects. Send a CSV file with /balance to start.');
           return;
@@ -2909,18 +2909,18 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
         const { getProjectByName, getProjectTasks, getResultsForProject, formatBalanceResult, runBalance } = await import('../balance.js');
-        const project = getProjectByName(projectName);
+        const project = await getProjectByName(projectName);
         if (!project) {
           await ctx.reply(`Project "${projectName}" not found.`);
           return;
         }
-        const results = getResultsForProject(project.id);
+        const results = await getResultsForProject(project.id);
         if (results.length === 0) {
           await ctx.reply(`Project "${projectName}" has no balance runs yet.`);
           return;
         }
         const latest = results[0];
-        const tasks = getProjectTasks(project.id);
+        const tasks = await getProjectTasks(project.id);
         const balanceResult = runBalance(tasks, latest.takt_time, project.name);
         balanceResult.project_id = project.id;
         await ctx.reply(formatBalanceResult(balanceResult, true), { parse_mode: 'HTML' });
@@ -2934,12 +2934,12 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
         const { getProjectByName, getResultsForProject, formatBalanceComparison } = await import('../balance.js');
-        const project = getProjectByName(projectName);
+        const project = await getProjectByName(projectName);
         if (!project) {
           await ctx.reply(`Project "${projectName}" not found.`);
           return;
         }
-        const results = getResultsForProject(project.id);
+        const results = await getResultsForProject(project.id);
         if (results.length === 0) {
           await ctx.reply('No balance runs found for this project.');
           return;
@@ -2955,12 +2955,12 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
         const { getProjectByName, deleteProject } = await import('../balance.js');
-        const project = getProjectByName(projectName);
+        const project = await getProjectByName(projectName);
         if (!project) {
           await ctx.reply(`Project "${projectName}" not found.`);
           return;
         }
-        deleteProject(project.id);
+        await deleteProject(project.id);
         await ctx.reply(`Deleted balance project "${projectName}".`);
         return;
       }
@@ -3046,7 +3046,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const allTools = pc.tools.listRegistered();
-        const userTools = pc.tools.listUserTools();
+        const userTools = await pc.tools.listUserTools();
         const lines: string[] = [];
 
         for (const t of allTools) {
@@ -3081,7 +3081,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         }
 
         // Check user tools first
-        const userTool = pc.tools.getByName(name.toLowerCase());
+        const userTool = await pc.tools.getByName(name.toLowerCase());
         if (userTool) {
           const toolConfig = JSON.parse(userTool.config);
           const configPreview = JSON.stringify(toolConfig, null, 2).slice(0, 500);
@@ -3119,7 +3119,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /tool fix &lt;name&gt; &lt;feedback&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const fixToolObj = pc.tools.getByName(fixName.toLowerCase());
+        const fixToolObj = await pc.tools.getByName(fixName.toLowerCase());
         if (!fixToolObj) {
           await ctx.reply('User tool not found. (Only user-created tools can be fixed.)');
           return;
@@ -3148,9 +3148,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'enable': {
         const name = parts[1];
         if (!name) { await ctx.reply('Usage: /tool enable &lt;name&gt;', { parse_mode: 'HTML' }); return; }
-        const tool = pc.tools.getByName(name.toLowerCase());
+        const tool = await pc.tools.getByName(name.toLowerCase());
         if (!tool) { await ctx.reply('User tool not found.'); return; }
-        pc.tools.enable(tool.id);
+        await pc.tools.enable(tool.id);
         pc.tools.loadUserTools();
         await ctx.reply(`Tool "${name}" enabled.`);
         return;
@@ -3159,9 +3159,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'disable': {
         const name = parts[1];
         if (!name) { await ctx.reply('Usage: /tool disable &lt;name&gt;', { parse_mode: 'HTML' }); return; }
-        const tool = pc.tools.getByName(name.toLowerCase());
+        const tool = await pc.tools.getByName(name.toLowerCase());
         if (!tool) { await ctx.reply('User tool not found.'); return; }
-        pc.tools.disable(tool.id);
+        await pc.tools.disable(tool.id);
         pc.tools.loadUserTools();
         await ctx.reply(`Tool "${name}" disabled.`);
         return;
@@ -3170,9 +3170,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'lock': {
         const name = parts[1];
         if (!name) { await ctx.reply('Usage: /tool lock &lt;name&gt;', { parse_mode: 'HTML' }); return; }
-        const tool = pc.tools.getByName(name.toLowerCase());
+        const tool = await pc.tools.getByName(name.toLowerCase());
         if (!tool) { await ctx.reply('User tool not found.'); return; }
-        pc.tools.lock(tool.id);
+        await pc.tools.lock(tool.id);
         await ctx.reply(`Tool "${name}" locked.`);
         return;
       }
@@ -3180,9 +3180,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'unlock': {
         const name = parts[1];
         if (!name) { await ctx.reply('Usage: /tool unlock &lt;name&gt;', { parse_mode: 'HTML' }); return; }
-        const tool = pc.tools.getByName(name.toLowerCase());
+        const tool = await pc.tools.getByName(name.toLowerCase());
         if (!tool) { await ctx.reply('User tool not found.'); return; }
-        pc.tools.unlock(tool.id);
+        await pc.tools.unlock(tool.id);
         await ctx.reply(`Tool "${name}" unlocked.`);
         return;
       }
@@ -3190,10 +3190,10 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'delete': {
         const name = parts[1];
         if (!name) { await ctx.reply('Usage: /tool delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
-        const tool = pc.tools.getByName(name.toLowerCase());
+        const tool = await pc.tools.getByName(name.toLowerCase());
         if (!tool) { await ctx.reply('User tool not found.'); return; }
         if (tool.locked) { await ctx.reply('Tool is locked. Unlock it first.'); return; }
-        pc.tools.delete(tool.id);
+        await pc.tools.delete(tool.id);
         pc.tools.loadUserTools();
         await ctx.reply(`Tool "${name}" deleted.`);
         return;
@@ -3205,7 +3205,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           await ctx.reply('Usage: /tool export &lt;name&gt;', { parse_mode: 'HTML' });
           return;
         }
-        const tool = pc.tools.getByName(name);
+        const tool = await pc.tools.getByName(name);
         if (!tool) {
           await ctx.reply(`User tool "${name}" not found. Only user-created tools can be exported.`);
           return;
@@ -3550,7 +3550,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listPlans } = await import('../capacity/index.js');
-        const plans = listPlans();
+        const plans = await listPlans();
         if (plans.length === 0) { await ctx.reply('No capacity plans. Use the web UI at /capacity or ask the AI.'); return; }
         const lines = plans.map((p) =>
           `<b>${escapeHtml(p.name)}</b> — ${new Date(p.updated_at).toLocaleDateString()}`
@@ -3563,7 +3563,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const planName = parts.slice(1).join(' ');
         if (!planName) { await ctx.reply('Usage: /capacity view &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getPlan } = await import('../capacity/index.js');
-        const plan = getPlan(planName);
+        const plan = await getPlan(planName);
         if (!plan) { await ctx.reply(`Plan "${planName}" not found.`); return; }
         const result = plan.result_json ? JSON.parse(plan.result_json) : null;
         let msg = `<b>Capacity Plan: ${escapeHtml(plan.name)}</b>\n`;
@@ -3588,9 +3588,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const planName = parts.slice(1).join(' ');
         if (!planName) { await ctx.reply('Usage: /capacity delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getPlan, deletePlan } = await import('../capacity/index.js');
-        const plan = getPlan(planName);
+        const plan = await getPlan(planName);
         if (!plan) { await ctx.reply(`Plan "${planName}" not found.`); return; }
-        deletePlan(plan.id);
+        await deletePlan(plan.id);
         await ctx.reply(`Deleted capacity plan "${planName}".`);
         return;
       }
@@ -3618,7 +3618,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
     if (subcommand === 'list') {
       const { listFSMs } = await import('../fsm/index.js');
-      const configs = listFSMs();
+      const configs = await listFSMs();
       if (configs.length === 0) { await ctx.reply('No FSM configs. Use /fsm on the web dashboard.'); return; }
       const lines = configs.map((c) => `<b>${escapeHtml(c.name)}</b> — ${new Date(c.updated_at).toLocaleDateString()}`);
       await ctx.reply(`<b>FSM Configs (${configs.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
@@ -3650,7 +3650,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
     if (subcommand === 'list') {
       const { listDOEs } = await import('../doe/index.js');
-      const exps = listDOEs();
+      const exps = await listDOEs();
       if (exps.length === 0) { await ctx.reply('No DOE experiments. Use /doe on the web dashboard.'); return; }
       const lines = exps.map((e) => `<b>${escapeHtml(e.name)}</b> — ${new Date(e.updated_at).toLocaleDateString()}`);
       await ctx.reply(`<b>DOE Experiments (${exps.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
@@ -3676,7 +3676,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
     if (subcommand === 'list') {
       const { listConwips } = await import('../conwip/index.js');
-      const configs = listConwips();
+      const configs = await listConwips();
       if (configs.length === 0) { await ctx.reply('No CONWIP/Heijunka configs. Use /conwip on the web dashboard.'); return; }
       const lines = configs.map((c) => `<b>${escapeHtml(c.name)}</b> — ${new Date(c.updated_at).toLocaleDateString()}`);
       await ctx.reply(`<b>Configs (${configs.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
@@ -3703,7 +3703,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listTOCs } = await import('../toc/index.js');
-        const configs = listTOCs();
+        const configs = await listTOCs();
         if (configs.length === 0) { await ctx.reply('No TOC configs. Use /toc on the web dashboard.'); return; }
         const lines = configs.map((c) => `<b>${escapeHtml(c.name)}</b> — ${new Date(c.updated_at).toLocaleDateString()}`);
         await ctx.reply(`<b>TOC Configs (${configs.length}):</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
@@ -3714,7 +3714,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const name = parts.slice(1).join(' ');
         if (!name) { await ctx.reply('Usage: /toc view &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getTOC } = await import('../toc/index.js');
-        const toc = getTOC(name);
+        const toc = await getTOC(name);
         if (!toc) { await ctx.reply(`Config "${name}" not found.`); return; }
         const result = toc.result_json ? JSON.parse(toc.result_json) : null;
         let msg = `<b>TOC: ${escapeHtml(toc.name)}</b>\n`;
@@ -3752,7 +3752,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listVSMs } = await import('../vsm/index.js');
-        const maps = listVSMs();
+        const maps = await listVSMs();
         if (maps.length === 0) { await ctx.reply('No VSM maps. Use the web UI at /vsm or ask the AI.'); return; }
         const lines = maps.map((m) =>
           `<b>${escapeHtml(m.name)}</b> — ${new Date(m.updated_at).toLocaleDateString()}`
@@ -3765,7 +3765,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const mapName = parts.slice(1).join(' ');
         if (!mapName) { await ctx.reply('Usage: /vsm view &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getVSM } = await import('../vsm/index.js');
-        const vsm = getVSM(mapName);
+        const vsm = await getVSM(mapName);
         if (!vsm) { await ctx.reply(`Map "${mapName}" not found.`); return; }
         const result = vsm.result_json ? JSON.parse(vsm.result_json) : null;
         let msg = `<b>VSM: ${escapeHtml(vsm.name)}</b>\n`;
@@ -3786,9 +3786,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const mapName = parts.slice(1).join(' ');
         if (!mapName) { await ctx.reply('Usage: /vsm delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getVSM, deleteVSM } = await import('../vsm/index.js');
-        const vsm = getVSM(mapName);
+        const vsm = await getVSM(mapName);
         if (!vsm) { await ctx.reply(`Map "${mapName}" not found.`); return; }
-        deleteVSM(vsm.id);
+        await deleteVSM(vsm.id);
         await ctx.reply(`Deleted VSM "${mapName}".`);
         return;
       }
@@ -3818,7 +3818,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     switch (subcommand) {
       case 'list': {
         const { listSchedules } = await import('../sequencer/index.js');
-        const schedules = listSchedules();
+        const schedules = await listSchedules();
         if (schedules.length === 0) { await ctx.reply('No saved schedules. Use the web UI at /sequence or ask the AI.'); return; }
         const lines = schedules.map((s) =>
           `<b>${escapeHtml(s.name)}</b> — ${new Date(s.updated_at).toLocaleDateString()}`
@@ -3831,9 +3831,9 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const name = parts.slice(1).join(' ');
         if (!name) { await ctx.reply('Usage: /sequence delete &lt;name&gt;', { parse_mode: 'HTML' }); return; }
         const { getSchedule, deleteSchedule } = await import('../sequencer/index.js');
-        const sched = getSchedule(name);
+        const sched = await getSchedule(name);
         if (!sched) { await ctx.reply(`Schedule "${name}" not found.`); return; }
-        deleteSchedule(sched.id);
+        await deleteSchedule(sched.id);
         await ctx.reply(`Deleted schedule "${name}".`);
         return;
       }

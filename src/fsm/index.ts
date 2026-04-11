@@ -3,7 +3,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from '../db.js';
+import { getKnex } from '../db-knex.js';
 import type { SavedFSM, MachineAnalysis, StateResidence } from './models.js';
 import { MFG_STATE_COLORS } from './models.js';
 
@@ -18,26 +18,29 @@ import type { TableInitializer } from '../core/interfaces.js';
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initFsmTables(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS fsm_configs (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL DEFAULT '',
-      name TEXT NOT NULL,
-      config_json TEXT NOT NULL,
-      result_json TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_fsm_configs_name ON fsm_configs(name);
-  `);
+export async function initFsmTables(): Promise<void> {
+  const db = getKnex();
+
+  if (!(await db.schema.hasTable('fsm_configs'))) {
+    await db.schema.createTable('fsm_configs', (t) => {
+      t.text('id').primary();
+      t.text('chat_id').notNullable().defaultTo('');
+      t.text('name').notNullable();
+      t.text('config_json').notNullable();
+      t.text('result_json');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
+
+  await db.raw('CREATE INDEX IF NOT EXISTS idx_fsm_configs_name ON fsm_configs(name)');
 
   // Migration: add chat_id column if missing (for existing databases)
-  const cols = db.prepare("PRAGMA table_info(fsm_configs)").all() as Array<{ name: string }>;
-  if (!cols.some(c => c.name === 'chat_id')) {
-    db.exec("ALTER TABLE fsm_configs ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
-    db.exec('CREATE INDEX IF NOT EXISTS idx_fsm_configs_chat ON fsm_configs(chat_id, name)');
+  if (!(await db.schema.hasColumn('fsm_configs', 'chat_id'))) {
+    await db.schema.alterTable('fsm_configs', (t) => {
+      t.text('chat_id').notNullable().defaultTo('');
+    });
+    await db.raw('CREATE INDEX IF NOT EXISTS idx_fsm_configs_chat ON fsm_configs(chat_id, name)');
   }
 }
 
@@ -45,35 +48,53 @@ export const fsmTableInit: TableInitializer = { name: 'fsm', initTables: initFsm
 
 function genId(): string { return randomBytes(16).toString('hex'); }
 
-export function saveFSM(name: string, config: unknown, result?: unknown, chatId: string = ''): SavedFSM {
-  const db = getDatabase();
+export async function saveFSM(name: string, config: unknown, result?: unknown, chatId: string = ''): Promise<SavedFSM> {
+  const db = getKnex();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
-  const existing = db.prepare('SELECT * FROM fsm_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(name, chatId) as SavedFSM | undefined;
+
+  const existing = await db('fsm_configs')
+    .whereRaw('LOWER(name) = LOWER(?)', [name])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedFSM | undefined;
+
   if (existing) {
-    db.prepare('UPDATE fsm_configs SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?')
-      .run(configJson, resultJson, Date.now(), existing.id);
-    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: Date.now() };
+    const now = Date.now();
+    await db('fsm_configs')
+      .where({ id: existing.id })
+      .update({ config_json: configJson, result_json: resultJson, updated_at: now });
+    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: now };
   }
+
   const id = genId();
   const now = Date.now();
-  db.prepare('INSERT INTO fsm_configs (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, chatId, name, configJson, resultJson, now, now);
+  await db('fsm_configs').insert({
+    id, chat_id: chatId, name, config_json: configJson, result_json: resultJson, created_at: now, updated_at: now,
+  });
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getFSMConfig(nameOrId: string, chatId: string = ''): SavedFSM | undefined {
-  const db = getDatabase();
-  return (db.prepare('SELECT * FROM fsm_configs WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM fsm_configs WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)) as SavedFSM | undefined;
+export async function getFSMConfig(nameOrId: string, chatId: string = ''): Promise<SavedFSM | undefined> {
+  const db = getKnex();
+  const byId = await db('fsm_configs').where({ id: nameOrId }).first();
+  if (byId) return byId as SavedFSM;
+  return await db('fsm_configs')
+    .whereRaw('LOWER(name) = LOWER(?)', [nameOrId])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedFSM | undefined;
 }
 
-export function listFSMs(chatId: string = ''): SavedFSM[] {
-  return getDatabase().prepare('SELECT * FROM fsm_configs WHERE chat_id = ? ORDER BY updated_at DESC').all(chatId) as SavedFSM[];
+export async function listFSMs(chatId: string = ''): Promise<SavedFSM[]> {
+  const db = getKnex();
+  return await db('fsm_configs')
+    .where({ chat_id: chatId })
+    .orderBy('updated_at', 'desc') as SavedFSM[];
 }
 
-export function deleteFSMConfig(id: string, chatId: string = ''): boolean {
-  return getDatabase().prepare('DELETE FROM fsm_configs WHERE id = ? AND chat_id = ?').run(id, chatId).changes > 0;
+export async function deleteFSMConfig(id: string, chatId: string = ''): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('fsm_configs').where({ id, chat_id: chatId }).del();
+  return count > 0;
 }
 
 // ── Charts ───────────────────────────────────────────────────

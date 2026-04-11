@@ -46,7 +46,7 @@ export async function stateMachineSimulator(args: Record<string, unknown>): Prom
         const state = initSimulation(config);
         const finalState = runToCompletion(state, config);
         const analysis = analyzeSimulation(finalState, config);
-        if (config.name) saveFSM(config.name, config, analysis);
+        if (config.name) await saveFSM(config.name, config, analysis);
         return {
           success: true,
           transitions: analysis.system_metrics.total_transitions,
@@ -71,7 +71,7 @@ export async function stateMachineSimulator(args: Record<string, unknown>): Prom
         return { success: true, templates: listTemplates() };
       }
       case 'list': {
-        const configs = listFSMs();
+        const configs = await listFSMs();
         return { success: true, configs: configs.map((c) => ({ name: c.name, updated: new Date(c.updated_at).toISOString() })) };
       }
       default: return { error: `Unknown action: ${args.action}` };

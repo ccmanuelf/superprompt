@@ -4,7 +4,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from '../db.js';
+import { getKnex } from '../db-knex.js';
 import { logger } from '../logger.js';
 import type { TableInitializer } from '../core/interfaces.js';
 
@@ -70,73 +70,73 @@ const MAX_ACTIVE_PLANS = 5;
 
 // ── Initialization ──────────────────────────────────────────
 
-export function initLearningTables(): void {
-  const db = getDatabase();
+export async function initLearningTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS learning_plans (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL,
-      subject TEXT NOT NULL,
-      goal TEXT NOT NULL,
-      persona TEXT NOT NULL DEFAULT 'friendly_conversational',
-      preferred_time TEXT,
-      schedule_task_id TEXT,
-      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'completed')),
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  if (!(await db.schema.hasTable('learning_plans'))) {
+    await db.schema.createTable('learning_plans', (t) => {
+      t.string('id').primary();
+      t.string('chat_id').notNullable();
+      t.string('subject').notNullable();
+      t.text('goal').notNullable();
+      t.string('persona').notNullable().defaultTo('friendly_conversational');
+      t.string('preferred_time').nullable();
+      t.string('schedule_task_id').nullable();
+      t.string('status').notNullable().defaultTo('active');
+      t.bigInteger('created_at').notNullable();
+      t.bigInteger('updated_at').notNullable();
+      t.index(['chat_id', 'status']);
+    });
+  }
 
-    CREATE INDEX IF NOT EXISTS idx_learning_plans_chat
-      ON learning_plans(chat_id, status);
+  if (!(await db.schema.hasTable('learning_topics'))) {
+    await db.schema.createTable('learning_topics', (t) => {
+      t.string('id').primary();
+      t.string('plan_id').notNullable();
+      t.string('title').notNullable();
+      t.text('description').nullable();
+      t.integer('sort_order').notNullable();
+      t.integer('difficulty').notNullable().defaultTo(3);
+      t.integer('estimated_minutes').notNullable().defaultTo(10);
+      t.string('status').notNullable().defaultTo('pending');
+      t.float('mastery').notNullable().defaultTo(0.0);
+      t.bigInteger('last_reviewed_at').nullable();
+      t.integer('review_count').notNullable().defaultTo(0);
+      t.bigInteger('created_at').notNullable();
+      t.foreign('plan_id').references('learning_plans.id').onDelete('CASCADE');
+      t.index(['plan_id', 'sort_order']);
+    });
+  }
 
-    CREATE TABLE IF NOT EXISTS learning_topics (
-      id TEXT PRIMARY KEY,
-      plan_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT,
-      sort_order INTEGER NOT NULL,
-      difficulty INTEGER NOT NULL DEFAULT 3,
-      estimated_minutes INTEGER NOT NULL DEFAULT 10,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'deferred')),
-      mastery REAL NOT NULL DEFAULT 0.0,
-      last_reviewed_at INTEGER,
-      review_count INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (plan_id) REFERENCES learning_plans(id) ON DELETE CASCADE
-    );
+  if (!(await db.schema.hasTable('learning_sessions'))) {
+    await db.schema.createTable('learning_sessions', (t) => {
+      t.string('id').primary();
+      t.string('plan_id').notNullable();
+      t.string('topic_id').nullable();
+      t.string('chat_id').notNullable();
+      t.string('persona').notNullable();
+      t.string('session_type').notNullable().defaultTo('lesson');
+      t.bigInteger('started_at').notNullable();
+      t.bigInteger('ended_at').nullable();
+      t.integer('duration_seconds').nullable();
+      t.integer('questions_asked').notNullable().defaultTo(0);
+      t.integer('correct_answers').notNullable().defaultTo(0);
+      t.text('notes').nullable();
+      t.foreign('plan_id').references('learning_plans.id').onDelete('CASCADE');
+      t.foreign('topic_id').references('learning_topics.id').onDelete('SET NULL');
+      t.index(['chat_id', 'started_at']);
+    });
+  }
 
-    CREATE INDEX IF NOT EXISTS idx_learning_topics_plan
-      ON learning_topics(plan_id, sort_order);
-
-    CREATE TABLE IF NOT EXISTS learning_sessions (
-      id TEXT PRIMARY KEY,
-      plan_id TEXT NOT NULL,
-      topic_id TEXT,
-      chat_id TEXT NOT NULL,
-      persona TEXT NOT NULL,
-      session_type TEXT NOT NULL DEFAULT 'lesson' CHECK(session_type IN ('lesson', 'review', 'assessment', 'practice')),
-      started_at INTEGER NOT NULL,
-      ended_at INTEGER,
-      duration_seconds INTEGER,
-      questions_asked INTEGER NOT NULL DEFAULT 0,
-      correct_answers INTEGER NOT NULL DEFAULT 0,
-      notes TEXT,
-      FOREIGN KEY (plan_id) REFERENCES learning_plans(id) ON DELETE CASCADE,
-      FOREIGN KEY (topic_id) REFERENCES learning_topics(id) ON DELETE SET NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_learning_sessions_chat
-      ON learning_sessions(chat_id, started_at);
-
-    CREATE TABLE IF NOT EXISTS learning_daily_time (
-      chat_id TEXT NOT NULL,
-      date TEXT NOT NULL,
-      total_seconds INTEGER NOT NULL DEFAULT 0,
-      session_count INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (chat_id, date)
-    );
-  `);
+  if (!(await db.schema.hasTable('learning_daily_time'))) {
+    await db.schema.createTable('learning_daily_time', (t) => {
+      t.string('chat_id').notNullable();
+      t.string('date').notNullable();
+      t.integer('total_seconds').notNullable().defaultTo(0);
+      t.integer('session_count').notNullable().defaultTo(0);
+      t.primary(['chat_id', 'date']);
+    });
+  }
 
   logger.info('Learning tables initialized');
 }
@@ -151,16 +151,16 @@ function generateId(): string {
 
 // ── Plans CRUD ──────────────────────────────────────────────
 
-export function createPlan(
+export async function createPlan(
   chatId: string,
   subject: string,
   goal: string,
   persona: string = 'friendly_conversational',
-): LearningPlan {
-  const db = getDatabase();
+): Promise<LearningPlan> {
+  const db = getKnex();
 
   // Enforce max active plans
-  const activePlans = getActivePlansByChat(chatId);
+  const activePlans = await getActivePlansByChat(chatId);
   if (activePlans.length >= MAX_ACTIVE_PLANS) {
     throw new Error(
       `You already have ${MAX_ACTIVE_PLANS} active learning plans. ` +
@@ -171,67 +171,68 @@ export function createPlan(
   const id = generateId();
   const now = Date.now();
 
-  db.prepare(
-    `INSERT INTO learning_plans (id, chat_id, subject, goal, persona, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
-  ).run(id, chatId, subject, goal, persona, now, now);
+  await db('learning_plans').insert({
+    id, chat_id: chatId, subject, goal, persona,
+    status: 'active', created_at: now, updated_at: now,
+  });
 
-  return getPlan(id)!;
+  return (await getPlan(id))!;
 }
 
-export function getPlan(id: string): LearningPlan | undefined {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM learning_plans WHERE id = ?').get(id) as LearningPlan | undefined;
+export async function getPlan(id: string): Promise<LearningPlan | undefined> {
+  const db = getKnex();
+  return db('learning_plans').where({ id }).first();
 }
 
-export function getPlansByChat(chatId: string): LearningPlan[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM learning_plans WHERE chat_id = ? ORDER BY updated_at DESC',
-  ).all(chatId) as LearningPlan[];
+export async function getPlansByChat(chatId: string): Promise<LearningPlan[]> {
+  const db = getKnex();
+  return db('learning_plans').where({ chat_id: chatId }).orderBy('updated_at', 'desc');
 }
 
 /** Get all plans across all chats (for web dashboard). */
-export function getAllPlans(): LearningPlan[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM learning_plans ORDER BY updated_at DESC',
-  ).all() as LearningPlan[];
+export async function getAllPlans(): Promise<LearningPlan[]> {
+  const db = getKnex();
+  return db('learning_plans').orderBy('updated_at', 'desc');
 }
 
 /** Get all daily time records across all chats for the last N days. */
-export function getAllWeeklyTime(days: number = 7): DailyTime[] {
-  const db = getDatabase();
+export async function getAllWeeklyTime(days: number = 7): Promise<DailyTime[]> {
+  const db = getKnex();
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  return db.prepare(
-    'SELECT * FROM learning_daily_time WHERE date >= ? ORDER BY date',
-  ).all(cutoff) as DailyTime[];
+  return db('learning_daily_time').where('date', '>=', cutoff).orderBy('date');
 }
 
 /** Get all recent sessions across all chats. */
-export function getAllRecentSessions(limit: number = 20): LearningSession[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM learning_sessions ORDER BY started_at DESC LIMIT ?',
-  ).all(limit) as LearningSession[];
+export async function getAllRecentSessions(limit: number = 20): Promise<LearningSession[]> {
+  const db = getKnex();
+  return db('learning_sessions').orderBy('started_at', 'desc').limit(limit);
 }
 
 /** Get recent sessions for a specific chat. */
-export function getRecentSessionsByChat(chatId: string, limit: number = 20): LearningSession[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM learning_sessions WHERE chat_id = ? ORDER BY started_at DESC LIMIT ?',
-  ).all(chatId, limit) as LearningSession[];
+export async function getRecentSessionsByChat(chatId: string, limit: number = 20): Promise<LearningSession[]> {
+  const db = getKnex();
+  return db('learning_sessions').where({ chat_id: chatId }).orderBy('started_at', 'desc').limit(limit);
 }
 
 /** Calculate study streak: consecutive days meeting the goal (10 min). */
-export function calculateStreak(chatId?: string): number {
-  const db = getDatabase();
-  const rows = db.prepare(
-    chatId
-      ? 'SELECT date, total_seconds FROM learning_daily_time WHERE chat_id = ? ORDER BY date DESC LIMIT 60'
-      : 'SELECT date, SUM(total_seconds) as total_seconds FROM learning_daily_time GROUP BY date ORDER BY date DESC LIMIT 60',
-  ).all(...(chatId ? [chatId] : [])) as Array<{ date: string; total_seconds: number }>;
+export async function calculateStreak(chatId?: string): Promise<number> {
+  const db = getKnex();
+  let rows: Array<{ date: string; total_seconds: number }>;
+
+  if (chatId) {
+    rows = await db('learning_daily_time')
+      .where({ chat_id: chatId })
+      .orderBy('date', 'desc')
+      .limit(60)
+      .select('date', 'total_seconds');
+  } else {
+    rows = await db('learning_daily_time')
+      .select('date')
+      .sum('total_seconds as total_seconds')
+      .groupBy('date')
+      .orderBy('date', 'desc')
+      .limit(60) as Array<{ date: string; total_seconds: number }>;
+  }
 
   let streak = 0;
   const today = new Date().toISOString().slice(0, 10);
@@ -250,55 +251,51 @@ export function calculateStreak(chatId?: string): number {
   return streak;
 }
 
-export function getActivePlansByChat(chatId: string): LearningPlan[] {
-  const db = getDatabase();
-  return db.prepare(
-    "SELECT * FROM learning_plans WHERE chat_id = ? AND status = 'active' ORDER BY updated_at DESC",
-  ).all(chatId) as LearningPlan[];
+export async function getActivePlansByChat(chatId: string): Promise<LearningPlan[]> {
+  const db = getKnex();
+  return db('learning_plans')
+    .where({ chat_id: chatId, status: 'active' })
+    .orderBy('updated_at', 'desc');
 }
 
-export function getPlanBySubject(chatId: string, subject: string): LearningPlan | undefined {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM learning_plans WHERE chat_id = ? AND LOWER(subject) = LOWER(?) AND status != ?',
-  ).get(chatId, subject, 'completed') as LearningPlan | undefined;
+export async function getPlanBySubject(chatId: string, subject: string): Promise<LearningPlan | undefined> {
+  const db = getKnex();
+  return db('learning_plans')
+    .where({ chat_id: chatId })
+    .whereRaw('LOWER(subject) = LOWER(?)', [subject])
+    .whereNot({ status: 'completed' })
+    .first();
 }
 
-export function updatePlan(
+export async function updatePlan(
   id: string,
   updates: Partial<Pick<LearningPlan, 'persona' | 'preferred_time' | 'schedule_task_id' | 'status'>>,
-): LearningPlan | undefined {
-  const db = getDatabase();
-  const plan = getPlan(id);
+): Promise<LearningPlan | undefined> {
+  const db = getKnex();
+  const plan = await getPlan(id);
   if (!plan) return undefined;
 
-  const fields: string[] = [];
-  const values: unknown[] = [];
+  const data: Record<string, unknown> = { updated_at: Date.now() };
+  if (updates.persona !== undefined) data.persona = updates.persona;
+  if (updates.preferred_time !== undefined) data.preferred_time = updates.preferred_time;
+  if (updates.schedule_task_id !== undefined) data.schedule_task_id = updates.schedule_task_id;
+  if (updates.status !== undefined) data.status = updates.status;
 
-  if (updates.persona !== undefined) { fields.push('persona = ?'); values.push(updates.persona); }
-  if (updates.preferred_time !== undefined) { fields.push('preferred_time = ?'); values.push(updates.preferred_time); }
-  if (updates.schedule_task_id !== undefined) { fields.push('schedule_task_id = ?'); values.push(updates.schedule_task_id); }
-  if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+  if (Object.keys(data).length <= 1) return plan; // only updated_at
 
-  if (fields.length === 0) return plan;
-
-  fields.push('updated_at = ?');
-  values.push(Date.now());
-  values.push(id);
-
-  db.prepare(`UPDATE learning_plans SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  await db('learning_plans').where({ id }).update(data);
   return getPlan(id);
 }
 
-export function deletePlan(id: string): boolean {
-  const db = getDatabase();
-  const result = db.prepare('DELETE FROM learning_plans WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deletePlan(id: string): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('learning_plans').where({ id }).del();
+  return count > 0;
 }
 
 // ── Topics CRUD ─────────────────────────────────────────────
 
-export function createTopic(
+export async function createTopic(
   planId: string,
   title: string,
   options?: {
@@ -307,100 +304,95 @@ export function createTopic(
     difficulty?: number;
     estimatedMinutes?: number;
   },
-): LearningTopic {
-  const db = getDatabase();
+): Promise<LearningTopic> {
+  const db = getKnex();
   const id = generateId();
   const now = Date.now();
 
   // Auto-assign sort_order if not specified: append after last topic
   let sortOrder = options?.sortOrder;
   if (sortOrder === undefined) {
-    const last = db.prepare(
-      'SELECT MAX(sort_order) as max_order FROM learning_topics WHERE plan_id = ?',
-    ).get(planId) as { max_order: number | null } | undefined;
+    const last = await db('learning_topics')
+      .where({ plan_id: planId })
+      .max('sort_order as max_order')
+      .first() as { max_order: number | null } | undefined;
     sortOrder = (last?.max_order ?? -1) + 1;
   }
 
-  db.prepare(
-    `INSERT INTO learning_topics (id, plan_id, title, description, sort_order, difficulty, estimated_minutes, status, mastery, review_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0.0, 0, ?)`,
-  ).run(
-    id, planId, title,
-    options?.description ?? null,
-    sortOrder,
-    options?.difficulty ?? 3,
-    options?.estimatedMinutes ?? 10,
-    now,
-  );
+  await db('learning_topics').insert({
+    id, plan_id: planId, title,
+    description: options?.description ?? null,
+    sort_order: sortOrder,
+    difficulty: options?.difficulty ?? 3,
+    estimated_minutes: options?.estimatedMinutes ?? 10,
+    status: 'pending', mastery: 0.0, review_count: 0, created_at: now,
+  });
 
-  return getTopic(id)!;
+  return (await getTopic(id))!;
 }
 
-export function getTopic(id: string): LearningTopic | undefined {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM learning_topics WHERE id = ?').get(id) as LearningTopic | undefined;
+export async function getTopic(id: string): Promise<LearningTopic | undefined> {
+  const db = getKnex();
+  return db('learning_topics').where({ id }).first();
 }
 
-export function getTopicsByPlan(planId: string): LearningTopic[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM learning_topics WHERE plan_id = ? ORDER BY sort_order',
-  ).all(planId) as LearningTopic[];
+export async function getTopicsByPlan(planId: string): Promise<LearningTopic[]> {
+  const db = getKnex();
+  return db('learning_topics').where({ plan_id: planId }).orderBy('sort_order');
 }
 
-export function getPendingTopics(planId: string): LearningTopic[] {
-  const db = getDatabase();
-  return db.prepare(
-    "SELECT * FROM learning_topics WHERE plan_id = ? AND status IN ('pending', 'in_progress') ORDER BY sort_order",
-  ).all(planId) as LearningTopic[];
+export async function getPendingTopics(planId: string): Promise<LearningTopic[]> {
+  const db = getKnex();
+  return db('learning_topics')
+    .where({ plan_id: planId })
+    .whereIn('status', ['pending', 'in_progress'])
+    .orderBy('sort_order');
 }
 
-export function getCompletedTopics(planId: string): LearningTopic[] {
-  const db = getDatabase();
-  return db.prepare(
-    "SELECT * FROM learning_topics WHERE plan_id = ? AND status = 'completed' ORDER BY sort_order",
-  ).all(planId) as LearningTopic[];
+export async function getCompletedTopics(planId: string): Promise<LearningTopic[]> {
+  const db = getKnex();
+  return db('learning_topics')
+    .where({ plan_id: planId, status: 'completed' })
+    .orderBy('sort_order');
 }
 
-export function getTopicByTitle(planId: string, title: string): LearningTopic | undefined {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM learning_topics WHERE plan_id = ? AND LOWER(title) = LOWER(?)',
-  ).get(planId, title) as LearningTopic | undefined;
+export async function getTopicByTitle(planId: string, title: string): Promise<LearningTopic | undefined> {
+  const db = getKnex();
+  return db('learning_topics')
+    .where({ plan_id: planId })
+    .whereRaw('LOWER(title) = LOWER(?)', [title])
+    .first();
 }
 
-export function updateTopic(
+export async function updateTopic(
   id: string,
   updates: Partial<Pick<LearningTopic, 'status' | 'mastery' | 'last_reviewed_at' | 'review_count' | 'sort_order' | 'description'>>,
-): LearningTopic | undefined {
-  const db = getDatabase();
-  const topic = getTopic(id);
+): Promise<LearningTopic | undefined> {
+  const db = getKnex();
+  const topic = await getTopic(id);
   if (!topic) return undefined;
 
-  const fields: string[] = [];
-  const values: unknown[] = [];
+  const data: Record<string, unknown> = {};
+  if (updates.status !== undefined) data.status = updates.status;
+  if (updates.mastery !== undefined) data.mastery = updates.mastery;
+  if (updates.last_reviewed_at !== undefined) data.last_reviewed_at = updates.last_reviewed_at;
+  if (updates.review_count !== undefined) data.review_count = updates.review_count;
+  if (updates.sort_order !== undefined) data.sort_order = updates.sort_order;
+  if (updates.description !== undefined) data.description = updates.description;
 
-  if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
-  if (updates.mastery !== undefined) { fields.push('mastery = ?'); values.push(updates.mastery); }
-  if (updates.last_reviewed_at !== undefined) { fields.push('last_reviewed_at = ?'); values.push(updates.last_reviewed_at); }
-  if (updates.review_count !== undefined) { fields.push('review_count = ?'); values.push(updates.review_count); }
-  if (updates.sort_order !== undefined) { fields.push('sort_order = ?'); values.push(updates.sort_order); }
-  if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
+  if (Object.keys(data).length === 0) return topic;
 
-  if (fields.length === 0) return topic;
-
-  values.push(id);
-  db.prepare(`UPDATE learning_topics SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  await db('learning_topics').where({ id }).update(data);
   return getTopic(id);
 }
 
 /** Reorder: move topic to a new position, shifting others. */
-export function reorderTopic(topicId: string, newPosition: number): boolean {
-  const db = getDatabase();
-  const topic = getTopic(topicId);
+export async function reorderTopic(topicId: string, newPosition: number): Promise<boolean> {
+  const db = getKnex();
+  const topic = await getTopic(topicId);
   if (!topic) return false;
 
-  const allTopics = getTopicsByPlan(topic.plan_id);
+  const allTopics = await getTopicsByPlan(topic.plan_id);
   const oldPosition = topic.sort_order;
 
   if (newPosition === oldPosition) return true;
@@ -409,34 +401,37 @@ export function reorderTopic(topicId: string, newPosition: number): boolean {
   // Shift topics between old and new position
   if (newPosition < oldPosition) {
     // Moving up: shift topics in [newPosition, oldPosition) down by 1
-    db.prepare(
-      'UPDATE learning_topics SET sort_order = sort_order + 1 WHERE plan_id = ? AND sort_order >= ? AND sort_order < ?',
-    ).run(topic.plan_id, newPosition, oldPosition);
+    await db('learning_topics')
+      .where({ plan_id: topic.plan_id })
+      .where('sort_order', '>=', newPosition)
+      .where('sort_order', '<', oldPosition)
+      .update({ sort_order: db.raw('sort_order + 1') });
   } else {
     // Moving down: shift topics in (oldPosition, newPosition] up by 1
-    db.prepare(
-      'UPDATE learning_topics SET sort_order = sort_order - 1 WHERE plan_id = ? AND sort_order > ? AND sort_order <= ?',
-    ).run(topic.plan_id, oldPosition, newPosition);
+    await db('learning_topics')
+      .where({ plan_id: topic.plan_id })
+      .where('sort_order', '>', oldPosition)
+      .where('sort_order', '<=', newPosition)
+      .update({ sort_order: db.raw('sort_order - 1') });
   }
 
   // Set the topic to its new position
-  db.prepare('UPDATE learning_topics SET sort_order = ? WHERE id = ?').run(newPosition, topicId);
+  await db('learning_topics').where({ id: topicId }).update({ sort_order: newPosition });
   return true;
 }
 
-export function deleteTopic(id: string): boolean {
-  const db = getDatabase();
-  const topic = getTopic(id);
+export async function deleteTopic(id: string): Promise<boolean> {
+  const db = getKnex();
+  const topic = await getTopic(id);
   if (!topic) return false;
 
-  db.prepare('DELETE FROM learning_topics WHERE id = ?').run(id);
+  await db('learning_topics').where({ id }).del();
 
   // Re-number remaining topics to close the gap
-  const remaining = getTopicsByPlan(topic.plan_id);
-  const reorder = db.prepare('UPDATE learning_topics SET sort_order = ? WHERE id = ?');
+  const remaining = await getTopicsByPlan(topic.plan_id);
   for (let i = 0; i < remaining.length; i++) {
     if (remaining[i].sort_order !== i) {
-      reorder.run(i, remaining[i].id);
+      await db('learning_topics').where({ id: remaining[i].id }).update({ sort_order: i });
     }
   }
   return true;
@@ -444,64 +439,59 @@ export function deleteTopic(id: string): boolean {
 
 // ── Sessions CRUD ───────────────────────────────────────────
 
-export function createSession(
+export async function createSession(
   planId: string,
   chatId: string,
   persona: string,
   sessionType: SessionType = 'lesson',
   topicId?: string,
-): LearningSession {
-  const db = getDatabase();
+): Promise<LearningSession> {
+  const db = getKnex();
   const id = generateId();
   const now = Date.now();
 
-  db.prepare(
-    `INSERT INTO learning_sessions (id, plan_id, topic_id, chat_id, persona, session_type, started_at, questions_asked, correct_answers)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)`,
-  ).run(id, planId, topicId ?? null, chatId, persona, sessionType, now);
+  await db('learning_sessions').insert({
+    id, plan_id: planId, topic_id: topicId ?? null,
+    chat_id: chatId, persona, session_type: sessionType,
+    started_at: now, questions_asked: 0, correct_answers: 0,
+  });
 
-  return getSession(id)!;
+  return (await getSession(id))!;
 }
 
-export function getSession(id: string): LearningSession | undefined {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM learning_sessions WHERE id = ?').get(id) as LearningSession | undefined;
+export async function getSession(id: string): Promise<LearningSession | undefined> {
+  const db = getKnex();
+  return db('learning_sessions').where({ id }).first();
 }
 
-export function updateSession(
+export async function updateSession(
   id: string,
   updates: Partial<Pick<LearningSession, 'ended_at' | 'duration_seconds' | 'questions_asked' | 'correct_answers' | 'notes' | 'topic_id'>>,
-): LearningSession | undefined {
-  const db = getDatabase();
-  const fields: string[] = [];
-  const values: unknown[] = [];
+): Promise<LearningSession | undefined> {
+  const db = getKnex();
+  const data: Record<string, unknown> = {};
 
-  if (updates.ended_at !== undefined) { fields.push('ended_at = ?'); values.push(updates.ended_at); }
-  if (updates.duration_seconds !== undefined) { fields.push('duration_seconds = ?'); values.push(updates.duration_seconds); }
-  if (updates.questions_asked !== undefined) { fields.push('questions_asked = ?'); values.push(updates.questions_asked); }
-  if (updates.correct_answers !== undefined) { fields.push('correct_answers = ?'); values.push(updates.correct_answers); }
-  if (updates.notes !== undefined) { fields.push('notes = ?'); values.push(updates.notes); }
-  if (updates.topic_id !== undefined) { fields.push('topic_id = ?'); values.push(updates.topic_id); }
+  if (updates.ended_at !== undefined) data.ended_at = updates.ended_at;
+  if (updates.duration_seconds !== undefined) data.duration_seconds = updates.duration_seconds;
+  if (updates.questions_asked !== undefined) data.questions_asked = updates.questions_asked;
+  if (updates.correct_answers !== undefined) data.correct_answers = updates.correct_answers;
+  if (updates.notes !== undefined) data.notes = updates.notes;
+  if (updates.topic_id !== undefined) data.topic_id = updates.topic_id;
 
-  if (fields.length === 0) return getSession(id);
+  if (Object.keys(data).length === 0) return getSession(id);
 
-  values.push(id);
-  db.prepare(`UPDATE learning_sessions SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  await db('learning_sessions').where({ id }).update(data);
   return getSession(id);
 }
 
-export function getSessionsByPlan(planId: string, limit: number = 20): LearningSession[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM learning_sessions WHERE plan_id = ? ORDER BY started_at DESC LIMIT ?',
-  ).all(planId, limit) as LearningSession[];
+export async function getSessionsByPlan(planId: string, limit: number = 20): Promise<LearningSession[]> {
+  const db = getKnex();
+  return db('learning_sessions').where({ plan_id: planId }).orderBy('started_at', 'desc').limit(limit);
 }
 
-export function getSessionsByChat(chatId: string, limit: number = 20): LearningSession[] {
-  const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM learning_sessions WHERE chat_id = ? ORDER BY started_at DESC LIMIT ?',
-  ).all(chatId, limit) as LearningSession[];
+export async function getSessionsByChat(chatId: string, limit: number = 20): Promise<LearningSession[]> {
+  const db = getKnex();
+  return db('learning_sessions').where({ chat_id: chatId }).orderBy('started_at', 'desc').limit(limit);
 }
 
 // ── Daily Time Tracking ─────────────────────────────────────
@@ -510,76 +500,71 @@ function todayDateString(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function addDailyTime(chatId: string, seconds: number): DailyTime {
-  const db = getDatabase();
+export async function addDailyTime(chatId: string, seconds: number): Promise<DailyTime> {
+  const db = getKnex();
   const date = todayDateString();
 
-  db.prepare(
-    `INSERT INTO learning_daily_time (chat_id, date, total_seconds, session_count)
-     VALUES (?, ?, ?, 1)
-     ON CONFLICT(chat_id, date) DO UPDATE SET
-       total_seconds = total_seconds + ?,
-       session_count = session_count + 1`,
-  ).run(chatId, date, seconds, seconds);
+  await db('learning_daily_time')
+    .insert({ chat_id: chatId, date, total_seconds: seconds, session_count: 1 })
+    .onConflict(['chat_id', 'date'])
+    .merge({
+      total_seconds: db.raw('learning_daily_time.total_seconds + ?', [seconds]),
+      session_count: db.raw('learning_daily_time.session_count + 1'),
+    });
 
-  return getDailyTime(chatId, date)!;
+  return (await getDailyTime(chatId, date))!;
 }
 
-export function getDailyTime(chatId: string, date?: string): DailyTime | undefined {
-  const db = getDatabase();
+export async function getDailyTime(chatId: string, date?: string): Promise<DailyTime | undefined> {
+  const db = getKnex();
   const d = date ?? todayDateString();
-  return db.prepare(
-    'SELECT * FROM learning_daily_time WHERE chat_id = ? AND date = ?',
-  ).get(chatId, d) as DailyTime | undefined;
+  return db('learning_daily_time').where({ chat_id: chatId, date: d }).first();
 }
 
-export function getWeeklyTime(chatId: string): DailyTime[] {
-  const db = getDatabase();
+export async function getWeeklyTime(chatId: string): Promise<DailyTime[]> {
+  const db = getKnex();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  return db.prepare(
-    'SELECT * FROM learning_daily_time WHERE chat_id = ? AND date >= ? ORDER BY date',
-  ).all(chatId, sevenDaysAgo) as DailyTime[];
+  return db('learning_daily_time')
+    .where({ chat_id: chatId })
+    .where('date', '>=', sevenDaysAgo)
+    .orderBy('date');
 }
 
 /** Get least-recently-studied active plan for session rotation. */
-export function getLeastRecentPlan(chatId: string): LearningPlan | undefined {
-  const db = getDatabase();
-  return db.prepare(
-    `SELECT p.* FROM learning_plans p
-     LEFT JOIN learning_sessions s ON s.plan_id = p.id
-     WHERE p.chat_id = ? AND p.status = 'active'
-     GROUP BY p.id
-     ORDER BY COALESCE(MAX(s.started_at), 0) ASC
-     LIMIT 1`,
-  ).get(chatId) as LearningPlan | undefined;
+export async function getLeastRecentPlan(chatId: string): Promise<LearningPlan | undefined> {
+  const db = getKnex();
+  return db('learning_plans as p')
+    .leftJoin('learning_sessions as s', 's.plan_id', 'p.id')
+    .where({ 'p.chat_id': chatId, 'p.status': 'active' })
+    .groupBy('p.id')
+    .orderByRaw('COALESCE(MAX(s.started_at), 0) ASC')
+    .select('p.*')
+    .first();
 }
 
 /** Get plan with most overdue review topics. */
-export function getMostOverduePlan(chatId: string): LearningPlan | undefined {
-  const db = getDatabase();
+export async function getMostOverduePlan(chatId: string): Promise<(LearningPlan & { overdue_count: number }) | undefined> {
+  const db = getKnex();
   const now = Date.now();
-  return db.prepare(
-    `SELECT p.*, COUNT(t.id) as overdue_count FROM learning_plans p
-     JOIN learning_topics t ON t.plan_id = p.id
-     WHERE p.chat_id = ? AND p.status = 'active'
-       AND t.status = 'completed'
-       AND t.last_reviewed_at IS NOT NULL
-       AND t.last_reviewed_at < ?
-     GROUP BY p.id
-     ORDER BY overdue_count DESC
-     LIMIT 1`,
-  ).get(chatId, now - 24 * 60 * 60 * 1000) as (LearningPlan & { overdue_count: number }) | undefined;
+  return db('learning_plans as p')
+    .join('learning_topics as t', 't.plan_id', 'p.id')
+    .where({ 'p.chat_id': chatId, 'p.status': 'active', 't.status': 'completed' })
+    .whereNotNull('t.last_reviewed_at')
+    .where('t.last_reviewed_at', '<', now - 24 * 60 * 60 * 1000)
+    .groupBy('p.id')
+    .orderBy('overdue_count', 'desc')
+    .select('p.*', db.raw('COUNT(t.id) as overdue_count'))
+    .first() as unknown as (LearningPlan & { overdue_count: number }) | undefined;
 }
 
 /** Get plans that haven't had a session in the given number of days. */
-export function getStalePlans(chatId: string, staleDays: number = 7): LearningPlan[] {
-  const db = getDatabase();
+export async function getStalePlans(chatId: string, staleDays: number = 7): Promise<LearningPlan[]> {
+  const db = getKnex();
   const cutoff = Date.now() - staleDays * 24 * 60 * 60 * 1000;
-  return db.prepare(
-    `SELECT p.* FROM learning_plans p
-     LEFT JOIN learning_sessions s ON s.plan_id = p.id
-     WHERE p.chat_id = ? AND p.status = 'active'
-     GROUP BY p.id
-     HAVING COALESCE(MAX(s.started_at), p.created_at) < ?`,
-  ).all(chatId, cutoff) as LearningPlan[];
+  return db('learning_plans as p')
+    .leftJoin('learning_sessions as s', 's.plan_id', 'p.id')
+    .where({ 'p.chat_id': chatId, 'p.status': 'active' })
+    .groupBy('p.id')
+    .havingRaw('COALESCE(MAX(s.started_at), p.created_at) < ?', [cutoff])
+    .select('p.*');
 }

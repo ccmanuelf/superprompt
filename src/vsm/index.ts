@@ -3,7 +3,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from '../db.js';
+import { getKnex } from '../db-knex.js';
 import { logger } from '../logger.js';
 
 import type {
@@ -24,26 +24,29 @@ import type { TableInitializer } from '../core/interfaces.js';
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initVsmTables(): void {
-  const db = getDatabase();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS vsm_maps (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL DEFAULT '',
-      name TEXT NOT NULL,
-      config_json TEXT NOT NULL,
-      result_json TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_vsm_maps_name ON vsm_maps(name);
-  `);
+export async function initVsmTables(): Promise<void> {
+  const db = getKnex();
+
+  if (!(await db.schema.hasTable('vsm_maps'))) {
+    await db.schema.createTable('vsm_maps', (t) => {
+      t.text('id').primary();
+      t.text('chat_id').notNullable().defaultTo('');
+      t.text('name').notNullable();
+      t.text('config_json').notNullable();
+      t.text('result_json');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
+
+  await db.raw('CREATE INDEX IF NOT EXISTS idx_vsm_maps_name ON vsm_maps(name)');
 
   // Migration: add chat_id column if missing (for existing databases)
-  const cols = db.prepare("PRAGMA table_info(vsm_maps)").all() as Array<{ name: string }>;
-  if (!cols.some(c => c.name === 'chat_id')) {
-    db.exec("ALTER TABLE vsm_maps ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''");
-    db.exec('CREATE INDEX IF NOT EXISTS idx_vsm_maps_chat ON vsm_maps(chat_id, name)');
+  if (!(await db.schema.hasColumn('vsm_maps', 'chat_id'))) {
+    await db.schema.alterTable('vsm_maps', (t) => {
+      t.text('chat_id').notNullable().defaultTo('');
+    });
+    await db.raw('CREATE INDEX IF NOT EXISTS idx_vsm_maps_chat ON vsm_maps(chat_id, name)');
   }
 }
 
@@ -55,53 +58,58 @@ function genId(): string {
   return randomBytes(16).toString('hex');
 }
 
-export function saveVSM(
+export async function saveVSM(
   name: string,
   config: VSMConfig,
   result?: VSMAnalysis,
   chatId: string = '',
-): SavedVSM {
-  const db = getDatabase();
+): Promise<SavedVSM> {
+  const db = getKnex();
   const configJson = JSON.stringify(config);
   const resultJson = result ? JSON.stringify(result) : null;
 
-  const existing = db.prepare(
-    'SELECT * FROM vsm_maps WHERE name = ? COLLATE NOCASE AND chat_id = ?',
-  ).get(name, chatId) as SavedVSM | undefined;
+  const existing = await db('vsm_maps')
+    .whereRaw('LOWER(name) = LOWER(?)', [name])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedVSM | undefined;
 
   if (existing) {
-    db.prepare(
-      'UPDATE vsm_maps SET config_json = ?, result_json = ?, updated_at = ? WHERE id = ?',
-    ).run(configJson, resultJson, Date.now(), existing.id);
-    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: Date.now() };
+    const now = Date.now();
+    await db('vsm_maps')
+      .where({ id: existing.id })
+      .update({ config_json: configJson, result_json: resultJson, updated_at: now });
+    return { ...existing, config_json: configJson, result_json: resultJson ?? undefined, updated_at: now };
   }
 
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    'INSERT INTO vsm_maps (id, chat_id, name, config_json, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, chatId, name, configJson, resultJson, now, now);
+  await db('vsm_maps').insert({
+    id, chat_id: chatId, name, config_json: configJson, result_json: resultJson, created_at: now, updated_at: now,
+  });
   return { id, name, config_json: configJson, result_json: resultJson ?? undefined, created_at: now, updated_at: now };
 }
 
-export function getVSM(nameOrId: string, chatId: string = ''): SavedVSM | undefined {
-  const db = getDatabase();
-  return (
-    db.prepare('SELECT * FROM vsm_maps WHERE id = ?').get(nameOrId) ??
-    db.prepare('SELECT * FROM vsm_maps WHERE name = ? COLLATE NOCASE AND chat_id = ?').get(nameOrId, chatId)
-  ) as SavedVSM | undefined;
+export async function getVSM(nameOrId: string, chatId: string = ''): Promise<SavedVSM | undefined> {
+  const db = getKnex();
+  const byId = await db('vsm_maps').where({ id: nameOrId }).first();
+  if (byId) return byId as SavedVSM;
+  return await db('vsm_maps')
+    .whereRaw('LOWER(name) = LOWER(?)', [nameOrId])
+    .andWhere({ chat_id: chatId })
+    .first() as SavedVSM | undefined;
 }
 
-export function listVSMs(chatId: string = ''): SavedVSM[] {
-  return getDatabase()
-    .prepare('SELECT * FROM vsm_maps WHERE chat_id = ? ORDER BY updated_at DESC')
-    .all(chatId) as SavedVSM[];
+export async function listVSMs(chatId: string = ''): Promise<SavedVSM[]> {
+  const db = getKnex();
+  return await db('vsm_maps')
+    .where({ chat_id: chatId })
+    .orderBy('updated_at', 'desc') as SavedVSM[];
 }
 
-export function deleteVSM(id: string, chatId: string = ''): boolean {
-  return getDatabase()
-    .prepare('DELETE FROM vsm_maps WHERE id = ? AND chat_id = ?')
-    .run(id, chatId).changes > 0;
+export async function deleteVSM(id: string, chatId: string = ''): Promise<boolean> {
+  const db = getKnex();
+  const count = await db('vsm_maps').where({ id, chat_id: chatId }).del();
+  return count > 0;
 }
 
 // ── Chart Generation ─────────────────────────────────────────

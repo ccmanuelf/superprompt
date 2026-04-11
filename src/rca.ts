@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
@@ -53,36 +53,35 @@ export interface A3Report {
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initRcaTables(): void {
-  const db = getDatabase();
+export async function initRcaTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS rca_documents (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      method TEXT NOT NULL DEFAULT '5why',
-      problem_statement TEXT NOT NULL DEFAULT '',
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  if (!(await db.schema.hasTable('rca_documents'))) {
+    await db.schema.createTable('rca_documents', (t) => {
+      t.text('id').primary();
+      t.text('name').notNullable();
+      t.text('method').notNullable().defaultTo('5why');
+      t.text('problem_statement').notNullable().defaultTo('');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
 
-    CREATE TABLE IF NOT EXISTS rca_nodes (
-      id TEXT PRIMARY KEY,
-      doc_id TEXT NOT NULL,
-      parent_id TEXT,
-      node_type TEXT NOT NULL DEFAULT 'cause',
-      label TEXT NOT NULL,
-      detail TEXT NOT NULL DEFAULT '',
-      category TEXT NOT NULL DEFAULT '',
-      level INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (doc_id) REFERENCES rca_documents(id) ON DELETE CASCADE,
-      FOREIGN KEY (parent_id) REFERENCES rca_nodes(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_rca_nodes_doc ON rca_nodes(doc_id);
-    CREATE INDEX IF NOT EXISTS idx_rca_nodes_parent ON rca_nodes(parent_id);
-  `);
+  if (!(await db.schema.hasTable('rca_nodes'))) {
+    await db.schema.createTable('rca_nodes', (t) => {
+      t.text('id').primary();
+      t.text('doc_id').notNullable().references('id').inTable('rca_documents').onDelete('CASCADE');
+      t.text('parent_id').references('id').inTable('rca_nodes').onDelete('CASCADE');
+      t.text('node_type').notNullable().defaultTo('cause');
+      t.text('label').notNullable();
+      t.text('detail').notNullable().defaultTo('');
+      t.text('category').notNullable().defaultTo('');
+      t.integer('level').notNullable().defaultTo(0);
+      t.integer('created_at').notNullable();
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_rca_nodes_doc ON rca_nodes(doc_id)');
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_rca_nodes_parent ON rca_nodes(parent_id)');
+  }
 }
 
 export const rcaTableInit: TableInitializer = { name: 'rca', initTables: initRcaTables };
@@ -91,44 +90,47 @@ function genId(): string { return randomBytes(16).toString('hex'); }
 
 // ── CRUD ─────────────────────────────────────────────────────
 
-export function createRcaDoc(name: string, method: RcaMethod, problem: string = ''): RcaDocument {
-  const db = getDatabase();
+export async function createRcaDoc(name: string, method: RcaMethod, problem: string = ''): Promise<RcaDocument> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    'INSERT INTO rca_documents (id, name, method, problem_statement, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(id, name, method, problem, now, now);
+  await db('rca_documents').insert({
+    id, name, method, problem_statement: problem, created_at: now, updated_at: now,
+  });
   return { id, name, method, problem_statement: problem, created_at: now, updated_at: now };
 }
 
-export function getRcaDocByName(name: string): RcaDocument | undefined {
-  return getDatabase().prepare('SELECT * FROM rca_documents WHERE name = ? COLLATE NOCASE').get(name) as RcaDocument | undefined;
+export async function getRcaDocByName(name: string): Promise<RcaDocument | undefined> {
+  return await getKnex()('rca_documents').whereRaw('LOWER(name) = LOWER(?)', [name]).first() as RcaDocument | undefined;
 }
 
-export function listRcaDocs(): RcaDocument[] {
-  return getDatabase().prepare('SELECT * FROM rca_documents ORDER BY updated_at DESC').all() as RcaDocument[];
+export async function listRcaDocs(): Promise<RcaDocument[]> {
+  return await getKnex()('rca_documents').orderBy('updated_at', 'desc') as RcaDocument[];
 }
 
-export function deleteRcaDoc(id: string): boolean {
-  return getDatabase().prepare('DELETE FROM rca_documents WHERE id = ?').run(id).changes > 0;
+export async function deleteRcaDoc(id: string): Promise<boolean> {
+  const count = await getKnex()('rca_documents').where({ id }).del();
+  return count > 0;
 }
 
-export function addRcaNode(
+export async function addRcaNode(
   docId: string, parentId: string | null, nodeType: string, label: string,
   detail: string = '', category: string = '', level: number = 0,
-): RcaNode {
-  const db = getDatabase();
+): Promise<RcaNode> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    'INSERT INTO rca_nodes (id, doc_id, parent_id, node_type, label, detail, category, level, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, docId, parentId, nodeType, label, detail, category, level, now);
-  db.prepare('UPDATE rca_documents SET updated_at = ? WHERE id = ?').run(now, docId);
+  await db('rca_nodes').insert({
+    id, doc_id: docId, parent_id: parentId, node_type: nodeType,
+    label, detail, category, level, created_at: now,
+  });
+  await db('rca_documents').where({ id: docId }).update({ updated_at: now });
   return { id, doc_id: docId, parent_id: parentId, node_type: nodeType, label, detail, category, level, created_at: now };
 }
 
-export function getRcaNodes(docId: string): RcaNode[] {
-  return getDatabase().prepare('SELECT * FROM rca_nodes WHERE doc_id = ? ORDER BY level, created_at').all(docId) as RcaNode[];
+export async function getRcaNodes(docId: string): Promise<RcaNode[]> {
+  return await getKnex()('rca_nodes')
+    .where({ doc_id: docId }).orderBy('level').orderBy('created_at') as RcaNode[];
 }
 
 // ── 5 Whys ───────────────────────────────────────────────────
@@ -137,15 +139,15 @@ export function getRcaNodes(docId: string): RcaNode[] {
  * Build a 5 Whys chain. Returns the root node and the chain.
  * Exported for testing.
  */
-export function build5Whys(
+export async function build5Whys(
   docId: string, problem: string, whys: string[],
-): { root: RcaNode; chain: RcaNode[] } {
-  const root = addRcaNode(docId, null, 'root', problem, '', '', 0);
+): Promise<{ root: RcaNode; chain: RcaNode[] }> {
+  const root = await addRcaNode(docId, null, 'root', problem, '', '', 0);
   const chain: RcaNode[] = [root];
   let parentId = root.id;
 
   for (let i = 0; i < whys.length; i++) {
-    const node = addRcaNode(docId, parentId, 'why', whys[i], '', '', i + 1);
+    const node = await addRcaNode(docId, parentId, 'why', whys[i], '', '', i + 1);
     chain.push(node);
     parentId = node.id;
   }
@@ -162,23 +164,23 @@ export type FishboneCategory = typeof FISHBONE_6M[number];
  * Build an Ishikawa/Fishbone diagram structure.
  * Exported for testing.
  */
-export function buildFishbone(
+export async function buildFishbone(
   docId: string, problem: string,
   causes: Array<{ category: FishboneCategory; cause: string; sub_causes?: string[] }>,
-): { root: RcaNode; nodes: RcaNode[] } {
-  const root = addRcaNode(docId, null, 'root', problem, '', '', 0);
+): Promise<{ root: RcaNode; nodes: RcaNode[] }> {
+  const root = await addRcaNode(docId, null, 'root', problem, '', '', 0);
   const nodes: RcaNode[] = [root];
 
   for (const c of causes) {
-    const catNode = addRcaNode(docId, root.id, 'category', c.category, '', c.category, 1);
+    const catNode = await addRcaNode(docId, root.id, 'category', c.category, '', c.category, 1);
     nodes.push(catNode);
 
-    const causeNode = addRcaNode(docId, catNode.id, 'cause', c.cause, '', c.category, 2);
+    const causeNode = await addRcaNode(docId, catNode.id, 'cause', c.cause, '', c.category, 2);
     nodes.push(causeNode);
 
     if (c.sub_causes) {
       for (const sub of c.sub_causes) {
-        nodes.push(addRcaNode(docId, causeNode.id, 'cause', sub, '', c.category, 3));
+        nodes.push(await addRcaNode(docId, causeNode.id, 'cause', sub, '', c.category, 3));
       }
     }
   }
@@ -192,9 +194,9 @@ export function buildFishbone(
  * Build a PDCA cycle document.
  * Exported for testing.
  */
-export function buildPdca(docId: string, cycle: PdcaCycle): RcaNode[] {
+export async function buildPdca(docId: string, cycle: PdcaCycle): Promise<RcaNode[]> {
   const nodes: RcaNode[] = [];
-  const root = addRcaNode(docId, null, 'root', 'PDCA Cycle', '', '', 0);
+  const root = await addRcaNode(docId, null, 'root', 'PDCA Cycle', '', '', 0);
   nodes.push(root);
 
   const phases = [
@@ -205,10 +207,10 @@ export function buildPdca(docId: string, cycle: PdcaCycle): RcaNode[] {
   ];
 
   for (const phase of phases) {
-    const phaseNode = addRcaNode(docId, root.id, phase.type, phase.label, '', '', 1);
+    const phaseNode = await addRcaNode(docId, root.id, phase.type, phase.label, '', '', 1);
     nodes.push(phaseNode);
     for (const item of phase.items) {
-      nodes.push(addRcaNode(docId, phaseNode.id, 'action', item, '', phase.type, 2));
+      nodes.push(await addRcaNode(docId, phaseNode.id, 'action', item, '', phase.type, 2));
     }
   }
 
@@ -221,12 +223,12 @@ export function buildPdca(docId: string, cycle: PdcaCycle): RcaNode[] {
  * Build a Fault Tree with AND/OR gate logic.
  * Exported for testing.
  */
-export function buildFaultTree(
+export async function buildFaultTree(
   docId: string, topEvent: string,
   gates: Array<{ gate_type: 'and' | 'or'; label: string; parent_label?: string; events: string[] }>,
-): RcaNode[] {
+): Promise<RcaNode[]> {
   const nodes: RcaNode[] = [];
-  const root = addRcaNode(docId, null, 'root', topEvent, '', '', 0);
+  const root = await addRcaNode(docId, null, 'root', topEvent, '', '', 0);
   nodes.push(root);
 
   const labelToId = new Map<string, string>();
@@ -234,12 +236,12 @@ export function buildFaultTree(
 
   for (const gate of gates) {
     const parentId = gate.parent_label ? labelToId.get(gate.parent_label) || root.id : root.id;
-    const gateNode = addRcaNode(docId, parentId, `gate_${gate.gate_type}`, gate.label, '', gate.gate_type, 1);
+    const gateNode = await addRcaNode(docId, parentId, `gate_${gate.gate_type}`, gate.label, '', gate.gate_type, 1);
     nodes.push(gateNode);
     labelToId.set(gate.label, gateNode.id);
 
     for (const event of gate.events) {
-      const eventNode = addRcaNode(docId, gateNode.id, 'cause', event, '', '', 2);
+      const eventNode = await addRcaNode(docId, gateNode.id, 'cause', event, '', '', 2);
       nodes.push(eventNode);
       labelToId.set(event, eventNode.id);
     }
@@ -254,19 +256,19 @@ export function buildFaultTree(
  * Build a Mind Map brainstorm structure.
  * Exported for testing.
  */
-export function buildMindMap(
+export async function buildMindMap(
   docId: string, centralTopic: string,
   branches: Array<{ topic: string; subtopics: string[] }>,
-): RcaNode[] {
+): Promise<RcaNode[]> {
   const nodes: RcaNode[] = [];
-  const root = addRcaNode(docId, null, 'root', centralTopic, '', '', 0);
+  const root = await addRcaNode(docId, null, 'root', centralTopic, '', '', 0);
   nodes.push(root);
 
   for (const branch of branches) {
-    const branchNode = addRcaNode(docId, root.id, 'branch', branch.topic, '', '', 1);
+    const branchNode = await addRcaNode(docId, root.id, 'branch', branch.topic, '', '', 1);
     nodes.push(branchNode);
     for (const sub of branch.subtopics) {
-      nodes.push(addRcaNode(docId, branchNode.id, 'topic', sub, '', '', 2));
+      nodes.push(await addRcaNode(docId, branchNode.id, 'topic', sub, '', '', 2));
     }
   }
 

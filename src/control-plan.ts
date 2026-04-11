@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from './db.js';
+import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import type { TableInitializer } from './core/interfaces.js';
 
@@ -58,55 +58,55 @@ export interface ControlPlanSummary {
 
 // ── Database ─────────────────────────────────────────────────
 
-export function initControlPlanTables(): void {
-  const db = getDatabase();
+export async function initControlPlanTables(): Promise<void> {
+  const db = getKnex();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS control_plans (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      process_type TEXT NOT NULL DEFAULT 'semi_automated',
-      product TEXT NOT NULL DEFAULT '',
-      applicable_standard TEXT NOT NULL DEFAULT '',
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  if (!(await db.schema.hasTable('control_plans'))) {
+    await db.schema.createTable('control_plans', (t) => {
+      t.text('id').primary();
+      t.text('name').notNullable();
+      t.text('process_type').notNullable().defaultTo('semi_automated');
+      t.text('product').notNullable().defaultTo('');
+      t.text('applicable_standard').notNullable().defaultTo('');
+      t.integer('created_at').notNullable();
+      t.integer('updated_at').notNullable();
+    });
+  }
 
-    CREATE TABLE IF NOT EXISTS voc_items (
-      id TEXT PRIMARY KEY,
-      plan_id TEXT NOT NULL,
-      requirement TEXT NOT NULL,
-      category TEXT NOT NULL DEFAULT 'other',
-      priority INTEGER NOT NULL DEFAULT 3,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (plan_id) REFERENCES control_plans(id) ON DELETE CASCADE
-    );
+  if (!(await db.schema.hasTable('voc_items'))) {
+    await db.schema.createTable('voc_items', (t) => {
+      t.text('id').primary();
+      t.text('plan_id').notNullable().references('id').inTable('control_plans').onDelete('CASCADE');
+      t.text('requirement').notNullable();
+      t.text('category').notNullable().defaultTo('other');
+      t.integer('priority').notNullable().defaultTo(3);
+      t.integer('created_at').notNullable();
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_voc_plan ON voc_items(plan_id)');
+  }
 
-    CREATE TABLE IF NOT EXISTS ctq_items (
-      id TEXT PRIMARY KEY,
-      plan_id TEXT NOT NULL,
-      voc_id TEXT NOT NULL,
-      ctq_name TEXT NOT NULL,
-      measurement_method TEXT NOT NULL DEFAULT '',
-      unit TEXT NOT NULL DEFAULT '',
-      usl REAL,
-      lsl REAL,
-      target REAL,
-      severity INTEGER NOT NULL DEFAULT 5,
-      occurrence INTEGER NOT NULL DEFAULT 5,
-      detection INTEGER NOT NULL DEFAULT 5,
-      rpn INTEGER NOT NULL DEFAULT 125,
-      chart_type TEXT NOT NULL DEFAULT 'i_mr',
-      sampling_strategy TEXT NOT NULL DEFAULT '',
-      reaction_plan TEXT NOT NULL DEFAULT '',
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (plan_id) REFERENCES control_plans(id) ON DELETE CASCADE,
-      FOREIGN KEY (voc_id) REFERENCES voc_items(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_voc_plan ON voc_items(plan_id);
-    CREATE INDEX IF NOT EXISTS idx_ctq_plan ON ctq_items(plan_id);
-  `);
+  if (!(await db.schema.hasTable('ctq_items'))) {
+    await db.schema.createTable('ctq_items', (t) => {
+      t.text('id').primary();
+      t.text('plan_id').notNullable().references('id').inTable('control_plans').onDelete('CASCADE');
+      t.text('voc_id').notNullable().references('id').inTable('voc_items').onDelete('CASCADE');
+      t.text('ctq_name').notNullable();
+      t.text('measurement_method').notNullable().defaultTo('');
+      t.text('unit').notNullable().defaultTo('');
+      t.float('usl');
+      t.float('lsl');
+      t.float('target');
+      t.integer('severity').notNullable().defaultTo(5);
+      t.integer('occurrence').notNullable().defaultTo(5);
+      t.integer('detection').notNullable().defaultTo(5);
+      t.integer('rpn').notNullable().defaultTo(125);
+      t.text('chart_type').notNullable().defaultTo('i_mr');
+      t.text('sampling_strategy').notNullable().defaultTo('');
+      t.text('reaction_plan').notNullable().defaultTo('');
+      t.integer('created_at').notNullable();
+    });
+    await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_ctq_plan ON ctq_items(plan_id)');
+  }
 }
 
 export const controlPlanTableInit: TableInitializer = { name: 'control-plan', initTables: initControlPlanTables };
@@ -117,48 +117,51 @@ function genId(): string {
 
 // ── CRUD ─────────────────────────────────────────────────────
 
-export function createControlPlan(
+export async function createControlPlan(
   name: string, processType: ProcessType = 'semi_automated',
   product: string = '', standard: string = '',
-): ControlPlan {
-  const db = getDatabase();
+): Promise<ControlPlan> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    'INSERT INTO control_plans (id, name, process_type, product, applicable_standard, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, name, processType, product, standard, now, now);
+  await db('control_plans').insert({
+    id, name, process_type: processType, product, applicable_standard: standard, created_at: now, updated_at: now,
+  });
   return { id, name, process_type: processType, product, applicable_standard: standard, created_at: now, updated_at: now };
 }
 
-export function getControlPlanByName(name: string): ControlPlan | undefined {
-  return getDatabase().prepare('SELECT * FROM control_plans WHERE name = ? COLLATE NOCASE').get(name) as ControlPlan | undefined;
+export async function getControlPlanByName(name: string): Promise<ControlPlan | undefined> {
+  return await getKnex()('control_plans').whereRaw('LOWER(name) = LOWER(?)', [name]).first() as ControlPlan | undefined;
 }
 
-export function listControlPlans(): ControlPlan[] {
-  return getDatabase().prepare('SELECT * FROM control_plans ORDER BY updated_at DESC').all() as ControlPlan[];
+export async function listControlPlans(): Promise<ControlPlan[]> {
+  return await getKnex()('control_plans').orderBy('updated_at', 'desc') as ControlPlan[];
 }
 
-export function deleteControlPlan(id: string): boolean {
-  return getDatabase().prepare('DELETE FROM control_plans WHERE id = ?').run(id).changes > 0;
+export async function deleteControlPlan(id: string): Promise<boolean> {
+  const count = await getKnex()('control_plans').where({ id }).del();
+  return count > 0;
 }
 
-export function addVocItem(planId: string, requirement: string, category: VocCategory = 'other', priority: number = 3): VocItem {
-  const db = getDatabase();
+export async function addVocItem(planId: string, requirement: string, category: VocCategory = 'other', priority: number = 3): Promise<VocItem> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
-  db.prepare(
-    'INSERT INTO voc_items (id, plan_id, requirement, category, priority, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(id, planId, requirement, category, Math.min(Math.max(priority, 1), 5), now);
-  db.prepare('UPDATE control_plans SET updated_at = ? WHERE id = ?').run(now, planId);
+  await db('voc_items').insert({
+    id, plan_id: planId, requirement, category,
+    priority: Math.min(Math.max(priority, 1), 5), created_at: now,
+  });
+  await db('control_plans').where({ id: planId }).update({ updated_at: now });
   return { id, plan_id: planId, requirement, category, priority };
 }
 
-export function getVocItems(planId: string): VocItem[] {
-  return getDatabase().prepare('SELECT * FROM voc_items WHERE plan_id = ? ORDER BY priority DESC').all(planId) as VocItem[];
+export async function getVocItems(planId: string): Promise<VocItem[]> {
+  return await getKnex()('voc_items')
+    .where({ plan_id: planId }).orderBy('priority', 'desc') as VocItem[];
 }
 
-export function addCtqItem(planId: string, vocId: string, ctq: Partial<CtqItem>): CtqItem {
-  const db = getDatabase();
+export async function addCtqItem(planId: string, vocId: string, ctq: Partial<CtqItem>): Promise<CtqItem> {
+  const db = getKnex();
   const id = genId();
   const now = Date.now();
 
@@ -170,18 +173,19 @@ export function addCtqItem(planId: string, vocId: string, ctq: Partial<CtqItem>)
   const chartType = ctq.chart_type || recommendChartType(ctq.usl, ctq.lsl);
 
   // Auto-generate sampling and reaction from plan's process type if not provided
-  const plan = db.prepare('SELECT process_type FROM control_plans WHERE id = ?').get(planId) as { process_type: string } | undefined;
+  const plan = await db('control_plans').select('process_type').where({ id: planId }).first() as { process_type: string } | undefined;
   const processType = (plan?.process_type || 'semi_automated') as ProcessType;
   const sampling = ctq.sampling_strategy || recommendSampling(processType, rpn, severity, detection);
   const reaction = ctq.reaction_plan || recommendReaction(severity, chartType as ChartRecommendation);
 
-  db.prepare(
-    `INSERT INTO ctq_items (id, plan_id, voc_id, ctq_name, measurement_method, unit, usl, lsl, target, severity, occurrence, detection, rpn, chart_type, sampling_strategy, reaction_plan, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, planId, vocId, ctq.ctq_name || '', ctq.measurement_method || '', ctq.unit || '',
-    ctq.usl ?? null, ctq.lsl ?? null, ctq.target ?? null,
-    severity, occurrence, detection, rpn, chartType, sampling, reaction, now);
-  db.prepare('UPDATE control_plans SET updated_at = ? WHERE id = ?').run(now, planId);
+  await db('ctq_items').insert({
+    id, plan_id: planId, voc_id: vocId,
+    ctq_name: ctq.ctq_name || '', measurement_method: ctq.measurement_method || '',
+    unit: ctq.unit || '', usl: ctq.usl ?? null, lsl: ctq.lsl ?? null, target: ctq.target ?? null,
+    severity, occurrence, detection, rpn, chart_type: chartType,
+    sampling_strategy: sampling, reaction_plan: reaction, created_at: now,
+  });
+  await db('control_plans').where({ id: planId }).update({ updated_at: now });
 
   return {
     id, plan_id: planId, voc_id: vocId,
@@ -192,8 +196,9 @@ export function addCtqItem(planId: string, vocId: string, ctq: Partial<CtqItem>)
   };
 }
 
-export function getCtqItems(planId: string): CtqItem[] {
-  return getDatabase().prepare('SELECT * FROM ctq_items WHERE plan_id = ? ORDER BY rpn DESC').all(planId) as CtqItem[];
+export async function getCtqItems(planId: string): Promise<CtqItem[]> {
+  return await getKnex()('ctq_items')
+    .where({ plan_id: planId }).orderBy('rpn', 'desc') as CtqItem[];
 }
 
 // ── Recommendations Engine ───────────────────────────────────
@@ -300,13 +305,13 @@ export function suggestStandard(product: string, processType: ProcessType): stri
  * Build a complete control plan summary with risk analysis.
  * Exported for testing.
  */
-export function buildControlPlanSummary(planId: string): ControlPlanSummary {
-  const db = getDatabase();
-  const plan = db.prepare('SELECT * FROM control_plans WHERE id = ?').get(planId) as ControlPlan;
+export async function buildControlPlanSummary(planId: string): Promise<ControlPlanSummary> {
+  const db = getKnex();
+  const plan = await db('control_plans').where({ id: planId }).first() as ControlPlan;
   if (!plan) throw new Error('Control plan not found.');
 
-  const vocItems = getVocItems(planId);
-  const ctqItems = getCtqItems(planId);
+  const vocItems = await getVocItems(planId);
+  const ctqItems = await getCtqItems(planId);
 
   // Risk summary
   let high = 0, medium = 0, low = 0;

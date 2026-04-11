@@ -65,10 +65,10 @@ The tool auto-generates: RPN scores, chart type recommendations, sampling strate
   },
 };
 
-export function spcSetup(
+export async function spcSetup(
   args: Record<string, unknown>,
   chatId: string,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   try {
     const action = args.action as string;
 
@@ -81,10 +81,10 @@ export function spcSetup(
         let standard = (args.standard as string) || '';
         if (!standard && product) standard = suggestStandard(product, processType);
 
-        const existing = getControlPlanByName(name);
+        const existing = await getControlPlanByName(name);
         if (existing) return { error: `Plan "${name}" already exists. Use a different name.` };
 
-        const plan = createControlPlan(name, processType, product, standard);
+        const plan = await createControlPlan(name, processType, product, standard);
         return {
           success: true,
           plan_id: plan.id,
@@ -96,17 +96,17 @@ export function spcSetup(
         const name = args.plan_name as string;
         if (!name) return { error: 'plan_name is required.' };
         if (!args.requirement) return { error: 'requirement is required.' };
-        const plan = getControlPlanByName(name);
+        const plan = await getControlPlanByName(name);
         if (!plan) return { error: `Plan "${name}" not found.` };
 
-        const voc = addVocItem(
+        const voc = await addVocItem(
           plan.id,
           args.requirement as string,
           (args.category as VocCategory) || 'other',
           (args.priority as number) || 3,
         );
 
-        const vocCount = getVocItems(plan.id).length;
+        const vocCount = (await getVocItems(plan.id)).length;
         return {
           success: true,
           voc_id: voc.id,
@@ -120,11 +120,11 @@ export function spcSetup(
         if (!args.ctq_name) return { error: 'ctq_name is required.' };
         if (!args.voc_requirement) return { error: 'voc_requirement is required to link CTQ to VOC.' };
 
-        const plan = getControlPlanByName(name);
+        const plan = await getControlPlanByName(name);
         if (!plan) return { error: `Plan "${name}" not found.` };
 
         // Find VOC by matching requirement text
-        const vocItems = getVocItems(plan.id);
+        const vocItems = await getVocItems(plan.id);
         const voc = vocItems.find((v) => v.requirement.toLowerCase().includes((args.voc_requirement as string).toLowerCase()));
         if (!voc) return { error: `No VOC matching "${args.voc_requirement}". Add it first with add_voc.` };
 
@@ -138,7 +138,7 @@ export function spcSetup(
         const chartType = args.usl !== undefined && args.lsl !== undefined ? 'xbar_r' : 'p';
         const reaction = recommendReaction(severity, chartType as ChartRecommendation);
 
-        const ctq = addCtqItem(plan.id, voc.id, {
+        const ctq = await addCtqItem(plan.id, voc.id, {
           ctq_name: args.ctq_name as string,
           measurement_method: (args.measurement_method as string) || '',
           unit: (args.unit as string) || '',
@@ -167,20 +167,20 @@ export function spcSetup(
       case 'summary': {
         const name = args.plan_name as string;
         if (!name) return { error: 'plan_name is required.' };
-        const plan = getControlPlanByName(name);
+        const plan = await getControlPlanByName(name);
         if (!plan) return { error: `Plan "${name}" not found.` };
 
-        const summary = buildControlPlanSummary(plan.id);
+        const summary = await buildControlPlanSummary(plan.id);
         return { success: true, summary: formatControlPlan(summary, false), risk: summary.risk_summary };
       }
 
       case 'export': {
         const name = args.plan_name as string;
         if (!name) return { error: 'plan_name is required.' };
-        const plan = getControlPlanByName(name);
+        const plan = await getControlPlanByName(name);
         if (!plan) return { error: `Plan "${name}" not found.` };
 
-        const summary = buildControlPlanSummary(plan.id);
+        const summary = await buildControlPlanSummary(plan.id);
         const csv = exportControlPlanCsv(summary);
         return { success: true, csv, message: `Control plan exported (${summary.ctq_items.length} CTQs).` };
       }
@@ -193,7 +193,7 @@ export function spcSetup(
       }
 
       case 'list': {
-        const plans = listControlPlans();
+        const plans = await listControlPlans();
         if (plans.length === 0) return { message: 'No control plans found. Create one with create action.' };
         return {
           plans: plans.map((p) => ({

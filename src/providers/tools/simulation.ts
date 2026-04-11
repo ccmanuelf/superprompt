@@ -56,9 +56,9 @@ export async function productionSimulation(
         const results = calculateAllBlocks(config, metrics, report, durationSeconds);
 
         if (args.scenario_name) {
-          const scenario = saveScenario(args.scenario_name as string, config);
+          const scenario = await saveScenario(args.scenario_name as string, config);
           const { saveSimResult } = await import('../../simulation/index.js');
-          saveSimResult(scenario.id, 'single', results);
+          await saveSimResult(scenario.id, 'single', results);
         }
 
         return {
@@ -120,17 +120,17 @@ export async function productionSimulation(
       }
 
       case 'list': {
-        const scenarios = listScenarios();
+        const scenarios = await listScenarios();
         if (scenarios.length === 0) return { message: 'No saved scenarios.' };
         return { scenarios: scenarios.map(s => ({ name: s.name, updated: new Date(s.updated_at).toLocaleString() })) };
       }
 
       case 'status': {
         if (!args.scenario_name) return { error: 'scenario_name is required.' };
-        const scenario = getScenarioByName(args.scenario_name as string);
+        const scenario = await getScenarioByName(args.scenario_name as string);
         if (!scenario) return { error: `Scenario "${args.scenario_name}" not found.` };
         const { getSimResults } = await import('../../simulation/index.js');
-        const results = getSimResults(scenario.id);
+        const results = await getSimResults(scenario.id);
         return {
           name: scenario.name,
           config: JSON.parse(scenario.config_json),

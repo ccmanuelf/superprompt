@@ -1,6 +1,6 @@
 import type { ProviderRouter } from './providers/router.js';
 import type { AIResponse } from './providers/types.js';
-import { insertEpisode } from './db.js';
+import { insertEpisode } from './db-core.js';
 import { generateEmbedding } from './embeddings.js';
 import { logger } from './logger.js';
 
@@ -441,7 +441,7 @@ async function storeOrchestrationEpisode(
     if (emb) embedding = emb;
   } catch { /* non-critical */ }
 
-  insertEpisode(
+  await insertEpisode(
     chatId,
     summary,
     keyFacts.length > 0 ? keyFacts : null,

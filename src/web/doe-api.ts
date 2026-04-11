@@ -26,16 +26,16 @@ export async function handleDoeApi(
   const route = urlPath.replace('/api/doe', '') || '/';
 
   try {
-    if (req.method === 'GET') return handleGet(route, res, chatId);
+    if (req.method === 'GET') return await handleGet(route, res, chatId);
     if (req.method === 'POST') {
       const body = await readBody(req);
       return await handlePost(route, body, res, chatId);
     }
     if (req.method === 'PUT') {
       const body = await readBody(req);
-      return handlePut(route, body, res, chatId);
+      return await handlePut(route, body, res, chatId);
     }
-    if (req.method === 'DELETE') return handleDelete(route, res, chatId);
+    if (req.method === 'DELETE') return await handleDelete(route, res, chatId);
     json(res, 405, { error: 'Method not allowed' });
     return true;
   } catch (err) {
@@ -46,7 +46,7 @@ export async function handleDoeApi(
   }
 }
 
-function handleGet(route: string, res: ServerResponse, chatId: string): boolean {
+async function handleGet(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   if (route === '/' || route === '/info') {
     json(res, 200, {
       engine: 'Design of Experiments v1.0',
@@ -56,7 +56,7 @@ function handleGet(route: string, res: ServerResponse, chatId: string): boolean 
   }
   if (route === '/experiments') {
     json(res, 200, {
-      experiments: listDOEs(chatId).map((e) => ({
+      experiments: (await listDOEs(chatId)).map((e) => ({
         id: e.id, name: e.name, has_result: !!e.result_json,
         created_at: e.created_at, updated_at: e.updated_at,
       })),
@@ -65,7 +65,7 @@ function handleGet(route: string, res: ServerResponse, chatId: string): boolean 
   }
   const match = route.match(/^\/experiments\/(.+)$/);
   if (match) {
-    const exp = getDOE(match[1], chatId);
+    const exp = await getDOE(match[1], chatId);
     if (!exp) { json(res, 404, { error: 'Not found' }); return true; }
     json(res, 200, {
       ...exp, config: JSON.parse(exp.config_json),
@@ -89,7 +89,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         return true;
       }
       const matrix = generateMatrix(config);
-      if (config.name) saveDOE(config.name, { config, matrix }, undefined, chatId);
+      if (config.name) await saveDOE(config.name, { config, matrix }, undefined, chatId);
       json(res, 200, { success: true, matrix });
       return true;
     }
@@ -118,7 +118,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         }
       } catch (err) { logger.warn({ err }, 'DOE chart generation failed'); }
 
-      if (config.name) saveDOE(config.name, { config, matrix }, analysis, chatId);
+      if (config.name) await saveDOE(config.name, { config, matrix }, analysis, chatId);
 
       json(res, 200, {
         success: true, analysis,
@@ -133,7 +133,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
       const config = data.config;
       const name = (data.name as string) || (config as Record<string, unknown>)?.name as string;
       if (!name || !config) { json(res, 400, { error: 'name and config required' }); return true; }
-      const saved = saveDOE(name, config, undefined, chatId);
+      const saved = await saveDOE(name, config, undefined, chatId);
       json(res, 201, { success: true, experiment: { id: saved.id, name: saved.name } });
       return true;
     }
@@ -145,10 +145,10 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
 }
 
 // PUT to update response data in runs
-function handlePut(route: string, body: unknown, res: ServerResponse, chatId: string): boolean {
+async function handlePut(route: string, body: unknown, res: ServerResponse, chatId: string): Promise<boolean> {
   const match = route.match(/^\/experiments\/(.+)\/responses$/);
   if (match) {
-    const exp = getDOE(match[1], chatId);
+    const exp = await getDOE(match[1], chatId);
     if (!exp) { json(res, 404, { error: 'Not found' }); return true; }
 
     const data = body as Record<string, unknown>;
@@ -162,7 +162,7 @@ function handlePut(route: string, body: unknown, res: ServerResponse, chatId: st
           run.responses = { ...run.responses, ...runResponses };
         }
       }
-      saveDOE(exp.name, config, undefined, chatId);
+      await saveDOE(exp.name, config, undefined, chatId);
     }
 
     json(res, 200, { success: true });
@@ -172,10 +172,10 @@ function handlePut(route: string, body: unknown, res: ServerResponse, chatId: st
   return true;
 }
 
-function handleDelete(route: string, res: ServerResponse, chatId: string): boolean {
+async function handleDelete(route: string, res: ServerResponse, chatId: string): Promise<boolean> {
   const match = route.match(/^\/experiments\/(.+)$/);
   if (match) {
-    const d = deleteDOE(match[1], chatId);
+    const d = await deleteDOE(match[1], chatId);
     json(res, d ? 200 : 404, d ? { success: true } : { error: 'Not found' });
     return true;
   }

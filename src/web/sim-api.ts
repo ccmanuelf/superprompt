@@ -98,7 +98,7 @@ async function handleGet(route: string, res: ServerResponse, chatId: string): Pr
     }
 
     case '/scenarios': {
-      const scenarios = listScenarios(chatId);
+      const scenarios = await listScenarios(chatId);
       jsonResponse(res, 200, {
         scenarios: scenarios.map((s) => ({
           id: s.id,
@@ -114,7 +114,7 @@ async function handleGet(route: string, res: ServerResponse, chatId: string): Pr
       const scenarioMatch = route.match(/^\/scenarios\/(.+)$/);
       if (scenarioMatch) {
         const name = decodeURIComponent(scenarioMatch[1]);
-        const scenario = getScenarioByName(name, chatId);
+        const scenario = await getScenarioByName(name, chatId);
         if (!scenario) {
           jsonResponse(res, 404, { error: `Scenario "${name}" not found` });
           return true;
@@ -123,7 +123,7 @@ async function handleGet(route: string, res: ServerResponse, chatId: string): Pr
           id: scenario.id,
           name: scenario.name,
           config: JSON.parse(scenario.config_json),
-          results: getSimResults(scenario.id).map((r) => ({
+          results: (await getSimResults(scenario.id)).map((r) => ({
             type: r.result_type,
             data: JSON.parse(r.result_json),
             created: new Date(r.created_at).toISOString(),
@@ -167,8 +167,8 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
       // Auto-save if scenario name provided
       const scenarioName = body.scenario_name as string;
       if (scenarioName) {
-        const scenario = saveScenario(scenarioName, config, chatId);
-        saveSimResult(scenario.id, 'single', results);
+        const scenario = await saveScenario(scenarioName, config, chatId);
+        await saveSimResult(scenario.id, 'single', results);
       }
 
       jsonResponse(res, 200, { success: true, results, validation_report: report, message: 'Simulation complete' });
@@ -194,8 +194,8 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
 
       const scenarioName = body.scenario_name as string;
       if (scenarioName) {
-        const scenario = saveScenario(scenarioName, config, chatId);
-        saveSimResult(scenario.id, 'monte_carlo', {
+        const scenario = await saveScenario(scenarioName, config, chatId);
+        await saveSimResult(scenario.id, 'monte_carlo', {
           replications: mcResults.replications,
           throughput: mcResults.throughput,
           cycle_time: mcResults.cycle_time,
@@ -330,7 +330,7 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
       const name = body.name as string;
       const config = body.config as SimulationConfig;
       if (!name || !config) { jsonResponse(res, 400, { error: 'name and config are required' }); return true; }
-      const scenario = saveScenario(name, config, chatId);
+      const scenario = await saveScenario(name, config, chatId);
       jsonResponse(res, 200, { success: true, id: scenario.id, name: scenario.name });
       return true;
     }
@@ -347,12 +347,12 @@ async function handleDelete(route: string, res: ServerResponse, chatId: string):
   const scenarioMatch = route.match(/^\/scenarios\/(.+)$/);
   if (scenarioMatch) {
     const name = decodeURIComponent(scenarioMatch[1]);
-    const scenario = getScenarioByName(name, chatId);
+    const scenario = await getScenarioByName(name, chatId);
     if (!scenario) {
       jsonResponse(res, 404, { error: `Scenario "${name}" not found` });
       return true;
     }
-    deleteScenario(scenario.id, chatId);
+    await deleteScenario(scenario.id, chatId);
     jsonResponse(res, 200, { success: true });
     return true;
   }

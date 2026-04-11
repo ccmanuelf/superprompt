@@ -1,4 +1,4 @@
-import { getUserTool, getToolRevisions, updateUserTool, insertToolRevision, type UserTool } from '../db.js';
+import { getUserTool, getToolRevisions, updateUserTool, insertToolRevision, type UserTool } from '../db-core.js';
 import { logger, getRecentLogs } from '../logger.js';
 import { scanToolCode } from './safety-scanner.js';
 import { loadUserTools } from './tool-registry.js';
@@ -14,12 +14,12 @@ export async function fixTool(
   chatId: string,
   router: ProviderRouter,
 ): Promise<{ summary: string } | { error: string }> {
-  const tool = getUserTool(toolId);
+  const tool = await getUserTool(toolId);
   if (!tool) return { error: 'Tool not found' };
   if (tool.locked) return { error: 'Tool is locked. Unlock it first.' };
 
   // Get recent revisions
-  const revisions = getToolRevisions(toolId, 3);
+  const revisions = await getToolRevisions(toolId, 3);
   const revisionContext = revisions.length > 0
     ? `\n\nPrevious revisions (most recent first):\n${revisions.map((r, i) => `${i + 1}. [${r.revision_note || 'no note'}] ${r.config.slice(0, 200)}...`).join('\n')}`
     : '';
@@ -120,9 +120,9 @@ The code runs in an async function with \`args\` and \`fetch\` available.`;
     }
 
     const newConfig = JSON.stringify(newConfigObj);
-    updateUserTool(toolId, { config: newConfig });
-    insertToolRevision(toolId, newConfig, `Fix: ${userFeedback.slice(0, 100)}`);
-    loadUserTools(); // Reload in registry
+    await updateUserTool(toolId, { config: newConfig });
+    await insertToolRevision(toolId, newConfig, `Fix: ${userFeedback.slice(0, 100)}`);
+    await loadUserTools(); // Reload in registry
 
     logger.info({ toolId, toolName: tool.name }, 'Tool fixed via AI');
 

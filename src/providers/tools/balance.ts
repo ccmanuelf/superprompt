@@ -84,7 +84,7 @@ export async function lineBalance(
         if (!args.takt_time || args.takt_time <= 0) return { error: 'takt_time must be a positive number.' };
         if (!args.project_name) return { error: 'project_name is required for run action.' };
 
-        const result = executeBalance(
+        const result = await executeBalance(
           args.csv_content,
           args.takt_time,
           args.project_name,
@@ -106,11 +106,11 @@ export async function lineBalance(
 
       case 'status': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getProjectByName(args.project_name);
+        const project = await getProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const tasks = getProjectTasks(project.id);
-        const results = getResultsForProject(project.id);
+        const tasks = await getProjectTasks(project.id);
+        const results = await getResultsForProject(project.id);
         const latestResult = results[0];
 
         return {
@@ -133,10 +133,10 @@ export async function lineBalance(
 
       case 'compare': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getProjectByName(args.project_name);
+        const project = await getProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const results = getResultsForProject(project.id);
+        const results = await getResultsForProject(project.id);
         if (results.length === 0) return { error: 'No balance runs found for this project.' };
 
         return {
@@ -153,7 +153,7 @@ export async function lineBalance(
       }
 
       case 'list': {
-        const projects = listProjects();
+        const projects = await listProjects();
         if (projects.length === 0) return { message: 'No balance projects found.' };
 
         return {
@@ -167,15 +167,15 @@ export async function lineBalance(
 
       case 'export': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getProjectByName(args.project_name);
+        const project = await getProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const results = getResultsForProject(project.id);
+        const results = await getResultsForProject(project.id);
         if (results.length === 0) return { error: 'No balance runs found.' };
 
         const latest = results[0];
         const assignments = JSON.parse(latest.assignments_json);
-        const tasks = getProjectTasks(project.id);
+        const tasks = await getProjectTasks(project.id);
 
         // Reconstruct BalanceResult for export
         const balanceResult: BalanceResult = runBalance(tasks, latest.takt_time, project.name);
@@ -191,11 +191,11 @@ export async function lineBalance(
 
       case 'yamazumi': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getProjectByName(args.project_name);
+        const project = await getProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const tasks = getProjectTasks(project.id);
-        const results = getResultsForProject(project.id);
+        const tasks = await getProjectTasks(project.id);
+        const results = await getResultsForProject(project.id);
         if (results.length === 0) return { error: 'No balance runs found.' };
 
         const latest = results[0];
@@ -208,11 +208,11 @@ export async function lineBalance(
 
       case 'gantt': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getProjectByName(args.project_name);
+        const project = await getProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const tasks = getProjectTasks(project.id);
-        const results = getResultsForProject(project.id);
+        const tasks = await getProjectTasks(project.id);
+        const results = await getResultsForProject(project.id);
         if (results.length === 0) return { error: 'No balance runs found.' };
 
         const latest = results[0];
@@ -225,11 +225,11 @@ export async function lineBalance(
 
       case 'charts': {
         if (!args.project_name) return { error: 'project_name is required.' };
-        const project = getProjectByName(args.project_name);
+        const project = await getProjectByName(args.project_name);
         if (!project) return { error: `Project "${args.project_name}" not found.` };
 
-        const tasks = getProjectTasks(project.id);
-        const results = getResultsForProject(project.id);
+        const tasks = await getProjectTasks(project.id);
+        const results = await getResultsForProject(project.id);
         if (results.length === 0) return { error: 'No balance runs found.' };
 
         const latest = results[0];
