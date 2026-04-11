@@ -73,10 +73,10 @@ export function submitBackgroundTask(
   processQueue();
 
   const position = taskQueue.length;
-  const message = `⏳ **Task queued**: ${description}\n` +
+  const message = `⏳ **Task queued / Tarea en cola**: ${description}\n` +
     `ID: \`${id}\`\n` +
-    `Position: ${position} in queue, ${activeTasks.size} running\n` +
-    `You'll be notified when it completes. Continue chatting normally.`;
+    `Position / Posición: ${position} in queue / en cola, ${activeTasks.size} running / en ejecución\n` +
+    `You'll be notified when it completes. / Se te notificará cuando termine.`;
 
   return { taskId: id, message };
 }
@@ -154,7 +154,7 @@ async function runTask(task: BackgroundTask): Promise<void> {
       const resultPreview = result.length > 500 ? result.slice(0, 500) + '...' : result;
       await notifyFn(
         task.chatId,
-        `✅ **Background task completed** (${durationSec}s)\n` +
+        `✅ **Task completed / Tarea completada** (${durationSec}s)\n` +
         `${task.description}\n\n${resultPreview}`,
       );
     }
@@ -172,7 +172,7 @@ async function runTask(task: BackgroundTask): Promise<void> {
     if (notifyFn) {
       await notifyFn(
         task.chatId,
-        `❌ **Background task failed** (${durationSec}s)\n` +
+        `❌ **Task failed / Tarea fallida** (${durationSec}s)\n` +
         `${task.description}\n\nError: ${(err as Error).message}`,
       );
     }

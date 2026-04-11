@@ -211,7 +211,7 @@ export async function processEvent(
       if (notifyFn && response.text) {
         await notifyFn(
           trigger.chat_id || event.chatId,
-          `🔔 **Event Trigger**: ${event.type}\n${response.text}`,
+          `🔔 **Event Trigger / Evento**: ${event.type}\n${response.text}`,
         );
       }
 

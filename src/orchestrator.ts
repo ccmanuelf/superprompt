@@ -333,7 +333,7 @@ export async function orchestrateTask(
   if (progressFn) {
     await progressFn(
       chatId,
-      `📋 **Breaking this into ${steps.length} steps:**\n${planLines}`,
+      `📋 **Breaking into ${steps.length} steps / Dividiendo en ${steps.length} pasos:**\n${planLines}`,
     );
   }
 
@@ -443,7 +443,8 @@ export async function orchestrateTask(
         const stepNums = batch.map(s => s.step).join(', ');
         await progressFn(
           chatId,
-          `⚡ Steps ${stepNums} running in parallel (${batch.length} concurrent)`,
+          `⚡ Steps ${stepNums} running in parallel (${batch.length} concurrent)\n` +
+          `Pasos ${stepNums} ejecutándose en paralelo (${batch.length} simultáneos)`,
         );
       }
 
@@ -482,7 +483,7 @@ export async function orchestrateTask(
         const skillNote = step.suggestedSkill ? ` [${step.suggestedSkill}]` : '';
         await progressFn(
           chatId,
-          `⏳ Step ${step.step}/${steps.length}: ${step.instruction}${skillNote}`,
+          `⏳ Step / Paso ${step.step}/${steps.length}: ${step.instruction}${skillNote}`,
         );
       }
 
@@ -507,7 +508,7 @@ export async function orchestrateTask(
         if (progressFn) {
           await progressFn(
             chatId,
-            `❌ Step ${step.step} failed: ${errorMsg}\nContinuing with remaining steps...`,
+            `❌ Step / Paso ${step.step} failed / falló: ${errorMsg}\nContinuing / Continuando...`,
           );
         }
 
@@ -530,7 +531,7 @@ export async function orchestrateTask(
   if (progressFn) {
     await progressFn(
       chatId,
-      `✅ Completed ${successCount}/${steps.length} steps.`,
+      `✅ Completed / Completado ${successCount}/${steps.length} steps / pasos.`,
     );
   }
 
