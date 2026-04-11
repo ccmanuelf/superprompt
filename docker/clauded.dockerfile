@@ -56,8 +56,8 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY package.json ./
 
-# Copy runtime files (banner, system prompt, entrypoint)
-COPY banner.txt CLAUDED.md ./
+# Copy runtime files (banner, entrypoint)
+COPY banner.txt ./
 # Copy static web assets for voice chat (served from dist/web/public/)
 COPY src/web/public/ ./dist/web/public/
 # Copy documentation (served via /docs web UI and /api/docs endpoint)
