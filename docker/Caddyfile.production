@@ -1,0 +1,53 @@
+# Caddy Production Config — Multi-Instance Reverse Proxy
+#
+# Routes traffic to per-deployment bot instances based on path prefix.
+# Each deployment gets: /deploy-N/* → clauded-bot-N:PORT
+#
+# Default (no prefix) routes to deployment 1.
+
+{$CADDY_DOMAIN:localhost} {
+	# ── Security ──
+	request_body {
+		max_size 10MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# ── Telegram Webhooks (per-deployment) ──
+	# Each deployment has a unique webhook path
+	handle /webhook/deploy-1/* {
+		reverse_proxy clauded-bot-1:3031
+	}
+	handle /webhook/deploy-2/* {
+		reverse_proxy clauded-bot-2:3032
+	}
+
+	# ── Deployment 1 (default — no prefix) ──
+	# Main deployment accessible at the root domain
+	handle {
+		reverse_proxy clauded-bot-1:3031 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			transport http {
+				versions h2c 1.1
+			}
+		}
+	}
+
+	# ── Logging ──
+	log {
+		output file /data/access.log {
+			roll_size 50mb
+			roll_keep 5
+		}
+		format json
+	}
+}

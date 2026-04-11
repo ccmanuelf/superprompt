@@ -103,12 +103,19 @@ CLAUDE_CODE_OAUTH_TOKEN=your-token-from-setup-token
 docker compose up -d
 ```
 
-This starts two containers:
+This starts three containers:
 
 | Container | Purpose | Status |
 |-----------|---------|--------|
 | `clauded-bot` | Main bot — AI, messaging, memory, tools | Required |
 | `clauded-speaches` | Voice sidecar — STT + TTS | Required (starts automatically) |
+| `clauded-searxng` | Web search engine (for Ollama) | Required (auto-configured) |
+
+For production deployments with HTTPS, add the Caddy reverse proxy:
+```bash
+# Set CADDY_DOMAIN in .env first
+docker compose --profile production up -d
+```
 
 On first start, the entrypoint script automatically:
 - Sets up Claude CLI onboarding flags
@@ -199,15 +206,21 @@ Host Machine
 └── Docker Compose
     ├── clauded-bot (Node 22, port 3030)
     │   ├── Claude CLI (subprocess)
-    │   ├── Telegram bot (grammy)
+    │   ├── Telegram bot (grammy) — long-polling or webhook mode
     │   ├── Matrix bot (optional)
     │   ├── Web server (Express + WebSocket)
-    │   ├── SQLite database (./store/)
+    │   ├── Database via Knex (SQLite/MariaDB/PostgreSQL)
     │   └── Manufacturing tools
     │
     ├── clauded-speaches (Python, internal)
     │   ├── Faster-whisper STT (~850MB RAM)
     │   └── Kokoro-82M TTS (~200MB RAM)
+    │
+    ├── clauded-searxng (internal)
+    │   └── Web search engine (auto-configured)
+    │
+    ├── clauded-caddy (--profile production, optional)
+    │   └── Reverse proxy, automatic HTTPS via Let's Encrypt
     │
     └── clauded-synapse (optional, port 8008)
         └── Matrix homeserver
@@ -217,7 +230,7 @@ Host Machine
 
 | Host Path | Container Path | Contents |
 |-----------|---------------|----------|
-| `./store/` | `/app/store/` | SQLite database, memories, episodes, skills, tools |
+| `./store/` | `/app/store/` | Database (SQLite default, or MariaDB/PostgreSQL via DB_DRIVER), memories, episodes, skills, tools |
 | `./workspace/` | `/app/workspace/` | Temp uploads, generated documents, screenshots |
 | `./packs/` | `/app/packs/` | Domain packs (editable on host, restart to reload) |
 | `./forge/` | `/app/forge/` | User tools & skills (auto-imported at startup) |
@@ -527,6 +540,18 @@ The AI can create scheduled tasks through conversation:
 > "Remind me to review the deployment logs every Monday at 10 AM"
 
 The AI uses the `create_reminder` tool to set this up automatically.
+
+### Event-Driven Triggers
+
+clauded supports reactive automation via the `event_triggers` table. Events emitted by the system (e.g., order status changes, tool completions, threshold breaches) can trigger automatic actions through `emitEvent()`.
+
+### Background Task Queue
+
+Long-running tasks can be submitted to a background queue via `submitBackgroundTask()`. The task executes asynchronously and notifies the user when complete. This prevents blocking the conversation while heavy operations run.
+
+### Parallel Orchestration
+
+When the orchestrator decomposes a complex request into multiple steps, independent steps now run in parallel via `Promise.all()`. Each step can specify a `suggestedSkill` for pack-scoped delegation, routing the step to the most relevant domain pack.
 
 ---
 

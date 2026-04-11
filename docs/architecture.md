@@ -88,6 +88,8 @@ graph LR
 |-----------|-------|---------|---------------|
 | `clauded-bot` | `node:22-slim` (custom) | Main application | Internal + port 3030 (localhost) |
 | `clauded-speaches` | `ghcr.io/speaches-ai/speaches:latest-cpu` | Voice STT/TTS | Internal only |
+| `clauded-searxng` | `searxng/searxng:latest` | Web search (Ollama) | Internal only |
+| `clauded-caddy` | `caddy:2-alpine` | Reverse proxy + HTTPS (production profile) | Ports 80, 443 |
 | `clauded-synapse` | `matrixdotorg/synapse:latest` | Matrix homeserver (optional) | Internal + port 8008 (localhost) |
 
 ### Build Stages (clauded.dockerfile)
@@ -641,7 +643,7 @@ function notifyUser(chatId: string, message: string) {
 
 **Source**: `src/orchestrator.ts`
 
-Handles multi-step tasks that require decomposition.
+Handles multi-step tasks that require decomposition, parallel execution, and event-driven automation.
 
 ### Detection
 
@@ -649,10 +651,19 @@ Handles multi-step tasks that require decomposition.
 
 ### Execution
 
-1. Decompose task into ordered steps
-2. Execute each step sequentially
-3. Track progress and send updates
-4. Handle failures gracefully (report which step failed)
+1. Decompose task into ordered steps with dependency analysis
+2. Independent steps run in parallel via `Promise.all()`
+3. Each step can specify a `suggestedSkill` for pack-scoped delegation
+4. Track progress and send updates
+5. Handle failures gracefully (report which step failed)
+
+### Event-Driven Triggers
+
+The `event_triggers` table stores reactive automation rules. When `emitEvent()` is called (e.g., by a tool, scheduler, or external webhook), matching triggers fire their associated actions. This enables reactive autonomy without polling.
+
+### Background Task Queue
+
+Long-running tasks are submitted via `submitBackgroundTask()`. Tasks execute asynchronously in the background and notify the user upon completion, preventing conversation blocking during heavy operations.
 
 ---
 
@@ -730,7 +741,7 @@ Express HTTP server + WebSocket (ws) on a single port.
 - **HTTP API**: Per-user token or `VOICE_WEB_TOKEN` in query string or Authorization header
 - **Per-user tokens**: Generated via `/webtoken create [label] [ttl]`, scoped to chat_id (isolates board, learning, memory, schedules). Max 5 per user, optional TTL (24h/7d/30d), revocation disconnects sessions.
 - **Legacy fallback**: `VOICE_WEB_TOKEN` env var still accepted (shared, no per-user data isolation)
-- **Rate limiting**: 5 failed auth attempts per minute per IP
+- **Rate limiting**: 3 failed auth attempts per minute per IP, hourly IP ban after 15 failures
 
 ### Security
 
@@ -767,7 +778,17 @@ All SPAs are Vue 3 + Vuetify loaded from CDN — no build step required.
 
 **Source**: `src/db.ts`
 
-SQLite in WAL mode with FTS5 and sqlite-vec extensions.
+All database access goes through **Knex** query builder, enabling support for multiple database drivers via the `DB_DRIVER` environment variable:
+
+| Driver | Value | Use Case |
+|--------|-------|----------|
+| SQLite | `DB_DRIVER=sqlite` | Development, E2E testing (default) |
+| MariaDB | `DB_DRIVER=mariadb` | Production (InMotion hosting) |
+| PostgreSQL | `DB_DRIVER=postgres` | Production (VMware, Render) |
+
+Migration script: `scripts/migrate-database.ts` handles schema migration across drivers.
+
+SQLite mode uses WAL mode with FTS5 and sqlite-vec extensions.
 
 ### Core Tables
 
@@ -808,11 +829,13 @@ SQLite in WAL mode with FTS5 and sqlite-vec extensions.
 | `sessions` | Learning session logs |
 | `assessment_results` | 4-level mastery tracking |
 
-### Digest Tables
+### Digest & Automation Tables
 
 | Table | Purpose |
 |-------|---------|
 | `digest_preferences` | Per-user digest frequency (daily/weekly/off) |
+| `event_triggers` | Event-driven trigger rules (event name → action) |
+| `tool_audit_log` | Audit trail for every tool call (chatId, tool, action, duration, process) |
 
 ### Manufacturing Tables
 
@@ -1114,7 +1137,7 @@ Users can create Level 2 packs through conversation:
 
 ### Test Coverage
 
-1813 tests across 76 files validate all pack-loaded tools, core infrastructure, circuit breaker, rate limiting, guardrails, context health, and pack tuner.
+2003 tests across 80+ files validate all pack-loaded tools, core infrastructure, circuit breaker, rate limiting, guardrails, context health, pack tuner, Knex database layer, event triggers, background tasks, and parallel orchestration.
 
 ---
 
@@ -1125,8 +1148,9 @@ Recommended deployment for InfoSec sign-off:
 ```
                     ┌─────────────────────────────┐
                     │       DMZ / Reverse Proxy    │
-                    │   (Nginx/Apache + TLS cert)  │
+                    │   (Caddy — automatic HTTPS)  │
                     │   Port 443 → localhost:3030  │
+                    │   docker/Caddyfile config    │
                     └──────────┬──────────────────┘
                                │ HTTPS
                     ┌──────────┴──────────────────┐
@@ -1168,7 +1192,7 @@ Recommended deployment for InfoSec sign-off:
 ```
 
 **Key security boundaries:**
-- Reverse proxy terminates TLS — internal traffic is HTTP
+- Caddy reverse proxy terminates TLS (automatic Let's Encrypt) — internal traffic is HTTP
 - Speaches has NO external network access
 - Process 2 (tools) has NO database access, NO bot tokens
 - Process 3 (parsers) has NO network access, NO database, NO API keys

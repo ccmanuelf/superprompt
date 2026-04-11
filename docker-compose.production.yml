@@ -1,0 +1,296 @@
+# ═══════════════════════════════════════════════════════════════
+# clauded — Production Multi-Instance Deployment
+# ═══════════════════════════════════════════════════════════════
+#
+# Architecture B: Shared infrastructure with per-deployment bots.
+# Designed for InMotion dedicated server (64GB RAM, 16 cores).
+#
+# Shared services (1 instance each):
+#   - Caddy: HTTPS reverse proxy + Let's Encrypt
+#   - MariaDB/PostgreSQL: production database
+#   - Ollama: local AI model inference
+#   - SearXNG: web search aggregator
+#   - Speaches: voice STT/TTS
+#
+# Per-deployment bots (up to 10):
+#   - Each has its own Telegram bot token
+#   - Each has its own web UI on a unique path
+#   - Shared DB mode: all bots share one database (departments see same data)
+#   - Isolated DB mode: each bot gets its own database (client isolation)
+#
+# Usage:
+#   # Start shared infrastructure
+#   docker compose -f docker-compose.production.yml up -d
+#
+#   # Add a deployment (copy .env.deploy-1 for each)
+#   docker compose -f docker-compose.production.yml --profile deploy-1 up -d
+#
+#   # Add more deployments
+#   docker compose -f docker-compose.production.yml --profile deploy-2 up -d
+#
+# Configuration:
+#   - Edit .env.production for shared settings (domain, DB credentials)
+#   - Edit .env.deploy-N for each deployment (Telegram token, chat IDs)
+#   - See docs/inmotion-deployment-guide.md for full instructions
+# ═══════════════════════════════════════════════════════════════
+
+services:
+
+  # ── Caddy (HTTPS reverse proxy) ─────────────────────────────
+  # Single entry point for all web traffic. Routes to per-bot
+  # instances based on path prefix or subdomain.
+  caddy:
+    image: caddy:2-alpine
+    container_name: clauded-caddy
+    environment:
+      - CADDY_DOMAIN=${CADDY_DOMAIN:-localhost}
+    volumes:
+      - ./docker/Caddyfile.production:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.5'
+
+  # ── Database (MariaDB or PostgreSQL) ────────────────────────
+  # Production database. Set DB_DRIVER in .env.production.
+  #
+  # MariaDB (default):
+  mariadb:
+    image: mariadb:11
+    container_name: clauded-mariadb
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-clauded-root-change-me}
+      - MYSQL_DATABASE=${DB_NAME:-clauded}
+      - MYSQL_USER=${DB_USER:-clauded}
+      - MYSQL_PASSWORD=${DB_PASSWORD:-clauded-change-me}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    # Not exposed to host — internal network only
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+    profiles:
+      - mariadb
+
+  # PostgreSQL (alternative):
+  postgres:
+    image: postgres:16-alpine
+    container_name: clauded-postgres
+    environment:
+      - POSTGRES_DB=${DB_NAME:-clauded}
+      - POSTGRES_USER=${DB_USER:-clauded}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-clauded-change-me}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-clauded}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+    profiles:
+      - postgres
+
+  # ── Ollama (shared AI model inference) ──────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: clauded-ollama
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4'
+
+  # ── SearXNG (shared web search) ─────────────────────────────
+  searxng:
+    image: searxng/searxng:latest
+    container_name: clauded-searxng
+    volumes:
+      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # ── Speaches (shared voice STT/TTS) ────────────────────────
+  speaches:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    container_name: clauded-speaches
+    volumes:
+      - speaches-models:/root/.cache
+    environment:
+      - UVICORN_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+
+  # ══════════════════════════════════════════════════════════════
+  # Per-Deployment Bot Instances
+  # ══════════════════════════════════════════════════════════════
+  #
+  # Each deployment is a separate clauded bot with its own:
+  #   - Telegram bot token (TELEGRAM_BOT_TOKEN)
+  #   - Authorized user list (ALLOWED_CHAT_ID)
+  #   - Web UI port (VOICE_WEB_PORT)
+  #   - Store directory (for SQLite fallback or local state)
+  #
+  # Database mode:
+  #   - Shared DB (default): all bots use the same DB_NAME
+  #     → Departments share work orders, cards, memories
+  #   - Isolated DB: each bot uses a different DB_NAME
+  #     → Client data completely separated
+  #
+  # To add a new deployment:
+  #   1. Copy .env.deploy-template to .env.deploy-N
+  #   2. Fill in Telegram token and chat IDs
+  #   3. Run: docker compose -f docker-compose.production.yml --profile deploy-N up -d
+  # ══════════════════════════════════════════════════════════════
+
+  # ── Deployment 1 ────────────────────────────────────────────
+  clauded-1:
+    build:
+      context: .
+      dockerfile: docker/clauded.dockerfile
+    container_name: clauded-bot-1
+    env_file:
+      - .env.production
+      - .env.deploy-1
+    environment:
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
+      - OLLAMA_HOST=http://ollama:11434
+      - SPEACHES_URL=http://speaches:8000/v1
+      - SEARXNG_URL=http://searxng:8080
+    volumes:
+      - ./store/deploy-1:/app/store
+      - ./workspace/deploy-1:/app/workspace
+      - ./packs:/app/packs:ro
+      - ./forge/deploy-1:/app/forge
+      - ./docs:/app/docs:ro
+    depends_on:
+      searxng:
+        condition: service_healthy
+      speaches:
+        condition: service_started
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+    profiles:
+      - deploy-1
+
+  # ── Deployment 2 ────────────────────────────────────────────
+  clauded-2:
+    build:
+      context: .
+      dockerfile: docker/clauded.dockerfile
+    container_name: clauded-bot-2
+    env_file:
+      - .env.production
+      - .env.deploy-2
+    environment:
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
+      - OLLAMA_HOST=http://ollama:11434
+      - SPEACHES_URL=http://speaches:8000/v1
+      - SEARXNG_URL=http://searxng:8080
+    volumes:
+      - ./store/deploy-2:/app/store
+      - ./workspace/deploy-2:/app/workspace
+      - ./packs:/app/packs:ro
+      - ./forge/deploy-2:/app/forge
+      - ./docs:/app/docs:ro
+    depends_on:
+      searxng:
+        condition: service_healthy
+      speaches:
+        condition: service_started
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+    profiles:
+      - deploy-2
+
+  # ── Deployments 3-10: Copy the pattern above ────────────────
+  # Each deployment follows the same template:
+  #   - container_name: clauded-bot-N
+  #   - env_file: .env.deploy-N
+  #   - volumes: ./store/deploy-N, ./workspace/deploy-N, ./forge/deploy-N
+  #   - profile: deploy-N
+  #
+  # For convenience, use the script: scripts/add-deployment.sh N
+
+networks:
+  clauded-net:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:
+  mariadb-data:
+  postgres-data:
+  ollama-models:
+  speaches-models:

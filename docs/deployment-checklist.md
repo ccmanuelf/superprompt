@@ -1,4 +1,4 @@
-# clauded v1.0.0-rc.29 — Deployment Checklist
+# clauded v1.0.0-rc.60 — Deployment Checklist
 
 Pre-deployment criteria, considerations, and decision factors for production deployment.
 
@@ -53,20 +53,34 @@ Pre-deployment criteria, considerations, and decision factors for production dep
 ### Web UI
 - [ ] VOICE_WEB_PORT set (default: 3030)
 - [ ] VOICE_WEB_TOKEN generated (optional fallback): `openssl rand -hex 32` — per-user tokens via `/webtoken create` are now the recommended approach
-- [ ] TLS certificates (VOICE_WEB_TLS_CERT/KEY) for non-localhost access
-- [ ] Reverse proxy (Nginx/Apache) configured for HTTPS
+- [ ] TLS certificates (VOICE_WEB_TLS_CERT/KEY) for non-localhost access — or use Caddy (see below)
+- [ ] Reverse proxy configured for HTTPS (Caddy recommended, Nginx/Apache also supported)
+
+### Caddy Reverse Proxy (production HTTPS)
+- [ ] `CADDY_DOMAIN` set in `.env` (e.g., `clauded.example.com`)
+- [ ] Started with `docker compose --profile production up -d`
+- [ ] Automatic HTTPS via Let's Encrypt confirmed (check Caddy logs)
+- [ ] HTTP-to-HTTPS redirect working
+- [ ] WebSocket proxying working (voice web chat)
+- [ ] Caddyfile at `docker/Caddyfile` reviewed for security headers
+
+### Telegram Webhook (production, optional)
+- [ ] `TELEGRAM_WEBHOOK_URL` set (e.g., `https://clauded.example.com/telegram/webhook`)
+- [ ] `TELEGRAM_WEBHOOK_SECRET` generated: `openssl rand -hex 32`
+- [ ] HTTPS required for webhook (use Caddy or other reverse proxy)
 
 ### Web Search (required for Ollama)
-- [ ] SEARXNG_URL or BRAVE_API_KEY configured (at least one)
-- [ ] Note: Claude has built-in web search; this is only needed for Ollama
-- [ ] SearXNG: `docker run -p 8888:8080 searxng/searxng` or self-hosted
-- [ ] Brave: free tier at https://brave.com/search/api/ (2,000 queries/month)
+- [ ] SearXNG is included as a Docker service in docker-compose.yml — auto-configured, no setup needed
+- [ ] Alternatively: BRAVE_API_KEY configured (cloud option, 2,000 queries/month free)
+- [ ] Note: Claude has built-in web search; SearXNG/Brave is only needed for Ollama
 - [ ] Verified: `/ollama` then ask "search the web for..." returns results
 
 ### Database
 - [ ] **Development/E2E:** SQLite (default, no config needed)
-- [ ] **Production:** MariaDB or PostgreSQL selected
-- [ ] DB migration tested (StorageProvider swap in db.ts)
+- [ ] **Production:** MariaDB or PostgreSQL selected via `DB_DRIVER` env var
+- [ ] `DB_DRIVER=sqlite|mariadb|postgres` set in `.env`
+- [ ] All database access through Knex query builder (no raw SQLite calls)
+- [ ] DB migration tested: `npx ts-node scripts/migrate-database.ts`
 - [ ] Backup strategy defined (automated daily with point-in-time recovery)
 
 ### Security
@@ -75,6 +89,12 @@ Pre-deployment criteria, considerations, and decision factors for production dep
 - [ ] TLS certificates installed (web UI HTTPS)
 - [ ] .env file permissions restricted (chmod 600)
 - [ ] Docker network isolated from host network
+
+### Orchestration & Automation
+- [ ] Event-driven triggers: `event_triggers` table created (Knex migration)
+- [ ] Background task queue: `submitBackgroundTask()` operational
+- [ ] Parallel orchestration: independent steps run via `Promise.all()`
+- [ ] Pack-scoped delegation: `suggestedSkill` per orchestration step working
 
 ### Packs
 - [ ] Department packs verified: `/pack list` shows all 10
@@ -86,6 +106,10 @@ Pre-deployment criteria, considerations, and decision factors for production dep
 ## 3. Post-Deployment Verification
 
 Run the full E2E test guide: `docs/e2e-test-guide.md` (17 sections, 65+ tests)
+
+### Production Compose
+- [ ] Multi-instance production file: `docker-compose.production.yml` reviewed
+- [ ] Production-specific settings applied (log levels, resource limits)
 
 ### Quick Smoke Test (5 minutes)
 - [ ] `docker ps` shows clauded-bot healthy
@@ -187,4 +211,4 @@ Each department (or group) gets its own clauded instance:
 
 ---
 
-*clauded v1.0.0-rc.29 — Deployment Checklist*
+*clauded v1.0.0-rc.60 — Deployment Checklist*

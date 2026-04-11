@@ -1,7 +1,7 @@
 # clauded — Executive Brief
 
 **For:** Board of Directors & Executive Leadership
-**Version:** v1.0.0-rc.31 | April 2026
+**Version:** v1.0.0-rc.60 | April 2026
 
 ---
 
@@ -81,11 +81,16 @@ A sample client integration (ACME Corp) is already pre-built as a proof of conce
 | Component | Status |
 |-----------|--------|
 | 10 department packs | Ready |
-| 43 AI tools (classified by risk) | Ready |
+| 49+ AI tools (classified by risk) | Ready |
 | 15 manufacturing modules | Ready |
 | 14 web dashboards | Ready |
 | 3-process security architecture | Ready |
-| 1,813 automated tests | Passing |
+| Knex database abstraction (SQLite/MariaDB/PostgreSQL) | Ready |
+| Caddy reverse proxy (automatic HTTPS) | Ready |
+| Event-driven triggers & background task queue | Ready |
+| Parallel orchestration & pack-scoped delegation | Ready |
+| Tool audit logging (chatId, tool, action, duration) | Ready |
+| 2,003 automated tests | Passing |
 | Voice (English + Spanish) | Ready |
 | Learning coach (12 teaching styles) | Ready |
 | Operations Hub (S17/S18 preview) | Sample data — team finalizing |
@@ -122,7 +127,7 @@ Existing Systems (ERP, MES, inventory)
 | Process isolation | 3-process architecture (core, tools, parsers) |
 | Tool permissions | 43 tools classified by risk, per-user trust memory |
 | Threat model | 20 vectors assessed with documented mitigations |
-| Test coverage | 1,813 tests across 76 files |
+| Test coverage | 2,003 tests across 80+ files |
 
 ---
 
@@ -147,4 +152,4 @@ clauded is ready for **pilot deployment** in 1-2 departments (Manufacturing + En
 
 ---
 
-*clauded v1.0.0-rc.31 — Department-Ready AI Assistant Platform*
+*clauded v1.0.0-rc.60 — Department-Ready AI Assistant Platform*

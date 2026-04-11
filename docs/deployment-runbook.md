@@ -1,4 +1,4 @@
-# clauded v1.0.0-rc.29 — Department Onboarding Runbook
+# clauded v1.0.0-rc.60 — Department Onboarding Runbook
 
 Get your own clauded instance running in 45-60 minutes. This guide is for team members receiving the repository who need to set up their own independent instance.
 
@@ -198,6 +198,24 @@ After starting clauded, each user generates their own web token:
 docker compose up -d
 ```
 
+This starts the bot, Speaches voice sidecar, and SearXNG web search engine. SearXNG is auto-configured as a Docker service — no setup needed.
+
+**For production deployments with HTTPS**, add the Caddy reverse proxy:
+```bash
+# Set your domain first in .env:
+# CADDY_DOMAIN=clauded.example.com
+docker compose --profile production up -d
+```
+Caddy provides automatic HTTPS via Let's Encrypt, HTTP-to-HTTPS redirect, security headers, and WebSocket proxying. See `.env.example` for details.
+
+**For Telegram webhook mode** (production, optional):
+```bash
+# In .env:
+# TELEGRAM_WEBHOOK_URL=https://clauded.example.com/telegram/webhook
+# TELEGRAM_WEBHOOK_SECRET=generate-with-openssl-rand-hex-32
+```
+Webhook mode is more efficient than the default long-polling on public servers. Requires Caddy or another HTTPS reverse proxy.
+
 First run takes 3-5 minutes (building the Docker image, downloading voice models). Watch progress:
 
 ```bash
@@ -330,10 +348,11 @@ The pre-installed Finance pack demonstrates the pattern:
 ### Starting and Stopping
 
 ```bash
-docker compose up -d          # Start (runs in background)
-docker compose down           # Stop
-docker compose restart clauded # Restart after .env changes
-docker compose logs -f clauded # View live logs
+docker compose up -d                      # Start (runs in background)
+docker compose --profile production up -d  # Start with Caddy HTTPS (production)
+docker compose down                        # Stop
+docker compose restart clauded             # Restart after .env changes
+docker compose logs -f clauded             # View live logs
 ```
 
 ### Updating

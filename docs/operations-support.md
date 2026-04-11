@@ -73,6 +73,10 @@
 | Packs loaded | Docker logs "Loaded domain pack" | 11 | <11 |
 | Response time | User experience | <10s | >30s |
 | Rate limit hits | User reports | Rare | Frequent |
+| Tool audit logs | `docker logs clauded-bot \| grep "tool_audit"` | Normal activity | Unusual patterns |
+| Event triggers | `docker logs clauded-bot \| grep "event_trigger"` | Firing as expected | Missed events |
+| Auth failures | `docker logs clauded-bot \| grep "auth_fail"` | 0 | >3/min (IP ban at 15/hr) |
+| Caddy TLS (prod) | `docker logs clauded-caddy` | Certificate valid | Renewal errors |
 
 ### Daily Check (2 minutes)
 
@@ -108,4 +112,4 @@ User → Department Champion → IT Operations → Software Development Team
 
 ---
 
-*clauded v1.0.0-rc.31 — Operations & Support Model*
+*clauded v1.0.0-rc.60 — Operations & Support Model*

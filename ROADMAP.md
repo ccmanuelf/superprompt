@@ -1,6 +1,6 @@
 # clauded — Enhancement Roadmap
 
-> Last updated: 2026-04-03
+> Last updated: 2026-04-06
 > Previous roadmap versions: `memory/roadmap.md` (2026-03-13), ROADMAP.md (2026-03-18, 2026-03-21, 2026-03-29)
 
 ## Summary
