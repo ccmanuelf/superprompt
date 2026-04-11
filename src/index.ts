@@ -253,7 +253,7 @@ async function main(): Promise<void> {
 
       // Sync user tools to Process 2
       if (toolsClient.isReady) {
-        const userTools = (await import('./db.js')).listUserTools();
+        const userTools = await (await import('./db-core.js')).listUserTools();
         for (const tool of userTools) {
           if (!tool.enabled) continue;
           const config = JSON.parse(tool.config);
