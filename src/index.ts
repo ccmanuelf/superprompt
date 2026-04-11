@@ -333,13 +333,38 @@ async function main(): Promise<void> {
         }
       },
       start: async () => {
-        bot.start({
-          onStart: (botInfo) => {
-            logger.info({ username: botInfo.username }, 'Telegram bot started');
-          },
-        });
+        if (config.TELEGRAM_WEBHOOK_URL) {
+          // Webhook mode — production (requires HTTPS via Caddy)
+          const webhookUrl = config.TELEGRAM_WEBHOOK_URL;
+          const secret = config.TELEGRAM_WEBHOOK_SECRET || undefined;
+
+          // Register webhook handler on the web server
+          const { webhookCallback } = await import('grammy');
+          const { registerWebhookHandler } = await import('./web/server.js');
+          const webhookPath = new URL(webhookUrl).pathname;
+          const callback = webhookCallback(bot, 'http', { secretToken: secret });
+          registerWebhookHandler(webhookPath, async (req, res) => {
+            await callback(req, res);
+          });
+
+          await bot.api.setWebhook(webhookUrl, {
+            secret_token: secret,
+            drop_pending_updates: true,
+          });
+          logger.info({ webhookUrl, webhookPath }, 'Telegram bot started (webhook mode)');
+        } else {
+          // Long-polling mode — development
+          bot.start({
+            onStart: (botInfo) => {
+              logger.info({ username: botInfo.username }, 'Telegram bot started (polling mode)');
+            },
+          });
+        }
       },
       stop: async () => {
+        if (config.TELEGRAM_WEBHOOK_URL) {
+          await bot.api.deleteWebhook();
+        }
         await bot.stop();
         logger.info('Telegram bot stopped');
       },

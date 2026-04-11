@@ -306,14 +306,16 @@ export async function executeTool(
   args: Record<string, unknown>,
   chatId: string,
 ): Promise<Record<string, unknown>> {
-  logger.debug({ tool: name, args }, 'Executing tool');
+  const startTime = Date.now();
 
   // SA4: Policy enforcement — check before execution
   const policyDecision = await evaluatePolicy(name, chatId);
   if (!policyDecision.allowed) {
+    logger.info({ tool: name, chatId, action: 'blocked', reason: policyDecision.reason }, 'AUDIT: tool execution blocked by policy');
     return { error: policyDecision.reason || 'Tool execution blocked by policy' };
   }
   if (policyDecision.requiresConfirmation) {
+    logger.info({ tool: name, chatId, action: 'pending_confirmation' }, 'AUDIT: tool awaiting user confirmation');
     return {
       _confirmation_required: true,
       _confirmation_prompt: policyDecision.confirmationPrompt,
@@ -327,19 +329,47 @@ export async function executeTool(
   const targetProcess = entry?.process;
 
   let result: Record<string, unknown>;
+  let executionProcess = 'core';
 
-  // Route to Process 2 (tools) if classified and client ready
-  if (targetProcess === 'tools' && toolsProcessClient?.isReady) {
-    result = await toolsProcessClient.execute(name, args, chatId);
-  } else if (targetProcess === 'parsers' && parsersProcessClient?.isReady) {
-    // Route to Process 3 (parsers) if classified and client ready
-    result = await parsersProcessClient.execute(name, args, chatId);
-  } else {
-    // Fallback: execute locally in Process 1
-    if (targetProcess && targetProcess !== 'core') {
-      logger.debug({ tool: name, targetProcess }, 'Child process unavailable — executing locally');
+  try {
+    // Route to Process 2 (tools) if classified and client ready
+    if (targetProcess === 'tools' && toolsProcessClient?.isReady) {
+      executionProcess = 'tools';
+      result = await toolsProcessClient.execute(name, args, chatId);
+    } else if (targetProcess === 'parsers' && parsersProcessClient?.isReady) {
+      executionProcess = 'parsers';
+      result = await parsersProcessClient.execute(name, args, chatId);
+    } else {
+      if (targetProcess && targetProcess !== 'core') {
+        logger.debug({ tool: name, targetProcess }, 'Child process unavailable — executing locally');
+      }
+      result = await executeRegisteredTool(name, args, chatId);
     }
-    result = await executeRegisteredTool(name, args, chatId);
+
+    // Audit log: successful execution
+    const durationMs = Date.now() - startTime;
+    const success = !('error' in result);
+    logger.info({
+      tool: name,
+      chatId,
+      action: success ? 'success' : 'error',
+      process: executionProcess,
+      durationMs,
+      argsKeys: Object.keys(args),
+    }, `AUDIT: tool ${success ? 'executed' : 'returned error'}`);
+
+  } catch (err) {
+    // Audit log: execution failure
+    const durationMs = Date.now() - startTime;
+    logger.error({
+      tool: name,
+      chatId,
+      action: 'exception',
+      process: executionProcess,
+      durationMs,
+      error: (err as Error).message,
+    }, 'AUDIT: tool execution threw exception');
+    throw err;
   }
 
   // Pack tuner: record outcome for BOTH providers (Claude + Ollama)

@@ -44,6 +44,8 @@ export const config = {
 
   // Telegram
   TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN || '',
+  TELEGRAM_WEBHOOK_URL: env.TELEGRAM_WEBHOOK_URL || '', // e.g. https://clauded.example.com/telegram/webhook
+  TELEGRAM_WEBHOOK_SECRET: env.TELEGRAM_WEBHOOK_SECRET || '',
   ALLOWED_CHAT_ID: env.ALLOWED_CHAT_ID || '',
 
   // Matrix

@@ -95,6 +95,32 @@ services:
         limits:
           memory: 512M
 
+  # ── Caddy reverse proxy (production HTTPS) ─────────────────
+  # Provides automatic HTTPS via Let's Encrypt, HTTP/2, WebSocket proxy,
+  # request size limits (10MB), security headers, and access logging.
+  # Only service that exposes ports to the network (80 + 443).
+  caddy:
+    image: caddy:2-alpine
+    container_name: clauded-caddy
+    environment:
+      - CADDY_DOMAIN=${CADDY_DOMAIN:-localhost}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data      # TLS certificates (auto-managed)
+      - caddy-config:/config   # Caddy runtime config
+    ports:
+      - "80:80"     # HTTP → HTTPS redirect
+      - "443:443"   # HTTPS (production)
+    depends_on:
+      - clauded
+    networks:
+      - clauded-net
+    restart: unless-stopped
+    profiles:
+      # Only starts when explicitly requested: docker compose --profile production up
+      # For local dev, access clauded directly on port 3030
+      - production
+
   # ── Synapse Matrix homeserver (optional) ───────────────────
   synapse:
     image: matrixdotorg/synapse:latest
@@ -126,3 +152,5 @@ networks:
 volumes:
   speaches-models:
   synapse-data:
+  caddy-data:       # TLS certificates (Let's Encrypt, auto-renewed)
+  caddy-config:     # Caddy runtime configuration

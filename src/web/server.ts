@@ -54,26 +54,53 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 
 // Rate limiter for failed auth attempts (per IP)
-const AUTH_FAIL_WINDOW_MS = 60_000; // 1 minute window
-const AUTH_FAIL_MAX = 5;            // max failures per window
+// Two tiers: short window (3 failures/min) + hourly ban (15 failures/hour)
+const AUTH_FAIL_WINDOW_MS = 60_000;      // 1 minute window
+const AUTH_FAIL_MAX = 3;                  // max failures per minute (tightened from 5)
+const AUTH_BAN_WINDOW_MS = 3_600_000;    // 1 hour ban window
+const AUTH_BAN_THRESHOLD = 15;            // failures in 1 hour triggers IP ban
 const authFailures = new Map<string, { count: number; resetAt: number }>();
+const authBans = new Map<string, { totalCount: number; bannedUntil: number }>();
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
+
+  // Check hourly ban first
+  const ban = authBans.get(ip);
+  if (ban && now < ban.bannedUntil) {
+    logger.warn({ ip, bannedUntil: new Date(ban.bannedUntil).toISOString() }, 'Web: IP banned (too many auth failures)');
+    return false;
+  }
+
+  // Check per-minute limit
   const entry = authFailures.get(ip);
   if (!entry || now > entry.resetAt) {
-    return true; // No recent failures or window expired
+    return true;
   }
   return entry.count < AUTH_FAIL_MAX;
 }
 
 function recordAuthFailure(ip: string): void {
   const now = Date.now();
+
+  // Per-minute tracking
   const entry = authFailures.get(ip);
   if (!entry || now > entry.resetAt) {
     authFailures.set(ip, { count: 1, resetAt: now + AUTH_FAIL_WINDOW_MS });
   } else {
     entry.count++;
+  }
+
+  // Hourly ban tracking
+  const ban = authBans.get(ip);
+  if (!ban || now > ban.bannedUntil) {
+    authBans.set(ip, { totalCount: 1, bannedUntil: 0 });
+  } else {
+    ban.totalCount++;
+    if (ban.totalCount >= AUTH_BAN_THRESHOLD) {
+      ban.bannedUntil = now + AUTH_BAN_WINDOW_MS;
+      logger.warn({ ip, totalFailures: ban.totalCount }, 'Web: IP banned for 1 hour (exceeded 15 auth failures)');
+    }
   }
 }
 
@@ -250,6 +277,21 @@ function handleDocsApi(
   res.end(JSON.stringify({ id: docId, file: docFile, content }));
 }
 
+// ── Webhook handler registry ──────────────────────────────
+// Allows external modules (e.g. Telegram) to register POST handlers
+// for specific paths, processed before API auth.
+type WebhookHandler = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void>;
+const webhookHandlers = new Map<string, WebhookHandler>();
+
+/**
+ * Register a webhook handler for a specific URL path.
+ * Used by Telegram webhook mode to receive updates from Telegram servers.
+ */
+export function registerWebhookHandler(path: string, handler: WebhookHandler): void {
+  webhookHandlers.set(path, handler);
+  logger.info({ path }, 'Webhook handler registered');
+}
+
 /**
  * Start the voice web server (HTTP + WebSocket).
  * Only called when VOICE_WEB_PORT is set.
@@ -287,6 +329,13 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     res: import('node:http').ServerResponse,
   ): Promise<void> {
     const urlPath = req.url?.split('?')[0] || '/';
+
+    // ── Webhook handlers (e.g. Telegram webhook — no auth, verified by secret) ──
+    const webhookHandler = webhookHandlers.get(urlPath);
+    if (webhookHandler && req.method === 'POST') {
+      await webhookHandler(req, res);
+      return;
+    }
 
     // ── API routes (handle before static files) ──
     if (urlPath.startsWith('/api/')) {
