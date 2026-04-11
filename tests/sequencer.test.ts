@@ -1,16 +1,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-sequencer');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'seq-test.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -49,16 +47,14 @@ import { ALL_RULES, productColor } from '../src/sequencer/models.js';
 
 // ── Test Helpers ─────────────────────────────────────────────
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initSequencerTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initSequencerTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ── Sample Data ──────────────────────────────────────────────
 
@@ -349,42 +345,42 @@ describe('Setup Matrix', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('Database CRUD', () => {
-  it('should save and retrieve a schedule', () => {
-    const sched = saveSchedule('My Schedule', SAMPLE_CONFIG);
+  it('should save and retrieve a schedule', async () => {
+    const sched = await saveSchedule('My Schedule', SAMPLE_CONFIG);
     expect(sched.id).toBeTruthy();
     expect(sched.name).toBe('My Schedule');
 
-    const retrieved = getSchedule('My Schedule');
+    const retrieved = await getSchedule('My Schedule');
     expect(retrieved).toBeDefined();
     expect(JSON.parse(retrieved!.config_json).jobs).toHaveLength(5);
   });
 
-  it('should update on name collision', () => {
-    saveSchedule('Same', SAMPLE_CONFIG);
-    saveSchedule('Same', { ...SAMPLE_CONFIG, name: 'Updated' });
-    const all = listSchedules();
+  it('should update on name collision', async () => {
+    await saveSchedule('Same', SAMPLE_CONFIG);
+    await saveSchedule('Same', { ...SAMPLE_CONFIG, name: 'Updated' });
+    const all = await listSchedules();
     expect(all.filter((s) => s.name === 'Same')).toHaveLength(1);
   });
 
-  it('should list sorted by updated_at', () => {
-    saveSchedule('A', SAMPLE_CONFIG);
-    saveSchedule('B', SAMPLE_CONFIG);
-    saveSchedule('C', SAMPLE_CONFIG);
-    const all = listSchedules();
+  it('should list sorted by updated_at', async () => {
+    await saveSchedule('A', SAMPLE_CONFIG);
+    await saveSchedule('B', SAMPLE_CONFIG);
+    await saveSchedule('C', SAMPLE_CONFIG);
+    const all = await listSchedules();
     expect(all).toHaveLength(3);
     for (let i = 1; i < all.length; i++) {
       expect(all[i].updated_at).toBeLessThanOrEqual(all[i - 1].updated_at);
     }
   });
 
-  it('should delete a schedule', () => {
-    const sched = saveSchedule('ToDelete', SAMPLE_CONFIG);
-    expect(deleteSchedule(sched.id)).toBe(true);
-    expect(getSchedule(sched.id)).toBeUndefined();
+  it('should delete a schedule', async () => {
+    const sched = await saveSchedule('ToDelete', SAMPLE_CONFIG);
+    expect(await deleteSchedule(sched.id)).toBe(true);
+    expect(await getSchedule(sched.id)).toBeUndefined();
   });
 
-  it('should return false on delete of nonexistent', () => {
-    expect(deleteSchedule('nope')).toBe(false);
+  it('should return false on delete of nonexistent', async () => {
+    expect(await deleteSchedule('nope')).toBe(false);
   });
 });
 

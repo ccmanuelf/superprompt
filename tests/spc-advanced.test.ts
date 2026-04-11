@@ -1,16 +1,15 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-spc-adv');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'spc-adv-test.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -47,17 +46,18 @@ import {
   suggestStandard,
 } from '../src/control-plan.js';
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initSigmaTables();
-  initControlPlanTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initSigmaTables();
+  await initControlPlanTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => {
+  mkdirSync(resolve(tmpdir(), 'clauded-test-spc-adv'), { recursive: true });
+  await initTestDb();
+});
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ══════════════════════════════════════════════════════════════
 // ATTRIBUTE CHARTS
@@ -436,32 +436,32 @@ describe('Chart Generation', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('Control Plan CRUD', () => {
-  it('creates and retrieves a control plan', () => {
-    const plan = createControlPlan('PCB Line 3', 'automated', 'PCB Assembly', 'IPC-A-610');
+  it('creates and retrieves a control plan', async () => {
+    const plan = await createControlPlan('PCB Line 3', 'automated', 'PCB Assembly', 'IPC-A-610');
     expect(plan.name).toBe('PCB Line 3');
     expect(plan.process_type).toBe('automated');
     expect(plan.applicable_standard).toBe('IPC-A-610');
 
-    const found = getControlPlanByName('pcb line 3');
+    const found = await getControlPlanByName('pcb line 3');
     expect(found).toBeDefined();
   });
 
-  it('adds VOC items', () => {
-    const plan = createControlPlan('Test Plan');
-    addVocItem(plan.id, 'No visible scratches', 'appearance', 4);
-    addVocItem(plan.id, 'Connector must click', 'function', 5);
+  it('adds VOC items', async () => {
+    const plan = await createControlPlan('Test Plan');
+    await addVocItem(plan.id, 'No visible scratches', 'appearance', 4);
+    await addVocItem(plan.id, 'Connector must click', 'function', 5);
 
-    const items = getVocItems(plan.id);
+    const items = await getVocItems(plan.id);
     expect(items).toHaveLength(2);
     expect(items[0].priority).toBe(5); // sorted by priority desc
     expect(items[0].requirement).toBe('Connector must click');
   });
 
-  it('adds CTQ items linked to VOC', () => {
-    const plan = createControlPlan('Test Plan', 'semi_automated');
-    const voc = addVocItem(plan.id, 'Board must pass functional test', 'function', 5);
+  it('adds CTQ items linked to VOC', async () => {
+    const plan = await createControlPlan('Test Plan', 'semi_automated');
+    const voc = await addVocItem(plan.id, 'Board must pass functional test', 'function', 5);
 
-    const ctq = addCtqItem(plan.id, voc.id, {
+    const ctq = await addCtqItem(plan.id, voc.id, {
       ctq_name: 'Functional test pass rate',
       measurement_method: 'ICT + FCT',
       unit: '%',
@@ -477,14 +477,14 @@ describe('Control Plan CRUD', () => {
     expect(ctq.chart_type).toBe('xbar_r'); // has spec limits
   });
 
-  it('cascades delete', () => {
-    const plan = createControlPlan('Cascade');
-    const voc = addVocItem(plan.id, 'Test');
-    addCtqItem(plan.id, voc.id, { ctq_name: 'CTQ1' });
+  it('cascades delete', async () => {
+    const plan = await createControlPlan('Cascade');
+    const voc = await addVocItem(plan.id, 'Test');
+    await addCtqItem(plan.id, voc.id, { ctq_name: 'CTQ1' });
 
-    deleteControlPlan(plan.id);
-    expect(getVocItems(plan.id)).toHaveLength(0);
-    expect(getCtqItems(plan.id)).toHaveLength(0);
+    await deleteControlPlan(plan.id);
+    expect(await getVocItems(plan.id)).toHaveLength(0);
+    expect(await getCtqItems(plan.id)).toHaveLength(0);
   });
 });
 
@@ -557,22 +557,22 @@ describe('Standard Suggestions', () => {
 });
 
 describe('Control Plan Summary', () => {
-  it('builds complete summary with risk analysis', () => {
-    const plan = createControlPlan('Summary Test', 'semi_automated', 'Harness', 'IPC/WHMA-A-620');
-    const voc1 = addVocItem(plan.id, 'Crimp must hold', 'function', 5);
-    const voc2 = addVocItem(plan.id, 'No exposed wire', 'appearance', 4);
+  it('builds complete summary with risk analysis', async () => {
+    const plan = await createControlPlan('Summary Test', 'semi_automated', 'Harness', 'IPC/WHMA-A-620');
+    const voc1 = await addVocItem(plan.id, 'Crimp must hold', 'function', 5);
+    const voc2 = await addVocItem(plan.id, 'No exposed wire', 'appearance', 4);
 
-    addCtqItem(plan.id, voc1.id, {
+    await addCtqItem(plan.id, voc1.id, {
       ctq_name: 'Pull force',
       usl: 50, lsl: 30, target: 40,
       severity: 9, occurrence: 4, detection: 3,
     });
-    addCtqItem(plan.id, voc2.id, {
+    await addCtqItem(plan.id, voc2.id, {
       ctq_name: 'Insulation coverage',
       severity: 6, occurrence: 2, detection: 2,
     });
 
-    const summary = buildControlPlanSummary(plan.id);
+    const summary = await buildControlPlanSummary(plan.id);
 
     expect(summary.voc_items).toHaveLength(2);
     expect(summary.ctq_items).toHaveLength(2);
@@ -581,16 +581,16 @@ describe('Control Plan Summary', () => {
     expect(summary.risk_summary.low).toBe(1); // Insulation: sev=6, RPN=24 → LOW
   });
 
-  it('formats control plan as HTML', () => {
-    const plan = createControlPlan('Format Test', 'automated', 'PCB');
-    const voc = addVocItem(plan.id, 'Solder quality');
-    addCtqItem(plan.id, voc.id, {
+  it('formats control plan as HTML', async () => {
+    const plan = await createControlPlan('Format Test', 'automated', 'PCB');
+    const voc = await addVocItem(plan.id, 'Solder quality');
+    await addCtqItem(plan.id, voc.id, {
       ctq_name: 'Solder paste volume',
       usl: 0.6, lsl: 0.4, target: 0.5, unit: 'mm³',
       severity: 7, occurrence: 3, detection: 4,
     });
 
-    const summary = buildControlPlanSummary(plan.id);
+    const summary = await buildControlPlanSummary(plan.id);
     const html = formatControlPlan(summary, true);
 
     expect(html).toContain('<b>Control Plan: Format Test</b>');
@@ -599,15 +599,15 @@ describe('Control Plan Summary', () => {
     expect(html).toContain('xbar-r');
   });
 
-  it('exports control plan as CSV', () => {
-    const plan = createControlPlan('Export Test');
-    const voc = addVocItem(plan.id, 'Must work');
-    addCtqItem(plan.id, voc.id, {
+  it('exports control plan as CSV', async () => {
+    const plan = await createControlPlan('Export Test');
+    const voc = await addVocItem(plan.id, 'Must work');
+    await addCtqItem(plan.id, voc.id, {
       ctq_name: 'Pass rate', usl: 100, lsl: 95,
       severity: 8, occurrence: 3, detection: 2,
     });
 
-    const summary = buildControlPlanSummary(plan.id);
+    const summary = await buildControlPlanSummary(plan.id);
     const csv = exportControlPlanCsv(summary);
 
     expect(csv).toContain('CTQ Name');
@@ -657,25 +657,25 @@ describe('Real-World Scenarios', () => {
     expect(result.predicted_oos_description).toContain('USL');
   });
 
-  it('full control plan for PCB assembly line', () => {
-    const plan = createControlPlan('PCB Line 5', 'automated', 'Automotive control board', '');
+  it('full control plan for PCB assembly line', async () => {
+    const plan = await createControlPlan('PCB Line 5', 'automated', 'Automotive control board', '');
     // Standard should be auto-suggested
     const suggested = suggestStandard('Automotive control board', 'automated');
     expect(suggested).toContain('IATF');
 
     // VOC items from customer
-    const voc1 = addVocItem(plan.id, 'No solder bridges', 'function', 5);
-    const voc2 = addVocItem(plan.id, 'Component alignment within 0.1mm', 'dimensions', 4);
-    const voc3 = addVocItem(plan.id, 'Board passes ICT/FCT', 'function', 5);
+    const voc1 = await addVocItem(plan.id, 'No solder bridges', 'function', 5);
+    const voc2 = await addVocItem(plan.id, 'Component alignment within 0.1mm', 'dimensions', 4);
+    const voc3 = await addVocItem(plan.id, 'Board passes ICT/FCT', 'function', 5);
 
     // CTQs
-    addCtqItem(plan.id, voc1.id, {
+    await addCtqItem(plan.id, voc1.id, {
       ctq_name: 'Solder bridge count per board',
       measurement_method: 'AOI (Automated Optical Inspection)',
       severity: 8, occurrence: 3, detection: 1, // AOI catches most
     });
 
-    addCtqItem(plan.id, voc2.id, {
+    await addCtqItem(plan.id, voc2.id, {
       ctq_name: 'Component offset X/Y',
       measurement_method: 'SPI + AOI',
       unit: 'mm',
@@ -683,7 +683,7 @@ describe('Real-World Scenarios', () => {
       severity: 6, occurrence: 4, detection: 2,
     });
 
-    addCtqItem(plan.id, voc3.id, {
+    await addCtqItem(plan.id, voc3.id, {
       ctq_name: 'ICT pass rate',
       measurement_method: 'In-Circuit Test',
       unit: '%',
@@ -691,7 +691,7 @@ describe('Real-World Scenarios', () => {
       severity: 10, occurrence: 2, detection: 1,
     });
 
-    const summary = buildControlPlanSummary(plan.id);
+    const summary = await buildControlPlanSummary(plan.id);
 
     expect(summary.voc_items).toHaveLength(3);
     expect(summary.ctq_items).toHaveLength(3);

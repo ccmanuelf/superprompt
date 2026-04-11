@@ -6,18 +6,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-gap-fixes');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'gap-fixes-test.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'clauded-test-gap-fixes'), config: { NODE_ENV: 'test' } }));
 
@@ -47,19 +45,17 @@ import type { TOCConfig } from '../src/toc/models.js';
 
 // ── Test Helpers ────────────────────────────────────────────
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initCapacityTables();
-  initSequencerTables();
-  initVsmTables();
-  initTocTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initCapacityTables();
+  await initSequencerTables();
+  await initVsmTables();
+  await initTocTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ═════════════════════════════════════════════════════════════
 // GAP #2 — Per-line calendar override
@@ -426,12 +422,12 @@ describe('GAP #12 — VSM takt vs bottleneck', () => {
 // ═════════════════════════════════════════════════════════════
 
 describe('GAP #15 — TOC throughput history', () => {
-  it('records and retrieves throughput data points sorted by period desc', () => {
-    recordThroughput('MyPlant', '2026-01', 1000, 50000, 85.5, 200);
-    recordThroughput('MyPlant', '2026-02', 1100, 55000, 88.0, 180);
-    recordThroughput('MyPlant', '2026-03', 1200, 60000, 90.0, 160);
+  it('records and retrieves throughput data points sorted by period desc', async () => {
+    await recordThroughput('MyPlant', '2026-01', 1000, 50000, 85.5, 200);
+    await recordThroughput('MyPlant', '2026-02', 1100, 55000, 88.0, 180);
+    await recordThroughput('MyPlant', '2026-03', 1200, 60000, 90.0, 160);
 
-    const history = getThroughputHistory('MyPlant');
+    const history = await getThroughputHistory('MyPlant');
     expect(history.length).toBe(3);
 
     // Sorted by period desc
@@ -446,12 +442,12 @@ describe('GAP #15 — TOC throughput history', () => {
     expect(history[0].wip_units).toBe(160);
   });
 
-  it('filters by config_name — different plants do not mix', () => {
-    recordThroughput('PlantA', '2026-01', 500, 25000, 70, 100);
-    recordThroughput('PlantB', '2026-01', 800, 40000, 92, 150);
+  it('filters by config_name — different plants do not mix', async () => {
+    await recordThroughput('PlantA', '2026-01', 500, 25000, 70, 100);
+    await recordThroughput('PlantB', '2026-01', 800, 40000, 92, 150);
 
-    const historyA = getThroughputHistory('PlantA');
-    const historyB = getThroughputHistory('PlantB');
+    const historyA = await getThroughputHistory('PlantA');
+    const historyB = await getThroughputHistory('PlantB');
 
     expect(historyA.length).toBe(1);
     expect(historyA[0].throughput_units).toBe(500);

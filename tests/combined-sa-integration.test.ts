@@ -8,14 +8,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Database from 'better-sqlite3';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 
-// Redirect getDatabase to test DB
-let db: Database.Database;
-vi.mock('../src/db.js', async (importOriginal) => {
-  const original = await importOriginal() as any;
-  return { ...original, getDatabase: () => db };
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
 });
+vi.mock('../src/logger.js', () => ({
+  logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
+}));
 
 import { executeInWorker } from '../src/forge/worker-sandbox.js';
 import {
@@ -30,32 +33,37 @@ import { Application } from '../src/core/app.js';
 import { ProcessClient } from '../src/ipc/client.js';
 import { TOOLS_PROCESS_ENV, PARSERS_PROCESS_ENV, buildChildEnv } from '../src/ipc/env-whitelist.js';
 import type { StorageProvider, TableInitializer } from '../src/core/interfaces.js';
-import type { Skill } from '../src/db.js';
+import type { Skill } from '../src/db-core.js';
 
-function setupTestDb(): void {
-  db = new Database(':memory:');
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS skills (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE,
-      description TEXT NOT NULL, system_prompt TEXT NOT NULL,
-      allowed_tools TEXT, is_builtin INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS skill_revisions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      skill_id TEXT NOT NULL, system_prompt TEXT NOT NULL,
-      revision_note TEXT, created_at INTEGER NOT NULL,
-      FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
-    );
-  `);
-  initAutoSkillsTables();
+async function setupTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+
+  await testKnex.schema.createTable('skills', (t) => {
+    t.text('id').primary();
+    t.text('name').notNullable().unique();
+    t.text('description').notNullable();
+    t.text('system_prompt').notNullable();
+    t.text('allowed_tools');
+    t.integer('is_builtin').notNullable().defaultTo(0);
+    t.text('source_file');
+    t.integer('locked').notNullable().defaultTo(0);
+    t.bigInteger('created_at').notNullable();
+    t.bigInteger('updated_at').notNullable();
+  });
+  await testKnex.schema.createTable('skill_revisions', (t) => {
+    t.increments('id').primary();
+    t.text('skill_id').notNullable().references('id').inTable('skills').onDelete('CASCADE');
+    t.text('system_prompt').notNullable();
+    t.text('revision_note');
+    t.bigInteger('created_at').notNullable();
+  });
+  await initAutoSkillsTables();
 }
 
 describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
-  beforeEach(() => setupTestDb());
-  afterEach(() => db.close());
+  beforeEach(async () => await setupTestDb());
+  afterEach(async () => { if (testKnex) await testKnex.destroy(); });
 
   // ── SA1 + Auto-Skills: Worker sandbox + tool tracking ──────
 
@@ -74,7 +82,7 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
       expect(results[2]).toEqual({ report: 'Summary of 3 items' });
 
       // Now feed the tool names into auto-skill detection
-      const candidate = detectSkillCandidate({
+      const candidate = await detectSkillCandidate({
         toolsUsed: ['fetch_api_data', 'analyze_data', 'generate_report'],
         qualityScore: 85,
         chatId: 'combined-test',
@@ -98,7 +106,7 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
 
       // This tool call "failed" — auto-skill detection should NOT fire for failed results
       // (quality would be low, below threshold)
-      const candidate = detectSkillCandidate({
+      const candidate = await detectSkillCandidate({
         toolsUsed: ['failing_tool'],
         qualityScore: 30, // low quality due to tool failure
         chatId: 'combined-test',
@@ -111,7 +119,7 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
   // ── SA2 + Auto-Skills: Application lifecycle + skill tables ──
 
   describe('SA2 Application lifecycle initializes auto-skill tables', () => {
-    it('auto-skills tables exist and are functional after Application startup', () => {
+    it('auto-skills tables exist and are functional after Application startup', async () => {
       // Tables were created in beforeEach via initAutoSkillsTables()
       // Verify they work with real data
       const proposal: SkillProposal = {
@@ -126,18 +134,18 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
         sourceSummary: 'Testing lifecycle',
       };
 
-      insertSkillProposal(proposal);
-      const retrieved = getPendingProposal('chat-lifecycle');
+      await insertSkillProposal(proposal);
+      const retrieved = await getPendingProposal('chat-lifecycle');
       expect(retrieved).not.toBeNull();
       expect(retrieved!.name).toBe('lifecycle-skill');
 
       // Approve and create
-      const skillId = createAutoSkill(proposal);
-      const skill = db.prepare('SELECT * FROM skills WHERE id = ?').get(skillId) as any;
+      const skillId = await createAutoSkill(proposal);
+      const skill = await testKnex('skills').where('id', skillId).first() as any;
       expect(skill.name).toBe('lifecycle-skill');
 
       // Triggers stored
-      const triggers = getSkillTriggers();
+      const triggers = await getSkillTriggers();
       expect(triggers.some(t => t.pattern === 'lifecycle.*test')).toBe(true);
 
       // Dynamic trigger matches a real message
@@ -194,9 +202,9 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
   // ── Full auto-skill lifecycle: detect → propose → approve → trigger → heal ──
 
   describe('complete auto-skill lifecycle with self-healing', () => {
-    it('detect → propose → approve → skill created → triggers registered', () => {
+    it('detect → propose → approve → skill created → triggers registered', async () => {
       // Step 1: Detect candidate
-      const candidate = detectSkillCandidate({
+      const candidate = await detectSkillCandidate({
         toolsUsed: ['web_search', 'summarize_url', 'generate_document', 'read_file'],
         qualityScore: 90,
         chatId: 'full-lifecycle',
@@ -216,26 +224,26 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
         sourceType: 'tool_chain',
         sourceSummary: 'Research market trends, summarize sources, create a report',
       };
-      insertSkillProposal(proposal);
+      await insertSkillProposal(proposal);
 
       // Step 3: User response detection
       expect(detectProposalResponse('yes')).toBe('approve');
       expect(detectProposalResponse('si')).toBe('approve');
 
       // Step 4: Approve
-      const confirmation = handleProposalResponse('full-lifecycle', true);
+      const confirmation = await handleProposalResponse('full-lifecycle', true);
       expect(confirmation).toContain('created');
       expect(confirmation).toContain('[EN]');
       expect(confirmation).toContain('[ES]');
 
       // Step 5: Verify skill exists
-      const skill = db.prepare("SELECT * FROM skills WHERE name = 'market-research'").get() as any;
+      const skill = await testKnex('skills').where('name', 'market-research').first() as any;
       expect(skill).not.toBeUndefined();
       expect(skill.system_prompt).toContain('market research assistant');
       expect(JSON.parse(skill.allowed_tools)).toContain('web_search');
 
       // Step 6: Verify triggers match real messages
-      const triggers = db.prepare("SELECT * FROM skill_triggers WHERE skill_id = 'auto-market-research'").all() as any[];
+      const triggers = await testKnex('skill_triggers').where('skill_id', 'auto-market-research') as any[];
       expect(triggers.length).toBe(3);
 
       const marketResearchRegex = new RegExp(triggers[0].pattern, 'i');
@@ -243,18 +251,16 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
       expect(marketResearchRegex.test('What is 2 + 2?')).toBe(false);
 
       // Step 7: Verify revision stored
-      const revisions = db.prepare("SELECT * FROM skill_revisions WHERE skill_id = 'auto-market-research'").all() as any[];
+      const revisions = await testKnex('skill_revisions').where('skill_id', 'auto-market-research') as any[];
       expect(revisions.length).toBe(1);
       expect(revisions[0].revision_note).toBe('Auto-generated from workflow');
     });
 
-    it('self-healing: low quality triggers skill patch', () => {
+    it('self-healing: low quality triggers skill patch', async () => {
       // Create an auto-generated skill
-      db.prepare(
-        'INSERT INTO skills (id, name, description, system_prompt, allowed_tools, is_builtin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
-      ).run('auto-qa-check', 'qa-check', 'Quality check workflow', 'Step 1: Check standards', '["web_search"]', Date.now(), Date.now());
+      await testKnex('skills').insert({ id: 'auto-qa-check', name: 'qa-check', description: 'Quality check workflow', system_prompt: 'Step 1: Check standards', allowed_tools: '["web_search"]', is_builtin: 0, created_at: Date.now(), updated_at: Date.now() });
 
-      const skill = db.prepare("SELECT * FROM skills WHERE id = 'auto-qa-check'").get() as Skill;
+      const skill = await testKnex('skills').where('id', 'auto-qa-check').first() as Skill;
 
       // Low quality score → should heal
       expect(shouldHealSkill(skill, 40)).toBe(true);
@@ -266,21 +272,17 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
       expect(shouldHealSkill(skill, 80, "no, that's wrong")).toBe(true);
     });
 
-    it('self-healing does NOT heal builtin skills', () => {
-      db.prepare(
-        'INSERT INTO skills (id, name, description, system_prompt, is_builtin, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)',
-      ).run('builtin-coder', 'coder', 'Coding assistant', 'Write code', Date.now(), Date.now());
+    it('self-healing does NOT heal builtin skills', async () => {
+      await testKnex('skills').insert({ id: 'builtin-coder', name: 'coder', description: 'Coding assistant', system_prompt: 'Write code', is_builtin: 1, created_at: Date.now(), updated_at: Date.now() });
 
-      const skill = db.prepare("SELECT * FROM skills WHERE id = 'builtin-coder'").get() as Skill;
+      const skill = await testKnex('skills').where('id', 'builtin-coder').first() as Skill;
       expect(shouldHealSkill(skill, 20)).toBe(false); // never heal builtins
     });
 
-    it('self-healing does NOT heal manually created skills', () => {
-      db.prepare(
-        'INSERT INTO skills (id, name, description, system_prompt, is_builtin, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)',
-      ).run('custom-pirate', 'pirate', 'Pirate speak', 'Arr', Date.now(), Date.now());
+    it('self-healing does NOT heal manually created skills', async () => {
+      await testKnex('skills').insert({ id: 'custom-pirate', name: 'pirate', description: 'Pirate speak', system_prompt: 'Arr', is_builtin: 0, created_at: Date.now(), updated_at: Date.now() });
 
-      const skill = db.prepare("SELECT * FROM skills WHERE id = 'custom-pirate'").get() as Skill;
+      const skill = await testKnex('skills').where('id', 'custom-pirate').first() as Skill;
       expect(shouldHealSkill(skill, 20)).toBe(false); // id doesn't start with 'auto-'
     });
   });
@@ -316,26 +318,26 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
       expect(msg).toContain('[ES]');
     });
 
-    it('skill approval confirmation is bilingual', () => {
-      insertSkillProposal({
+    it('skill approval confirmation is bilingual', async () => {
+      await insertSkillProposal({
         id: 'bilingual-test', chatId: 'chat-bi', name: 'bi-skill',
         description: 'Test', systemPrompt: 'Test',
         allowedTools: [], triggerPatterns: [],
         sourceType: 'tool_chain', sourceSummary: 'Test',
       });
-      const msg = handleProposalResponse('chat-bi', true);
+      const msg = await handleProposalResponse('chat-bi', true);
       expect(msg).toContain('[EN]');
       expect(msg).toContain('[ES]');
     });
 
-    it('skill rejection confirmation is bilingual', () => {
-      insertSkillProposal({
+    it('skill rejection confirmation is bilingual', async () => {
+      await insertSkillProposal({
         id: 'reject-test', chatId: 'chat-rej', name: 'rej-skill',
         description: 'Test', systemPrompt: 'Test',
         allowedTools: [], triggerPatterns: [],
         sourceType: 'tool_chain', sourceSummary: 'Test',
       });
-      const msg = handleProposalResponse('chat-rej', false);
+      const msg = await handleProposalResponse('chat-rej', false);
       expect(msg).toContain('[EN]');
       expect(msg).toContain('[ES]');
     });
@@ -362,15 +364,15 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
   // ── Cooldown + dedup across all sprints ────────────────────
 
   describe('rate limiting and deduplication', () => {
-    it('cooldown prevents rapid skill proposals', () => {
-      insertSkillProposal({
+    it('cooldown prevents rapid skill proposals', async () => {
+      await insertSkillProposal({
         id: 'cooldown-1', chatId: 'rate-test', name: 'first',
         description: 'First', systemPrompt: 'First',
         allowedTools: ['web_search', 'read_file', 'generate_document'],
         triggerPatterns: [], sourceType: 'tool_chain', sourceSummary: 'First',
       });
 
-      const candidate = detectSkillCandidate({
+      const candidate = await detectSkillCandidate({
         toolsUsed: ['web_search', 'summarize_url', 'run_command'],
         qualityScore: 90,
         chatId: 'rate-test',
@@ -379,12 +381,10 @@ describe('Combined SA1+SA2+SA3+AutoSkills — real execution', () => {
       expect(candidate).toBeNull(); // cooldown active
     });
 
-    it('dedup prevents duplicate skills with same tools', () => {
-      db.prepare(
-        'INSERT INTO skills (id, name, description, system_prompt, allowed_tools, is_builtin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
-      ).run('existing', 'existing', 'Existing', 'prompt', '["web_search","read_file","generate_document"]', Date.now(), Date.now());
+    it('dedup prevents duplicate skills with same tools', async () => {
+      await testKnex('skills').insert({ id: 'existing', name: 'existing', description: 'Existing', system_prompt: 'prompt', allowed_tools: '["web_search","read_file","generate_document"]', is_builtin: 0, created_at: Date.now(), updated_at: Date.now() });
 
-      const candidate = detectSkillCandidate({
+      const candidate = await detectSkillCandidate({
         toolsUsed: ['web_search', 'read_file', 'generate_document'],
         qualityScore: 90,
         chatId: 'dedup-test',

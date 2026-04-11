@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -38,17 +39,12 @@ import {
   type CapabilityResult,
 } from '../src/sigma.js';
 
-// ── Test DB setup (raw SQL, same pattern as balance/kanban) ──
-
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-sigma');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'sigma-test.db');
-
-let db: Database.Database;
-
-// Mock getDatabase before importing
+let testKnex: Knex;
 import { vi } from 'vitest';
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -57,16 +53,17 @@ vi.mock('../src/config.js', () => ({
   config: { NODE_ENV: 'test' },
 }));
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initSigmaTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initSigmaTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => {
+  mkdirSync(resolve(tmpdir(), 'clauded-test-sigma'), { recursive: true });
+  await initTestDb();
+});
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ── Test Data ────────────────────────────────────────────────
 
@@ -556,66 +553,66 @@ describe('Formatting', () => {
 // ── Database Tests ───────────────────────────────────────────
 
 describe('Database Operations', () => {
-  it('creates and retrieves a sigma project', () => {
-    const project = createSigmaProject('Widget', 11, 9, 10);
+  it('creates and retrieves a sigma project', async () => {
+    const project = await createSigmaProject('Widget', 11, 9, 10);
     expect(project.name).toBe('Widget');
     expect(project.usl).toBe(11);
     expect(project.lsl).toBe(9);
     expect(project.target).toBe(10);
 
-    const retrieved = getSigmaProject(project.id);
+    const retrieved = await getSigmaProject(project.id);
     expect(retrieved).toBeDefined();
     expect(retrieved!.name).toBe('Widget');
   });
 
-  it('finds project by name (case-insensitive)', () => {
-    createSigmaProject('PCB Width', 5.1, 4.9);
-    const found = getSigmaProjectByName('pcb width');
+  it('finds project by name (case-insensitive)', async () => {
+    await createSigmaProject('PCB Width', 5.1, 4.9);
+    const found = await getSigmaProjectByName('pcb width');
     expect(found).toBeDefined();
   });
 
-  it('inserts and retrieves measurements', () => {
-    const project = createSigmaProject('MeasTest', 11, 9);
+  it('inserts and retrieves measurements', async () => {
+    const project = await createSigmaProject('MeasTest', 11, 9);
     const rows: MeasurementRow[] = [
       { value: 10.0, subgroup: 'A' },
       { value: 10.1, subgroup: 'A' },
       { value: 9.9, subgroup: 'B', defect_type: 'scratch' },
     ];
-    insertMeasurements(project.id, rows);
+    await insertMeasurements(project.id, rows);
 
-    const retrieved = getMeasurements(project.id);
+    const retrieved = await getMeasurements(project.id);
     expect(retrieved).toHaveLength(3);
     expect(retrieved[0].value).toBe(10.0);
     expect(retrieved[2].defect_type).toBe('scratch');
   });
 
-  it('saves and retrieves results', () => {
-    const project = createSigmaProject('ResultTest', 11, 9);
+  it('saves and retrieves results', async () => {
+    const project = await createSigmaProject('ResultTest', 11, 9);
     const capData = { cp: 1.5, cpk: 1.3 };
-    saveSigmaResult(project.id, 'capability', capData);
+    await saveSigmaResult(project.id, 'capability', capData);
 
-    const results = getSigmaResults(project.id);
+    const results = await getSigmaResults(project.id);
     expect(results).toHaveLength(1);
     expect(results[0].result_type).toBe('capability');
     const parsed = JSON.parse(results[0].result_json);
     expect(parsed.cp).toBe(1.5);
   });
 
-  it('cascades delete from project to measurements and results', () => {
-    const project = createSigmaProject('Cascade', 11, 9);
-    insertMeasurements(project.id, [{ value: 10 }]);
-    saveSigmaResult(project.id, 'test', { x: 1 });
+  it('cascades delete from project to measurements and results', async () => {
+    const project = await createSigmaProject('Cascade', 11, 9);
+    await insertMeasurements(project.id, [{ value: 10 }]);
+    await saveSigmaResult(project.id, 'test', { x: 1 });
 
-    deleteSigmaProject(project.id);
+    await deleteSigmaProject(project.id);
 
-    expect(getMeasurements(project.id)).toHaveLength(0);
-    expect(getSigmaResults(project.id)).toHaveLength(0);
+    expect(await getMeasurements(project.id)).toHaveLength(0);
+    expect(await getSigmaResults(project.id)).toHaveLength(0);
   });
 
-  it('lists projects ordered by updated_at desc', () => {
-    createSigmaProject('First', 11, 9);
-    createSigmaProject('Second', 11, 9);
-    const projects = listSigmaProjects();
+  it('lists projects ordered by updated_at desc', async () => {
+    await createSigmaProject('First', 11, 9);
+    await createSigmaProject('Second', 11, 9);
+    const projects = await listSigmaProjects();
     expect(projects).toHaveLength(2);
   });
 });

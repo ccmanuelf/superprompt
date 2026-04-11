@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 // Mock DB functions before importing
-vi.mock('../src/db.js', () => ({
+vi.mock('../src/db-core.js', () => ({
   getSkillByName: vi.fn(),
   createSkill: vi.fn(),
   insertSkillRevision: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock('../src/logger.js', () => ({
 }));
 
 import { autoImportForge } from '../src/forge/auto-import.js';
-import { getSkillByName, createSkill, getUserToolByName, createUserTool } from '../src/db.js';
+import { getSkillByName, createSkill, getUserToolByName, createUserTool } from '../src/db-core.js';
 
 describe('autoImportForge', () => {
   beforeEach(() => {
@@ -42,7 +42,7 @@ describe('autoImportForge', () => {
     try { rmSync(TMP_DIR, { recursive: true }); } catch { /* ignore */ }
   });
 
-  it('imports skill markdown files that do not exist in DB', () => {
+  it('imports skill markdown files that do not exist in DB', async () => {
     const skillMd = `---
 name: pirate
 description: Speaks like a pirate
@@ -50,9 +50,9 @@ description: Speaks like a pirate
 You are a pirate. Say arrr.`;
 
     writeFileSync(resolve(TMP_DIR, 'forge/skills/pirate.md'), skillMd);
-    vi.mocked(getSkillByName).mockReturnValue(undefined);
+    vi.mocked(getSkillByName).mockResolvedValue(undefined);
 
-    const result = autoImportForge();
+    const result = await autoImportForge();
 
     expect(result.skills).toBe(1);
     expect(createSkill).toHaveBeenCalledWith(
@@ -66,7 +66,7 @@ You are a pirate. Say arrr.`;
     );
   });
 
-  it('skips skills that already exist in DB', () => {
+  it('skips skills that already exist in DB', async () => {
     const skillMd = `---
 name: existing
 description: Already exists
@@ -74,15 +74,15 @@ description: Already exists
 Some prompt.`;
 
     writeFileSync(resolve(TMP_DIR, 'forge/skills/existing.md'), skillMd);
-    vi.mocked(getSkillByName).mockReturnValue({ id: 'custom-existing' } as any);
+    vi.mocked(getSkillByName).mockResolvedValue({ id: 'custom-existing' } as any);
 
-    const result = autoImportForge();
+    const result = await autoImportForge();
 
     expect(result.skills).toBe(0);
     expect(createSkill).not.toHaveBeenCalled();
   });
 
-  it('imports tool markdown files that do not exist in DB', () => {
+  it('imports tool markdown files that do not exist in DB', async () => {
     const toolMd = `---
 name: weather
 description: Get weather
@@ -100,9 +100,9 @@ endpoint:
 ---`;
 
     writeFileSync(resolve(TMP_DIR, 'forge/tools/weather.md'), toolMd);
-    vi.mocked(getUserToolByName).mockReturnValue(undefined);
+    vi.mocked(getUserToolByName).mockResolvedValue(undefined);
 
-    const result = autoImportForge();
+    const result = await autoImportForge();
 
     expect(result.tools).toBe(1);
     expect(createUserTool).toHaveBeenCalledWith(
@@ -123,7 +123,7 @@ endpoint:
     expect(config.parameters[0].name).toBe('city');
   });
 
-  it('skips tools that already exist in DB', () => {
+  it('skips tools that already exist in DB', async () => {
     const toolMd = `---
 name: existing
 description: Already exists
@@ -134,23 +134,23 @@ endpoint:
 ---`;
 
     writeFileSync(resolve(TMP_DIR, 'forge/tools/existing.md'), toolMd);
-    vi.mocked(getUserToolByName).mockReturnValue({ id: 'user-existing' } as any);
+    vi.mocked(getUserToolByName).mockResolvedValue({ id: 'user-existing' } as any);
 
-    const result = autoImportForge();
+    const result = await autoImportForge();
 
     expect(result.tools).toBe(0);
     expect(createUserTool).not.toHaveBeenCalled();
   });
 
-  it('skips invalid markdown files with warnings', () => {
+  it('skips invalid markdown files with warnings', async () => {
     writeFileSync(resolve(TMP_DIR, 'forge/skills/bad.md'), 'No frontmatter here');
 
-    const result = autoImportForge();
+    const result = await autoImportForge();
 
     expect(result.skills).toBe(0);
   });
 
-  it('rejects unsafe generated_code tools', () => {
+  it('rejects unsafe generated_code tools', async () => {
     const toolMd = `---
 name: evil
 description: Dangerous tool
@@ -167,18 +167,18 @@ return { result: "bye" };
 \`\`\``;
 
     writeFileSync(resolve(TMP_DIR, 'forge/tools/evil.md'), toolMd);
-    vi.mocked(getUserToolByName).mockReturnValue(undefined);
+    vi.mocked(getUserToolByName).mockResolvedValue(undefined);
 
-    const result = autoImportForge();
+    const result = await autoImportForge();
 
     expect(result.tools).toBe(0);
     expect(createUserTool).not.toHaveBeenCalled();
   });
 
-  it('returns zeros when forge directories do not exist', () => {
+  it('returns zeros when forge directories do not exist', async () => {
     rmSync(TMP_DIR, { recursive: true });
 
-    const result = autoImportForge();
+    const result = await autoImportForge();
 
     expect(result.skills).toBe(0);
     expect(result.tools).toBe(0);

@@ -8,18 +8,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-final-val');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'final-val.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'clauded-test-final-val'), config: { NODE_ENV: 'test' } }));
 
@@ -70,21 +68,19 @@ import { convertCapacityToTOC, convertVSMToSimulation } from '../src/bridges.js'
 
 // ── Test Setup ──────────────────────────────────────────────
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initCapacityTables();
-  initSequencerTables();
-  initVsmTables();
-  initTocTables();
-  initConwipTables();
-  initDoeTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initCapacityTables();
+  await initSequencerTables();
+  await initVsmTables();
+  await initTocTables();
+  await initConwipTables();
+  await initDoeTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ═══════════════════════════════════════════════════════════════
 // GAP 1: Capacity quantity-only demand → fallback produces >0 hours
@@ -505,12 +501,12 @@ describe('GAP 14 — TOC 0-demand warning', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('GAP 15 — TOC throughput history', () => {
-  it('records 3 points and retrieves them ordered by period desc', () => {
-    recordThroughput('PCB-Plant', '2026-01', 5000, 250000, 88, 300);
-    recordThroughput('PCB-Plant', '2026-02', 5500, 275000, 90, 280);
-    recordThroughput('PCB-Plant', '2026-03', 6000, 300000, 92, 260);
+  it('records 3 points and retrieves them ordered by period desc', async () => {
+    await recordThroughput('PCB-Plant', '2026-01', 5000, 250000, 88, 300);
+    await recordThroughput('PCB-Plant', '2026-02', 5500, 275000, 90, 280);
+    await recordThroughput('PCB-Plant', '2026-03', 6000, 300000, 92, 260);
 
-    const history = getThroughputHistory('PCB-Plant');
+    const history = await getThroughputHistory('PCB-Plant');
     expect(history.length).toBe(3);
     expect(history[0].period).toBe('2026-03');
     expect(history[1].period).toBe('2026-02');

@@ -1,16 +1,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-toc');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'toc-test.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -36,16 +34,14 @@ import {
 } from '../src/toc/index.js';
 import type { TOCConfig, WorkCenter, BufferConfig } from '../src/toc/models.js';
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initTocTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initTocTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ── Sample Data ──────────────────────────────────────────────
 
@@ -298,37 +294,37 @@ describe('Full TOC Analysis', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('Database CRUD', () => {
-  it('should save and retrieve', () => {
-    const saved = saveTOC('My TOC', SAMPLE_CONFIG);
+  it('should save and retrieve', async () => {
+    const saved = await saveTOC('My TOC', SAMPLE_CONFIG);
     expect(saved.id).toBeTruthy();
-    const retrieved = getTOC('My TOC');
+    const retrieved = await getTOC('My TOC');
     expect(retrieved).toBeDefined();
     expect(JSON.parse(retrieved!.config_json).work_centers).toHaveLength(5);
   });
 
-  it('should save with result', () => {
+  it('should save with result', async () => {
     const result = analyzeTOC(SAMPLE_CONFIG);
-    saveTOC('With Result', SAMPLE_CONFIG, result);
-    const retrieved = getTOC('With Result');
+    await saveTOC('With Result', SAMPLE_CONFIG, result);
+    const retrieved = await getTOC('With Result');
     expect(retrieved!.result_json).toBeTruthy();
   });
 
-  it('should update on name collision', () => {
-    saveTOC('Same', SAMPLE_CONFIG);
-    saveTOC('Same', { ...SAMPLE_CONFIG, demand_units_per_day: 999 });
-    expect(listTOCs().filter((t) => t.name === 'Same')).toHaveLength(1);
+  it('should update on name collision', async () => {
+    await saveTOC('Same', SAMPLE_CONFIG);
+    await saveTOC('Same', { ...SAMPLE_CONFIG, demand_units_per_day: 999 });
+    expect((await listTOCs()).filter((t) => t.name === 'Same')).toHaveLength(1);
   });
 
-  it('should delete', () => {
-    const saved = saveTOC('ToDelete', SAMPLE_CONFIG);
-    expect(deleteTOC(saved.id)).toBe(true);
-    expect(getTOC(saved.id)).toBeUndefined();
+  it('should delete', async () => {
+    const saved = await saveTOC('ToDelete', SAMPLE_CONFIG);
+    expect(await deleteTOC(saved.id)).toBe(true);
+    expect(await getTOC(saved.id)).toBeUndefined();
   });
 
-  it('should list sorted', () => {
-    saveTOC('A', SAMPLE_CONFIG);
-    saveTOC('B', SAMPLE_CONFIG);
-    const all = listTOCs();
+  it('should list sorted', async () => {
+    await saveTOC('A', SAMPLE_CONFIG);
+    await saveTOC('B', SAMPLE_CONFIG);
+    const all = await listTOCs();
     expect(all).toHaveLength(2);
     expect(all[0].updated_at).toBeGreaterThanOrEqual(all[1].updated_at);
   });

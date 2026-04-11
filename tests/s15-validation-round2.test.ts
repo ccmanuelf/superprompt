@@ -8,18 +8,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-r2');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'r2-test.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'clauded-test-r2'), config: { NODE_ENV: 'test' } }));
 
@@ -71,21 +69,19 @@ import type { FSMConfig, FSMEvent, FSMDefinition } from '../src/fsm/models.js';
 
 // ── Test Setup ──────────────────────────────────────────────
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initCapacityTables();
-  initSequencerTables();
-  initVsmTables();
-  initTocTables();
-  initConwipTables();
-  initDoeTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initCapacityTables();
+  await initSequencerTables();
+  await initVsmTables();
+  await initTocTables();
+  await initConwipTables();
+  await initDoeTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ══════════════════════════════════════════════════════════════
 // S15.1 — CAPACITY PLANNING: PCB Assembly
@@ -187,10 +183,10 @@ describe('S15.1 Capacity Planning — PCB Assembly', () => {
     expect(mc.confidence_95.lower).toBeLessThan(mc.confidence_95.upper);
   });
 
-  it('DB persistence: save and list capacity plans', () => {
+  it('DB persistence: save and list capacity plans', async () => {
     const result = analyzeCapacity(PCB_CONFIG);
-    savePlan(PCB_CONFIG.name, PCB_CONFIG, result);
-    const plans = listPlans();
+    await savePlan(PCB_CONFIG.name, PCB_CONFIG, result);
+    const plans = await listPlans();
     expect(plans.length).toBeGreaterThanOrEqual(1);
     expect(plans.some(p => p.name === 'PCB_Assembly_R2')).toBe(true);
   });

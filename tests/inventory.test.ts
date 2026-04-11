@@ -1,18 +1,15 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-// ── Test DB setup ────────────────────────────────────────────
-
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-inventory');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'inventory-test.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -47,17 +44,18 @@ import {
 // Need sigma tables for inverseNormal dependency
 import { initSigmaTables } from '../src/sigma.js';
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initSigmaTables();
-  initInventoryTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initSigmaTables();
+  await initInventoryTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => {
+  mkdirSync(resolve(tmpdir(), 'clauded-test-inventory'), { recursive: true });
+  await initTestDb();
+});
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ── Test Data ────────────────────────────────────────────────
 
@@ -367,42 +365,42 @@ describe('Formatting', () => {
 // ── Database Tests ───────────────────────────────────────────
 
 describe('Database Operations', () => {
-  it('creates and retrieves project', () => {
-    const project = createInventoryProject('Warehouse', 'Main warehouse');
+  it('creates and retrieves project', async () => {
+    const project = await createInventoryProject('Warehouse', 'Main warehouse');
     expect(project.name).toBe('Warehouse');
 
-    const found = getInventoryProjectByName('warehouse');
+    const found = await getInventoryProjectByName('warehouse');
     expect(found).toBeDefined();
     expect(found!.name).toBe('Warehouse');
   });
 
-  it('inserts and retrieves items', () => {
-    const project = createInventoryProject('ItemTest');
+  it('inserts and retrieves items', async () => {
+    const project = await createInventoryProject('ItemTest');
     const items = parseInventoryCsv(BASIC_CSV);
-    insertInventoryItems(project.id, items);
+    await insertInventoryItems(project.id, items);
 
-    const retrieved = getInventoryItems(project.id);
+    const retrieved = await getInventoryItems(project.id);
     expect(retrieved).toHaveLength(5);
     expect(retrieved[0].item_id).toBe('SKU-001');
   });
 
-  it('cascades delete', () => {
-    const project = createInventoryProject('Cascade');
-    insertInventoryItems(project.id, parseInventoryCsv(BASIC_CSV));
-    saveInventoryResult(project.id, 'test', { x: 1 });
+  it('cascades delete', async () => {
+    const project = await createInventoryProject('Cascade');
+    await insertInventoryItems(project.id, parseInventoryCsv(BASIC_CSV));
+    await saveInventoryResult(project.id, 'test', { x: 1 });
 
-    deleteInventoryProject(project.id);
-    expect(getInventoryItems(project.id)).toHaveLength(0);
-    expect(getInventoryResults(project.id)).toHaveLength(0);
+    await deleteInventoryProject(project.id);
+    expect(await getInventoryItems(project.id)).toHaveLength(0);
+    expect(await getInventoryResults(project.id)).toHaveLength(0);
   });
 
-  it('prevents duplicate item_id per project', () => {
-    const project = createInventoryProject('DupTest');
+  it('prevents duplicate item_id per project', async () => {
+    const project = await createInventoryProject('DupTest');
     const items: InventoryItem[] = [
       { item_id: 'A', description: 'A', annual_demand: 100, unit_cost: 10, order_cost: 50, holding_cost_pct: 20, lead_time_days: 5, service_level: 0.95 },
     ];
-    insertInventoryItems(project.id, items);
-    expect(() => insertInventoryItems(project.id, items)).toThrow();
+    await insertInventoryItems(project.id, items);
+    await expect(insertInventoryItems(project.id, items)).rejects.toThrow();
   });
 });
 

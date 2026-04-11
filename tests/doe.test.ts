@@ -1,15 +1,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-doe');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'doe-test.db');
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'clauded-test-doe'), config: { NODE_ENV: 'test' } }));
 
@@ -17,15 +16,13 @@ import { generateMatrix, analyzeDOE } from '../src/doe/analysis.js';
 import { initDoeTables, saveDOE, getDOE, listDOEs, deleteDOE } from '../src/doe/index.js';
 import type { DOEConfig, Factor, ResponseVar } from '../src/doe/models.js';
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initDoeTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initDoeTables();
 }
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ── Sample Data ──────────────────────────────────────────────
 
@@ -304,29 +301,29 @@ describe('Desirability', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('Database CRUD', () => {
-  it('should save and retrieve', () => {
-    const saved = saveDOE('My DOE', BASE_CONFIG);
+  it('should save and retrieve', async () => {
+    const saved = await saveDOE('My DOE', BASE_CONFIG);
     expect(saved.id).toBeTruthy();
-    const retrieved = getDOE('My DOE');
+    const retrieved = await getDOE('My DOE');
     expect(retrieved).toBeDefined();
   });
 
-  it('should update on collision', () => {
-    saveDOE('Same', BASE_CONFIG);
-    saveDOE('Same', { ...BASE_CONFIG, name: 'Updated' });
-    expect(listDOEs().filter((e) => e.name === 'Same')).toHaveLength(1);
+  it('should update on collision', async () => {
+    await saveDOE('Same', BASE_CONFIG);
+    await saveDOE('Same', { ...BASE_CONFIG, name: 'Updated' });
+    expect((await listDOEs()).filter((e) => e.name === 'Same')).toHaveLength(1);
   });
 
-  it('should delete', () => {
-    const saved = saveDOE('Del', BASE_CONFIG);
-    expect(deleteDOE(saved.id)).toBe(true);
-    expect(getDOE(saved.id)).toBeUndefined();
+  it('should delete', async () => {
+    const saved = await saveDOE('Del', BASE_CONFIG);
+    expect(await deleteDOE(saved.id)).toBe(true);
+    expect(await getDOE(saved.id)).toBeUndefined();
   });
 
-  it('should list sorted', () => {
-    saveDOE('A', BASE_CONFIG);
-    saveDOE('B', BASE_CONFIG);
-    const all = listDOEs();
+  it('should list sorted', async () => {
+    await saveDOE('A', BASE_CONFIG);
+    await saveDOE('B', BASE_CONFIG);
+    const all = await listDOEs();
     expect(all).toHaveLength(2);
     expect(all[0].updated_at).toBeGreaterThanOrEqual(all[1].updated_at);
   });

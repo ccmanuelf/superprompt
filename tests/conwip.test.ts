@@ -1,15 +1,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-conwip');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'conwip-test.db');
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'clauded-test-conwip'), config: { NODE_ENV: 'test' } }));
 
@@ -17,15 +16,13 @@ import { analyzeCONWIP, analyzeHeijunka } from '../src/conwip/analysis.js';
 import { initConwipTables, saveConwip, getConwip, listConwips, deleteConwip } from '../src/conwip/index.js';
 import type { CONWIPConfig, HeijunkaConfig, ProductionStage, ProductType } from '../src/conwip/models.js';
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initConwipTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initConwipTables();
 }
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ── Sample Data ──────────────────────────────────────────────
 
@@ -183,29 +180,29 @@ describe('Heijunka Analysis', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('Database CRUD', () => {
-  it('should save and retrieve', () => {
-    const saved = saveConwip('My Config', CW_CONFIG);
+  it('should save and retrieve', async () => {
+    const saved = await saveConwip('My Config', CW_CONFIG);
     expect(saved.id).toBeTruthy();
-    const retrieved = getConwip('My Config');
+    const retrieved = await getConwip('My Config');
     expect(retrieved).toBeDefined();
   });
 
-  it('should update on name collision', () => {
-    saveConwip('Same', CW_CONFIG);
-    saveConwip('Same', HJ_CONFIG);
-    expect(listConwips().filter((c) => c.name === 'Same')).toHaveLength(1);
+  it('should update on name collision', async () => {
+    await saveConwip('Same', CW_CONFIG);
+    await saveConwip('Same', HJ_CONFIG);
+    expect((await listConwips()).filter((c) => c.name === 'Same')).toHaveLength(1);
   });
 
-  it('should delete', () => {
-    const saved = saveConwip('Del', CW_CONFIG);
-    expect(deleteConwip(saved.id)).toBe(true);
-    expect(getConwip(saved.id)).toBeUndefined();
+  it('should delete', async () => {
+    const saved = await saveConwip('Del', CW_CONFIG);
+    expect(await deleteConwip(saved.id)).toBe(true);
+    expect(await getConwip(saved.id)).toBeUndefined();
   });
 
-  it('should list sorted', () => {
-    saveConwip('A', CW_CONFIG);
-    saveConwip('B', HJ_CONFIG);
-    const all = listConwips();
+  it('should list sorted', async () => {
+    await saveConwip('A', CW_CONFIG);
+    await saveConwip('B', HJ_CONFIG);
+    const all = await listConwips();
     expect(all).toHaveLength(2);
     expect(all[0].updated_at).toBeGreaterThanOrEqual(all[1].updated_at);
   });

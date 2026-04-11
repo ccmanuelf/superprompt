@@ -1,11 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { tmpdir } from 'node:os';
-
-// We test the fixer logic by mocking the DB and router
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-skill-fixer');
+import { describe, it, expect, vi } from 'vitest';
 
 describe('skill-fixer', () => {
   it('rejects locked skills', async () => {
@@ -13,8 +6,8 @@ describe('skill-fixer', () => {
     const { fixSkill } = await import('../src/forge/skill-fixer.js');
 
     // Mock getSkill to return a locked skill
-    const db = await import('../src/db.js');
-    vi.spyOn(db, 'getSkill').mockReturnValue({
+    const db = await import('../src/db-core.js');
+    vi.spyOn(db, 'getSkill').mockResolvedValue({
       id: 'test-1',
       name: 'locked-skill',
       description: 'A locked skill',
@@ -39,8 +32,8 @@ describe('skill-fixer', () => {
 
   it('returns error for missing skill', async () => {
     const { fixSkill } = await import('../src/forge/skill-fixer.js');
-    const db = await import('../src/db.js');
-    vi.spyOn(db, 'getSkill').mockReturnValue(undefined);
+    const db = await import('../src/db-core.js');
+    vi.spyOn(db, 'getSkill').mockResolvedValue(undefined);
 
     const mockRouter = {} as any;
     const result = await fixSkill('nonexistent', 'fix this', 'chat1', mockRouter);

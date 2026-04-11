@@ -1,16 +1,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-capacity');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'capacity-test.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -49,16 +47,14 @@ import {
 
 // ── Test Helpers ─────────────────────────────────────────────
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initCapacityTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initCapacityTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ── Sample Data ──────────────────────────────────────────────
 
@@ -545,76 +541,76 @@ describe('ROI Calculator', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('Database CRUD', () => {
-  it('should save and retrieve a plan', () => {
-    const plan = savePlan('My Plan', SAMPLE_CONFIG);
+  it('should save and retrieve a plan', async () => {
+    const plan = await savePlan('My Plan', SAMPLE_CONFIG);
     expect(plan.id).toBeTruthy();
     expect(plan.name).toBe('My Plan');
 
-    const retrieved = getPlan('My Plan');
+    const retrieved = await getPlan('My Plan');
     expect(retrieved).toBeDefined();
     expect(retrieved!.name).toBe('My Plan');
     expect(JSON.parse(retrieved!.config_json).lines).toHaveLength(3);
   });
 
-  it('should save plan with result', () => {
+  it('should save plan with result', async () => {
     const result = analyzeCapacity(SAMPLE_CONFIG);
-    const plan = savePlan('With Result', SAMPLE_CONFIG, result);
+    const plan = await savePlan('With Result', SAMPLE_CONFIG, result);
 
-    const retrieved = getPlan(plan.id);
+    const retrieved = await getPlan(plan.id);
     expect(retrieved!.result_json).toBeTruthy();
     const parsedResult = JSON.parse(retrieved!.result_json!);
     expect(parsedResult.overall_utilization_pct).toBeGreaterThan(0);
   });
 
-  it('should update existing plan on name collision', () => {
-    savePlan('Same Name', SAMPLE_CONFIG);
+  it('should update existing plan on name collision', async () => {
+    await savePlan('Same Name', SAMPLE_CONFIG);
     const config2 = { ...SAMPLE_CONFIG, name: 'Updated' };
-    savePlan('Same Name', config2);
+    await savePlan('Same Name', config2);
 
-    const plans = listPlans();
+    const plans = await listPlans();
     const matching = plans.filter((p) => p.name === 'Same Name');
     expect(matching).toHaveLength(1);
     expect(JSON.parse(matching[0].config_json).name).toBe('Updated');
   });
 
-  it('should list plans sorted by updated_at desc', () => {
-    savePlan('Plan A', SAMPLE_CONFIG);
-    savePlan('Plan B', SAMPLE_CONFIG);
-    savePlan('Plan C', SAMPLE_CONFIG);
+  it('should list plans sorted by updated_at desc', async () => {
+    await savePlan('Plan A', SAMPLE_CONFIG);
+    await savePlan('Plan B', SAMPLE_CONFIG);
+    await savePlan('Plan C', SAMPLE_CONFIG);
 
-    const plans = listPlans();
+    const plans = await listPlans();
     expect(plans).toHaveLength(3);
     for (let i = 1; i < plans.length; i++) {
       expect(plans[i].updated_at).toBeLessThanOrEqual(plans[i - 1].updated_at);
     }
   });
 
-  it('should delete a plan', () => {
-    const plan = savePlan('To Delete', SAMPLE_CONFIG);
-    expect(deletePlan(plan.id)).toBe(true);
-    expect(getPlan(plan.id)).toBeUndefined();
+  it('should delete a plan', async () => {
+    const plan = await savePlan('To Delete', SAMPLE_CONFIG);
+    expect(await deletePlan(plan.id)).toBe(true);
+    expect(await getPlan(plan.id)).toBeUndefined();
   });
 
-  it('should return false when deleting non-existent plan', () => {
-    expect(deletePlan('nonexistent')).toBe(false);
+  it('should return false when deleting non-existent plan', async () => {
+    expect(await deletePlan('nonexistent')).toBe(false);
   });
 
-  it('should save and retrieve results', () => {
-    const plan = savePlan('With Results', SAMPLE_CONFIG);
-    const resultId = saveResult(plan.id, 'analysis', { test: true });
+  it('should save and retrieve results', async () => {
+    const plan = await savePlan('With Results', SAMPLE_CONFIG);
+    const resultId = await saveResult(plan.id, 'analysis', { test: true });
     expect(resultId).toBeTruthy();
 
-    const results = getResults(plan.id);
+    const results = await getResults(plan.id);
     expect(results).toHaveLength(1);
     expect(results[0].result_type).toBe('analysis');
     expect(JSON.parse(results[0].result_json).test).toBe(true);
   });
 
-  it('should get plan by ID or name', () => {
-    const plan = savePlan('Findable Plan', SAMPLE_CONFIG);
-    expect(getPlan(plan.id)).toBeDefined();
-    expect(getPlan('Findable Plan')).toBeDefined();
-    expect(getPlan('Nonexistent')).toBeUndefined();
+  it('should get plan by ID or name', async () => {
+    const plan = await savePlan('Findable Plan', SAMPLE_CONFIG);
+    expect(await getPlan(plan.id)).toBeDefined();
+    expect(await getPlan('Findable Plan')).toBeDefined();
+    expect(await getPlan('Nonexistent')).toBeUndefined();
   });
 });
 

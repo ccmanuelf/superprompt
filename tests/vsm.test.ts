@@ -1,16 +1,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-vsm');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'vsm-test.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -29,16 +27,14 @@ import {
 } from '../src/vsm/index.js';
 import type { VSMConfig, ProcessStep } from '../src/vsm/models.js';
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initVsmTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initVsmTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ── Sample Data ──────────────────────────────────────────────
 
@@ -298,41 +294,41 @@ describe('Bottleneck Detection', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('Database CRUD', () => {
-  it('should save and retrieve a VSM', () => {
-    const saved = saveVSM('My VSM', SAMPLE_CONFIG);
+  it('should save and retrieve a VSM', async () => {
+    const saved = await saveVSM('My VSM', SAMPLE_CONFIG);
     expect(saved.id).toBeTruthy();
     expect(saved.name).toBe('My VSM');
 
-    const retrieved = getVSM('My VSM');
+    const retrieved = await getVSM('My VSM');
     expect(retrieved).toBeDefined();
     expect(JSON.parse(retrieved!.config_json).steps).toHaveLength(6);
   });
 
-  it('should save with analysis result', () => {
+  it('should save with analysis result', async () => {
     const result = analyzeVSM(SAMPLE_CONFIG);
-    saveVSM('With Result', SAMPLE_CONFIG, result);
-    const retrieved = getVSM('With Result');
+    await saveVSM('With Result', SAMPLE_CONFIG, result);
+    const retrieved = await getVSM('With Result');
     expect(retrieved!.result_json).toBeTruthy();
     expect(JSON.parse(retrieved!.result_json!).pce_pct).toBeGreaterThan(0);
   });
 
-  it('should update on name collision', () => {
-    saveVSM('Same', SAMPLE_CONFIG);
-    saveVSM('Same', { ...SAMPLE_CONFIG, product_family: 'Gadget' });
-    const all = listVSMs();
+  it('should update on name collision', async () => {
+    await saveVSM('Same', SAMPLE_CONFIG);
+    await saveVSM('Same', { ...SAMPLE_CONFIG, product_family: 'Gadget' });
+    const all = await listVSMs();
     expect(all.filter((v) => v.name === 'Same')).toHaveLength(1);
   });
 
-  it('should delete a VSM', () => {
-    const saved = saveVSM('ToDelete', SAMPLE_CONFIG);
-    expect(deleteVSM(saved.id)).toBe(true);
-    expect(getVSM(saved.id)).toBeUndefined();
+  it('should delete a VSM', async () => {
+    const saved = await saveVSM('ToDelete', SAMPLE_CONFIG);
+    expect(await deleteVSM(saved.id)).toBe(true);
+    expect(await getVSM(saved.id)).toBeUndefined();
   });
 
-  it('should list sorted by updated_at', () => {
-    saveVSM('A', SAMPLE_CONFIG);
-    saveVSM('B', SAMPLE_CONFIG);
-    const all = listVSMs();
+  it('should list sorted by updated_at', async () => {
+    await saveVSM('A', SAMPLE_CONFIG);
+    await saveVSM('B', SAMPLE_CONFIG);
+    const all = await listVSMs();
     expect(all).toHaveLength(2);
     expect(all[0].updated_at).toBeGreaterThanOrEqual(all[1].updated_at);
   });

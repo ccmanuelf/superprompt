@@ -1,16 +1,15 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-fmea');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'fmea-test.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -28,16 +27,17 @@ import {
   type FailureMode, type ActionItem,
 } from '../src/fmea.js';
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initFmeaTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initFmeaTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => {
+  mkdirSync(resolve(tmpdir(), 'clauded-test-fmea'), { recursive: true });
+  await initTestDb();
+});
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 const SMT_CSV = `process_step,failure_mode,effect,severity,cause,occurrence,detection_method,detection,current_controls
 Solder paste print,Insufficient paste,Cold solder joints,8,Stencil clogged,4,SPI inspection,2,Regular stencil cleaning
@@ -113,17 +113,17 @@ describe('CSV Parsing', () => {
 // ── Database CRUD ────────────────────────────────────────────
 
 describe('Database CRUD', () => {
-  it('creates and retrieves FMEA doc', () => {
-    const doc = createFmeaDoc('SMT Line 3', 'pfmea', 'Control Board', 'SMT Assembly');
+  it('creates and retrieves FMEA doc', async () => {
+    const doc = await createFmeaDoc('SMT Line 3', 'pfmea', 'Control Board', 'SMT Assembly');
     expect(doc.fmea_type).toBe('pfmea');
-    const found = getFmeaDocByName('smt line 3');
+    const found = await getFmeaDocByName('smt line 3');
     expect(found).toBeDefined();
     expect(found!.product).toBe('Control Board');
   });
 
-  it('adds failure modes with auto-calculated RPN and AP', () => {
-    const doc = createFmeaDoc('Test');
-    const fm = addFailureMode(doc.id, {
+  it('adds failure modes with auto-calculated RPN and AP', async () => {
+    const doc = await createFmeaDoc('Test');
+    const fm = await addFailureMode(doc.id, {
       process_step: 'Solder', failure_mode: 'Cold joint',
       severity: 9, occurrence: 3, detection: 3,
     });
@@ -131,69 +131,69 @@ describe('Database CRUD', () => {
     expect(fm.action_priority).toBe('H'); // sev >= 9
   });
 
-  it('failure modes sorted by RPN desc', () => {
-    const doc = createFmeaDoc('Sort Test');
-    addFailureMode(doc.id, { process_step: 'A', failure_mode: 'Low', severity: 2, occurrence: 2, detection: 2 });
-    addFailureMode(doc.id, { process_step: 'B', failure_mode: 'High', severity: 9, occurrence: 5, detection: 5 });
-    addFailureMode(doc.id, { process_step: 'C', failure_mode: 'Med', severity: 5, occurrence: 5, detection: 5 });
+  it('failure modes sorted by RPN desc', async () => {
+    const doc = await createFmeaDoc('Sort Test');
+    await addFailureMode(doc.id, { process_step: 'A', failure_mode: 'Low', severity: 2, occurrence: 2, detection: 2 });
+    await addFailureMode(doc.id, { process_step: 'B', failure_mode: 'High', severity: 9, occurrence: 5, detection: 5 });
+    await addFailureMode(doc.id, { process_step: 'C', failure_mode: 'Med', severity: 5, occurrence: 5, detection: 5 });
 
-    const fms = getFailureModes(doc.id);
+    const fms = await getFailureModes(doc.id);
     expect(fms[0].failure_mode).toBe('High');
     expect(fms[0].rpn).toBeGreaterThan(fms[1].rpn);
     expect(fms[1].rpn).toBeGreaterThan(fms[2].rpn);
   });
 
-  it('adds and retrieves action items', () => {
-    const doc = createFmeaDoc('Action Test');
-    const fm = addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y', severity: 8, occurrence: 4, detection: 3 });
-    const act = addAction(fm.id, doc.id, 'Redesign fixture', 'John', '2026-04-01', fm.rpn);
+  it('adds and retrieves action items', async () => {
+    const doc = await createFmeaDoc('Action Test');
+    const fm = await addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y', severity: 8, occurrence: 4, detection: 3 });
+    const act = await addAction(fm.id, doc.id, 'Redesign fixture', 'John', '2026-04-01', fm.rpn);
 
     expect(act.status).toBe('open');
     expect(act.rpn_before).toBe(96);
 
-    const acts = getActions(doc.id);
+    const acts = await getActions(doc.id);
     expect(acts).toHaveLength(1);
     expect(acts[0].owner).toBe('John');
   });
 
-  it('completes action with new S/O/D and updates failure mode', () => {
-    const doc = createFmeaDoc('Complete Test');
-    const fm = addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y', severity: 8, occurrence: 6, detection: 5 });
-    const act = addAction(fm.id, doc.id, 'Fix it', 'Jane', '', fm.rpn);
+  it('completes action with new S/O/D and updates failure mode', async () => {
+    const doc = await createFmeaDoc('Complete Test');
+    const fm = await addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y', severity: 8, occurrence: 6, detection: 5 });
+    const act = await addAction(fm.id, doc.id, 'Fix it', 'Jane', '', fm.rpn);
 
-    const result = completeAction(act.id, 8, 2, 2);
+    const result = await completeAction(act.id, 8, 2, 2);
     expect(result).not.toBeNull();
     expect(result!.rpn_before).toBe(240);
     expect(result!.rpn_after).toBe(32); // 8×2×2
     expect(result!.status).toBe('completed');
 
     // Failure mode should be updated
-    const fms = getFailureModes(doc.id);
+    const fms = await getFailureModes(doc.id);
     expect(fms[0].rpn).toBe(32);
     expect(fms[0].occurrence).toBe(2);
   });
 
-  it('cascades delete', () => {
-    const doc = createFmeaDoc('Cascade');
-    const fm = addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y' });
-    addAction(fm.id, doc.id, 'Fix', '', '', fm.rpn);
+  it('cascades delete', async () => {
+    const doc = await createFmeaDoc('Cascade');
+    const fm = await addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y' });
+    await addAction(fm.id, doc.id, 'Fix', '', '', fm.rpn);
 
-    deleteFmeaDoc(doc.id);
-    expect(getFailureModes(doc.id)).toHaveLength(0);
-    expect(getActions(doc.id)).toHaveLength(0);
+    await deleteFmeaDoc(doc.id);
+    expect(await getFailureModes(doc.id)).toHaveLength(0);
+    expect(await getActions(doc.id)).toHaveLength(0);
   });
 });
 
 // ── Risk Matrix ──────────────────────────────────────────────
 
 describe('Risk Matrix', () => {
-  it('groups failure modes by severity × occurrence', () => {
-    const doc = createFmeaDoc('Matrix');
-    addFailureMode(doc.id, { process_step: 'A', failure_mode: 'FM1', severity: 8, occurrence: 4 });
-    addFailureMode(doc.id, { process_step: 'B', failure_mode: 'FM2', severity: 8, occurrence: 4 });
-    addFailureMode(doc.id, { process_step: 'C', failure_mode: 'FM3', severity: 5, occurrence: 2 });
+  it('groups failure modes by severity × occurrence', async () => {
+    const doc = await createFmeaDoc('Matrix');
+    await addFailureMode(doc.id, { process_step: 'A', failure_mode: 'FM1', severity: 8, occurrence: 4 });
+    await addFailureMode(doc.id, { process_step: 'B', failure_mode: 'FM2', severity: 8, occurrence: 4 });
+    await addFailureMode(doc.id, { process_step: 'C', failure_mode: 'FM3', severity: 5, occurrence: 2 });
 
-    const fms = getFailureModes(doc.id);
+    const fms = await getFailureModes(doc.id);
     const matrix = buildRiskMatrix(fms);
 
     const cell84 = matrix.find((c) => c.severity === 8 && c.occurrence === 4);
@@ -203,12 +203,12 @@ describe('Risk Matrix', () => {
     expect(cell84!.failure_modes).toContain('FM2');
   });
 
-  it('sorts by risk (S×O) descending', () => {
-    const doc = createFmeaDoc('Sort');
-    addFailureMode(doc.id, { process_step: 'A', failure_mode: 'Low', severity: 2, occurrence: 1 });
-    addFailureMode(doc.id, { process_step: 'B', failure_mode: 'High', severity: 9, occurrence: 8 });
+  it('sorts by risk (S×O) descending', async () => {
+    const doc = await createFmeaDoc('Sort');
+    await addFailureMode(doc.id, { process_step: 'A', failure_mode: 'Low', severity: 2, occurrence: 1 });
+    await addFailureMode(doc.id, { process_step: 'B', failure_mode: 'High', severity: 9, occurrence: 8 });
 
-    const matrix = buildRiskMatrix(getFailureModes(doc.id));
+    const matrix = buildRiskMatrix(await getFailureModes(doc.id));
     expect(matrix[0].severity * matrix[0].occurrence).toBeGreaterThan(
       matrix[1].severity * matrix[1].occurrence,
     );
@@ -218,8 +218,8 @@ describe('Risk Matrix', () => {
 // ── Full Pipeline ────────────────────────────────────────────
 
 describe('Full Pipeline (CSV → FMEA)', () => {
-  it('imports SMT FMEA and auto-generates actions for HIGH', () => {
-    const { doc, failureModes, actions } = executeFmeaFromCsv(
+  it('imports SMT FMEA and auto-generates actions for HIGH', async () => {
+    const { doc, failureModes, actions } = await executeFmeaFromCsv(
       SMT_CSV, 'SMT PFMEA', 'pfmea', 'Control Board', 'SMT Assembly',
     );
 
@@ -246,19 +246,19 @@ describe('Full Pipeline (CSV → FMEA)', () => {
     expect(undetected.action_priority).toBe('H');
   });
 
-  it('reuse existing doc on re-import', () => {
-    executeFmeaFromCsv(SMT_CSV, 'Reuse Test');
-    const { failureModes } = executeFmeaFromCsv(SMT_CSV, 'Reuse Test');
+  it('reuse existing doc on re-import', async () => {
+    await executeFmeaFromCsv(SMT_CSV, 'Reuse Test');
+    const { failureModes } = await executeFmeaFromCsv(SMT_CSV, 'Reuse Test');
     expect(failureModes).toHaveLength(10); // not 20
-    expect(listFmeaDocs().filter((d) => d.name === 'Reuse Test')).toHaveLength(1);
+    expect((await listFmeaDocs()).filter((d) => d.name === 'Reuse Test')).toHaveLength(1);
   });
 });
 
 // ── Formatting ───────────────────────────────────────────────
 
 describe('Formatting', () => {
-  it('formats FMEA worksheet with all sections', () => {
-    const { doc, failureModes, actions } = executeFmeaFromCsv(SMT_CSV, 'Format Test');
+  it('formats FMEA worksheet with all sections', async () => {
+    const { doc, failureModes, actions } = await executeFmeaFromCsv(SMT_CSV, 'Format Test');
     const text = formatFmeaWorksheet(doc, failureModes, actions, false);
 
     expect(text).toContain('FMEA: Format Test');
@@ -271,20 +271,20 @@ describe('Formatting', () => {
     expect(text).toContain('[Open]'); // auto-generated actions
   });
 
-  it('formats as HTML', () => {
-    const doc = createFmeaDoc('HTML');
-    const fm = addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y' });
+  it('formats as HTML', async () => {
+    const doc = await createFmeaDoc('HTML');
+    const fm = await addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y' });
     const text = formatFmeaWorksheet(doc, [fm], [], true);
     expect(text).toContain('<b>');
   });
 
-  it('shows RPN reduction for completed actions', () => {
-    const doc = createFmeaDoc('Reduction');
-    const fm = addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y', severity: 8, occurrence: 5, detection: 4 });
-    const act = addAction(fm.id, doc.id, 'Fix', 'Bob', '', fm.rpn);
-    completeAction(act.id, 8, 2, 2);
+  it('shows RPN reduction for completed actions', async () => {
+    const doc = await createFmeaDoc('Reduction');
+    const fm = await addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y', severity: 8, occurrence: 5, detection: 4 });
+    const act = await addAction(fm.id, doc.id, 'Fix', 'Bob', '', fm.rpn);
+    await completeAction(act.id, 8, 2, 2);
 
-    const text = formatFmeaWorksheet(doc, getFailureModes(doc.id), getActions(doc.id), false);
+    const text = formatFmeaWorksheet(doc, await getFailureModes(doc.id), await getActions(doc.id), false);
     expect(text).toContain('160→32'); // RPN before→after
     expect(text).toContain('[Done]');
   });
@@ -293,8 +293,8 @@ describe('Formatting', () => {
 // ── CSV Export ────────────────────────────────────────────────
 
 describe('CSV Export', () => {
-  it('exports with all columns', () => {
-    const { doc, failureModes, actions } = executeFmeaFromCsv(SMT_CSV, 'Export Test');
+  it('exports with all columns', async () => {
+    const { doc, failureModes, actions } = await executeFmeaFromCsv(SMT_CSV, 'Export Test');
     const csv = exportFmeaCsv(doc, failureModes, actions);
     const lines = csv.split('\n');
 
@@ -305,12 +305,12 @@ describe('CSV Export', () => {
     expect(lines.length).toBeGreaterThan(10); // header + 10 FMs (some with actions)
   });
 
-  it('includes action details in export', () => {
-    const doc = createFmeaDoc('ActExport');
-    const fm = addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y', severity: 9 });
-    addAction(fm.id, doc.id, 'Redesign', 'Alice', '2026-05-01', fm.rpn);
+  it('includes action details in export', async () => {
+    const doc = await createFmeaDoc('ActExport');
+    const fm = await addFailureMode(doc.id, { process_step: 'X', failure_mode: 'Y', severity: 9 });
+    await addAction(fm.id, doc.id, 'Redesign', 'Alice', '2026-05-01', fm.rpn);
 
-    const csv = exportFmeaCsv(doc, getFailureModes(doc.id), getActions(doc.id));
+    const csv = exportFmeaCsv(doc, await getFailureModes(doc.id), await getActions(doc.id));
     expect(csv).toContain('Redesign');
     expect(csv).toContain('Alice');
     expect(csv).toContain('2026-05-01');
@@ -321,7 +321,7 @@ describe('CSV Export', () => {
 
 describe('Chart Generation', () => {
   it('generates risk heatmap PNG', async () => {
-    const { failureModes } = executeFmeaFromCsv(SMT_CSV, 'Heatmap Test');
+    const { failureModes } = await executeFmeaFromCsv(SMT_CSV, 'Heatmap Test');
     const filePath = await generateRiskHeatmap(failureModes, 'Heatmap Test');
     expect(existsSync(filePath)).toBe(true);
     expect(readFileSync(filePath)[0]).toBe(0x89);
@@ -329,7 +329,7 @@ describe('Chart Generation', () => {
   });
 
   it('generates RPN Pareto PNG', async () => {
-    const { failureModes } = executeFmeaFromCsv(SMT_CSV, 'Pareto Test');
+    const { failureModes } = await executeFmeaFromCsv(SMT_CSV, 'Pareto Test');
     const filePath = await generateRpnPareto(failureModes, 'Pareto Test');
     expect(existsSync(filePath)).toBe(true);
     expect(readFileSync(filePath)[0]).toBe(0x89);
@@ -337,15 +337,15 @@ describe('Chart Generation', () => {
   });
 
   it('generates RPN trend PNG after completing actions', async () => {
-    const doc = createFmeaDoc('Trend');
-    const fm1 = addFailureMode(doc.id, { process_step: 'A', failure_mode: 'F1', severity: 8, occurrence: 5, detection: 4 });
-    const fm2 = addFailureMode(doc.id, { process_step: 'B', failure_mode: 'F2', severity: 7, occurrence: 4, detection: 5 });
-    const a1 = addAction(fm1.id, doc.id, 'Fix 1', '', '', fm1.rpn);
-    const a2 = addAction(fm2.id, doc.id, 'Fix 2', '', '', fm2.rpn);
-    completeAction(a1.id, 8, 2, 2);
-    completeAction(a2.id, 7, 2, 2);
+    const doc = await createFmeaDoc('Trend');
+    const fm1 = await addFailureMode(doc.id, { process_step: 'A', failure_mode: 'F1', severity: 8, occurrence: 5, detection: 4 });
+    const fm2 = await addFailureMode(doc.id, { process_step: 'B', failure_mode: 'F2', severity: 7, occurrence: 4, detection: 5 });
+    const a1 = await addAction(fm1.id, doc.id, 'Fix 1', '', '', fm1.rpn);
+    const a2 = await addAction(fm2.id, doc.id, 'Fix 2', '', '', fm2.rpn);
+    await completeAction(a1.id, 8, 2, 2);
+    await completeAction(a2.id, 7, 2, 2);
 
-    const filePath = await generateRpnTrend(getActions(doc.id), 'Trend');
+    const filePath = await generateRpnTrend(await getActions(doc.id), 'Trend');
     expect(existsSync(filePath)).toBe(true);
     expect(readFileSync(filePath)[0]).toBe(0x89);
     rmSync(filePath);
@@ -355,8 +355,8 @@ describe('Chart Generation', () => {
 // ── Real-World Scenarios ─────────────────────────────────────
 
 describe('Real-World Scenarios', () => {
-  it('SMT assembly PFMEA: correct risk distribution', () => {
-    const { failureModes } = executeFmeaFromCsv(SMT_CSV, 'SMT Validation');
+  it('SMT assembly PFMEA: correct risk distribution', async () => {
+    const { failureModes } = await executeFmeaFromCsv(SMT_CSV, 'SMT Validation');
 
     const high = failureModes.filter((f) => f.action_priority === 'H');
     const med = failureModes.filter((f) => f.action_priority === 'M');
@@ -374,54 +374,54 @@ describe('Real-World Scenarios', () => {
     expect(high.length + med.length + low.length).toBe(10);
   });
 
-  it('action completion reduces RPN and updates failure mode', () => {
-    const { doc, failureModes } = executeFmeaFromCsv(SMT_CSV, 'Action Flow');
+  it('action completion reduces RPN and updates failure mode', async () => {
+    const { doc, failureModes } = await executeFmeaFromCsv(SMT_CSV, 'Action Flow');
 
     // Find the highest RPN failure mode
     const topFm = failureModes[0];
     const originalRpn = topFm.rpn;
 
     // Add a corrective action
-    const act = addAction(topFm.id, doc.id,
+    const act = await addAction(topFm.id, doc.id,
       'Implement poka-yoke on feeder loading', 'Quality Eng', '2026-04-15', topFm.rpn);
 
     // Complete with improved scores
-    const result = completeAction(act.id, topFm.severity, 1, 1);
+    const result = await completeAction(act.id, topFm.severity, 1, 1);
     expect(result!.rpn_after!).toBeLessThan(originalRpn);
 
     // Verify the failure mode is updated in DB
-    const updatedFms = getFailureModes(doc.id);
+    const updatedFms = await getFailureModes(doc.id);
     const updatedFm = updatedFms.find((f) => f.id === topFm.id)!;
     expect(updatedFm.rpn).toBe(result!.rpn_after);
     expect(updatedFm.rpn).toBeLessThan(originalRpn);
   });
 
-  it('full FMEA lifecycle: create → add → action → complete → report', () => {
+  it('full FMEA lifecycle: create → add → action → complete → report', async () => {
     // 1. Create
-    const doc = createFmeaDoc('Lifecycle Test', 'pfmea', 'Harness', 'Crimp Process');
+    const doc = await createFmeaDoc('Lifecycle Test', 'pfmea', 'Harness', 'Crimp Process');
 
     // 2. Add failure modes
-    const fm1 = addFailureMode(doc.id, {
+    const fm1 = await addFailureMode(doc.id, {
       process_step: 'Wire strip', failure_mode: 'Nick in conductor',
       effect: 'Reduced current capacity', severity: 7, cause: 'Blade wear',
       occurrence: 4, detection_method: 'Visual + pull test', detection: 5,
     });
-    const fm2 = addFailureMode(doc.id, {
+    const fm2 = await addFailureMode(doc.id, {
       process_step: 'Terminal crimp', failure_mode: 'Crimp too loose',
       effect: 'Intermittent connection', severity: 9, cause: 'Die wear',
       occurrence: 3, detection_method: 'Crimp force monitor', detection: 2,
     });
 
     // 3. Add actions for high-risk item
-    const act = addAction(fm2.id, doc.id,
+    const act = await addAction(fm2.id, doc.id,
       'Replace crimp die set and implement preventive schedule', 'Maint Lead', '2026-04-01', fm2.rpn);
 
     // 4. Complete action
-    completeAction(act.id, 9, 1, 2); // occurrence reduced from 3→1
+    await completeAction(act.id, 9, 1, 2); // occurrence reduced from 3→1
 
     // 5. Generate report
-    const fms = getFailureModes(doc.id);
-    const acts = getActions(doc.id);
+    const fms = await getFailureModes(doc.id);
+    const acts = await getActions(doc.id);
     const report = formatFmeaWorksheet(doc, fms, acts, false);
 
     expect(report).toContain('Lifecycle Test');

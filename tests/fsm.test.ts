@@ -1,15 +1,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-fsm');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'fsm-test.db');
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'clauded-test-fsm'), config: { NODE_ENV: 'test' } }));
 
@@ -22,15 +21,13 @@ import { bridgeFromSimulation, bridgeFromVSM, bridgeFromTOC, bridgeFromSequencer
 import { initFsmTables, saveFSM, getFSMConfig, listFSMs, deleteFSMConfig } from '../src/fsm/index.js';
 import type { FSMConfig, FSMDefinition, FSMEvent } from '../src/fsm/models.js';
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initFsmTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initFsmTables();
 }
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ── Sample Data ──────────────────────────────────────────────
 
@@ -360,30 +357,30 @@ describe('Bridge', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('Database CRUD', () => {
-  it('should save and retrieve', () => {
+  it('should save and retrieve', async () => {
     const config = makeConfig();
-    const saved = saveFSM('My FSM', config);
+    const saved = await saveFSM('My FSM', config);
     expect(saved.id).toBeTruthy();
-    const retrieved = getFSMConfig('My FSM');
+    const retrieved = await getFSMConfig('My FSM');
     expect(retrieved).toBeDefined();
   });
 
-  it('should update on collision', () => {
-    saveFSM('Same', makeConfig());
-    saveFSM('Same', { ...makeConfig(), name: 'Updated' });
-    expect(listFSMs().filter((c) => c.name === 'Same')).toHaveLength(1);
+  it('should update on collision', async () => {
+    await saveFSM('Same', makeConfig());
+    await saveFSM('Same', { ...makeConfig(), name: 'Updated' });
+    expect((await listFSMs()).filter((c) => c.name === 'Same')).toHaveLength(1);
   });
 
-  it('should delete', () => {
-    const saved = saveFSM('Del', makeConfig());
-    expect(deleteFSMConfig(saved.id)).toBe(true);
-    expect(getFSMConfig(saved.id)).toBeUndefined();
+  it('should delete', async () => {
+    const saved = await saveFSM('Del', makeConfig());
+    expect(await deleteFSMConfig(saved.id)).toBe(true);
+    expect(await getFSMConfig(saved.id)).toBeUndefined();
   });
 
-  it('should list sorted', () => {
-    saveFSM('A', makeConfig());
-    saveFSM('B', makeConfig());
-    const all = listFSMs();
+  it('should list sorted', async () => {
+    await saveFSM('A', makeConfig());
+    await saveFSM('B', makeConfig());
+    const all = await listFSMs();
     expect(all).toHaveLength(2);
     expect(all[0].updated_at).toBeGreaterThanOrEqual(all[1].updated_at);
   });

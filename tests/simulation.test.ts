@@ -1,16 +1,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { mkdirSync, rmSync } from 'node:fs';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-sim');
-mkdirSync(TMP_DIR, { recursive: true });
-const DB_PATH = resolve(TMP_DIR, 'sim-test.db');
-
-let db: Database.Database;
-
-vi.mock('../src/db.js', () => ({ getDatabase: () => db }));
+let testKnex: Knex;
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -28,16 +26,14 @@ import { runMonteCarlo, computeStats } from '../src/simulation/monte-carlo.js';
 import { initSimulationTables, saveScenario, getScenarioByName, listScenarios, deleteScenario } from '../src/simulation/index.js';
 import type { SimulationConfig } from '../src/simulation/models.js';
 
-function initTestDb(): void {
-  try { rmSync(DB_PATH); } catch { /* */ }
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  initSimulationTables();
+async function initTestDb(): Promise<void> {
+  if (testKnex) await testKnex.destroy();
+  testKnex = createTestKnex();
+  await initSimulationTables();
 }
 
-beforeEach(() => { initTestDb(); });
-afterAll(() => { db?.close(); try { rmSync(TMP_DIR, { recursive: true }); } catch { /* */ } });
+beforeEach(async () => { await initTestDb(); });
+afterAll(async () => { if (testKnex) await testKnex.destroy(); });
 
 // ── T-shirt sample config ────────────────────────────────────
 
@@ -268,27 +264,27 @@ describe('Monte Carlo', () => {
 // ── DB Persistence ───────────────────────────────────────────
 
 describe('Scenario Persistence', () => {
-  it('saves and retrieves scenario', () => {
-    const scenario = saveScenario('Test Line', TSHIRT_CONFIG);
+  it('saves and retrieves scenario', async () => {
+    const scenario = await saveScenario('Test Line', TSHIRT_CONFIG);
     expect(scenario.name).toBe('Test Line');
 
-    const found = getScenarioByName('test line');
+    const found = await getScenarioByName('test line');
     expect(found).toBeDefined();
     const config = JSON.parse(found!.config_json);
     expect(config.operations).toHaveLength(9);
   });
 
-  it('reuses existing scenario on save', () => {
-    saveScenario('Reuse', TSHIRT_CONFIG);
-    saveScenario('Reuse', TSHIRT_CONFIG);
-    const all = listScenarios();
+  it('reuses existing scenario on save', async () => {
+    await saveScenario('Reuse', TSHIRT_CONFIG);
+    await saveScenario('Reuse', TSHIRT_CONFIG);
+    const all = await listScenarios();
     expect(all.filter(s => s.name === 'Reuse')).toHaveLength(1);
   });
 
-  it('deletes scenario', () => {
-    const scenario = saveScenario('Delete Me', TSHIRT_CONFIG);
-    expect(deleteScenario(scenario.id)).toBe(true);
-    expect(getScenarioByName('Delete Me')).toBeUndefined();
+  it('deletes scenario', async () => {
+    const scenario = await saveScenario('Delete Me', TSHIRT_CONFIG);
+    expect(await deleteScenario(scenario.id)).toBe(true);
+    expect(await getScenarioByName('Delete Me')).toBeUndefined();
   });
 });
 
