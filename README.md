@@ -1,6 +1,6 @@
 # clauded
 
-A personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department. **v1.0.0-rc.29**
+A personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department. **v1.0.0-rc.60**
 
 **New here?** Start with the [Department Onboarding Runbook](docs/deployment-runbook.md) — a 30-minute step-by-step guide to get your own instance running.
 
@@ -234,7 +234,7 @@ npm run test:watch # Watch mode
 npm run typecheck  # TypeScript type checking
 ```
 
-1813 tests across 76 files covering domain packs, manufacturing modules, memory system, tools, security architecture, and utilities.
+2003 tests across 80+ files covering domain packs, manufacturing modules, memory system, tools, security architecture, Knex database layer, event triggers, parallel orchestration, and utilities.
 
 ## E2E Testing
 

@@ -182,7 +182,7 @@ docker compose restart clauded
 
 **Security notes**:
 - The token protects all web UI connections. Choose a strong random string (32+ characters).
-- Failed authentication attempts are rate-limited (5 per minute per IP).
+- Failed authentication attempts are rate-limited (3 per minute per IP, hourly IP ban after 15 failures).
 - If accessing from a remote machine (not localhost), you MUST also configure TLS — browsers require HTTPS for microphone access on non-localhost domains. See the TLS section in `.env.example`.
 
 ### Step 9 (Optional): Enable Matrix

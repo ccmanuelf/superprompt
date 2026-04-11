@@ -5,16 +5,24 @@
 
 ## Summary
 
-clauded is evolving from personal AI assistant into a **company-wide AI operations platform** serving 9 departments. Core sprints S1-S16 + S9 complete (1813 tests, 76 files). Currently in multi-department E2E validation (v1.0.0-rc.29).
+clauded is evolving from personal AI assistant into a **company-wide AI operations platform** serving 9 departments. Core sprints S1-S16 + S9 complete plus architecture hardening (SA1-SA5) and workstation sprints (WS1-WS4). 2003 tests, 80+ files. Currently v1.0.0-rc.60.
 
-**Completed:** S1-S8 ✅ → S10-S14 ✅ → S16 ✅ → S15 ✅ → S9 ✅
+**Completed:** S1-S8 ✅ → S10-S14 ✅ → S16 ✅ → S15 ✅ → S9 ✅ → SA1-SA5 ✅ → WS1-WS4 ✅
 
 **In progress:** S4 (E2E across 4 workstations)
 
+**Recent additions (rc.35 → rc.60):**
+- WS4 (rc.49-57): Knex database abstraction — DB_DRIVER=sqlite|mariadb|postgres, migration script
+- WS1 (rc.58): Caddy reverse proxy, tightened rate limits (3/min, hourly ban), tool audit logging, Telegram webhook mode
+- WS2 (rc.59): Parallel orchestration (Promise.all), event-driven triggers, background task queue, pack-scoped delegation
+- rc.38: Per-user web tokens (/webtoken create/list/revoke)
+- rc.47: SearXNG as Docker service (auto-configured)
+- rc.45: Manufacturing data isolation (chat_id scoping on all 10 tables)
+- rc.60: 2003 tests
+
 **Forward roadmap:**
-- Phase 1: SA1-SA5 (Architecture Hardening) — CTO security + modularity concerns
-- Phase 2: S17-S18 (Production Hub + BOM Intelligence) — as capability packs
-- Phase 3: S3 (Production Deployment) — hosting + DB migration + multi-instance
+- S17-S18 (Production Hub + BOM Intelligence) — as capability packs
+- S3 (Production Deployment) — hosting + DB migration + multi-instance
 - Phase 4: Client Integration Platform (SaaS) — Board of Directors revenue vision
 - Core subsystems: Auto-Skills (absorbed S19) + Quality Techniques (rc.9/rc.10)
 
@@ -769,7 +777,7 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Forward Roadmap (2026-04-03)
+## Forward Roadmap (2026-04-06)
 
 > Updated based on CTO architecture review, department E2E feedback, and strategic direction.
 > clauded is evolving from an engineering tool into a **company-wide AI operations platform**.
@@ -779,27 +787,26 @@ Both providers get GitHub/Render access, each using their native mechanism:
 >
 > **Deployment decision:** Approach A (single instance, multi-user). Hosting platform TBD
 > (InMotion dedicated server, VMware VM, or Render). DB migration to MariaDB or PostgreSQL
-> when deployment is approved.
+> via `DB_DRIVER` env var and Knex (all database access through Knex, migration script at
+> `scripts/migrate-database.ts`).
 
 ### Execution Order
 
 ```
+Completed:
+  Phase 1 — Architecture Hardening: SA1-SA5 ✅
+  Workstation Sprints: WS1-WS4 ✅
+    WS4: Knex/DB_DRIVER (rc.49-57)
+    WS1: Caddy, rate limits, audit logging, webhook (rc.58)
+    WS2: Parallel orchestration, event triggers, background tasks (rc.59)
+    WS3: Production docker-compose (in progress)
+
 Current:  S4 (E2E) ← in progress across 4 workstations
 
-Phase 1 — Architecture Hardening (CTO concerns):
-          SA1 (Worker Thread Sandbox)
-          SA2 (Formal Application Core)
-          SA3 (Process Separation)
-          SA4 (Policy-Based Tool Permissions)
-          SA5 (Modules as Capability Packs)
-
-Phase 2 — Feature Expansion:
-          S17 (Production Hub — Order Management)
-          S18 (BOM & Shortage Intelligence)
-          S19 (Auto-Generated Skills from Experience)
-
-Phase 3 — Deployment:
-          S3  (Production Deployment — hosting + DB migration)
+Next:
+  S17 (Production Hub — Order Management)
+  S18 (BOM & Shortage Intelligence)
+  S3  (Production Deployment — hosting + DB migration)
 ```
 
 ### Dependencies
@@ -832,7 +839,7 @@ S19 (Auto-Skills) ────► S3 (Production Deployment)
 ## Sprint S4: Full E2E Validation — IN PROGRESS
 
 **Goal:** Concurrent end-to-end testing across 4 department workstations.
-**Status:** Active. 93 test cases in `scripts/e2e-test.md`. Currently v1.0.0-rc.29.
+**Status:** Active. 93 test cases in `scripts/e2e-test.md`. Currently v1.0.0-rc.60.
 **Participants:** Engineering, Manufacturing (+ other departments joining).
 **Completion criteria:** All 93 tests pass across all participating workstations.
 
@@ -1043,13 +1050,20 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 ---
 
-## Sprint S3: Production Deployment — NOT STARTED (after architecture hardening)
+## Sprint S3: Production Deployment — IN PROGRESS
 
 **Goal:** Deploy clauded to production infrastructure for company-wide use across 9 departments.
 
-**Status:** Pending deployment approval. Hosting options evaluated: InMotion dedicated server (most likely), VMware VM, or Render.
+**Status:** Foundational work complete (Knex DB abstraction, Caddy reverse proxy, production docker-compose). Pending final deployment approval. Hosting options evaluated: InMotion dedicated server (most likely), VMware VM, or Render.
 
-**Depends on:** SA1-SA5 (architecture hardening), S4 (E2E validation), deployment approval.
+**Depends on:** SA1-SA5 (architecture hardening) ✅, S4 (E2E validation), deployment approval.
+
+**Already completed for S3:**
+- WS4: Knex database abstraction — `DB_DRIVER=sqlite|mariadb|postgres` (rc.49-57)
+- WS1: Caddy reverse proxy with automatic HTTPS — `docker/Caddyfile` (rc.58)
+- WS1: Telegram webhook mode — `TELEGRAM_WEBHOOK_URL` + `TELEGRAM_WEBHOOK_SECRET` (rc.58)
+- WS3: `docker-compose.production.yml` for multi-instance deployments
+- Migration script: `scripts/migrate-database.ts`
 
 ### Core Deployment Components (all required)
 - Docker (sandbox and process isolation)
@@ -1063,10 +1077,12 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 - Auto-generated skills (core subsystem — clauded learns from every user)
 
 ### Database Architecture
-- **Development/E2E:** SQLite with WAL mode (current)
-- **Production:** MariaDB (InMotion) or PostgreSQL (VMware/Render)
+- **Development/E2E:** SQLite with WAL mode (`DB_DRIVER=sqlite`, default)
+- **Production:** MariaDB (`DB_DRIVER=mariadb`) or PostgreSQL (`DB_DRIVER=postgres`)
+- **All database access through Knex** query builder — no raw SQLite calls remain
+- **Migration:** `npx ts-node scripts/migrate-database.ts` migrates schema across drivers
 - **Multi-instance requirement:** If a single Anthropic Max $200/month account is insufficient for company-wide usage, multiple clauded instances with separate Anthropic accounts connect to the SAME shared database
-- **SA2 StorageProvider** abstracts the database — switch from SQLite to MariaDB/PostgreSQL is configuration, not code
+- **`docker-compose.production.yml`** supports multi-instance deployments
 
 ### Anthropic Max Capacity Assessment
 
@@ -1078,14 +1094,14 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 If multiple accounts are needed, each department (or group of departments) gets its own clauded instance with its own Anthropic Max account, all connected to one shared database — single source of truth company-wide.
 
-### Scope (when approved)
-- Database migration: SQLite → MariaDB (InMotion) or PostgreSQL (VMware/Render)
-- Reverse proxy configuration (Nginx or Apache)
-- TLS certificates for web UI
+### Remaining Scope (when approved)
+- Database migration execution: SQLite → MariaDB or PostgreSQL via `DB_DRIVER` + `scripts/migrate-database.ts` ✅ ready
+- Caddy reverse proxy: `docker/Caddyfile` + `--profile production` ✅ ready
+- Telegram webhook: `TELEGRAM_WEBHOOK_URL` + `TELEGRAM_WEBHOOK_SECRET` ✅ ready
 - Telegram bot: hybrid approach (one bot + department notification groups)
 - Dedicated Anthropic Max account(s) + Qwen 3.6 in Ollama
 - Backup strategy (automated daily DB backup with point-in-time recovery)
-- Monitoring and alerting
+- Monitoring and alerting (tool audit logging ✅ ready)
 - Core development team onboarding
 - Department champion training (Level 1/2 pack creation)
 
