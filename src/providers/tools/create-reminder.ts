@@ -1,6 +1,6 @@
 import type { Tool } from 'ollama';
 import { randomBytes } from 'node:crypto';
-import { createTask, getTasksByChat } from '../../db.js';
+import { createTask, getTasksByChat } from '../../db-core.js';
 import { computeNextRun, validateCron } from '../../scheduler.js';
 import { logger } from '../../logger.js';
 
@@ -34,10 +34,10 @@ export const createReminderDefinition: Tool = {
   },
 };
 
-export function createReminder(
+export async function createReminder(
   args: { message: string; cron: string; description: string },
   chatId: string,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const { message, cron, description } = args;
 
   // Validate cron expression
@@ -47,7 +47,7 @@ export function createReminder(
   }
 
   // Limit: max 20 tasks per chat
-  const existing = getTasksByChat(chatId);
+  const existing = await getTasksByChat(chatId);
   if (existing.length >= 20) {
     return {
       error: 'Too many scheduled tasks (max 20). Delete some with /schedule delete <id>.',
@@ -60,7 +60,7 @@ export function createReminder(
 
   // The prompt is the reminder message — when the scheduler runs it,
   // the notifyFn sends it directly to the user
-  createTask(taskId, chatId, message, cron, nextRun);
+  await createTask(taskId, chatId, message, cron, nextRun);
 
   const nextDate = new Date(nextRun);
 

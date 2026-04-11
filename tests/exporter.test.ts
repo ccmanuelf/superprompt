@@ -10,7 +10,7 @@ vi.mock('../src/config.js', () => ({
 }));
 
 import { exportSkillToMarkdown, exportToolToMarkdown } from '../src/forge/exporter.js';
-import type { Skill, UserTool } from '../src/db.js';
+import type { Skill, UserTool } from '../src/db-core.js';
 
 describe('exportSkillToMarkdown', () => {
   afterEach(() => {

@@ -12,7 +12,6 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { initDatabase } from './db.js';
 import {
   createTask,
   getTasksByChat,
@@ -21,11 +20,12 @@ import {
   resumeTask,
   deleteTask,
   getDueTasks,
-} from './db.js';
+} from './db-core.js';
+import { initKnex, readDbConfig } from './db-knex.js';
 import { computeNextRun, validateCron } from './scheduler.js';
 
-// Initialize database
-initDatabase();
+// Initialize database via Knex
+initKnex(readDbConfig());
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -63,6 +63,7 @@ function generateId(): string {
   return randomBytes(6).toString('hex');
 }
 
+(async () => {
 switch (command) {
   case 'create': {
     const chatId = args[1];
@@ -82,7 +83,7 @@ switch (command) {
 
     const id = generateId();
     const nextRun = computeNextRun(cron);
-    createTask(id, chatId, prompt, cron, nextRun);
+    await createTask(id, chatId, prompt, cron, nextRun);
 
     console.log(`Task created:`);
     console.log(`  ID:       ${id}`);
@@ -96,11 +97,11 @@ switch (command) {
   case 'list': {
     const chatId = args[1];
     const tasks = chatId
-      ? getTasksByChat(chatId)
-      : getDueTasks(); // Show due if no filter
+      ? await getTasksByChat(chatId)
+      : await getDueTasks();
 
     if (chatId) {
-      const allTasks = getTasksByChat(chatId);
+      const allTasks = await getTasksByChat(chatId);
       if (allTasks.length === 0) {
         console.log('No tasks found.');
         break;
@@ -130,7 +131,7 @@ switch (command) {
       console.error('Usage: show <task_id>');
       process.exit(1);
     }
-    const task = getTask(taskId);
+    const task = await getTask(taskId);
     if (!task) {
       console.error(`Task not found: ${taskId}`);
       process.exit(1);
@@ -153,7 +154,7 @@ switch (command) {
       console.error('Usage: pause <task_id>');
       process.exit(1);
     }
-    pauseTask(taskId);
+    await pauseTask(taskId);
     console.log(`Task ${taskId} paused.`);
     break;
   }
@@ -164,7 +165,7 @@ switch (command) {
       console.error('Usage: resume <task_id>');
       process.exit(1);
     }
-    resumeTask(taskId);
+    await resumeTask(taskId);
     console.log(`Task ${taskId} resumed.`);
     break;
   }
@@ -175,13 +176,13 @@ switch (command) {
       console.error('Usage: delete <task_id>');
       process.exit(1);
     }
-    deleteTask(taskId);
+    await deleteTask(taskId);
     console.log(`Task ${taskId} deleted.`);
     break;
   }
 
   case 'due': {
-    const tasks = getDueTasks();
+    const tasks = await getDueTasks();
     if (tasks.length === 0) {
       console.log('No tasks are due right now.');
       break;
@@ -198,3 +199,4 @@ switch (command) {
     usage();
     break;
 }
+})().catch(console.error);

@@ -8,7 +8,9 @@ This is the **build system** for **clauded** — a personal AI assistant daemon 
 
 The repo contains:
 - `PROJECT_PLAN.md` — Master implementation plan with phase checkboxes (read this first)
-- `REBUILD_PROMPT.md` — Original mega-prompt (kept as historical reference, not used)
+- `src/db-knex.ts` — Knex configuration (SQLite/MariaDB/PostgreSQL via DB_DRIVER)
+- `src/db-core.ts` — All database CRUD (async, Knex query builder)
+- `src/db-dialect.ts` — Cross-dialect FTS, vectors, column migrations
 - `prompts/` — Modular build prompts, one per phase (see `prompts/00-README.md`)
 - `reference/` — Research artifacts and confirmed decisions
 

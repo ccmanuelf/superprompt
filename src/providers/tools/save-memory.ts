@@ -1,5 +1,5 @@
 import type { Tool } from 'ollama';
-import { insertMemory } from '../../db.js';
+import { insertMemory } from '../../db-core.js';
 import { generateEmbedding } from '../../embeddings.js';
 
 export const saveMemoryDefinition: Tool = {
@@ -43,7 +43,7 @@ export async function saveMemory(
     // Non-critical
   }
 
-  const id = insertMemory(chatId, args.content, sector, undefined, embedding);
+  const id = await insertMemory(chatId, args.content, sector, undefined, embedding);
   return {
     saved: 'true',
     id,
