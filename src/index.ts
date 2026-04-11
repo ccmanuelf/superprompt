@@ -126,6 +126,10 @@ async function main(): Promise<void> {
   const { webTokenTableInit } = await import('./web/web-tokens.js');
   storage.registerTables(webTokenTableInit);
 
+  // Event triggers tables (reactive autonomy)
+  const { eventTriggerTableInit } = await import('./event-triggers.js');
+  storage.registerTables(eventTriggerTableInit);
+
   // Wire pack tuner into pack intent scoring
   const { setPackTunerModule } = await import('./packs.js');
   setPackTunerModule({ applyTunedWeight: packTunerMod.applyTunedWeight });
@@ -219,6 +223,18 @@ async function main(): Promise<void> {
   const router = new ProviderRouter();
   app.router = router;
   logger.info({ defaultProvider: config.AI_PROVIDER }, 'Provider router initialized');
+
+  // Initialize event trigger system (reactive autonomy)
+  const { initEventSystem } = await import('./event-triggers.js');
+  initEventSystem(router, async (chatId, text) => {
+    await app.notify(chatId, text);
+  });
+
+  // Initialize background task queue
+  const { initBackgroundTasks } = await import('./background-tasks.js');
+  initBackgroundTasks(async (chatId, text) => {
+    await app.notify(chatId, text);
+  });
 
   // ── Child Processes (SA3: Process Separation) ─────────────
   const { ProcessClient } = await import('./ipc/client.js');

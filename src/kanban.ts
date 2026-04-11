@@ -269,6 +269,17 @@ export async function createCard(
 
   await db('kanban_cards').insert(card);
 
+  // Emit event for trigger system
+  try {
+    const { emitEvent, EVENT_TYPES } = await import('./event-triggers.js');
+    emitEvent({
+      type: EVENT_TYPES.CARD_CREATED,
+      chatId,
+      data: { cardId: id, title, priority: card.priority, assignee: card.assignee, status: card.status },
+      timestamp: now,
+    });
+  } catch { /* event system may not be initialized */ }
+
   logger.debug({ cardId: id, chatId, title }, 'Kanban card created');
   return card;
 }
@@ -322,7 +333,22 @@ export async function moveCard(id: string, newStatus: CardStatus, chatId?: strin
 
   await db('kanban_cards').where({ id }).update({ status: newStatus, updated_at: Date.now() });
 
-  return await getCard(id) || null;
+  const movedCard = await getCard(id) || null;
+
+  // Emit event for trigger system
+  if (movedCard) {
+    try {
+      const { emitEvent, EVENT_TYPES } = await import('./event-triggers.js');
+      emitEvent({
+        type: EVENT_TYPES.CARD_MOVED,
+        chatId: movedCard.chat_id,
+        data: { cardId: id, newStatus, title: movedCard.title, priority: movedCard.priority },
+        timestamp: Date.now(),
+      });
+    } catch { /* event system may not be initialized */ }
+  }
+
+  return movedCard;
 }
 
 export async function assignCard(id: string, assignee: CardAssignee, chatId?: string): Promise<KanbanCard | null> {

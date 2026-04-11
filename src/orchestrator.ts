@@ -27,6 +27,8 @@ export interface TaskStep {
   instruction: string;
   /** Whether this step depends on the previous step's output */
   dependsOnPrevious: boolean;
+  /** Optional skill/persona to activate for this step (pack-scoped delegation) */
+  suggestedSkill?: string;
 }
 
 /** Result of running a single step. Exported for testing. */
@@ -248,14 +250,20 @@ async function decomposeTask(
 User request: "${message}"
 
 Respond in this exact JSON format (no markdown, no code fences):
-[{"step":1,"instruction":"Clear, specific instruction for step 1","dependsOnPrevious":false},{"step":2,"instruction":"Clear, specific instruction for step 2","dependsOnPrevious":true}]
+[{"step":1,"instruction":"Clear, specific instruction for step 1","dependsOnPrevious":false,"suggestedSkill":"manufacturing-expert"},{"step":2,"instruction":"Clear, specific instruction for step 2","dependsOnPrevious":true}]
 
 Rules:
 - Each step should be independently executable (given previous step results)
 - Set dependsOnPrevious to true if the step needs output from the prior step
 - Keep instructions concise and actionable
 - 2-5 steps only — don't over-decompose simple tasks
-- If the task is actually simple enough for one step, return a single-step array`;
+- If the task is actually simple enough for one step, return a single-step array
+- suggestedSkill is OPTIONAL — only include if the step benefits from a specific persona:
+  "manufacturing-expert" for production/quality/lean/engineering analysis
+  "analyst" for data analysis and pattern recognition
+  "researcher" for academic research and citations
+  "careful" for safety-critical operations
+  Omit suggestedSkill for general steps`;
 
   const response = await router.sendMessage({
     chatId,
@@ -329,67 +337,183 @@ export async function orchestrateTask(
     );
   }
 
-  // 3. Execute each step
+  // 3. Execute steps — parallel where possible, sequential where dependent
+  //
+  // Strategy: group steps into batches. Within each batch, all steps are
+  // independent (dependsOnPrevious=false) and run with Promise.all().
+  // A step with dependsOnPrevious=true starts a new sequential batch.
+  //
+  // Example: steps [1(ind), 2(ind), 3(dep), 4(ind), 5(dep)]
+  // → batch 1: [1, 2] in parallel
+  // → batch 2: [3] sequential (depends on batch 1 output)
+  // → batch 3: [4] independent
+  // → batch 4: [5] sequential (depends on batch 3 output)
+
   const results: StepResult[] = [];
   let lastStepOutput = '';
 
-  for (const step of steps) {
-    const stepMessage = await buildStepMessage(step, lastStepOutput, router, chatId);
+  // Helper: execute a single step with optional skill delegation
+  async function executeStep(step: TaskStep, contextOutput: string): Promise<StepResult> {
+    const stepMessage = await buildStepMessage(step, contextOutput, router, chatId);
 
-    // Notify progress
-    if (progressFn) {
-      await progressFn(
-        chatId,
-        `⏳ Step ${step.step}/${steps.length}: ${step.instruction}`,
-      );
+    // Pack-scoped delegation: set active skill for this step
+    let originalSkillRestored = false;
+    if (step.suggestedSkill) {
+      try {
+        const { getSkillByName, setActiveSkill, getActiveSkill, clearActiveSkill } = await import('./db-core.js');
+        const skill = await getSkillByName(step.suggestedSkill);
+        if (skill) {
+          // Save current skill to restore after step
+          const currentSkill = await getActiveSkill(chatId);
+          await setActiveSkill(chatId, skill.id);
+          logger.debug({ step: step.step, skill: step.suggestedSkill }, 'Pack-scoped delegation: skill activated for step');
+
+          try {
+            const response = await router.sendMessage({
+              chatId,
+              message: stepMessage,
+              skipAutoTrigger: true,
+            });
+            // Restore original skill
+            if (currentSkill) {
+              await setActiveSkill(chatId, currentSkill.id);
+            } else {
+              await clearActiveSkill(chatId);
+            }
+            originalSkillRestored = true;
+
+            return {
+              step: step.step,
+              instruction: step.instruction,
+              output: response.text || '(no output)',
+              success: true,
+              toolsUsed: response.toolsUsed,
+            };
+          } catch (err) {
+            // Restore skill even on error
+            if (!originalSkillRestored) {
+              if (currentSkill) await setActiveSkill(chatId, currentSkill.id);
+              else await clearActiveSkill(chatId);
+            }
+            throw err;
+          }
+        }
+      } catch (err) {
+        logger.debug({ err, skill: step.suggestedSkill }, 'Skill delegation skipped — skill not found or error');
+      }
     }
 
-    try {
-      const response = await router.sendMessage({
-        chatId,
-        message: stepMessage,
-        skipAutoTrigger: true, // Don't trigger skills mid-orchestration
-      });
+    // Standard execution (no skill delegation)
+    const response = await router.sendMessage({
+      chatId,
+      message: stepMessage,
+      skipAutoTrigger: true,
+    });
 
-      const output = response.text || '(no output)';
-      lastStepOutput = output;
+    return {
+      step: step.step,
+      instruction: step.instruction,
+      output: response.text || '(no output)',
+      success: true,
+      toolsUsed: response.toolsUsed,
+    };
+  }
 
-      results.push({
-        step: step.step,
-        instruction: step.instruction,
-        output,
-        success: true,
-        toolsUsed: response.toolsUsed,
-      });
+  // Group steps into execution batches
+  const batches: TaskStep[][] = [];
+  let currentBatch: TaskStep[] = [];
 
-      logger.debug(
-        { chatId, step: step.step, outputLength: output.length },
-        'Orchestration step completed',
-      );
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      results.push({
-        step: step.step,
-        instruction: step.instruction,
-        output: `Error: ${errorMsg}`,
-        success: false,
-      });
+  for (const step of steps) {
+    if (step.dependsOnPrevious && currentBatch.length > 0) {
+      // Dependent step starts a new batch (must wait for previous)
+      batches.push(currentBatch);
+      currentBatch = [step];
+    } else {
+      currentBatch.push(step);
+    }
+  }
+  if (currentBatch.length > 0) batches.push(currentBatch);
 
-      // Notify user of step failure
+  for (const batch of batches) {
+    const isParallel = batch.length > 1;
+
+    if (isParallel) {
+      // Notify parallel execution
       if (progressFn) {
+        const stepNums = batch.map(s => s.step).join(', ');
         await progressFn(
           chatId,
-          `❌ Step ${step.step} failed: ${errorMsg}\nContinuing with remaining steps...`,
+          `⚡ Steps ${stepNums} running in parallel (${batch.length} concurrent)`,
         );
       }
 
-      logger.warn(
-        { err, chatId, step: step.step },
-        'Orchestration step failed',
-      );
+      // Execute batch in parallel (with pack-scoped delegation)
+      const batchPromises = batch.map(async (step) => {
+        try {
+          return await executeStep(step, lastStepOutput);
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          logger.warn({ err, chatId, step: step.step }, 'Orchestration step failed');
+          return {
+            step: step.step,
+            instruction: step.instruction,
+            output: `Error: ${errorMsg}`,
+            success: false,
+          } as StepResult;
+        }
+      });
 
-      // Don't pass failed output as context
-      lastStepOutput = '';
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+
+      // Use the last successful output as context for the next batch
+      const lastSuccess = batchResults.filter(r => r.success).pop();
+      lastStepOutput = lastSuccess?.output || '';
+
+      logger.debug(
+        { chatId, batchSteps: batch.map(s => s.step), parallel: true },
+        'Parallel batch completed',
+      );
+    } else {
+      // Execute single step sequentially (with pack-scoped delegation)
+      const step = batch[0];
+
+      if (progressFn) {
+        const skillNote = step.suggestedSkill ? ` [${step.suggestedSkill}]` : '';
+        await progressFn(
+          chatId,
+          `⏳ Step ${step.step}/${steps.length}: ${step.instruction}${skillNote}`,
+        );
+      }
+
+      try {
+        const result = await executeStep(step, lastStepOutput);
+        lastStepOutput = result.output;
+        results.push(result);
+
+        logger.debug(
+          { chatId, step: step.step, outputLength: result.output.length, skill: step.suggestedSkill },
+          'Orchestration step completed',
+        );
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        results.push({
+          step: step.step,
+          instruction: step.instruction,
+          output: `Error: ${errorMsg}`,
+          success: false,
+        });
+
+        if (progressFn) {
+          await progressFn(
+            chatId,
+            `❌ Step ${step.step} failed: ${errorMsg}\nContinuing with remaining steps...`,
+          );
+        }
+
+        logger.warn({ err, chatId, step: step.step }, 'Orchestration step failed');
+        lastStepOutput = '';
+      }
     }
   }
 
