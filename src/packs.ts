@@ -702,6 +702,26 @@ async function importPackSkills(skillsDir: string, packName: string): Promise<nu
       const id = `pack-${packName}-${parsed.name}`;
       await createSkill(id, parsed.name, parsed.description, parsed.systemPrompt, parsed.tools, false, `packs/${packName}/skills/${file}`);
       await insertSkillRevision(id, parsed.systemPrompt, `Auto-imported from pack: ${packName}`);
+
+      // Register trigger patterns if the skill defines them in frontmatter
+      const triggerMatch = content.match(/trigger:\s*\n\s*patterns:\s*\n([\s\S]*?)\n\s*mode:\s*(\w+)/);
+      if (triggerMatch) {
+        const patternLines = triggerMatch[1].split('\n').map(l => l.trim().replace(/^-\s*["']?|["']?$/g, '')).filter(Boolean);
+        const mode = triggerMatch[2] || 'suggest';
+        try {
+          const db = (await import('./db-knex.js')).getKnex();
+          for (const pattern of patternLines) {
+            const exists = await db('skill_triggers').where({ skill_id: id, pattern }).first();
+            if (!exists) {
+              await db('skill_triggers').insert({ skill_id: id, pattern, mode, created_at: Date.now() });
+            }
+          }
+          logger.info({ skill: parsed.name, triggers: patternLines.length }, 'Registered pack skill triggers');
+        } catch {
+          // skill_triggers table may not exist yet
+        }
+      }
+
       imported++;
       logger.info({ skill: parsed.name, pack: packName }, 'Imported pack skill');
     } catch (err) {
