@@ -1,0 +1,77 @@
+# Developer Pack — Level 3 Feature Workflow
+
+## Overview
+
+This pack manages the lifecycle of Level 3 feature requests — features that require web UI development, new server routes, or TypeScript code changes that can't be created conversationally.
+
+It implements a 13-step workflow where clauded handles intake, documentation, scheduling, code drafting, and monitoring, while the dev team handles review, approval, and deployment.
+
+## The 13-Step Workflow
+
+| Step | Actor | What happens |
+|------|-------|-------------|
+| 1 | User | Describes the desired feature in conversation |
+| 2 | clauded (feature-architect skill) | Guides user through structured PRD conversation: problem → workflow → outcome → scope → success criteria |
+| 3 | clauded | Creates kanban card with PRD document attached |
+| 4 | clauded | Notifies user: "Request will be reviewed during off-hours" |
+| 5 | clauded (off-hours) | Reviews PRD draft, starts coding the feature |
+| 6 | clauded | Assigns review task to dev team, notifies them |
+| 7 | clauded | Notifies user: "Submitted to dev team, expect response in 48h" |
+| 8 | Dev team | Reviews code and PRD, marks task as reviewed |
+| 9 | clauded | Monitors card status, notifies user of changes |
+| 10 | Dev team (if approved) | Adjusts code, commits, marks as approved |
+| 11 | Dev team (if rejected) | Cancels task, includes reasons |
+| 12 | clauded (off-hours) | Verifies commit, deploys during off-hours, runs tests |
+| 13 | clauded | Notifies user, marks kanban card as completed |
+
+## Skills
+
+### feature-architect
+- **Trigger:** "I need a new dashboard", "build me a feature"
+- **Mode:** Suggest (user can accept or dismiss)
+- **What it does:** 5-phase conversation (problem, workflow, outcome, scope, criteria)
+- **Output:** Structured requirement data for the PRD writer
+
+### prd-writer
+- **Trigger:** "Generate the PRD", "create the requirements document"
+- **Mode:** Auto
+- **What it does:** Generates formal DOCX/PDF with 10 sections
+- **Output:** Document file + kanban card
+
+## Tools
+
+### feature_request
+- **Actions:** create, status, list, review_complete, approve, reject, deploy_verify
+- **Used by:** Skills (automated) and dev team (manual commands)
+- **Bilingual:** All notifications in EN/ES
+
+## Usage
+
+### For users (via Telegram):
+```
+"I need a new dashboard for tracking production orders"
+→ clauded activates feature-architect skill
+→ Guides through PRD conversation
+→ Generates document and kanban card
+→ User waits for dev team response
+```
+
+### For dev team (via Telegram commands):
+```
+/board                           # See pending feature requests
+/board show <card-id>            # Review PRD and code
+feature_request approve <id>     # Approve for deployment
+feature_request reject <id>      # Reject with reason
+```
+
+## Configuration
+
+No configuration needed. The pack auto-loads from the `packs/developer/` directory on clauded restart.
+
+## Dependencies
+
+- Kanban board (built-in)
+- Document generation (built-in)
+- Background task queue (WS2)
+- Event triggers (WS2)
+- Proactive notifications (built-in)

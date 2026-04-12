@@ -1,0 +1,24 @@
+name: developer
+version: "1.0.0"
+description: >
+  Software development workflow pack — manages Level 3 feature requests
+  from user conversation through PRD creation, code drafting, dev team
+  review, and deployment verification. Implements the 13-step autonomous
+  feature development workflow.
+level: 2
+department: engineering
+author: clauded
+capabilities:
+  - "Level 3 feature request intake and PRD generation"
+  - "Conversational requirement refinement (problem → workflow → outcome → scope → success criteria)"
+  - "Kanban card creation with PRD attachment"
+  - "Off-hours code drafting via background task queue"
+  - "Dev team notification and review task assignment"
+  - "Status monitoring with user notifications"
+  - "Post-deployment verification"
+tools:
+  - feature-request
+skills:
+  - feature-architect
+  - prd-writer
+web_apps: []
