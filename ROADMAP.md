@@ -7,22 +7,22 @@
 
 clauded is evolving from personal AI assistant into a **company-wide AI operations platform** serving 9 departments. Core sprints S1-S16 + S9 complete plus architecture hardening (SA1-SA5) and workstation sprints (WS1-WS4). 2003 tests, 80+ files. Currently v1.0.0-rc.60.
 
-**Completed:** S1-S8 ✅ → S10-S14 ✅ → S16 ✅ → S15 ✅ → S9 ✅ → SA1-SA5 ✅ → WS1-WS4 ✅
+**Completed:** S1-S8 ✅ → S10-S14 ✅ → S16 ✅ → S15 ✅ → S9 ✅ → SA1-SA5 ✅ → WS1-WS4 ✅ → S4 ✅ → S3 ✅
 
-**In progress:** S4 (E2E across 4 workstations)
+**All core sprints complete.** S17/S18 in preview mode. v1.0.0-rc.61.
 
-**Recent additions (rc.35 → rc.60):**
+**Recent additions (rc.35 → rc.61):**
 - WS4 (rc.49-57): Knex database abstraction — DB_DRIVER=sqlite|mariadb|postgres, migration script
 - WS1 (rc.58): Caddy reverse proxy, tightened rate limits (3/min, hourly ban), tool audit logging, Telegram webhook mode
 - WS2 (rc.59): Parallel orchestration (Promise.all), event-driven triggers, background task queue, pack-scoped delegation
 - rc.38: Per-user web tokens (/webtoken create/list/revoke)
 - rc.47: SearXNG as Docker service (auto-configured)
 - rc.45: Manufacturing data isolation (chat_id scoping on all 10 tables)
-- rc.60: 2003 tests
+- rc.60: 2003 tests, S4 E2E complete (86 integration tests)
+- rc.61: S3 production deployment (WS1-WS4, InMotion guide)
 
 **Forward roadmap:**
-- S17-S18 (Production Hub + BOM Intelligence) — as capability packs
-- S3 (Production Deployment) — hosting + DB migration + multi-instance
+- S17-S18 (Production Hub + BOM Intelligence) — preview deployed, full implementation pending
 - Phase 4: Client Integration Platform (SaaS) — Board of Directors revenue vision
 - Core subsystems: Auto-Skills (absorbed S19) + Quality Techniques (rc.9/rc.10)
 
@@ -35,8 +35,8 @@ clauded is evolving from personal AI assistant into a **company-wide AI operatio
 | Phase 1 | Voice Prompt Tuning (Telegram) | PASSED 10/10 |
 | Phase 2 | Skill Forge (Telegram) | PASSED 13/13 |
 | Phase 3 | Tool Forge (Telegram) | SMOKE TEST PASSED (`/tool list`, `/tool show`) — full suite deferred to S4 |
-| Phase 4 | Voice Web Chat (Browser) | NOT STARTED — deferred to S4 |
-| Phase 5 | Cross-Feature Integration | NOT STARTED — deferred to S4 |
+| Phase 4 | Voice Web Chat (Browser) | COMPLETED (rc.60) |
+| Phase 5 | Cross-Feature Integration | COMPLETED (rc.60) |
 
 **Decision (2026-03-18):** Sequential phase-by-phase testing was creating a bottleneck. Batch all remaining E2E tests into Sprint S4 after development is complete.
 
@@ -218,7 +218,7 @@ The bot should reach out to the user, not just respond. This is the single bigge
 
 ---
 
-## Sprint S6: Skill Auto-Triggering — NOT STARTED
+## Sprint S6: Skill Auto-Triggering — COMPLETED (SA4/SA5, auto-skills)
 
 **Goal:** AI detects when a skill should activate instead of requiring `/skill use <name>`.
 
@@ -248,7 +248,7 @@ The bot should reach out to the user, not just respond. This is the single bigge
 
 ---
 
-## Sprint S7: Multi-Step Task Orchestration — NOT STARTED
+## Sprint S7: Multi-Step Task Orchestration — COMPLETED (rc.59, parallel + delegation)
 
 **Goal:** Break complex requests ("research X, compare with Y, draft a report") into subtasks and execute sequentially.
 
@@ -536,7 +536,7 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Sprint S14: ClawMFG Chat-Native Tools — NOT STARTED
+## Sprint S14: ClawMFG Chat-Native Tools — COMPLETED (rc.22, 6 tools)
 
 **Goal:** 6 manufacturing optimization tools implemented as clauded Ollama tools + skills. Each tool accepts CSV/JSON input via Telegram, executes core algorithms locally, and returns results + visualizations.
 
@@ -836,7 +836,7 @@ S19 (Auto-Skills) ────► S3 (Production Deployment)
 
 ---
 
-## Sprint S4: Full E2E Validation — IN PROGRESS
+## Sprint S4: Full E2E Validation — COMPLETED (rc.60, 2003 tests, 86 integration)
 
 **Goal:** Concurrent end-to-end testing across 4 department workstations.
 **Status:** Active. 93 test cases in `scripts/e2e-test.md`. Currently v1.0.0-rc.60.
@@ -994,7 +994,7 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 ---
 
-## Sprint S17: Production Hub — Order Management — NOT STARTED
+## Sprint S17: Production Hub — PREVIEW (sample data, web UI at /hub)
 
 **Goal:** Conversational operations hub — multi-source order ingestion, role-based notifications, live dashboard.
 
@@ -1008,7 +1008,7 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 ---
 
-## Sprint S18: BOM & Shortage Intelligence — NOT STARTED (after S17)
+## Sprint S18: BOM & Shortage Intelligence — PREVIEW (sample data, web UI at /hub/bom)
 
 **Goal:** API-driven shortage detection, alternative component suggestions, FIFO split-orders, WO-scoped BOM overrides with auto-revert.
 
@@ -1050,7 +1050,7 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 ---
 
-## Sprint S3: Production Deployment — IN PROGRESS
+## Sprint S3: Production Deployment — COMPLETED (rc.61, WS1-WS4, InMotion guide)
 
 **Goal:** Deploy clauded to production infrastructure for company-wide use across 9 departments.
 
