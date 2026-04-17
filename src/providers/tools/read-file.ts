@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Tool } from 'ollama';
 import { config } from '../../config.js';
+import { buildNotFoundHint } from '../../upload-manifest.js';
 
 const MAX_CHARS = 10_000;
 
@@ -41,15 +42,22 @@ function isPathAllowed(filePath: string): boolean {
   return allowed.some((prefix) => resolved.startsWith(prefix));
 }
 
-export function readFileTool(args: {
+export async function readFileTool(args: {
   path: string;
-}): Record<string, string> {
+}): Promise<Record<string, unknown>> {
   const filePath = resolve(args.path);
 
   if (!isPathAllowed(filePath)) {
     return {
       error: `Access denied. Path "${filePath}" is not in OLLAMA_ALLOWED_PATHS.`,
     };
+  }
+
+  // rc.71: pre-flight existence check. If missing, return a
+  // structured hint with the current uploads list so small models
+  // can self-correct instead of spiraling into hallucinated paths.
+  if (!existsSync(filePath)) {
+    return buildNotFoundHint(filePath);
   }
 
   try {

@@ -1,7 +1,9 @@
 import type { Tool } from 'ollama';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseFile } from '../../files.js';
 import { config, UPLOADS_DIR } from '../../config.js';
+import { buildNotFoundHint } from '../../upload-manifest.js';
 
 export const parseFileDefinition: Tool = {
   type: 'function',
@@ -41,6 +43,12 @@ export async function parseFileTool(
 
   if (!isAllowed) {
     return { error: `Access denied: ${filePath} is not in an allowed path` };
+  }
+
+  // rc.71: pre-flight existence check. Surface a structured hint with
+  // the current uploads list so small models can pick a real path.
+  if (!existsSync(filePath)) {
+    return await buildNotFoundHint(filePath);
   }
 
   const result = await parseFile(filePath);

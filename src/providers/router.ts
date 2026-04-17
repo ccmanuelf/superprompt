@@ -68,6 +68,7 @@ import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAu
 import { CAPABILITIES_PROMPT, generateMfgContextHint } from '../capabilities.js';
 import { getAggregatedCapabilities, buildWebAppsPrompt } from '../packs.js';
 import { buildWebUIAwarenessPrompt } from '../web-ui-guide.js';
+import { getRecentUploads, formatUploadManifest } from '../upload-manifest.js';
 
 const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
 
@@ -711,13 +712,25 @@ export class ProviderRouter {
     const webAppsPrompt = buildWebAppsPrompt();
     const webUIAwareness = buildWebUIAwarenessPrompt();
     const fullCapabilities = [CAPABILITIES_PROMPT, packCaps, webAppsPrompt, webUIAwareness].filter(Boolean).join('\n\n');
+
+    // rc.71: upload manifest — short list of recently uploaded files
+    // with their exact absolute paths, so small models don't invent
+    // filenames. Filesystem-only lookup, cheap, failure-safe.
+    let uploadsManifest = '';
+    try {
+      const uploads = await getRecentUploads(10);
+      uploadsManifest = formatUploadManifest(uploads);
+    } catch (err) {
+      logger.debug({ err, chatId }, 'Upload manifest unavailable (non-fatal)');
+    }
+
     // Provider-aware system prompt composition:
     // - BOTH providers: platformIdentity comes FIRST (prevents Claude identity confusion)
     // - Claude: CLAUDE_PROVIDER_NOTICE (tool access via JSON blocks) + LANGUAGE_HINT
     // - Ollama: standard (has callable tools, model handles language)
     const systemPrompt = provider.name === 'claude'
-      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, CLAUDE_PROVIDER_NOTICE, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
+      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_PROVIDER_NOTICE, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
+      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)
