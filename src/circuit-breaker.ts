@@ -203,6 +203,34 @@ export function buildClaudeTimeoutError(timeoutMs: number): string {
   );
 }
 
+// ── Ollama HTTP Timeout ──────────────────────────────────────
+
+/** Default Ollama HTTP request timeout (milliseconds) */
+const DEFAULT_OLLAMA_TIMEOUT_MS = 600_000; // 10 minutes — matches Claude precedent
+
+/**
+ * Get the Ollama HTTP request timeout from env or default.
+ */
+export function getOllamaTimeoutMs(): number {
+  const envVal = process.env.OLLAMA_TIMEOUT_MS;
+  if (envVal) {
+    const parsed = parseInt(envVal, 10);
+    if (parsed > 0) return parsed;
+  }
+  return DEFAULT_OLLAMA_TIMEOUT_MS;
+}
+
+/**
+ * Build a bilingual timeout error for Ollama requests.
+ */
+export function buildOllamaTimeoutError(timeoutMs: number, model: string): string {
+  const seconds = Math.round(timeoutMs / 1000);
+  return (
+    `[EN] Ollama response timed out after ${seconds}s with model ${model}. The model is likely out of memory or the machine is swapping. Try a smaller model with /model qwen3:4b, or switch to Claude with /claude. `
+    + `[ES] La respuesta de Ollama agoto el tiempo despues de ${seconds}s con el modelo ${model}. Es probable que el modelo este sin memoria o la maquina este usando swap. Prueba un modelo mas pequeno con /model qwen3:4b, o cambia a Claude con /claude.`
+  );
+}
+
 // ── Utility ──────────────────────────────────────────────────
 
 /**

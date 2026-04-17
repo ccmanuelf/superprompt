@@ -4,6 +4,7 @@ import type { AIProvider, AIResponse, SendMessageParams } from './types.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { getToolDefinitions, executeTool } from './tools/index.js';
+import { getOllamaTimeoutMs, buildOllamaTimeoutError } from '../circuit-breaker.js';
 
 const MAX_ITERATIONS = 10;
 const MAX_HISTORY_TURNS = 20; // 20 turns = 40 messages (user + assistant)
@@ -91,21 +92,26 @@ export class OllamaProvider implements AIProvider {
   private client: Ollama;
 
   constructor() {
-    // Custom fetch with 10-minute timeout.
-    // Node's built-in undici has a default headersTimeout of ~5min which
-    // causes premature timeout on slow Ollama inference. Use explicit Agent.
+    // Hard request timeout. The ollama SDK passes its own AbortSignal to
+    // fetch (for its .abort() API), so a bare `init?.signal ??` fallback
+    // never arms — we must compose our hard deadline with AbortSignal.any
+    // so the request cannot hang past this budget.
+    const timeoutMs = getOllamaTimeoutMs();
     const dispatcher = new Agent({
-      headersTimeout: 600_000,
-      bodyTimeout: 600_000,
+      headersTimeout: timeoutMs,
+      bodyTimeout: timeoutMs,
     });
 
-    const timeoutFetch: typeof fetch = (input, init) =>
-      fetch(input, {
+    const timeoutFetch: typeof fetch = (input, init) => {
+      const hard = AbortSignal.timeout(timeoutMs);
+      const signal = init?.signal ? AbortSignal.any([init.signal, hard]) : hard;
+      return fetch(input, {
         ...init,
-        signal: init?.signal ?? AbortSignal.timeout(600_000),
+        signal,
         // @ts-expect-error dispatcher is a valid undici option for Node's fetch
         dispatcher,
       });
+    };
     this.client = new Ollama({
       host: config.OLLAMA_HOST,
       fetch: timeoutFetch,
@@ -177,6 +183,22 @@ export class OllamaProvider implements AIProvider {
     } catch (err) {
       // Remove the user message we just added if we fail
       history.pop();
+
+      const isTimeout =
+        err instanceof Error &&
+        (err.name === 'TimeoutError' ||
+          err.name === 'AbortError' ||
+          /timeout|aborted|headers timeout|body timeout/i.test(err.message));
+
+      if (isTimeout) {
+        const timeoutMs = getOllamaTimeoutMs();
+        logger.error({ err, model, timeoutMs }, 'Ollama request timed out');
+        return {
+          text: buildOllamaTimeoutError(timeoutMs, model),
+          provider: 'ollama',
+          model,
+        };
+      }
 
       logger.error({ err, model }, 'Ollama request failed');
       return {
