@@ -87,6 +87,17 @@ export function clearOllamaHistory(chatId: string): void {
   chatHistories.delete(chatId);
 }
 
+/**
+ * Replace the in-memory conversation history for a chat with the given
+ * turns. Used by the router to rebuild Ollama context from chat_log
+ * before each send so cross-provider turns are visible to the model
+ * (rc.69 continuity bridge). Pass an empty array to effectively reset
+ * — identical to clearOllamaHistory but explicit about intent.
+ */
+export function seedOllamaHistory(chatId: string, messages: Message[]): void {
+  chatHistories.set(chatId, [...messages]);
+}
+
 export class OllamaProvider implements AIProvider {
   readonly name = 'ollama' as const;
   private client: Ollama;
@@ -203,6 +214,13 @@ export class OllamaProvider implements AIProvider {
       // Filter tools by skill's allowedTools list
       const tools = getToolDefinitions(allowedTools || undefined);
 
+      // rc.69: systemPromptAppend carries the cross-provider conversation
+      // recap when the router detects a provider change. Fold it onto
+      // the extra system prompt here so both run paths see it.
+      const extraSystemPrompt = [params.systemPrompt, params.systemPromptAppend]
+        .filter((s): s is string => Boolean(s && s.trim()))
+        .join('\n\n') || undefined;
+
       if (useTools) {
         result = await this.runAgenticLoop(
           chatId,
@@ -210,11 +228,11 @@ export class OllamaProvider implements AIProvider {
           history,
           tools,
           onTyping,
-          params.systemPrompt,
+          extraSystemPrompt,
           isVoice,
         );
       } else {
-        result = await this.runChatTurn(model, history, onTyping, params.systemPrompt, isVoice);
+        result = await this.runChatTurn(model, history, onTyping, extraSystemPrompt, isVoice);
       }
 
       trimHistory(history);

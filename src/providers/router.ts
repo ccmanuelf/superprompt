@@ -1,6 +1,7 @@
 import type { AIProvider, AIResponse, SendMessageParams } from './types.js';
 import { ClaudeProvider, ModelDiscoveryUnavailableError } from './claude.js';
-import { OllamaProvider, clearOllamaHistory } from './ollama.js';
+import { OllamaProvider, clearOllamaHistory, seedOllamaHistory } from './ollama.js';
+import type { Message as OllamaMessage } from 'ollama';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import {
@@ -12,7 +13,57 @@ import {
   clearSession,
   setAutoRoute,
   isAutoRouteEnabled,
+  appendChatLog,
+  getRecentChatLog,
+  type ChatLogEntry,
 } from '../db-core.js';
+
+// rc.69 — cross-provider conversation continuity bridge.
+// Seed the incoming provider with up to the last N turns / M bytes from
+// the chat_log whenever it differs from the provider that handled the
+// previous turn. Chosen empirically: 20 pairs (40 messages) and 16 KB of
+// content. Older content is dropped oldest-first; no summarization.
+const CONTINUITY_MAX_PAIRS = 20;
+const CONTINUITY_MAX_BYTES = 16 * 1024;
+
+/** Trim chat_log tail to a pair/byte budget, oldest turns dropped first. */
+function trimContinuityTail(entries: ChatLogEntry[]): ChatLogEntry[] {
+  const maxMessages = CONTINUITY_MAX_PAIRS * 2;
+  let trimmed = entries.length > maxMessages
+    ? entries.slice(entries.length - maxMessages)
+    : entries.slice();
+
+  let totalBytes = trimmed.reduce((sum, e) => sum + Buffer.byteLength(e.content, 'utf8'), 0);
+  while (totalBytes > CONTINUITY_MAX_BYTES && trimmed.length > 0) {
+    const dropped = trimmed.shift()!;
+    totalBytes -= Buffer.byteLength(dropped.content, 'utf8');
+  }
+  return trimmed;
+}
+
+/** Turn chat_log entries into Ollama Message[] suitable for seedOllamaHistory. */
+function chatLogToOllamaMessages(entries: ChatLogEntry[]): OllamaMessage[] {
+  return entries.map((e) => ({
+    role: e.role as 'user' | 'assistant',
+    content: e.content,
+  }));
+}
+
+/** Build a compact, clearly-framed recap for Claude's --append-system-prompt. */
+function chatLogToClaudeRecap(entries: ChatLogEntry[]): string {
+  const lines = entries.map((e) => {
+    const who = e.role === 'user' ? 'User' : 'Assistant';
+    return `${who}: ${e.content}`;
+  });
+  return [
+    '## Prior conversation context',
+    'The turns below were exchanged earlier in this conversation with a different AI provider. '
+    + 'Continue seamlessly — do NOT greet the user again or ask what they are working on. '
+    + 'Pick up from where this leaves off, referencing the prior content as if you wrote it.',
+    '',
+    lines.join('\n\n'),
+  ].join('\n');
+}
 import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAutoTrigger } from '../skills.js';
 import { CAPABILITIES_PROMPT, generateMfgContextHint } from '../capabilities.js';
 import { getAggregatedCapabilities, buildWebAppsPrompt } from '../packs.js';
@@ -680,11 +731,42 @@ export class ProviderRouter {
       modelOverride = session.claude_model;
     }
 
+    // rc.69: cross-provider continuity — seed the incoming provider
+    // with recent chat_log turns when the previous turn ran on a
+    // different provider. Failures are isolated so a DB issue never
+    // blocks message delivery.
+    let continuityAppend: string | undefined;
+    try {
+      const recent = await getRecentChatLog(chatId, CONTINUITY_MAX_PAIRS * 2);
+      const priorProvider = recent.length ? recent[recent.length - 1].provider : null;
+      const isProviderChange = priorProvider !== null && priorProvider !== provider.name;
+
+      if (isProviderChange) {
+        const trimmed = trimContinuityTail(recent);
+        if (provider.name === 'ollama') {
+          seedOllamaHistory(chatId, chatLogToOllamaMessages(trimmed));
+          logger.info(
+            { chatId, priorProvider, turns: trimmed.length },
+            'Continuity bridge → Ollama: seeded in-memory history from chat_log',
+          );
+        } else {
+          continuityAppend = chatLogToClaudeRecap(trimmed);
+          logger.info(
+            { chatId, priorProvider, turns: trimmed.length, bytes: Buffer.byteLength(continuityAppend, 'utf8') },
+            'Continuity bridge → Claude: recap appended to system prompt',
+          );
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, chatId }, 'Continuity bridge failed — proceeding without seed');
+    }
+
     const response = await provider.sendMessage({
       ...params,
       message: effectiveMessage,
       sessionId: effectiveSessionId,
       systemPrompt,
+      systemPromptAppend: continuityAppend,
       allowedTools: allowedTools ?? undefined,
       modelOverride,
     });
@@ -707,6 +789,7 @@ export class ProviderRouter {
       }
 
       if (autoTriggerNotice) retryResponse.autoTriggerNotice = autoTriggerNotice;
+      await this.logConversationTurn(chatId, provider.name, params.message, retryResponse.text);
       return retryResponse;
     }
 
@@ -720,6 +803,10 @@ export class ProviderRouter {
     // Record successful call for rate limiting
     limiter.record(chatId, provider.name);
 
+    // rc.69: record this turn in the provider-agnostic chat_log so a
+    // later provider switch can seed the incoming provider with it.
+    await this.logConversationTurn(chatId, provider.name, params.message, response.text);
+
     // Context health tracking — both providers
     try {
       const { getContextHealthMonitor } = await import('../context-health.js');
@@ -730,6 +817,29 @@ export class ProviderRouter {
     }
 
     return response;
+  }
+
+  /**
+   * Append the user and assistant turns to chat_log for cross-provider
+   * continuity seeding. Silent on failure — a DB hiccup should never
+   * break message delivery. Logs only non-empty assistant responses.
+   */
+  private async logConversationTurn(
+    chatId: string,
+    provider: 'claude' | 'ollama',
+    userMessage: string,
+    assistantText: string | null | undefined,
+  ): Promise<void> {
+    try {
+      if (userMessage && userMessage.trim()) {
+        await appendChatLog(chatId, 'user', provider, userMessage);
+      }
+      if (assistantText && assistantText.trim()) {
+        await appendChatLog(chatId, 'assistant', provider, assistantText);
+      }
+    } catch (err) {
+      logger.warn({ err, chatId, provider }, 'chat_log append failed (non-fatal)');
+    }
   }
 
   /**

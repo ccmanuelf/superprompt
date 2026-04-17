@@ -15,6 +15,14 @@ export interface SendMessageParams {
   skipAutoTrigger?: boolean;
   /** Platform the message originated from — used for provider-aware identity in system prompt. */
   platform?: 'telegram' | 'matrix' | 'voice-web';
+  /**
+   * Extra system-prompt fragment appended (not replacing) the regular one.
+   * For Claude this maps to `--append-system-prompt`; for Ollama it is
+   * concatenated onto the system message. Used by the router to inject
+   * a cross-provider conversation recap when the active provider just
+   * changed (rc.69 continuity bridge).
+   */
+  systemPromptAppend?: string;
 }
 
 export interface GeneratedFile {

@@ -40,6 +40,21 @@ export interface Memory {
   embedding?: Buffer | null;
 }
 
+/**
+ * chat_log (rc.69) — provider-agnostic verbatim turn log used to seed
+ * context when a chat switches providers mid-conversation. Distinct
+ * from Memory (which is distilled, salience-decayed facts). Bounded
+ * retention via pruneAllChatLogs to avoid unbounded growth.
+ */
+export interface ChatLogEntry {
+  id: number;
+  chat_id: string;
+  role: 'user' | 'assistant';
+  provider: string;
+  content: string;
+  created_at: number;
+}
+
 export interface ScheduledTask {
   id: string;
   chat_id: string;
@@ -129,6 +144,19 @@ async function createCoreTables(db: Knex): Promise<void> {
   // Migration: claude_model (rc.68) — per-chat Claude model override
   if (!(await columnExists(db, 'sessions', 'claude_model'))) {
     await db.schema.alterTable('sessions', (t) => { t.string('claude_model').nullable(); });
+  }
+
+  // chat_log (rc.69) — provider-agnostic turn log for cross-provider continuity
+  if (!(await db.schema.hasTable('chat_log'))) {
+    await db.schema.createTable('chat_log', (t) => {
+      t.increments('id').primary();
+      t.string('chat_id').notNullable();
+      t.string('role').notNullable();       // 'user' | 'assistant'
+      t.string('provider').notNullable();   // 'claude' | 'ollama'
+      t.text('content').notNullable();
+      t.bigInteger('created_at').notNullable();
+      t.index(['chat_id', 'created_at']);
+    });
   }
 
   // Memories
@@ -368,6 +396,80 @@ export async function updateSessionOllamaModel(chatId: string, model: string | n
 export async function updateSessionClaudeModel(chatId: string, model: string | null): Promise<void> {
   const db = getKnex();
   await db('sessions').where({ chat_id: chatId }).update({ claude_model: model, updated_at: Date.now() });
+}
+
+// ── chat_log (rc.69) ─────────────────────────────────────────
+
+/**
+ * Append a single turn to the chat_log.
+ * Non-throwing at the application level — caller should ignore failures
+ * so a logging hiccup never breaks the active message flow.
+ */
+export async function appendChatLog(
+  chatId: string,
+  role: 'user' | 'assistant',
+  provider: string,
+  content: string,
+): Promise<void> {
+  const db = getKnex();
+  await db('chat_log').insert({
+    chat_id: chatId,
+    role,
+    provider,
+    content,
+    created_at: Date.now(),
+  });
+}
+
+/**
+ * Return the most recent `limit` turns for a chat in chronological order.
+ * Uses a subquery so the final ORDER BY stays ASC (natural read order)
+ * while the selection picks the newest `limit` rows.
+ */
+export async function getRecentChatLog(chatId: string, limit: number): Promise<ChatLogEntry[]> {
+  const db = getKnex();
+  const rows = await db('chat_log')
+    .where({ chat_id: chatId })
+    .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
+    .limit(limit);
+  return (rows as ChatLogEntry[]).reverse();
+}
+
+/**
+ * Delete turns older than the latest `keepLatest` for a single chat.
+ * No-op when a chat has <= keepLatest rows. Idempotent.
+ */
+export async function pruneChatLog(chatId: string, keepLatest: number): Promise<number> {
+  const db = getKnex();
+  const boundary = await db('chat_log')
+    .where({ chat_id: chatId })
+    .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
+    .offset(keepLatest)
+    .limit(1)
+    .first() as { id: number } | undefined;
+
+  if (!boundary) return 0;
+
+  return db('chat_log')
+    .where({ chat_id: chatId })
+    .where('id', '<=', boundary.id)
+    .del();
+}
+
+/**
+ * Prune every chat's log down to `keepPerChat` latest rows.
+ * Invoked from the memory decay sweep on the same cadence.
+ */
+export async function pruneAllChatLogs(keepPerChat: number): Promise<number> {
+  const db = getKnex();
+  const chats = await db('chat_log').distinct('chat_id') as Array<{ chat_id: string }>;
+  let total = 0;
+  for (const { chat_id } of chats) {
+    total += await pruneChatLog(chat_id, keepPerChat);
+  }
+  return total;
 }
 
 export async function clearSession(chatId: string): Promise<void> {

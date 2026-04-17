@@ -9,6 +9,7 @@ import {
   getCompressibleMemories,
   deleteMemories,
   insertEpisode,
+  pruneAllChatLogs,
   type Memory,
   type Episode,
 } from './db-core.js';
@@ -292,12 +293,24 @@ export async function runDecaySweep(): Promise<void> {
     .where('salience', '<', 0.1)
     .del();
 
+  // rc.69: prune the cross-provider chat_log to the last 200 turns per
+  // chat. Bounded retention prevents unbounded growth while keeping
+  // plenty of history for continuity-bridge seeding (budget is 20
+  // pairs = 40 messages).
+  let chatLogPruned = 0;
+  try {
+    chatLogPruned = await pruneAllChatLogs(200);
+  } catch (err) {
+    logger.warn({ err }, 'chat_log prune failed during memory decay sweep');
+  }
+
   logger.info(
     {
       decayed: decayCount,
       compressed,
       deleted: deletedCount,
       compressionFailed,
+      chatLogPruned,
     },
     'Memory decay sweep completed',
   );

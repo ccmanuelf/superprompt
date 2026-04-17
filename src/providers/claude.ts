@@ -78,6 +78,10 @@ export class ClaudeProvider implements AIProvider {
       args.push('--system-prompt', params.systemPrompt);
     }
 
+    if (params.systemPromptAppend) {
+      args.push('--append-system-prompt', params.systemPromptAppend);
+    }
+
     logger.debug({ args: ['claude', ...args].join(' ') }, 'Spawning claude CLI');
 
     return new Promise<AIResponse>((resolve, reject) => {
