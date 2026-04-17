@@ -6,9 +6,55 @@ import { logger } from '../logger.js';
 import { getToolDefinitions, executeTool } from './tools/index.js';
 import { getOllamaTimeoutMs, buildOllamaTimeoutError } from '../circuit-breaker.js';
 
-const MAX_ITERATIONS = 10;
 const MAX_HISTORY_TURNS = 20; // 20 turns = 40 messages (user + assistant)
 const MAX_HISTORY_MESSAGES = MAX_HISTORY_TURNS * 2;
+
+// rc.72 — model-size-aware agentic ceilings. Small models hallucinate
+// more and spiral longer in tool loops, so we tighten their leash:
+// fewer iterations, lower temperature (less creativity-induced drift),
+// and a num_predict cap to prevent runaway generations. Bigger models
+// keep the generous defaults. Tier is resolved from the `parameter_size`
+// returned by `ollama.list()` (e.g. "9.7B", "2.0B", "137M") and cached
+// per-model for the process lifetime.
+export interface ModelTier {
+  maxIterations: number;
+  numPredict?: number;
+  temperature: number;
+}
+
+const DEFAULT_TIER: ModelTier = { maxIterations: 10, temperature: 0.7 };
+
+/**
+ * Parse Ollama's `parameter_size` string into billions-of-params as a
+ * number. "9.7B" → 9.7, "137M" → 0.137. Unknown formats return
+ * Number.POSITIVE_INFINITY so the caller treats the model as large
+ * (no restrictions) — fail-open on unknown metadata.
+ */
+export function parseParameterSize(sizeStr: string | undefined | null): number {
+  if (!sizeStr) return Number.POSITIVE_INFINITY;
+  const match = sizeStr.trim().match(/^([\d.]+)\s*([BM])$/i);
+  if (!match) return Number.POSITIVE_INFINITY;
+  const n = parseFloat(match[1]);
+  if (!Number.isFinite(n)) return Number.POSITIVE_INFINITY;
+  return match[2].toUpperCase() === 'B' ? n : n / 1000;
+}
+
+/**
+ * Resolve agentic-loop knobs for a given model size in billions.
+ *   ≤2B   → strict: 4 iterations, 512 token cap, temp 0.2
+ *   ≤4B   → medium: 6 iterations, 1024 cap, temp 0.3
+ *   >4B   → default: current 10 iterations, no cap, temp 0.7
+ * Boundaries inclusive at the small end (2B fits in the strict tier).
+ */
+export function resolveModelTier(paramsInBillions: number): ModelTier {
+  if (paramsInBillions <= 2) {
+    return { maxIterations: 4, numPredict: 512, temperature: 0.2 };
+  }
+  if (paramsInBillions <= 4) {
+    return { maxIterations: 6, numPredict: 1024, temperature: 0.3 };
+  }
+  return DEFAULT_TIER;
+}
 
 const TOOL_MODEL_SYSTEM_PROMPT = `You are clauded, a helpful AI assistant. You have access to tools that let you interact with the system.
 
@@ -101,6 +147,8 @@ export function seedOllamaHistory(chatId: string, messages: Message[]): void {
 export class OllamaProvider implements AIProvider {
   readonly name = 'ollama' as const;
   private client: Ollama;
+  /** Cache of resolved tier per model name. Populated lazily via getModelTier(). */
+  private tierCache = new Map<string, ModelTier>();
 
   constructor() {
     // Hard request timeout. The ollama SDK passes its own AbortSignal to
@@ -143,6 +191,33 @@ export class OllamaProvider implements AIProvider {
   async modelExists(name: string): Promise<boolean> {
     const models = await this.listModels();
     return models.some((m) => m.name === name);
+  }
+
+  /**
+   * Resolve the agentic-loop tier for a model (cached). Failure-safe:
+   * if /api/tags can't be reached or the model isn't listed, returns
+   * the default tier (no restrictions). Small-model tuning is strictly
+   * a quality-of-life feature — it must never block inference.
+   */
+  async getModelTier(model: string): Promise<ModelTier> {
+    const cached = this.tierCache.get(model);
+    if (cached) return cached;
+
+    try {
+      const models = await this.listModels();
+      const entry = models.find((m) => m.name === model);
+      const params = parseParameterSize(entry?.size);
+      const tier = resolveModelTier(params);
+      this.tierCache.set(model, tier);
+      logger.debug(
+        { model, paramSize: entry?.size, paramsInBillions: params, tier },
+        'Ollama model tier resolved',
+      );
+      return tier;
+    } catch (err) {
+      logger.warn({ err, model }, 'Failed to resolve model tier, using default');
+      return DEFAULT_TIER;
+    }
   }
 
   /**
@@ -284,8 +359,19 @@ export class OllamaProvider implements AIProvider {
       ...history,
     ];
 
-    const options: Record<string, unknown> = { num_ctx: 32768 };
-    if (isVoice) options.num_predict = 256;
+    // rc.72: tier-aware generation options. Small models get a
+    // tighter num_predict cap and lower temperature; voice mode still
+    // takes the stricter 256-token ceiling.
+    const tier = await this.getModelTier(model);
+    const options: Record<string, unknown> = {
+      num_ctx: 32768,
+      temperature: tier.temperature,
+    };
+    if (isVoice) {
+      options.num_predict = 256;
+    } else if (tier.numPredict !== undefined) {
+      options.num_predict = tier.numPredict;
+    }
 
     const response = await this.client.chat({
       model,
@@ -328,6 +414,11 @@ export class OllamaProvider implements AIProvider {
       ...history,
     ];
 
+    // rc.72: tier gates the loop ceiling and per-request options. A 2B
+    // model that spirals for 10 iterations does more damage than a 2B
+    // that bails at 4 and prompts the user to upgrade model.
+    const tier = await this.getModelTier(model);
+
     let iterations = 0;
     const toolsUsedSet = new Set<string>();
     let toolErrorCount = 0;
@@ -339,7 +430,7 @@ export class OllamaProvider implements AIProvider {
     const { CircuitBreaker } = await import('../circuit-breaker.js');
     const breaker = new CircuitBreaker();
 
-    while (iterations < MAX_ITERATIONS && breaker.state !== 'open') {
+    while (iterations < tier.maxIterations && breaker.state !== 'open') {
       iterations++;
 
       if (onTyping) onTyping();
@@ -349,8 +440,15 @@ export class OllamaProvider implements AIProvider {
         'Agentic loop iteration',
       );
 
-      const agenticOptions: Record<string, unknown> = { num_ctx: 32768 };
-      if (isVoice) agenticOptions.num_predict = 256;
+      const agenticOptions: Record<string, unknown> = {
+        num_ctx: 32768,
+        temperature: tier.temperature,
+      };
+      if (isVoice) {
+        agenticOptions.num_predict = 256;
+      } else if (tier.numPredict !== undefined) {
+        agenticOptions.num_predict = tier.numPredict;
+      }
 
       const response = await this.client.chat({
         model,
@@ -482,9 +580,9 @@ export class OllamaProvider implements AIProvider {
       breaker.recordIterationEnd(msg.content?.length ?? 0);
     }
 
-    // Max iterations reached
+    // Max iterations reached (tier-dependent; 4 for small models, 10 default)
     logger.warn(
-      { chatId, iterations: MAX_ITERATIONS },
+      { chatId, model, iterations: tier.maxIterations, tier },
       'Agentic loop hit max iterations',
     );
 

@@ -19,26 +19,44 @@ import {
 } from '../db-core.js';
 
 // rc.69 — cross-provider conversation continuity bridge.
-// Seed the incoming provider with up to the last N turns / M bytes from
-// the chat_log whenever it differs from the provider that handled the
-// previous turn. Chosen empirically: 20 pairs (40 messages) and 16 KB of
-// content. Older content is dropped oldest-first; no summarization.
+// rc.72 — seed now uses PER-TURN truncation instead of aggregate byte
+// dropping. Rationale: an observed conversation had a single 21 KB
+// assistant turn (PDF-gen JSON). The old aggregate-budget loop would
+// shift every turn trying to fit under the cap, ending with an empty
+// seed — strictly worse than a truncated one. Per-turn capping keeps
+// the tail always populated: user sees gist of every recent turn.
 const CONTINUITY_MAX_PAIRS = 20;
-const CONTINUITY_MAX_BYTES = 16 * 1024;
+const CONTINUITY_PER_TURN_BYTES = 1024; // ~250 tokens — enough for the lede of any turn
+const CONTINUITY_TRUNCATION_MARKER = '… [truncated]';
 
-/** Trim chat_log tail to a pair/byte budget, oldest turns dropped first. */
+/**
+ * Trim chat_log tail to (at most) CONTINUITY_MAX_PAIRS pairs and cap
+ * each turn's content at CONTINUITY_PER_TURN_BYTES bytes. Uses
+ * Buffer.byteLength so multibyte chars don't overrun the budget. A
+ * truncation marker is appended so the model knows content was clipped.
+ * Natural total ceiling: 20 × 2 × 1 KB = 40 KB worst-case, usually far less.
+ */
 function trimContinuityTail(entries: ChatLogEntry[]): ChatLogEntry[] {
   const maxMessages = CONTINUITY_MAX_PAIRS * 2;
-  let trimmed = entries.length > maxMessages
+  const windowed = entries.length > maxMessages
     ? entries.slice(entries.length - maxMessages)
     : entries.slice();
 
-  let totalBytes = trimmed.reduce((sum, e) => sum + Buffer.byteLength(e.content, 'utf8'), 0);
-  while (totalBytes > CONTINUITY_MAX_BYTES && trimmed.length > 0) {
-    const dropped = trimmed.shift()!;
-    totalBytes -= Buffer.byteLength(dropped.content, 'utf8');
-  }
-  return trimmed;
+  const markerBytes = Buffer.byteLength(CONTINUITY_TRUNCATION_MARKER, 'utf8');
+  const targetBytes = CONTINUITY_PER_TURN_BYTES - markerBytes;
+
+  return windowed.map((e) => {
+    if (Buffer.byteLength(e.content, 'utf8') <= CONTINUITY_PER_TURN_BYTES) {
+      return e;
+    }
+    // Step back until the UTF-8 byte count fits under the target. 64-char
+    // steps keep this O(n/64) while avoiding slicing mid-codepoint.
+    let truncated = e.content;
+    while (Buffer.byteLength(truncated, 'utf8') > targetBytes && truncated.length > 0) {
+      truncated = truncated.slice(0, Math.max(0, truncated.length - 64));
+    }
+    return { ...e, content: truncated + CONTINUITY_TRUNCATION_MARKER };
+  });
 }
 
 /** Turn chat_log entries into Ollama Message[] suitable for seedOllamaHistory. */
