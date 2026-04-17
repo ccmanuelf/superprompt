@@ -26,15 +26,28 @@ import {
 // seed — strictly worse than a truncated one. Per-turn capping keeps
 // the tail always populated: user sees gist of every recent turn.
 const CONTINUITY_MAX_PAIRS = 20;
-const CONTINUITY_PER_TURN_BYTES = 1024; // ~250 tokens — enough for the lede of any turn
-const CONTINUITY_TRUNCATION_MARKER = '… [truncated]';
+// rc.73 — asymmetric truncation. User turns are usually short and
+// critical verbatim (intent + wording). Assistant turns can be
+// enormous (full JSON tool outputs, generated documents) and need
+// a higher cap so substantive content survives — but not so high
+// that one turn swallows the context window.
+const CONTINUITY_USER_TURN_BYTES = 4096;       // ~1K tokens, usually enough for any real user prompt
+const CONTINUITY_ASSISTANT_TURN_BYTES = 3072;  // ~750 tokens, keeps summaries + first data pass
+// rc.73 — directive truncation marker. A soft "[truncated]" was
+// treated as stylistic. This version tells the model exactly what
+// to do when the clipped content mattered: call a tool to re-fetch.
+const CONTINUITY_TRUNCATION_MARKER =
+  '… [TRUNCATED — if this turn referenced specific data (numbers, file contents, tool outputs), '
+  + 'CALL the relevant tool (parse_file, read_file, etc.) to fetch it. DO NOT fabricate values.]';
 
 /**
- * Trim chat_log tail to (at most) CONTINUITY_MAX_PAIRS pairs and cap
- * each turn's content at CONTINUITY_PER_TURN_BYTES bytes. Uses
+ * Trim chat_log tail to (at most) CONTINUITY_MAX_PAIRS pairs with
+ * asymmetric per-turn caps (user 4 KB, assistant 3 KB). Uses
  * Buffer.byteLength so multibyte chars don't overrun the budget. A
- * truncation marker is appended so the model knows content was clipped.
- * Natural total ceiling: 20 × 2 × 1 KB = 40 KB worst-case, usually far less.
+ * directive truncation marker is appended so the model knows content
+ * was clipped AND that fabrication is worse than calling a tool.
+ * Natural ceiling: 20 × (4 + 3) KB = 140 KB worst-case, typically
+ * far less since most turns are well under either cap.
  */
 function trimContinuityTail(entries: ChatLogEntry[]): ChatLogEntry[] {
   const maxMessages = CONTINUITY_MAX_PAIRS * 2;
@@ -43,12 +56,14 @@ function trimContinuityTail(entries: ChatLogEntry[]): ChatLogEntry[] {
     : entries.slice();
 
   const markerBytes = Buffer.byteLength(CONTINUITY_TRUNCATION_MARKER, 'utf8');
-  const targetBytes = CONTINUITY_PER_TURN_BYTES - markerBytes;
 
   return windowed.map((e) => {
-    if (Buffer.byteLength(e.content, 'utf8') <= CONTINUITY_PER_TURN_BYTES) {
+    const perTurnCap =
+      e.role === 'user' ? CONTINUITY_USER_TURN_BYTES : CONTINUITY_ASSISTANT_TURN_BYTES;
+    if (Buffer.byteLength(e.content, 'utf8') <= perTurnCap) {
       return e;
     }
+    const targetBytes = perTurnCap - markerBytes;
     // Step back until the UTF-8 byte count fits under the target. 64-char
     // steps keep this O(n/64) while avoiding slicing mid-codepoint.
     let truncated = e.content;
@@ -67,6 +82,16 @@ function chatLogToOllamaMessages(entries: ChatLogEntry[]): OllamaMessage[] {
   }));
 }
 
+// rc.73 — shared anti-fabrication directive for BOTH providers when
+// the continuity bridge fires. Claude gets it as part of its recap
+// block (--append-system-prompt). Ollama gets it via
+// systemPromptAppend which folds into its extra system prompt.
+const CONTINUITY_ANTI_FAB_FOOTER =
+  'IMPORTANT: The prior turns may be truncated at the per-turn cap. '
+  + 'If a referenced file, number, table, or tool output is NOT visible in full, '
+  + 'verify by calling the appropriate tool (parse_file, read_file, query_memory, etc.) '
+  + 'BEFORE using its contents in your response. Hallucinated values are worse than an extra tool call.';
+
 /** Build a compact, clearly-framed recap for Claude's --append-system-prompt. */
 function chatLogToClaudeRecap(entries: ChatLogEntry[]): string {
   const lines = entries.map((e) => {
@@ -80,6 +105,12 @@ function chatLogToClaudeRecap(entries: ChatLogEntry[]): string {
     + 'Pick up from where this leaves off, referencing the prior content as if you wrote it.',
     '',
     lines.join('\n\n'),
+    '',
+    // rc.73 — anti-fabrication footer. Observed failure mode: the
+    // model reads the recap, "knows" there was data, and invents
+    // specifics rather than re-fetching from the source. This footer
+    // turns the tool-use default from optional into required.
+    CONTINUITY_ANTI_FAB_FOOTER,
   ].join('\n');
 }
 import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAutoTrigger } from '../skills.js';
@@ -780,6 +811,12 @@ export class ProviderRouter {
           const trimmed = trimContinuityTail(recent);
           if (provider.name === 'ollama') {
             seedOllamaHistory(chatId, chatLogToOllamaMessages(trimmed));
+            // rc.73 — also inject the anti-fabrication directive into
+            // Ollama's system prompt for this turn. The per-turn
+            // truncation markers are strong but the footer adds an
+            // explicit "verify before you use" rule the model must
+            // apply across the whole seeded history.
+            continuityAppend = CONTINUITY_ANTI_FAB_FOOTER;
             logger.info(
               { chatId, priorProvider, turns: trimmed.length },
               'Continuity bridge → Ollama: seeded in-memory history from chat_log',

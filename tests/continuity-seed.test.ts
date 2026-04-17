@@ -18,8 +18,12 @@ import { describe, it, expect } from 'vitest';
 // the test surface small and avoid public API exposure for internal
 // helpers.)
 const CONTINUITY_MAX_PAIRS = 20;
-const CONTINUITY_PER_TURN_BYTES = 1024;
-const CONTINUITY_TRUNCATION_MARKER = '… [truncated]';
+// rc.73 — asymmetric caps + directive marker.
+const CONTINUITY_USER_TURN_BYTES = 4096;
+const CONTINUITY_ASSISTANT_TURN_BYTES = 3072;
+const CONTINUITY_TRUNCATION_MARKER =
+  '… [TRUNCATED — if this turn referenced specific data (numbers, file contents, tool outputs), '
+  + 'CALL the relevant tool (parse_file, read_file, etc.) to fetch it. DO NOT fabricate values.]';
 
 interface ChatLogEntry {
   id: number;
@@ -37,12 +41,14 @@ function trimContinuityTail(entries: ChatLogEntry[]): ChatLogEntry[] {
     : entries.slice();
 
   const markerBytes = Buffer.byteLength(CONTINUITY_TRUNCATION_MARKER, 'utf8');
-  const targetBytes = CONTINUITY_PER_TURN_BYTES - markerBytes;
 
   return windowed.map((e) => {
-    if (Buffer.byteLength(e.content, 'utf8') <= CONTINUITY_PER_TURN_BYTES) {
+    const perTurnCap =
+      e.role === 'user' ? CONTINUITY_USER_TURN_BYTES : CONTINUITY_ASSISTANT_TURN_BYTES;
+    if (Buffer.byteLength(e.content, 'utf8') <= perTurnCap) {
       return e;
     }
+    const targetBytes = perTurnCap - markerBytes;
     let truncated = e.content;
     while (Buffer.byteLength(truncated, 'utf8') > targetBytes && truncated.length > 0) {
       truncated = truncated.slice(0, Math.max(0, truncated.length - 64));
@@ -55,7 +61,7 @@ function makeEntry(id: number, role: 'user' | 'assistant', content: string): Cha
   return { id, chat_id: 'c', role, provider: 'claude', content, created_at: id };
 }
 
-describe('continuity seed truncation (rc.72)', () => {
+describe('continuity seed truncation (rc.72/73)', () => {
   it('is a no-op when every turn is under the per-turn cap', () => {
     const input = [
       makeEntry(1, 'user', 'hi'),
@@ -67,11 +73,10 @@ describe('continuity seed truncation (rc.72)', () => {
     expect(out.map((e) => e.content)).toEqual(['hi', 'hello', 'more', 'ok']);
   });
 
-  it('truncates an oversized turn in-place — never empties the seed (rc.72 regression)', () => {
+  it('truncates an oversized assistant turn in-place — never empties the seed (rc.72 regression)', () => {
     // The specific failure mode: one massive assistant turn alone
-    // blows the old 16 KB aggregate budget. Under rc.72, it survives
-    // truncated, alongside surrounding shorter turns.
-    const huge = 'X'.repeat(21 * 1024); // 21 KB, like the PDF-gen JSON
+    // used to zero the seed. Under rc.72/73 it survives truncated.
+    const huge = 'X'.repeat(21 * 1024);
     const input = [
       makeEntry(1, 'user', 'short user q'),
       makeEntry(2, 'assistant', huge),
@@ -81,7 +86,34 @@ describe('continuity seed truncation (rc.72)', () => {
     expect(out).toHaveLength(2); // CRITICAL — used to be 0 under rc.69/71
     expect(out[0].content).toBe('short user q');
     expect(out[1].content.endsWith(CONTINUITY_TRUNCATION_MARKER)).toBe(true);
-    expect(Buffer.byteLength(out[1].content, 'utf8')).toBeLessThanOrEqual(CONTINUITY_PER_TURN_BYTES);
+    expect(Buffer.byteLength(out[1].content, 'utf8')).toBeLessThanOrEqual(CONTINUITY_ASSISTANT_TURN_BYTES);
+  });
+
+  it('applies asymmetric caps: user 4 KB, assistant 3 KB (rc.73)', () => {
+    // A 3.5 KB user turn survives under the 4 KB user cap…
+    const midUser = 'U'.repeat(3500);
+    // …but a 3.5 KB assistant turn is truncated under the 3 KB assistant cap.
+    const midAssistant = 'A'.repeat(3500);
+    const input = [
+      makeEntry(1, 'user', midUser),
+      makeEntry(2, 'assistant', midAssistant),
+    ];
+    const out = trimContinuityTail(input);
+
+    expect(out[0].content).toBe(midUser); // untouched — under 4 KB cap
+    expect(out[0].content.endsWith(CONTINUITY_TRUNCATION_MARKER)).toBe(false);
+
+    expect(out[1].content.endsWith(CONTINUITY_TRUNCATION_MARKER)).toBe(true);
+    expect(Buffer.byteLength(out[1].content, 'utf8')).toBeLessThanOrEqual(CONTINUITY_ASSISTANT_TURN_BYTES);
+  });
+
+  it('marker is directive (tells the model to call tools, not just that content was clipped) (rc.73)', () => {
+    // Regression guard for the rc.73 fix that replaced the soft
+    // "[truncated]" with an explicit "CALL the relevant tool…
+    // DO NOT fabricate values." directive.
+    expect(CONTINUITY_TRUNCATION_MARKER).toMatch(/CALL/);
+    expect(CONTINUITY_TRUNCATION_MARKER).toMatch(/DO NOT fabricate/i);
+    expect(CONTINUITY_TRUNCATION_MARKER).toMatch(/parse_file|read_file/);
   });
 
   it('preserves ordering when multiple turns are oversized', () => {
