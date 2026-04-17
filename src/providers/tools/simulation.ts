@@ -21,6 +21,12 @@ Actions:
 - list: List saved scenarios.
 - status: Show scenario results. Requires scenario_name.
 
+CRITICAL — Multi-product / multi-cell modelling:
+- Each distinct product, cell, or parallel line MUST have its own set of operation rows with a unique "product" identifier. Do NOT merge cells/products into a single serial chain. A plant with 5 parallel cells → operations[] contains rows with 5 distinct "product" values.
+- Each product MUST have its own entry in demands[] with daily_demand set from the real data, not a default.
+- If the source spreadsheet has multiple sheets (e.g. cycle times, scenarios, restrictions, observations), READ EVERY SHEET before building config_json. Cell names, operation counts, and demand figures are usually spread across different sheets.
+- Default / template / placeholder configs ("PROD-001" with generic operations like "Corte/Doblado/Soldadura") are UNACCEPTABLE when real data is available. Use the exact cell names, operations, and SAMs from the parsed Excel.
+
 Config format: { operations: [{product, step, operation, machine_tool, sam_min, operators?, grade_pct?, fpd_pct?, rework_pct?}], schedule: {shifts_enabled, shift1_hours, work_days}, demands: [{product, bundle_size?, daily_demand?}], breakdowns?: [{machine_tool, breakdown_pct}], mode?: "demand-driven", horizon_days?: 1 }
 
 Also available: web UI at /sim on the web dashboard.`,

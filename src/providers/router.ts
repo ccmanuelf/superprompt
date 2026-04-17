@@ -333,9 +333,57 @@ function classifyDeliverableIntent(text: string | undefined): DeliverableIntent 
   return { isDeliverable: true, needsSimulation, allowedTools: tools };
 }
 
-// rc.75 — stricter system-prompt fragment used ONLY for the
-// automatic retry when the first Ollama attempt didn't call
-// generate_document. Even louder than the per-turn reminder.
+// rc.76 — per-turn language override. LANGUAGE_HINT alone was not
+// enough: when the continuity bridge seeded Spanish-heavy history, a
+// plain English request drew a Spanish reply because the model
+// weighted "match the conversation register" above the soft hint.
+// The override detects the CURRENT message's language via a stopword
+// heuristic (EN vs ES count; unknown if tied or both zero) and
+// injects a hard rule near the end of the system prompt, overriding
+// history inertia for this turn only.
+const EN_STOPWORDS =
+  /\b(the|is|are|was|were|this|that|these|those|with|for|from|into|and|or|but|not|have|has|had|can|could|should|would|will|do|does|did|you|your|we|our|they|their|please|generate|create|make|need|want|use|based|report|run)\b/gi;
+const ES_STOPWORDS =
+  /\b(el|la|los|las|un|una|unos|unas|de|del|que|con|para|por|como|pero|este|esta|estos|estas|eso|esa|ese|esas|esos|y|o|ya|no|se|su|sus|tu|tus|yo|mi|mis|nosotros|ustedes|ellos|ellas|es|son|era|fue|ser|estar|tiene|hacer|necesito|quiero|genera|crea|haz|usa|basado|reporte|correr|ejecuta)\b/gi;
+
+export function detectMessageLanguage(text: string | undefined): 'en' | 'es' | 'unknown' {
+  if (!text) return 'unknown';
+  const en = (text.match(EN_STOPWORDS) || []).length;
+  const es = (text.match(ES_STOPWORDS) || []).length;
+  if (en === 0 && es === 0) return 'unknown';
+  // Require a ≥1.5x margin — short messages like "proceed" shouldn't
+  // force-pick EN just from a single match.
+  if (en >= 2 && en >= es * 1.5) return 'en';
+  if (es >= 2 && es >= en * 1.5) return 'es';
+  if (en > es) return 'en';
+  if (es > en) return 'es';
+  return 'unknown';
+}
+
+const LANGUAGE_OVERRIDE_EN = `## CRITICAL LANGUAGE OVERRIDE
+
+The user's CURRENT message is in ENGLISH. Your entire response — text, summaries, tables, recommendations, document titles, section headings — MUST be in ENGLISH. This rule OVERRIDES any tendency to match the historical register of the conversation, including prior turns seeded from a different provider. English only for this turn. If any document is generated, its content must also be in English unless the user explicitly asks otherwise.`;
+
+const LANGUAGE_OVERRIDE_ES = `## REGLA CRÍTICA DE IDIOMA
+
+El mensaje ACTUAL del usuario está en ESPAÑOL. Tu respuesta completa — texto, resúmenes, tablas, recomendaciones, títulos de documentos, encabezados de sección — DEBE estar en ESPAÑOL. Esta regla ANULA cualquier inclinación a igualar el registro histórico de la conversación, incluidos los turnos previos sembrados desde otro proveedor. Solo español en este turno. Si se genera algún documento, su contenido también debe estar en español salvo que el usuario indique lo contrario.`;
+
+// rc.76 — simulation scaffolding hint. Activates only when the user's
+// raw message carries deliverable + simulation intent. Complements the
+// tightened tool description by putting a short, high-priority
+// reminder late in the system prompt (recency weight).
+const MULTI_PRODUCT_REGEX =
+  /\b(cells?|celdas?|lines?|l[ií]neas?|stations?|estaciones?|products?|productos?|multi[-\s]?(product|cell|line)|parallel|paralela[os]?)\b/i;
+
+const SIMULATION_SCAFFOLDING_HINT = `## Simulation-Configuration Scaffolding
+
+When you call production_simulation or monte_carlo for this turn:
+
+1. READ EVERY SHEET of the parsed Excel before building config_json. Cell names, cycle times, demand, scenarios, constraints, and observations are typically on separate sheets. Relying on only the first sheet will miss half the system.
+2. Each production cell / parallel line MUST appear as its OWN distinct "product" in operations[] AND in demands[]. If the file mentions N cells (see the filename, the "Datos Base" sheet, or the "Restricciones" sheet), operations[] must contain N distinct product identifiers.
+3. Do NOT collapse multiple cells into a single serial chain — that produces a fictional throughput number (capacity ≈ 1 ÷ sum_of_SAMs) that matches no real scenario.
+4. Do NOT invent placeholder product names ("PROD-001") or placeholder operations ("Corte / Doblado / Soldadura") when the Excel contains real names. Quote the real names verbatim.
+5. Use daily_demand per cell from the real data — never a default.`;
 const DELIVERABLE_RETRY_DIRECTIVE = `## RETRY — Previous response failed to produce the requested file
 
 Your previous response answered a deliverable request with discussion, questions, or analysis instead of calling generate_document. This is unacceptable.
@@ -893,15 +941,41 @@ export class ProviderRouter {
       ? (provider.name === 'claude' ? DELIVERABLE_REMINDER_CLAUDE : DELIVERABLE_REMINDER_OLLAMA)
       : '';
 
+    // rc.76 — per-turn language override. Stopword-based detection on
+    // the raw user message; injected near the end of the system
+    // prompt for high recency weight. Fixes Spanish-drift when the
+    // continuity bridge seeded a Spanish-heavy history but the user's
+    // current message is in English (or vice versa).
+    const userLang = detectMessageLanguage(params.rawUserMessage ?? params.message);
+    const languageOverride =
+      userLang === 'en' ? LANGUAGE_OVERRIDE_EN :
+      userLang === 'es' ? LANGUAGE_OVERRIDE_ES :
+      '';
+
+    // rc.76 — simulation scaffolding hint. Activates when the user
+    // asks for a deliverable that involves simulation AND mentions
+    // cells/lines/products/parallel — the multi-cell failure mode we
+    // observed. The tightened production_simulation tool description
+    // already covers most cases; this puts a late-in-prompt reminder
+    // for extra recency weight.
+    const rawForHints = params.rawUserMessage ?? params.message;
+    const simulationScaffolding =
+      detectDeliverableFormat(rawForHints)
+      && SIMULATION_INTENT_REGEX.test(rawForHints)
+      && MULTI_PRODUCT_REGEX.test(rawForHints)
+        ? SIMULATION_SCAFFOLDING_HINT
+        : '';
+
     // Provider-aware system prompt composition:
     // - BOTH providers: platformIdentity comes FIRST (prevents Claude identity confusion)
     // - Claude: CLAUDE_PROVIDER_NOTICE (tool access via JSON blocks) + CLAUDE_KANBAN_PROMPT + LANGUAGE_HINT
     // - Ollama: OLLAMA_KANBAN_PROMPT + LANGUAGE_HINT (rc.75 — English requests were getting Spanish replies
     //   when continuity bridge seeded Spanish history; hint forces language parity with the user's latest)
     // - rc.74: deliverableReminder injected near the end when applicable, so it's read last (high recency weight)
+    // - rc.76: simulationScaffolding + languageOverride placed at the VERY end for maximum recency weight
     const systemPrompt = provider.name === 'claude'
-      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_PROVIDER_NOTICE, CLAUDE_DOCUMENT_PROMPT, CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, OLLAMA_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, LANGUAGE_HINT].filter(Boolean).join('\n\n') || undefined;
+      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_PROVIDER_NOTICE, CLAUDE_DOCUMENT_PROMPT, CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, simulationScaffolding, LANGUAGE_HINT, languageOverride].filter(Boolean).join('\n\n')
+      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, OLLAMA_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, simulationScaffolding, LANGUAGE_HINT, languageOverride].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)

@@ -1,6 +1,6 @@
 {
   "name": "clauded",
-  "version": "1.0.0-rc.75",
+  "version": "1.0.0-rc.76",
   "description": "Personal AI assistant daemon — bridges messaging platforms to AI backends",
   "type": "module",
   "engines": {
