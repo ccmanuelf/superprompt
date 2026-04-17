@@ -28,10 +28,12 @@ export async function parseFileTool(
   const filePath = resolve(args.path);
 
   // Validate path against allowed locations
+  // rc.70: always include UPLOADS_DIR and WORKSPACE_DIR — files under
+  // these roots were produced by, or handed to, the bot itself.
   const allowedPaths = config.OLLAMA_ALLOWED_PATHS
     ? config.OLLAMA_ALLOWED_PATHS.split(',').map((p) => p.trim())
     : [];
-  allowedPaths.push(UPLOADS_DIR);
+  allowedPaths.push(UPLOADS_DIR, config.WORKSPACE_DIR);
 
   const isAllowed = allowedPaths.some((allowed) =>
     filePath.startsWith(resolve(allowed)),

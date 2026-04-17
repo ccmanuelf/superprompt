@@ -159,6 +159,28 @@ async function createCoreTables(db: Knex): Promise<void> {
     });
   }
 
+  // chat_log cleanup (rc.70) — idempotent sweep of two known pollution
+  // patterns from rc.69 (prior to rawUserMessage / skipTurnLog wiring):
+  //   1. Platform layer logged memory-prefixed user text, so every user
+  //      turn started with "[RETRIEVED MEMORY …".
+  //   2. Internal LLM calls (auto-skill drafter, etc.) went through the
+  //      router and got logged with their metaprompts as "user turns".
+  // Deleting these is safe — they were never real user turns, and
+  // keeping them would corrupt the continuity bridge seed on the next
+  // provider switch. Runs every startup; no-op once the table is clean.
+  try {
+    const deleted = await db('chat_log')
+      .where('content', 'like', '[RETRIEVED MEMORY%')
+      .orWhere('content', 'like', 'You are creating a reusable skill definition%')
+      .orWhere('content', 'like', 'You are improving an existing skill%')
+      .del();
+    if (deleted > 0) {
+      logger.info({ deleted }, 'chat_log: cleaned polluted rows from rc.69');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'chat_log cleanup sweep failed (non-fatal)');
+  }
+
   // Memories
   if (!(await db.schema.hasTable('memories'))) {
     await db.schema.createTable('memories', (t) => {

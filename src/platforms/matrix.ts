@@ -152,6 +152,7 @@ async function handleMessage(
           chatId: roomId,
           message: `Tool "${pendingToolConfirm.toolName}" executed. Result: ${JSON.stringify(confirmResult.result)}`,
           skipTools: true,
+          skipTurnLog: true,
           platform: 'matrix',
         });
         if (aiResponse.text) {
@@ -226,6 +227,7 @@ async function handleMessage(
     const response = await router.sendMessage({
       chatId: roomId,
       message: fullMessage,
+      rawUserMessage: body,
       isVoice,
       platform: 'matrix',
     });
@@ -271,7 +273,9 @@ async function handleMessage(
     }
 
     // 2c. Auto-skill detection for single-turn tool chains (3+ distinct tools)
-    if (response.toolsUsed && response.toolsUsed.length >= 3) {
+    // rc.70: skip failed workflows — max iterations or 2+ tool errors.
+    const workflowFailed = response.hitMaxIterations || (response.toolErrorCount ?? 0) >= 2;
+    if (response.toolsUsed && response.toolsUsed.length >= 3 && !workflowFailed) {
       try {
         const candidate = await ctx.autoSkills.detectCandidate({
           toolsUsed: response.toolsUsed,

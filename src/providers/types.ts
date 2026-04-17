@@ -23,6 +23,23 @@ export interface SendMessageParams {
    * changed (rc.69 continuity bridge).
    */
   systemPromptAppend?: string;
+  /**
+   * The clean user text, before platform-level enrichment (memory
+   * prefixes, retrieved-context blocks, etc). When provided, the
+   * router uses this for chat_log storage so the continuity bridge
+   * seeds downstream providers with the user's actual words — not
+   * with their in-prompt retrieval envelope. Falls back to `message`
+   * when not set (rc.70).
+   */
+  rawUserMessage?: string;
+  /**
+   * When true, the router skips both the continuity-bridge seed and
+   * the chat_log append for this call. Internal LLM invocations
+   * (auto-skill drafter, scheduler follow-ups, orchestrator step
+   * expansion) must set this — their prompts are NOT conversation
+   * turns and must not pollute the turn log (rc.70).
+   */
+  skipTurnLog?: boolean;
 }
 
 export interface GeneratedFile {
@@ -45,6 +62,18 @@ export interface AIResponse {
   autoTriggerNotice?: string;
   /** Tool names used during this response (tracked in Ollama agentic loop) */
   toolsUsed?: string[];
+  /**
+   * Set when the Ollama agentic loop exhausted MAX_ITERATIONS without
+   * producing a no-tool-calls final response. Signals a failed workflow
+   * — callers should NOT treat this as skill-worthy or high-quality.
+   */
+  hitMaxIterations?: boolean;
+  /**
+   * Count of tool calls that returned an error during this response.
+   * Used by auto-skill detection to avoid proposing skills based on
+   * failed workflows.
+   */
+  toolErrorCount?: number;
 }
 
 export interface AIProvider {

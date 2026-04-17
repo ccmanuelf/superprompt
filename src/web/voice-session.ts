@@ -98,6 +98,7 @@ export class VoiceSession {
       const response = await this.router.sendMessage({
         chatId: this.chatId,
         message: fullMessage,
+        rawUserMessage: transcript,
         isVoice: true,
         platform: 'voice-web',
       });

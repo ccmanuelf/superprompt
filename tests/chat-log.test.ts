@@ -134,4 +134,52 @@ describe('chat_log (rc.69)', () => {
         .toEqual(['C-6', 'C-7']);
     });
   });
+
+  // rc.70 — cleanup sweep for rows polluted before rawUserMessage/skipTurnLog
+  // were wired up. These patterns represent the two known pollution sources:
+  //  1. memory-prefixed user messages (platform-layer leak)
+  //  2. internal auto-skill drafter/healer metaprompts
+  describe('polluted-row cleanup (rc.70 startup sweep)', () => {
+    it('deletes [RETRIEVED MEMORY ... and skill metaprompt rows, preserves clean turns', async () => {
+      await appendChatLog('chat-X', 'user', 'ollama', '[RETRIEVED MEMORY — stored context] - User: hello');
+      await appendChatLog('chat-X', 'assistant', 'ollama', 'Hi there (clean response)');
+      await appendChatLog('chat-X', 'user', 'ollama', 'You are creating a reusable skill definition based on a successful workflow. ORIGINAL USER REQUEST: ...');
+      await appendChatLog('chat-X', 'assistant', 'ollama', '{ "name": "some-skill", ... }');
+      await appendChatLog('chat-X', 'user', 'claude', 'A genuinely clean user message');
+      await appendChatLog('chat-X', 'assistant', 'claude', 'A genuinely clean reply');
+      await appendChatLog('chat-X', 'user', 'ollama', 'You are improving an existing skill that had an issue during use.');
+
+      // Mirror the cleanup query from db-core.ts createCoreTables
+      const deleted = await testKnex('chat_log')
+        .where('content', 'like', '[RETRIEVED MEMORY%')
+        .orWhere('content', 'like', 'You are creating a reusable skill definition%')
+        .orWhere('content', 'like', 'You are improving an existing skill%')
+        .del();
+
+      expect(deleted).toBe(3);
+
+      const remaining = await getRecentChatLog('chat-X', 20);
+      expect(remaining.map((r) => r.content)).toEqual([
+        'Hi there (clean response)',
+        '{ "name": "some-skill", ... }',
+        'A genuinely clean user message',
+        'A genuinely clean reply',
+      ]);
+    });
+
+    it('is idempotent — second run deletes 0', async () => {
+      await appendChatLog('chat-Y', 'user', 'ollama', '[RETRIEVED MEMORY — bad]');
+      await appendChatLog('chat-Y', 'assistant', 'ollama', 'ok');
+
+      const first = await testKnex('chat_log')
+        .where('content', 'like', '[RETRIEVED MEMORY%')
+        .del();
+      const second = await testKnex('chat_log')
+        .where('content', 'like', '[RETRIEVED MEMORY%')
+        .del();
+
+      expect(first).toBe(1);
+      expect(second).toBe(0);
+    });
+  });
 });

@@ -330,6 +330,7 @@ export class OllamaProvider implements AIProvider {
 
     let iterations = 0;
     const toolsUsedSet = new Set<string>();
+    let toolErrorCount = 0;
     let thinkingContent: string | undefined;
     const generatedFiles: { path: string; filename: string; mimeType: string }[] = [];
     let kanbanToolCalled = false;
@@ -393,6 +394,7 @@ export class OllamaProvider implements AIProvider {
           thinkingContent,
           generatedFiles: generatedFiles.length ? generatedFiles : undefined,
           toolsUsed: toolsUsedSet.size > 0 ? [...toolsUsedSet] : undefined,
+          toolErrorCount: toolErrorCount > 0 ? toolErrorCount : undefined,
         };
       }
 
@@ -464,6 +466,13 @@ export class OllamaProvider implements AIProvider {
           content: JSON.stringify(result),
         });
 
+        // rc.70: track tool errors for failed-workflow detection.
+        // A result with an `error` key, or whose content starts with
+        // the "Access denied"/error pattern, counts as a failure.
+        if (result && typeof result === 'object' && 'error' in result) {
+          toolErrorCount++;
+        }
+
         // Circuit breaker: record result for pattern detection
         breaker.recordResult(toolName, toolArgs, result);
         // Pack tuner recording moved to executeTool() — covers both providers
@@ -495,6 +504,8 @@ export class OllamaProvider implements AIProvider {
       thinkingContent,
       generatedFiles: generatedFiles.length ? generatedFiles : undefined,
       toolsUsed: toolsUsedSet.size > 0 ? [...toolsUsedSet] : undefined,
+      hitMaxIterations: true,
+      toolErrorCount: toolErrorCount > 0 ? toolErrorCount : undefined,
     };
   }
 }

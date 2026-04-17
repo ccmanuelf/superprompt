@@ -179,6 +179,7 @@ async function handleMessage(
           chatId,
           message: `Tool "${pendingToolConfirm.toolName}" executed. Result: ${JSON.stringify(confirmResult.result)}`,
           skipTools: true,
+          skipTurnLog: true,
           platform: 'telegram',
         });
         if (aiResponse.text) {
@@ -251,7 +252,7 @@ async function handleMessage(
           const plan = await pc.learning.getPlan(activeSession.planId);
           if (plan) {
             const expandPrompt = await pc.learning.buildExpandPrompt(plan);
-            const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true, platform: 'telegram' });
+            const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true, skipTurnLog: true, platform: 'telegram' });
             const newTopics = pc.learning.parsePlanResponse(expandResponse.text || '');
             if (newTopics.length > 0) {
               pc.learning.addExpansionTopics(plan.id, newTopics);
@@ -276,6 +277,7 @@ async function handleMessage(
       const response = await pc.router.sendMessage({
         chatId,
         message: fullMessage,
+        rawUserMessage: rawText,
         skipAutoTrigger: true,
         systemPrompt: sessionPrompt ?? undefined,
         platform: 'telegram',
@@ -326,7 +328,7 @@ async function handleMessage(
               const plan = await pc.learning.getPlan(session.planId);
               if (plan) {
                 const expandPrompt = await pc.learning.buildExpandPrompt(plan);
-                const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true, platform: 'telegram' });
+                const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true, skipTurnLog: true, platform: 'telegram' });
                 const newTopics = pc.learning.parsePlanResponse(expandResponse.text || '');
                 if (newTopics.length > 0) {
                   pc.learning.addExpansionTopics(plan.id, newTopics);
@@ -387,7 +389,14 @@ async function handleMessage(
         }
 
         // Auto-skill detection for orchestrated tasks
-        try {
+        // rc.70: skip when the workflow had tool errors or hit max
+        // iterations — failed runs must not be offered as skill-worthy.
+        if (response.hitMaxIterations || (response.toolErrorCount ?? 0) >= 2) {
+          logger.debug(
+            { chatId, hitMax: response.hitMaxIterations, toolErrors: response.toolErrorCount },
+            'Auto-skill detection skipped (failed workflow)',
+          );
+        } else try {
           const quality = pc.selfMonitor.checkQuality(response, rawText);
           const candidate = await pc.autoSkills.detectCandidate({
             toolsUsed: response.toolsUsed || [],
@@ -415,6 +424,7 @@ async function handleMessage(
     const response = await pc.router.sendMessage({
       chatId,
       message: fullMessage,
+      rawUserMessage: rawText,
       onTyping: refreshTyping,
       skipTools,
       isVoice,
@@ -461,7 +471,9 @@ async function handleMessage(
     }
 
     // 4c. Auto-skill detection for single-turn tool chains (3+ distinct tools)
-    if (response.toolsUsed && response.toolsUsed.length >= 3) {
+    // rc.70: skip failed workflows — max iterations or 2+ tool errors.
+    const workflowFailed = response.hitMaxIterations || (response.toolErrorCount ?? 0) >= 2;
+    if (response.toolsUsed && response.toolsUsed.length >= 3 && !workflowFailed) {
       try {
         const candidate = await pc.autoSkills.detectCandidate({
           toolsUsed: response.toolsUsed,
@@ -2064,7 +2076,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         // Extract clean subject from goal and generate curriculum via AI
         const subject = pc.learning.extractSubject(goal);
         const prompt = pc.learning.buildPlanPrompt(subject, goal);
-        const aiResponse = await router.sendMessage({ chatId, message: prompt, skipAutoTrigger: true });
+        const aiResponse = await router.sendMessage({ chatId, message: prompt, skipAutoTrigger: true, skipTurnLog: true });
         const topics = pc.learning.parsePlanResponse(aiResponse.text || '');
 
         if (topics.length === 0) {
@@ -2133,6 +2145,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           chatId,
           message: openingPrompt,
           skipAutoTrigger: true,
+          skipTurnLog: true,
           systemPrompt: sessionPrompt ?? undefined,
           platform: 'telegram',
         });
@@ -2160,6 +2173,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           chatId,
           message: openingPrompt,
           skipAutoTrigger: true,
+          skipTurnLog: true,
           systemPrompt: sessionPrompt ?? undefined,
           platform: 'telegram',
         });
@@ -2207,7 +2221,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
         await ctx.replyWithChatAction('typing');
         const addPrompt = await pc.learning.buildAddTopicPrompt(plan, topicTitle);
-        const addResponse = await router.sendMessage({ chatId, message: addPrompt, skipAutoTrigger: true });
+        const addResponse = await router.sendMessage({ chatId, message: addPrompt, skipAutoTrigger: true, skipTurnLog: true });
         const placement = pc.learning.parseTopicPlacement(addResponse.text || '');
 
         if (placement) {
@@ -2256,6 +2270,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
             chatId,
             message: assessPrompt,
             skipAutoTrigger: true,
+            skipTurnLog: true,
             systemPrompt: sessionPrompt ?? undefined,
             platform: 'telegram',
           });
@@ -3431,6 +3446,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           const response = await router.sendMessage({
             chatId,
             message: fullMessage,
+            rawUserMessage: caption,
             onTyping: refreshTyping,
             images: [base64Image],
           });

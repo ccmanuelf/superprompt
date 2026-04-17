@@ -300,6 +300,7 @@ Return ONLY valid JSON:
       chatId,
       skipTools: true,
       skipAutoTrigger: true,
+      skipTurnLog: true,
     });
 
     if (!response.text) return null;
@@ -549,6 +550,7 @@ Return ONLY the updated system prompt text (no JSON wrapper, no markdown code bl
       chatId,
       skipTools: true,
       skipAutoTrigger: true,
+      skipTurnLog: true,
     });
 
     if (!response.text || response.text.length < 50) {

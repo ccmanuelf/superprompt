@@ -735,30 +735,35 @@ export class ProviderRouter {
     // with recent chat_log turns when the previous turn ran on a
     // different provider. Failures are isolated so a DB issue never
     // blocks message delivery.
+    // rc.70: skipTurnLog opts internal LLM calls (auto-skill drafter,
+    // scheduler, orchestrator expansions) out of both the seed and
+    // the later chat_log append. Their prompts are not conversation.
     let continuityAppend: string | undefined;
-    try {
-      const recent = await getRecentChatLog(chatId, CONTINUITY_MAX_PAIRS * 2);
-      const priorProvider = recent.length ? recent[recent.length - 1].provider : null;
-      const isProviderChange = priorProvider !== null && priorProvider !== provider.name;
+    if (!params.skipTurnLog) {
+      try {
+        const recent = await getRecentChatLog(chatId, CONTINUITY_MAX_PAIRS * 2);
+        const priorProvider = recent.length ? recent[recent.length - 1].provider : null;
+        const isProviderChange = priorProvider !== null && priorProvider !== provider.name;
 
-      if (isProviderChange) {
-        const trimmed = trimContinuityTail(recent);
-        if (provider.name === 'ollama') {
-          seedOllamaHistory(chatId, chatLogToOllamaMessages(trimmed));
-          logger.info(
-            { chatId, priorProvider, turns: trimmed.length },
-            'Continuity bridge → Ollama: seeded in-memory history from chat_log',
-          );
-        } else {
-          continuityAppend = chatLogToClaudeRecap(trimmed);
-          logger.info(
-            { chatId, priorProvider, turns: trimmed.length, bytes: Buffer.byteLength(continuityAppend, 'utf8') },
-            'Continuity bridge → Claude: recap appended to system prompt',
-          );
+        if (isProviderChange) {
+          const trimmed = trimContinuityTail(recent);
+          if (provider.name === 'ollama') {
+            seedOllamaHistory(chatId, chatLogToOllamaMessages(trimmed));
+            logger.info(
+              { chatId, priorProvider, turns: trimmed.length },
+              'Continuity bridge → Ollama: seeded in-memory history from chat_log',
+            );
+          } else {
+            continuityAppend = chatLogToClaudeRecap(trimmed);
+            logger.info(
+              { chatId, priorProvider, turns: trimmed.length, bytes: Buffer.byteLength(continuityAppend, 'utf8') },
+              'Continuity bridge → Claude: recap appended to system prompt',
+            );
+          }
         }
+      } catch (err) {
+        logger.warn({ err, chatId }, 'Continuity bridge failed — proceeding without seed');
       }
-    } catch (err) {
-      logger.warn({ err, chatId }, 'Continuity bridge failed — proceeding without seed');
     }
 
     const response = await provider.sendMessage({
@@ -789,7 +794,14 @@ export class ProviderRouter {
       }
 
       if (autoTriggerNotice) retryResponse.autoTriggerNotice = autoTriggerNotice;
-      await this.logConversationTurn(chatId, provider.name, params.message, retryResponse.text);
+      if (!params.skipTurnLog) {
+        await this.logConversationTurn(
+          chatId,
+          provider.name,
+          params.rawUserMessage ?? params.message,
+          retryResponse.text,
+        );
+      }
       return retryResponse;
     }
 
@@ -805,7 +817,16 @@ export class ProviderRouter {
 
     // rc.69: record this turn in the provider-agnostic chat_log so a
     // later provider switch can seed the incoming provider with it.
-    await this.logConversationTurn(chatId, provider.name, params.message, response.text);
+    // rc.70: use rawUserMessage (before memory/enrichment prefix) so
+    // the log stores clean user text; skip entirely for internal calls.
+    if (!params.skipTurnLog) {
+      await this.logConversationTurn(
+        chatId,
+        provider.name,
+        params.rawUserMessage ?? params.message,
+        response.text,
+      );
+    }
 
     // Context health tracking — both providers
     try {

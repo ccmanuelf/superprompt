@@ -22,8 +22,16 @@ export const readFileDefinition: Tool = {
 };
 
 function getAllowedPaths(): string[] {
-  if (!config.OLLAMA_ALLOWED_PATHS) return [];
-  return config.OLLAMA_ALLOWED_PATHS.split(',').map((p) => p.trim());
+  // rc.70: always allow the bot's own uploads directory. Files there
+  // were explicitly handed to the bot by the user (Telegram/Matrix
+  // uploads, voice transcripts, generated documents), so reading them
+  // back is already within the user's intent — the sandbox should
+  // protect other parts of the filesystem, not the user's own content.
+  const paths = [config.UPLOADS_DIR, config.WORKSPACE_DIR];
+  if (config.OLLAMA_ALLOWED_PATHS) {
+    paths.push(...config.OLLAMA_ALLOWED_PATHS.split(',').map((p) => p.trim()));
+  }
+  return paths.filter(Boolean);
 }
 
 function isPathAllowed(filePath: string): boolean {

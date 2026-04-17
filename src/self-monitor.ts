@@ -54,6 +54,11 @@ const ERROR_PATTERNS = [
   /\bError:\s*(ECONNREFUSED|ETIMEDOUT|ENOTFOUND|fetch failed)/i,
   /\btool.*(?:failed|error|unavailable)/i,
   /\bconnection refused\b/i,
+  // rc.70 — the Ollama agentic-loop fallback text when MAX_ITERATIONS is
+  // exhausted. Belt-and-suspenders alongside AIResponse.hitMaxIterations.
+  /\[Max tool iterations reached\./,
+  // rc.70 — raw tool-error JSON that sometimes surfaces as the final text
+  /^\s*\{\s*"error"\s*:/,
 ];
 
 /**

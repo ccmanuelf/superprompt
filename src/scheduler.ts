@@ -60,6 +60,7 @@ async function runTask(
     const response = await router.sendMessage({
       chatId: task.chat_id,
       message: task.prompt,
+      skipTurnLog: true,
     });
 
     const resultText = response.text || '(no response)';
