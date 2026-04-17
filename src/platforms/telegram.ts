@@ -1434,6 +1434,82 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     }
   });
 
+  bot.command('cmodels', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    try {
+      const models = await router.listClaudeModels();
+      if (models === null) {
+        await ctx.reply(
+          '[EN] Claude model discovery is not configured. Set <code>ANTHROPIC_DISCOVERY_API_KEY</code> '
+          + 'in <code>.env</code> (a distinct name from <code>ANTHROPIC_API_KEY</code> so the CLI cannot use it for billing). '
+          + 'You can still switch by passing any known model name to /cmodel (e.g. <code>/cmodel sonnet</code>) — '
+          + 'it will be probe-validated before taking effect.\n\n'
+          + '[ES] El descubrimiento de modelos de Claude no esta configurado. Define <code>ANTHROPIC_DISCOVERY_API_KEY</code> '
+          + 'en <code>.env</code> (un nombre distinto de <code>ANTHROPIC_API_KEY</code> para que la CLI no lo use para facturacion). '
+          + 'Aun puedes cambiar pasando un nombre conocido a /cmodel (p.ej. <code>/cmodel sonnet</code>) — sera validado antes de aplicarse.',
+          { parse_mode: 'HTML' },
+        );
+        return;
+      }
+      if (models.length === 0) {
+        await ctx.reply('No Claude models returned by the API.');
+        return;
+      }
+      const currentModel = await router.getClaudeModel(String(ctx.chat.id));
+      const lines = models.map((m, i) => {
+        const active = m.id === currentModel ? ' ✓' : '';
+        return `${i + 1}. <code>${escapeHtml(m.id)}</code> — ${escapeHtml(m.displayName)}${active}`;
+      });
+      const currentNote = currentModel
+        ? `\n\nCurrent: <code>${escapeHtml(currentModel)}</code>`
+        : '\n\nCurrent: <i>CLI default</i> (no per-chat override)';
+      await ctx.reply(
+        `<b>Available Claude models:</b>\n\n${lines.join('\n')}${currentNote}\n\nSwitch with: /cmodel &lt;name&gt;`,
+        { parse_mode: 'HTML' },
+      );
+    } catch (err) {
+      logger.error({ err }, 'Failed to list Claude models');
+      await ctx.reply('Failed to list Claude models. Check the discovery API key and network access.');
+    }
+  });
+
+  bot.command('cmodel', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const text = ctx.message?.text ?? '';
+    const modelName = text.replace(/^\/cmodel(@\w+)?/, '').trim();
+
+    if (!modelName) {
+      const current = await router.getClaudeModel(chatId);
+      const currentLine = current
+        ? `Current Claude model: <code>${escapeHtml(current)}</code>`
+        : 'Current Claude model: <i>CLI default</i> (no per-chat override)';
+      await ctx.reply(
+        `${currentLine}\n\nUsage: /cmodel &lt;name&gt;\nAliases: <code>opus</code>, <code>sonnet</code>, <code>haiku</code>\n`
+        + 'Full IDs like <code>claude-sonnet-4-6</code> also work.\nList models (requires discovery key): /cmodels',
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
+    await ctx.reply('Validating model with Claude CLI...');
+    try {
+      const result = await router.switchClaudeModel(chatId, modelName);
+      if (result === modelName) {
+        await router.switchProvider(chatId, 'claude');
+        await ctx.reply(
+          `Switched to Claude model: <code>${escapeHtml(modelName)}</code>`,
+          { parse_mode: 'HTML' },
+        );
+      } else {
+        await ctx.reply(result);
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to switch Claude model');
+      await ctx.reply('Failed to switch Claude model — check the bot logs for details.');
+    }
+  });
+
   bot.command('schedule', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
     const chatId = String(ctx.chat.id);

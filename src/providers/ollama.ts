@@ -134,6 +134,45 @@ export class OllamaProvider implements AIProvider {
     return models.some((m) => m.name === name);
   }
 
+  /**
+   * Names of models currently resident in Ollama's memory (/api/ps).
+   * Returns the exact names as reported by the server — useful for
+   * verifying that an unload actually freed memory.
+   */
+  async listLoadedModels(): Promise<string[]> {
+    const response = await this.client.ps();
+    return response.models.map((m) => m.name);
+  }
+
+  /**
+   * Size in bytes of a loaded model, or 0 if not currently loaded.
+   * Used to log how much memory an eviction actually freed.
+   */
+  async getLoadedModelSize(model: string): Promise<number> {
+    const response = await this.client.ps();
+    return response.models.find((m) => m.name === model)?.size ?? 0;
+  }
+
+  /**
+   * Ask Ollama to release a model from memory immediately.
+   * Implemented as an empty /api/generate with keep_alive=0 — Ollama
+   * treats this as an eviction signal regardless of normal keep-alive.
+   * Safe to call when the model isn't loaded (Ollama responds with an
+   * empty generation and no-op on the runner). Errors are swallowed
+   * with a warn so the caller can still proceed to verify via /api/ps.
+   */
+  async unloadModel(model: string): Promise<void> {
+    try {
+      await this.client.generate({
+        model,
+        prompt: '',
+        keep_alive: 0,
+      });
+    } catch (err) {
+      logger.warn({ err, model }, 'Ollama unload request failed (will verify via /api/ps)');
+    }
+  }
+
   async sendMessage(params: SendMessageParams): Promise<AIResponse> {
     const { message, chatId, onTyping, allowedTools, modelOverride, images, skipTools, isVoice } = params;
 

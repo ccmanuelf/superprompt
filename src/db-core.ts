@@ -23,6 +23,7 @@ export interface Session {
   session_id: string;
   provider: string;
   ollama_model: string | null;
+  claude_model: string | null;
   auto_route: number;
   updated_at: number;
 }
@@ -124,6 +125,10 @@ async function createCoreTables(db: Knex): Promise<void> {
   // Migration: auto_route
   if (!(await columnExists(db, 'sessions', 'auto_route'))) {
     await db.schema.alterTable('sessions', (t) => { t.integer('auto_route').notNullable().defaultTo(0); });
+  }
+  // Migration: claude_model (rc.68) — per-chat Claude model override
+  if (!(await columnExists(db, 'sessions', 'claude_model'))) {
+    await db.schema.alterTable('sessions', (t) => { t.string('claude_model').nullable(); });
   }
 
   // Memories
@@ -358,6 +363,11 @@ export async function updateSessionProvider(chatId: string, provider: string): P
 export async function updateSessionOllamaModel(chatId: string, model: string | null): Promise<void> {
   const db = getKnex();
   await db('sessions').where({ chat_id: chatId }).update({ ollama_model: model, updated_at: Date.now() });
+}
+
+export async function updateSessionClaudeModel(chatId: string, model: string | null): Promise<void> {
+  const db = getKnex();
+  await db('sessions').where({ chat_id: chatId }).update({ claude_model: model, updated_at: Date.now() });
 }
 
 export async function clearSession(chatId: string): Promise<void> {

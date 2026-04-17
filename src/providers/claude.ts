@@ -25,11 +25,37 @@ interface StreamJsonEvent {
   };
 }
 
+/**
+ * Build a subprocess env that cannot cause the Claude CLI to switch auth
+ * from our OAuth subscription to pay-per-token API billing. Explicitly
+ * strips ANTHROPIC_API_KEY (and related standard names) even if they're
+ * set in the parent process — the CLI reads these and, when present,
+ * uses them for inference. Our discovery-only key lives under a
+ * distinct name (ANTHROPIC_DISCOVERY_API_KEY) the CLI does not know.
+ */
+function buildClaudeSubprocessEnv(): NodeJS.ProcessEnv {
+  const {
+    ANTHROPIC_API_KEY: _stripApiKey,
+    ANTHROPIC_AUTH_TOKEN: _stripAuthToken,
+    ANTHROPIC_DISCOVERY_API_KEY: _stripDiscovery,
+    ...safe
+  } = process.env;
+  return { ...safe, TERM: 'dumb' };
+}
+
+/** In-memory cache for the /v1/models discovery response. */
+interface ModelListCacheEntry {
+  fetchedAt: number;
+  models: { id: string; displayName: string }[];
+}
+const MODEL_LIST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+let modelListCache: ModelListCacheEntry | null = null;
+
 export class ClaudeProvider implements AIProvider {
   readonly name = 'claude' as const;
 
   async sendMessage(params: SendMessageParams): Promise<AIResponse> {
-    const { message, sessionId, onTyping } = params;
+    const { message, sessionId, onTyping, modelOverride } = params;
 
     const args = [
       '-p',
@@ -44,6 +70,10 @@ export class ClaudeProvider implements AIProvider {
       args.push('--resume', sessionId);
     }
 
+    if (modelOverride) {
+      args.push('--model', modelOverride);
+    }
+
     if (params.systemPrompt) {
       args.push('--system-prompt', params.systemPrompt);
     }
@@ -53,11 +83,7 @@ export class ClaudeProvider implements AIProvider {
     return new Promise<AIResponse>((resolve, reject) => {
       const proc = spawn('claude', args, {
         cwd: PROJECT_ROOT,
-        env: {
-          ...process.env,
-          // Ensure Claude CLI doesn't prompt for input
-          TERM: 'dumb',
-        },
+        env: buildClaudeSubprocessEnv(),
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -199,5 +225,111 @@ export class ClaudeProvider implements AIProvider {
       // Close stdin immediately — we pass message via -p flag
       proc.stdin.end();
     });
+  }
+
+  /**
+   * List Claude models available to the discovery key.
+   *
+   * IMPORTANT: Uses ANTHROPIC_DISCOVERY_API_KEY — never ANTHROPIC_API_KEY
+   * — so the CLI can't pick it up and switch to pay-per-token billing.
+   * /v1/models is a metadata endpoint (no token cost). Response is
+   * cached for 24h so the endpoint is hit at most once a day regardless
+   * of how often /cmodels is invoked.
+   *
+   * Throws ModelDiscoveryUnavailableError when the key isn't set, so
+   * callers can distinguish "discovery not configured" from "network
+   * failure" and guide the user accordingly.
+   */
+  async listModels(): Promise<{ id: string; displayName: string }[]> {
+    const now = Date.now();
+    if (modelListCache && now - modelListCache.fetchedAt < MODEL_LIST_CACHE_TTL_MS) {
+      return modelListCache.models;
+    }
+
+    const key = process.env.ANTHROPIC_DISCOVERY_API_KEY;
+    if (!key) {
+      throw new ModelDiscoveryUnavailableError();
+    }
+
+    const response = await fetch('https://api.anthropic.com/v1/models', {
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Anthropic /v1/models returned HTTP ${response.status}`);
+    }
+
+    const body = (await response.json()) as { data?: Array<{ id: string; display_name?: string }> };
+    const models = (body.data ?? []).map((m) => ({
+      id: m.id,
+      displayName: m.display_name ?? m.id,
+    }));
+
+    modelListCache = { fetchedAt: now, models };
+    logger.info({ count: models.length }, 'Claude models fetched from /v1/models');
+    return models;
+  }
+
+  /**
+   * Probe-validate a Claude model name before committing a per-chat
+   * switch. Spawns a minimal `claude -p --model <name> "ok"` invocation
+   * with a short timeout. Returns null on success, or the CLI's error
+   * message on failure (e.g. unknown model, invalid alias).
+   */
+  async validateModel(model: string): Promise<string | null> {
+    return new Promise<string | null>((resolve) => {
+      const proc = spawn(
+        'claude',
+        ['-p', 'ok', '--model', model, '--dangerously-skip-permissions'],
+        {
+          cwd: PROJECT_ROOT,
+          env: buildClaudeSubprocessEnv(),
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      );
+
+      let stderr = '';
+      proc.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
+      const timer = setTimeout(() => {
+        proc.kill('SIGKILL');
+        resolve('Validation probe timed out after 30s.');
+      }, 30_000);
+
+      proc.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0) {
+          resolve(null);
+        } else {
+          const firstLine = stderr.split('\n').find((l) => l.trim()) ?? `exit code ${code}`;
+          resolve(firstLine.slice(0, 200));
+        }
+      });
+
+      proc.on('error', (err) => {
+        clearTimeout(timer);
+        resolve(err.message);
+      });
+
+      proc.stdin.end();
+    });
+  }
+}
+
+/**
+ * Thrown by ClaudeProvider.listModels() when ANTHROPIC_DISCOVERY_API_KEY
+ * is not configured. Distinct from network errors so the caller can
+ * surface a targeted setup message to the user.
+ */
+export class ModelDiscoveryUnavailableError extends Error {
+  constructor() {
+    super('Claude model discovery requires ANTHROPIC_DISCOVERY_API_KEY to be set.');
+    this.name = 'ModelDiscoveryUnavailableError';
   }
 }

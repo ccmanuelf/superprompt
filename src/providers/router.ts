@@ -1,5 +1,5 @@
 import type { AIProvider, AIResponse, SendMessageParams } from './types.js';
-import { ClaudeProvider } from './claude.js';
+import { ClaudeProvider, ModelDiscoveryUnavailableError } from './claude.js';
 import { OllamaProvider, clearOllamaHistory } from './ollama.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
@@ -8,6 +8,7 @@ import {
   setSession,
   updateSessionProvider,
   updateSessionOllamaModel,
+  updateSessionClaudeModel,
   clearSession,
   setAutoRoute,
   isAutoRouteEnabled,
@@ -671,10 +672,13 @@ export class ProviderRouter {
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)
     const effectiveSessionId = (provider.name === 'claude' && skillPrompt) ? undefined : sessionId;
 
-    // Per-chat Ollama model override
-    const modelOverride = provider.name === 'ollama' && session?.ollama_model
-      ? session.ollama_model
-      : undefined;
+    // Per-chat model override — provider-specific column on sessions
+    let modelOverride: string | undefined;
+    if (provider.name === 'ollama' && session?.ollama_model) {
+      modelOverride = session.ollama_model;
+    } else if (provider.name === 'claude' && session?.claude_model) {
+      modelOverride = session.claude_model;
+    }
 
     const response = await provider.sendMessage({
       ...params,
@@ -820,12 +824,22 @@ export class ProviderRouter {
 
   /**
    * Switch the Ollama model for a specific chat.
-   * Validates the model exists locally before switching.
+   * Validates the model exists locally, evicts the previous model from
+   * Ollama memory (keep_alive=0) before committing the switch, and
+   * verifies eviction via /api/ps. On a memory-constrained host this
+   * prevents the old 7 GB runner from lingering next to the new model
+   * until the default 5 min keep-alive expires.
    */
   async switchOllamaModel(chatId: string, model: string): Promise<string> {
     const exists = await this.ollama.modelExists(model);
     if (!exists) {
       return `Model "${model}" not found locally. Use /models to see available models.`;
+    }
+
+    const previousModel = await this.getOllamaModel(chatId);
+
+    if (previousModel !== model) {
+      await this.evictOllamaModel(previousModel);
     }
 
     const session = await getSession(chatId);
@@ -836,8 +850,55 @@ export class ProviderRouter {
       await updateSessionOllamaModel(chatId, model);
     }
 
-    logger.info({ chatId, model }, 'Switched Ollama model');
+    logger.info({ chatId, model, previousModel }, 'Switched Ollama model');
     return model;
+  }
+
+  /**
+   * Evict a model from Ollama memory and verify via /api/ps.
+   * Polls up to 5 times with a 500ms gap. Logs bytes freed on success,
+   * warns and continues on timeout — the caller's switch is still
+   * recorded, and Ollama's normal max-loaded-models eviction will catch
+   * up on the next inference request.
+   */
+  private async evictOllamaModel(model: string): Promise<void> {
+    let preEvictionSize = 0;
+    try {
+      const loaded = await this.ollama.listLoadedModels();
+      if (!loaded.includes(model)) {
+        logger.debug({ model }, 'Ollama model not loaded, skipping eviction');
+        return;
+      }
+      preEvictionSize = await this.ollama.getLoadedModelSize(model);
+    } catch (err) {
+      logger.warn({ err, model }, 'Ollama /api/ps check failed before eviction');
+    }
+
+    await this.ollama.unloadModel(model);
+
+    // Bounded poll: confirm eviction actually happened
+    const MAX_ATTEMPTS = 5;
+    const DELAY_MS = 500;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      await new Promise((r) => setTimeout(r, DELAY_MS));
+      try {
+        const loaded = await this.ollama.listLoadedModels();
+        if (!loaded.includes(model)) {
+          const freedMb = preEvictionSize
+            ? Math.round(preEvictionSize / (1024 * 1024))
+            : undefined;
+          logger.info({ model, attempts: attempt, freedMb }, 'Ollama model evicted');
+          return;
+        }
+      } catch (err) {
+        logger.warn({ err, model, attempt }, 'Ollama /api/ps poll failed during eviction wait');
+      }
+    }
+
+    logger.warn(
+      { model, maxAttempts: MAX_ATTEMPTS, waitedMs: MAX_ATTEMPTS * DELAY_MS },
+      'Ollama eviction not confirmed within budget — proceeding anyway',
+    );
   }
 
   /**
@@ -846,5 +907,55 @@ export class ProviderRouter {
   async getOllamaModel(chatId: string): Promise<string> {
     const session = await getSession(chatId);
     return session?.ollama_model || config.OLLAMA_CHAT_MODEL;
+  }
+
+  /**
+   * List Claude models available via the discovery API key.
+   * Returns null when discovery is not configured (caller should surface
+   * the setup instruction to the user).
+   */
+  async listClaudeModels(): Promise<{ id: string; displayName: string }[] | null> {
+    try {
+      return await this.claude.listModels();
+    } catch (err) {
+      if (err instanceof ModelDiscoveryUnavailableError) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Switch the Claude model for a specific chat.
+   * Validates the name against the CLI via a short probe before
+   * committing the switch. Returns the model name on success, or the
+   * CLI error message on failure.
+   */
+  async switchClaudeModel(chatId: string, model: string): Promise<string> {
+    const error = await this.claude.validateModel(model);
+    if (error) {
+      return `Claude rejected model "${model}": ${error}`;
+    }
+
+    const session = await getSession(chatId);
+    if (session) {
+      await updateSessionClaudeModel(chatId, model);
+    } else {
+      await setSession(chatId, '', 'claude');
+      await updateSessionClaudeModel(chatId, model);
+    }
+
+    logger.info({ chatId, model }, 'Switched Claude model');
+    return model;
+  }
+
+  /**
+   * Get the active Claude model for a chat. Returns null when the user
+   * has not set an override — the Claude CLI then uses its own default
+   * (governed by the user's subscription tier).
+   */
+  async getClaudeModel(chatId: string): Promise<string | null> {
+    const session = await getSession(chatId);
+    return session?.claude_model ?? null;
   }
 }
