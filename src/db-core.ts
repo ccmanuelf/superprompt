@@ -12,7 +12,7 @@ import { mkdirSync } from 'node:fs';
 import { STORE_DIR } from './config.js';
 import { logger } from './logger.js';
 import { initKnex, getKnex, destroyKnex, readDbConfig } from './db-knex.js';
-import { createFullTextSearch, createVectorTable, columnExists } from './db-dialect.js';
+import { createFullTextSearch, createVectorTable, columnExists, insertVecRow } from './db-dialect.js';
 import type { StorageProvider, TableInitializer } from './core/interfaces.js';
 import type { Knex } from 'knex';
 
@@ -406,9 +406,9 @@ export async function insertMemory(
 
   const memoryId = typeof id === 'number' ? id : Number(id);
 
-  if (embedding) {
+  if (embedding && embeddingBlob) {
     try {
-      await db('memories_vec').insert({ memory_id: memoryId, embedding: embeddingBlob });
+      await insertVecRow(db, 'memories_vec', 'memory_id', memoryId, embeddingBlob);
     } catch (err) {
       logger.warn({ err, memoryId }, 'Failed to insert into memories_vec');
     }
@@ -494,7 +494,7 @@ export async function updateMemoryEmbedding(id: number, embedding: number[]): Pr
 
   try {
     await db('memories_vec').where({ memory_id: id }).del();
-    await db('memories_vec').insert({ memory_id: id, embedding: embeddingBlob });
+    await insertVecRow(db, 'memories_vec', 'memory_id', id, embeddingBlob);
   } catch (err) {
     logger.warn({ err, id }, 'Failed to update memories_vec for backfill');
   }
@@ -769,7 +769,7 @@ export async function insertEpisode(
   if (embedding) {
     try {
       const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
-      await db('episodes_vec').insert({ episode_id: episodeId, embedding: embeddingBlob });
+      await insertVecRow(db, 'episodes_vec', 'episode_id', episodeId, embeddingBlob);
     } catch (err) {
       logger.warn({ err, episodeId }, 'Failed to insert into episodes_vec');
     }

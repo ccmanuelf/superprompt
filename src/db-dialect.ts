@@ -243,6 +243,35 @@ export async function createVectorTable(
 }
 
 /**
+ * Insert a row into a vector table (dialect-aware).
+ *
+ * On SQLite, sqlite-vec's vec0 virtual table requires the primary key to be
+ * bound as SQLITE_INTEGER. better-sqlite3 v12+ binds integer-valued JS Numbers
+ * as SQLITE_FLOAT through this path, which vec0 rejects with
+ * "Only integers are allows for primary key values". We embed the id as a
+ * SQL literal so it lands as an INTEGER token (id is a trusted internal
+ * auto-increment value — no injection risk). Knex's .insert() also rejects
+ * BigInt bindings, so a raw statement is the cleanest workaround.
+ */
+export async function insertVecRow(
+  db: Knex,
+  tableName: string,
+  idColumn: string,
+  id: number,
+  embedding: Buffer,
+): Promise<void> {
+  if (getDbDriver() === 'sqlite') {
+    const safeId = Math.trunc(Number(id));
+    await db.raw(
+      `INSERT INTO ${tableName} (${idColumn}, embedding) VALUES (${safeId}, ?)`,
+      [embedding],
+    );
+    return;
+  }
+  await db(tableName).insert({ [idColumn]: id, embedding });
+}
+
+/**
  * Perform a vector similarity search (dialect-specific).
  *
  * - SQLite: vec_distance_cosine via sqlite-vec

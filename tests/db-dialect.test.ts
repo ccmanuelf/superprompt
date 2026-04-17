@@ -19,7 +19,7 @@ vi.mock('../src/logger.js', () => ({
   logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
 }));
 
-import { columnExists, createFullTextSearch, fullTextSearch } from '../src/db-dialect.js';
+import { columnExists, createFullTextSearch, createVectorTable, fullTextSearch, insertVecRow } from '../src/db-dialect.js';
 
 describe('db-dialect (SQLite)', () => {
   beforeEach(async () => {
@@ -82,6 +82,27 @@ describe('db-dialect (SQLite)', () => {
 
       const results = await fullTextSearch(testKnex, 'articles2', 'content', 'articles2_fts', 'user1', 'nonexistent*', 3);
       expect(results).toHaveLength(0);
+    });
+  });
+
+  describe('insertVecRow (SQLite vec0)', () => {
+    // Regression for rc.65+: better-sqlite3 v12 binds integer-valued JS Numbers
+    // as SQLITE_FLOAT, which vec0 rejects with "Only integers are allows for
+    // primary key values". insertVecRow must keep the PK as an integer.
+    it('inserts into vec0 with integer PK', async () => {
+      const sqliteVec = await import('sqlite-vec');
+      const conn = await testKnex.client.acquireConnection();
+      sqliteVec.load(conn);
+      testKnex.client.releaseConnection(conn);
+
+      await createVectorTable(testKnex, 'test_vec', 'row_id', 4);
+      const embedding = Buffer.from(new Float32Array([0.1, 0.2, 0.3, 0.4]).buffer);
+
+      await insertVecRow(testKnex, 'test_vec', 'row_id', 7, embedding);
+      await insertVecRow(testKnex, 'test_vec', 'row_id', 42, embedding);
+
+      const rows = await testKnex.raw('SELECT row_id FROM test_vec ORDER BY row_id') as Array<{ row_id: number }>;
+      expect(rows.map((r) => Number(r.row_id))).toEqual([7, 42]);
     });
   });
 });
