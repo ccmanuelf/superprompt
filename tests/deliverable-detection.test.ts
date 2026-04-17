@@ -17,6 +17,35 @@ const DELIVERABLE_FORMAT_REGEX =
 const KANBAN_INTENT_REGEX =
   /\b(board|kanban|task|card|ticket|todo|to-?do|tablero|tarea|tarjeta|pendiente|pendientes|por hacer)\b/i;
 
+// Mirror of router.ts SIMULATION_INTENT_REGEX + classifyDeliverableIntent
+const SIMULATION_INTENT_REGEX =
+  /\b(simulation|simulaci[oó]n|monte\s*carlo|sanity\s*check|capacity|capacidad|bottleneck|restricci[oó]n|vsm|toc|throughput|takt)\b/i;
+
+interface DeliverableIntent {
+  isDeliverable: boolean;
+  needsSimulation: boolean;
+  allowedTools: string[] | null;
+}
+
+function classifyDeliverableIntent(text: string | undefined): DeliverableIntent {
+  if (!text || !DELIVERABLE_FORMAT_REGEX.test(text)) {
+    return { isDeliverable: false, needsSimulation: false, allowedTools: null };
+  }
+  const tools = ['parse_file', 'read_file', 'generate_document'];
+  const needsSimulation = SIMULATION_INTENT_REGEX.test(text);
+  if (needsSimulation) {
+    tools.push(
+      'production_simulation',
+      'monte_carlo',
+      'line_balance',
+      'capacity_planning',
+      'value_stream_map',
+      'toc_analysis',
+    );
+  }
+  return { isDeliverable: true, needsSimulation, allowedTools: tools };
+}
+
 describe('deliverable format detection (rc.74)', () => {
   const matchingEN = [
     'Please generate a PDF with the results',
@@ -102,4 +131,56 @@ describe('kanban intent detection (rc.74)', () => {
       expect(KANBAN_INTENT_REGEX.test(msg)).toBe(false);
     },
   );
+});
+
+describe('classifyDeliverableIntent — tool allowlist (rc.75)', () => {
+  it('returns null allowlist for non-deliverable messages', () => {
+    const result = classifyDeliverableIntent('How are things going today?');
+    expect(result.isDeliverable).toBe(false);
+    expect(result.needsSimulation).toBe(false);
+    expect(result.allowedTools).toBeNull();
+  });
+
+  it('returns base tools for a plain deliverable request (no simulation)', () => {
+    const result = classifyDeliverableIntent('Generate a PDF report in English');
+    expect(result.isDeliverable).toBe(true);
+    expect(result.needsSimulation).toBe(false);
+    expect(result.allowedTools).toEqual(['parse_file', 'read_file', 'generate_document']);
+  });
+
+  it('includes simulation tools when simulation keywords are present (EN)', () => {
+    const result = classifyDeliverableIntent(
+      'Run a Monte Carlo simulation and generate the PDF report',
+    );
+    expect(result.isDeliverable).toBe(true);
+    expect(result.needsSimulation).toBe(true);
+    expect(result.allowedTools).toContain('generate_document');
+    expect(result.allowedTools).toContain('production_simulation');
+    expect(result.allowedTools).toContain('monte_carlo');
+  });
+
+  it('includes simulation tools when simulation keywords are present (ES)', () => {
+    const result = classifyDeliverableIntent(
+      'Corre la simulación de Monte Carlo y genera el reporte PDF',
+    );
+    expect(result.isDeliverable).toBe(true);
+    expect(result.needsSimulation).toBe(true);
+    expect(result.allowedTools).toContain('generate_document');
+    expect(result.allowedTools).toContain('production_simulation');
+  });
+
+  it('does NOT include kanban, memory, screenshot, or unrelated tools', () => {
+    const result = classifyDeliverableIntent('Necesito el reporte PDF con análisis de capacidad');
+    expect(result.allowedTools).not.toContain('kanban_manage');
+    expect(result.allowedTools).not.toContain('query_memory');
+    expect(result.allowedTools).not.toContain('save_memory');
+    expect(result.allowedTools).not.toContain('take_screenshot');
+    expect(result.allowedTools).not.toContain('web_search');
+  });
+
+  it('handles undefined text safely', () => {
+    const result = classifyDeliverableIntent(undefined);
+    expect(result.isDeliverable).toBe(false);
+    expect(result.allowedTools).toBeNull();
+  });
 });

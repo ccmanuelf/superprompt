@@ -291,6 +291,64 @@ function detectDeliverableFormat(text: string | undefined): boolean {
   return DELIVERABLE_FORMAT_REGEX.test(text);
 }
 
+// rc.75 — simulation-intent detector. Bilingual. When a deliverable
+// request also mentions simulation/capacity/bottleneck keywords, the
+// tool allowlist widens to include the simulation tools.
+const SIMULATION_INTENT_REGEX =
+  /\b(simulation|simulaci[oó]n|monte\s*carlo|sanity\s*check|capacity|capacidad|bottleneck|restricci[oó]n|vsm|toc|throughput|takt)\b/i;
+
+/**
+ * rc.75 — classifyDeliverableIntent: figures out which tools Ollama
+ * actually needs to complete a deliverable request. Returns a
+ * narrowed allowlist when triggered, so the agentic loop literally
+ * cannot call kanban_manage / take_screenshot / query_memory /
+ * anything else and deflect the user request with unrelated actions.
+ *
+ * Base deliverable tools: parse_file, read_file, generate_document.
+ * Simulation keywords add: production_simulation, monte_carlo,
+ * line_balance, capacity_planning, value_stream_map, toc_analysis.
+ */
+interface DeliverableIntent {
+  isDeliverable: boolean;
+  needsSimulation: boolean;
+  allowedTools: string[] | null;
+}
+
+function classifyDeliverableIntent(text: string | undefined): DeliverableIntent {
+  if (!text || !DELIVERABLE_FORMAT_REGEX.test(text)) {
+    return { isDeliverable: false, needsSimulation: false, allowedTools: null };
+  }
+  const tools = ['parse_file', 'read_file', 'generate_document'];
+  const needsSimulation = SIMULATION_INTENT_REGEX.test(text);
+  if (needsSimulation) {
+    tools.push(
+      'production_simulation',
+      'monte_carlo',
+      'line_balance',
+      'capacity_planning',
+      'value_stream_map',
+      'toc_analysis',
+    );
+  }
+  return { isDeliverable: true, needsSimulation, allowedTools: tools };
+}
+
+// rc.75 — stricter system-prompt fragment used ONLY for the
+// automatic retry when the first Ollama attempt didn't call
+// generate_document. Even louder than the per-turn reminder.
+const DELIVERABLE_RETRY_DIRECTIVE = `## RETRY — Previous response failed to produce the requested file
+
+Your previous response answered a deliverable request with discussion, questions, or analysis instead of calling generate_document. This is unacceptable.
+
+In this turn:
+- Call parse_file first if you need data you don't already have.
+- Then call generate_document with the requested format (pdf/docx/xlsx/pptx/csv).
+- Do NOT ask clarifying questions. Use sensible defaults (executive summary, structured sections, full English/Spanish per the user's request).
+- Do NOT propose alternatives. The user specified the format.
+- Do NOT respond with text-only analysis.
+
+If you respond without calling generate_document, the system will surface a hard error to the user.`;
+
 const DELIVERABLE_REMINDER_OLLAMA = `## CRITICAL — Deliverable Requested This Turn
 
 The user's current message requests a specific output format (PDF, DOCX, XLSX, report, document, or similar — English or Spanish). This overrides default behavior:
@@ -838,11 +896,12 @@ export class ProviderRouter {
     // Provider-aware system prompt composition:
     // - BOTH providers: platformIdentity comes FIRST (prevents Claude identity confusion)
     // - Claude: CLAUDE_PROVIDER_NOTICE (tool access via JSON blocks) + CLAUDE_KANBAN_PROMPT + LANGUAGE_HINT
-    // - Ollama: OLLAMA_KANBAN_PROMPT (tool-based access, no JSON block path exposed to model)
+    // - Ollama: OLLAMA_KANBAN_PROMPT + LANGUAGE_HINT (rc.75 — English requests were getting Spanish replies
+    //   when continuity bridge seeded Spanish history; hint forces language parity with the user's latest)
     // - rc.74: deliverableReminder injected near the end when applicable, so it's read last (high recency weight)
     const systemPrompt = provider.name === 'claude'
       ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_PROVIDER_NOTICE, CLAUDE_DOCUMENT_PROMPT, CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, OLLAMA_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder].filter(Boolean).join('\n\n') || undefined;
+      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, OLLAMA_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, LANGUAGE_HINT].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)
@@ -897,15 +956,87 @@ export class ProviderRouter {
       }
     }
 
-    const response = await provider.sendMessage({
+    // rc.75 — when the user's raw message requests a deliverable,
+    // narrow the tool allowlist so the model literally cannot propose
+    // kanban, memory, screenshots etc. and deflect the user's ask.
+    // Override the skill-based allowedTools when deliverable is
+    // detected: user's explicit ask beats background skill context.
+    const deliverableIntent = classifyDeliverableIntent(params.rawUserMessage ?? params.message);
+    const effectiveAllowedTools = deliverableIntent.isDeliverable
+      ? deliverableIntent.allowedTools!
+      : (allowedTools ?? undefined);
+
+    if (deliverableIntent.isDeliverable) {
+      logger.info(
+        {
+          chatId,
+          provider: provider.name,
+          needsSimulation: deliverableIntent.needsSimulation,
+          allowedTools: effectiveAllowedTools,
+        },
+        'Deliverable intent detected — narrowing tool allowlist',
+      );
+    }
+
+    let response = await provider.sendMessage({
       ...params,
       message: effectiveMessage,
       sessionId: effectiveSessionId,
       systemPrompt,
       systemPromptAppend: continuityAppend,
-      allowedTools: allowedTools ?? undefined,
+      allowedTools: effectiveAllowedTools,
       modelOverride,
     });
+
+    // rc.75 — post-loop validator: when the user asked for a
+    // deliverable and the Ollama agentic loop ended WITHOUT calling
+    // generate_document, re-run with an even stricter allowlist and a
+    // retry directive. Up to one retry; on Ollama only (Claude uses
+    // JSON-block interception so the failure mode is different).
+    if (
+      provider.name === 'ollama'
+      && deliverableIntent.isDeliverable
+      && !response.toolsUsed?.includes('generate_document')
+    ) {
+      logger.warn(
+        { chatId, toolsUsed: response.toolsUsed ?? [] },
+        'Deliverable requested but generate_document not called — auto-retrying',
+      );
+      const retryResponse = await provider.sendMessage({
+        ...params,
+        message:
+          'Your previous response did not generate the requested file. '
+          + 'Emit a generate_document tool call NOW. '
+          + 'Use parse_file first if you need to (re-)read source data. '
+          + 'Do NOT ask clarifying questions. Use sensible defaults and the user\'s original language.',
+        sessionId: effectiveSessionId,
+        systemPrompt,
+        systemPromptAppend: DELIVERABLE_RETRY_DIRECTIVE,
+        allowedTools: deliverableIntent.allowedTools!,
+        modelOverride,
+        skipTurnLog: true,
+        skipAutoTrigger: true,
+      });
+      if (retryResponse.toolsUsed?.includes('generate_document')) {
+        logger.info({ chatId }, 'Deliverable retry succeeded');
+        response = retryResponse;
+      } else {
+        logger.error(
+          { chatId, retryToolsUsed: retryResponse.toolsUsed ?? [] },
+          'Deliverable retry FAILED — surfacing hard error to user',
+        );
+        response = {
+          ...response,
+          text:
+            '[EN] I was unable to generate the requested file after two attempts. '
+            + 'The model kept answering with text instead of calling generate_document. '
+            + 'Try simplifying the request, or switch to a more capable model with /model qwen3.5:latest or /claude. '
+            + '[ES] No pude generar el archivo solicitado despues de dos intentos. '
+            + 'El modelo siguio respondiendo con texto en lugar de llamar a generate_document. '
+            + 'Intenta simplificar la solicitud, o cambia a un modelo mas capaz con /model qwen3.5:latest o /claude.',
+        };
+      }
+    }
 
     // Handle stale Claude session — clear and retry without --resume
     if (response.staleSession && sessionId) {
@@ -916,7 +1047,7 @@ export class ProviderRouter {
         ...params,
         sessionId: undefined,
         systemPrompt,
-        allowedTools: allowedTools ?? undefined,
+        allowedTools: effectiveAllowedTools,
       });
 
       // Persist new session ID from retry
