@@ -518,13 +518,23 @@ async function handleMessage(
     }
 
     // 5b2. Kanban action (works for BOTH Claude and Ollama)
-    // Skip if Ollama already created the card via kanban_manage tool call
-    // (the tool sets response.generatedFiles or tool result contains kanban_manage)
+    // rc.74: Only auto-execute when the user's current message actually
+    // asked for a board/task/kanban operation (English OR Spanish).
+    // Prior behavior created a card whenever the model embedded a JSON
+    // block — observed side-effect: PDF requests triggered stray cards.
+    // When intent is absent, silently strip the JSON and move on.
     if (responseText && pc.kanban.isKanbanAction(responseText)) {
-      const kanbanReq = pc.kanban.parseKanbanAction(responseText);
-      if (kanbanReq) {
-        const kanbanResult = await pc.kanban.executeKanbanAction(chatId, kanbanReq);
-        await ctx.reply(formatForTelegram(kanbanResult), { parse_mode: 'HTML' });
+      const userWantsKanban =
+        /\b(board|kanban|task|card|ticket|todo|to-?do|tablero|tarea|tarjeta|pendiente|pendientes|por hacer)\b/i.test(rawText);
+      if (userWantsKanban) {
+        const kanbanReq = pc.kanban.parseKanbanAction(responseText);
+        if (kanbanReq) {
+          const kanbanResult = await pc.kanban.executeKanbanAction(chatId, kanbanReq);
+          await ctx.reply(formatForTelegram(kanbanResult), { parse_mode: 'HTML' });
+          responseText = pc.kanban.stripKanbanBlock(responseText);
+        }
+      } else {
+        logger.debug({ chatId }, 'Kanban JSON in response but user did not request board/task action — stripping without creating');
         responseText = pc.kanban.stripKanbanBlock(responseText);
       }
     }

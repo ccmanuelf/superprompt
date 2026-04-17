@@ -328,11 +328,20 @@ async function handleMessage(
       }
     }
 
+    // rc.74: Only auto-execute when user's current message actually
+    // asked for a board/task/kanban operation (English OR Spanish).
     if (responseText && ctx.kanban.isKanbanAction(responseText)) {
-      const kanbanReq = ctx.kanban.parseKanbanAction(responseText);
-      if (kanbanReq) {
-        const kanbanResult = await ctx.kanban.executeKanbanAction(roomId, kanbanReq);
-        await sendNotice(client, roomId, kanbanResult);
+      const userWantsKanban =
+        /\b(board|kanban|task|card|ticket|todo|to-?do|tablero|tarea|tarjeta|pendiente|pendientes|por hacer)\b/i.test(body);
+      if (userWantsKanban) {
+        const kanbanReq = ctx.kanban.parseKanbanAction(responseText);
+        if (kanbanReq) {
+          const kanbanResult = await ctx.kanban.executeKanbanAction(roomId, kanbanReq);
+          await sendNotice(client, roomId, kanbanResult);
+          responseText = ctx.kanban.stripKanbanBlock(responseText);
+        }
+      } else {
+        logger.debug({ roomId }, 'Kanban JSON in response but user did not request board/task action — stripping without creating');
         responseText = ctx.kanban.stripKanbanBlock(responseText);
       }
     }

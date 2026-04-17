@@ -209,51 +209,104 @@ When relevant, you can mention these commands to help the user. For example, if 
 
 You also have access to GitHub tools (github_list_repos, github_read_file, github_list_issues, github_clone_repo, github_diff, github_commit_push, github_create_pr), Render deploy tools (render_list_services, render_deploy_status, render_get_logs), a take_screenshot tool for capturing web pages visually, and kanban_manage for task tracking.
 
-IMPORTANT — Kanban Board: When you identify tasks, ideas, issues, or follow-ups during conversation, proactively suggest adding them to the board. With Ollama: call kanban_manage directly. With Claude: embed a kanban_action JSON block OR guide the user to \`/board add <title>\`.`;
+Kanban handling is provider-specific and lives in its own section below — follow ONLY the section that applies to your engine.`;
 
-/**
- * Kanban board action format — teaches BOTH providers how to create/manage cards.
- * Uses the same JSON-in-response pattern as document generation.
- * The platform handler detects and executes these automatically.
- */
-const KANBAN_PROMPT = `## Kanban Board — Always Accessible
+// rc.74 — KANBAN_PROMPT split into provider-specific variants. The
+// old combined prompt exposed both the "call kanban_manage tool" path
+// AND the "embed a kanban_action JSON block" path to every model, and
+// Ollama models were observed picking the Claude-only JSON path (the
+// platform then auto-executed the JSON, creating a card the user never
+// asked for). Each provider now sees only its own path.
+const OLLAMA_KANBAN_PROMPT = `## Kanban Board — Tool-Based Access
 
-The board is ALWAYS accessible from this conversation. NEVER say "the board is unavailable" or "I can't access it."
+The board is ALWAYS accessible via the \`kanban_manage\` tool. NEVER say "the board is unavailable" or "I can't access it."
 
-**How to access the board:**
-- **With tools (Ollama):** call kanban_manage directly with action "list", "create", "move", "assign", or "summary"
-- **Without tools (Claude):** use these Telegram commands or embed a kanban_action JSON block:
-  - \`/board\` — shows the full board with all columns and cards
-  - \`/board add "Task title"\` — creates a new card
-  - \`/board move [id] done\` — moves a card to done
-  - \`/board show [id]\` — shows card details
-  - \`/board priority [id] 1\` — sets priority (1=critical to 5=minimal)
-  - Web UI: \`/board.html\`
+**How to interact with the board (Ollama/tool mode):**
+- Call \`kanban_manage\` with action "list", "create", "move", "assign", or "summary"
+- Do NOT embed kanban_action JSON blocks in your response text — only a tool call does anything. Plain JSON in your reply is ignored (and, in rc.74+, may be stripped without taking effect).
 
-NEVER say a feature is unavailable — either use the tool directly OR guide to the slash command/web UI.
+**When to call kanban_manage:**
+- ONLY when the user's current message explicitly mentions the board, a task, a card, a ticket, or a to-do — in English OR Spanish (board, kanban, task, card, ticket, todo / tablero, tarea, tarjeta, pendiente).
+- If the user asks for a deliverable (PDF, report, analysis, document), DO NOT create kanban cards as a side effect. Generate the deliverable instead.
 
-When you identify a task, idea, issue, or opportunity during conversation, you can also add it by including a JSON block in your response:
+ASSIGNMENT RULES — follow these strictly when you DO create a card:
+- DEFAULT is always "noted" — capture the item for visibility but do NOT assign an owner until explicitly requested.
+- Set "bot" ONLY when the user explicitly asks you to handle it.
+- Set "me" ONLY when the user explicitly says they will do it.
+- Keep "noted" for everything else.
+
+Priority: 1=critical, 2=high, 3=medium, 4=low, 5=minimal.`;
+
+const CLAUDE_KANBAN_PROMPT = `## Kanban Board — JSON-Block Access
+
+The board is ALWAYS accessible. NEVER say "the board is unavailable."
+
+**How to interact with the board (Claude mode):**
+You don't call tools directly — the platform intercepts special JSON blocks in your response and executes them.
+
+Embed a kanban_action JSON block ONLY when the user's current message explicitly mentions the board, a task, a card, a ticket, or a to-do — in English OR Spanish (board, kanban, task, card, ticket, todo / tablero, tarea, tarjeta, pendiente).
+
+If the user asks for a deliverable (PDF, report, analysis, document), DO NOT create kanban cards as a side effect — embed a DocGenRequest JSON block instead.
+
+When a kanban action is appropriate:
 
 \`\`\`json
 {"kanban_action": "create", "title": "Task title", "description": "Optional details", "assignee": "noted", "priority": 3, "due_date": "2026-03-25", "scheduled_for": "tonight"}
 \`\`\`
 
+Or guide the user to slash commands:
+- \`/board\` — shows the full board
+- \`/board add "Task title"\` — creates a new card
+- \`/board move [id] done\` — moves a card to done
+
 ASSIGNMENT RULES — follow these strictly:
-- DEFAULT is always "noted" — capture the item for visibility but do NOT assign an owner until explicitly requested
-- Set "bot" ONLY when the user explicitly asks you to handle it: "please take care of X", "can you handle X", "you do X", "let the bot do X"
-- Set "me" ONLY when the user explicitly says they will do it: "I will do X", "I'll handle X", "let me take care of X"
-- Set "collaborative" ONLY when the user explicitly says to work together: "let's work on X together", "we should both look at X"
-- Keep "noted" for everything else — brainstorming, ideas, discussions, reviews, and anything ambiguous
-- When in doubt, use "noted" — NEVER assign ownership unless the user explicitly requests it
-- The user will review and reassign cards from the board when ready
+- DEFAULT is always "noted" — capture the item for visibility but do NOT assign an owner until explicitly requested.
+- Set "bot" ONLY when the user explicitly asks you to handle it.
+- Set "me" ONLY when the user explicitly says they will do it.
+- Keep "noted" for everything else.
 
 Priority: 1=critical, 2=high, 3=medium, 4=low, 5=minimal.
-due_date: optional deadline in ISO format (YYYY-MM-DD) — when the task should be DONE.
-scheduled_for: optional start time — "tonight", "tomorrow morning", or ISO datetime. Bot tasks with priority 1-2 execute immediately; priority 3-5 execute during nightly window (22:00-06:00) or at scheduled_for time.
+due_date: optional deadline in ISO format (YYYY-MM-DD).
+scheduled_for: optional start time — "tonight", "tomorrow morning", or ISO datetime.`;
 
-Set priority and dates conversationally: "this is urgent" → priority 1. "by Friday" → due_date. "run it tonight" → scheduled_for.
+/**
+ * rc.74 — deliverable-format detection. When the user's current
+ * message requests a document/file output (in English or Spanish),
+ * inject a strict reminder into the system prompt for THIS turn so
+ * the model must call the generation tool (Ollama) or embed a
+ * DocGenRequest (Claude) rather than respond with discussion.
+ *
+ * Keywords chosen to match observed user phrasing across EN/ES:
+ *   EN: pdf, docx, xlsx, pptx, csv, report, document, file,
+ *       attachment, download, deliverable
+ *   ES: reporte, informe, documento, archivo, adjunto, descarga,
+ *       descargar, entregable
+ * File extensions (pdf/docx/xlsx/pptx/csv) are universal so no ES copy needed.
+ */
+const DELIVERABLE_FORMAT_REGEX =
+  /\b(pdf|docx|xlsx|pptx|csv|report|document|file|attachment|download|deliverable|reporte|informe|documento|archivo|adjunto|descarga|descargar|entregable)\b/i;
 
-Be PROACTIVE about creating cards when the user mentions something actionable. But be CONSERVATIVE about assignment — let the user decide who does what.`;
+function detectDeliverableFormat(text: string | undefined): boolean {
+  if (!text) return false;
+  return DELIVERABLE_FORMAT_REGEX.test(text);
+}
+
+const DELIVERABLE_REMINDER_OLLAMA = `## CRITICAL — Deliverable Requested This Turn
+
+The user's current message requests a specific output format (PDF, DOCX, XLSX, report, document, or similar — English or Spanish). This overrides default behavior:
+
+1. Calling \`generate_document\` is your REQUIRED primary action. Not optional.
+2. Read source data first via \`parse_file\` if needed, then call \`generate_document\` with the parsed data.
+3. Do NOT respond with analysis, suggestions, questions, or kanban proposals INSTEAD of the document. The document comes first; a brief summary may follow.
+4. Responding with text-only discussion when a file was explicitly requested is a failure.`;
+
+const DELIVERABLE_REMINDER_CLAUDE = `## CRITICAL — Deliverable Requested This Turn
+
+The user's current message requests a specific output format (PDF, DOCX, XLSX, report, document, or similar — English or Spanish). This overrides default behavior:
+
+1. Embedding a DocGenRequest JSON block is your REQUIRED primary action. Not optional.
+2. Do NOT respond with analysis, suggestions, questions, or kanban proposals INSTEAD of the document. Generate the file first; a brief summary may follow.
+3. Responding with text-only discussion when a file was explicitly requested is a failure.`;
 
 /**
  * Claude-specific provider notice — injected ONLY when Claude is the active provider.
@@ -773,13 +826,23 @@ export class ProviderRouter {
       logger.debug({ err, chatId }, 'Upload manifest unavailable (non-fatal)');
     }
 
+    // rc.74 — deliverable-format detection. If the user's current raw
+    // message mentions PDF/DOCX/report/reporte/etc., inject a strict
+    // per-turn reminder that the generation tool is mandatory. Uses
+    // rawUserMessage (pre-memory-prefix) so memory context doesn't
+    // trigger false positives.
+    const deliverableReminder = detectDeliverableFormat(params.rawUserMessage ?? params.message)
+      ? (provider.name === 'claude' ? DELIVERABLE_REMINDER_CLAUDE : DELIVERABLE_REMINDER_OLLAMA)
+      : '';
+
     // Provider-aware system prompt composition:
     // - BOTH providers: platformIdentity comes FIRST (prevents Claude identity confusion)
-    // - Claude: CLAUDE_PROVIDER_NOTICE (tool access via JSON blocks) + LANGUAGE_HINT
-    // - Ollama: standard (has callable tools, model handles language)
+    // - Claude: CLAUDE_PROVIDER_NOTICE (tool access via JSON blocks) + CLAUDE_KANBAN_PROMPT + LANGUAGE_HINT
+    // - Ollama: OLLAMA_KANBAN_PROMPT (tool-based access, no JSON block path exposed to model)
+    // - rc.74: deliverableReminder injected near the end when applicable, so it's read last (high recency weight)
     const systemPrompt = provider.name === 'claude'
-      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_PROVIDER_NOTICE, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, LANGUAGE_HINT].filter(Boolean).join('\n\n')
-      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST].filter(Boolean).join('\n\n') || undefined;
+      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_PROVIDER_NOTICE, CLAUDE_DOCUMENT_PROMPT, CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, LANGUAGE_HINT].filter(Boolean).join('\n\n')
+      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, OLLAMA_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)
