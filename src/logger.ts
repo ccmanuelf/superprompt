@@ -1,5 +1,6 @@
 import pino from 'pino';
 import { config } from './config.js';
+import { getTraceId } from './trace.js';
 
 // ── Log Ring Buffer ─────────────────────────────────────
 
@@ -7,6 +8,7 @@ export interface LogEntry {
   timestamp: number;
   level: string;
   msg: string;
+  traceId?: string;
   [key: string]: unknown;
 }
 
@@ -163,6 +165,21 @@ export const logger = pino({
         level: levelName,
         msg: '',
       };
+
+      // Inject trace_id from AsyncLocalStorage so every log inside a traced
+      // request automatically carries the same correlation ID — both in the
+      // ring buffer and in the actual pino output. No call sites change.
+      const traceId = getTraceId();
+      if (traceId) {
+        entry.traceId = traceId;
+        const hasObject = inputArgs.some((a) => typeof a === 'object' && a !== null);
+        if (hasObject) {
+          const firstObjIdx = inputArgs.findIndex((a) => typeof a === 'object' && a !== null);
+          inputArgs[firstObjIdx] = { traceId, ...(inputArgs[firstObjIdx] as Record<string, unknown>) };
+        } else {
+          inputArgs.unshift({ traceId } as never);
+        }
+      }
 
       // Extract message and metadata from pino args (sanitize sensitive fields)
       for (const arg of inputArgs) {

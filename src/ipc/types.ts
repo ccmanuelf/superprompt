@@ -17,6 +17,8 @@ export interface ExecuteToolMessage {
   tool: string;
   args: Record<string, unknown>;
   chatId: string;
+  /** Per-request trace ID propagated from the originating message handler. */
+  traceId?: string;
 }
 
 export interface RegisterUserToolMessage {

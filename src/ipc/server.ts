@@ -8,6 +8,7 @@
 
 import type { ParentMessage } from './types.js';
 import type { ToolEntry } from '../core/interfaces.js';
+import { withTrace } from '../trace.js';
 
 /** Local tool registry for this child process */
 const localRegistry = new Map<string, ToolEntry>();
@@ -75,17 +76,25 @@ export function startIPCServer(processName: string): void {
           return;
         }
 
-        try {
-          const result = await entry.execute(msg.args, msg.chatId);
-          process.send!({ type: 'result', id: msg.id, result });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          process.send!({
-            type: 'error',
-            id: msg.id,
-            error: `[EN] Tool "${msg.tool}" failed in ${processName} process: ${message}. `
-              + `[ES] Herramienta "${msg.tool}" fallo en el proceso ${processName}: ${message}.`,
-          });
+        const run = async () => {
+          try {
+            const result = await entry.execute(msg.args, msg.chatId);
+            process.send!({ type: 'result', id: msg.id, result });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            process.send!({
+              type: 'error',
+              id: msg.id,
+              error: `[EN] Tool "${msg.tool}" failed in ${processName} process: ${message}. `
+                + `[ES] Herramienta "${msg.tool}" fallo en el proceso ${processName}: ${message}.`,
+            });
+          }
+        };
+
+        if (msg.traceId) {
+          await withTrace(msg.traceId, run);
+        } else {
+          await run();
         }
         break;
       }

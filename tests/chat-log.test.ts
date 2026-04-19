@@ -40,6 +40,7 @@ async function createChatLogTable(): Promise<void> {
     t.string('provider').notNullable();
     t.text('content').notNullable();
     t.bigInteger('created_at').notNullable();
+    t.string('trace_id').nullable().index();
     t.index(['chat_id', 'created_at']);
   });
 }

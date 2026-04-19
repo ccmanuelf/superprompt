@@ -11,6 +11,7 @@
 import { mkdirSync } from 'node:fs';
 import { STORE_DIR } from './config.js';
 import { logger } from './logger.js';
+import { getTraceId } from './trace.js';
 import { initKnex, getKnex, destroyKnex, readDbConfig } from './db-knex.js';
 import { createFullTextSearch, createVectorTable, columnExists, insertVecRow } from './db-dialect.js';
 import type { StorageProvider, TableInitializer } from './core/interfaces.js';
@@ -53,6 +54,7 @@ export interface ChatLogEntry {
   provider: string;
   content: string;
   created_at: number;
+  trace_id?: string | null;
 }
 
 export interface ScheduledTask {
@@ -117,6 +119,7 @@ export interface Episode {
   open_threads: string | null;
   source_count: number;
   created_at: number;
+  trace_id?: string | null;
 }
 
 // ── Initialization ──────────────────────────────────────────
@@ -157,6 +160,10 @@ async function createCoreTables(db: Knex): Promise<void> {
       t.bigInteger('created_at').notNullable();
       t.index(['chat_id', 'created_at']);
     });
+  }
+  // Migration: trace_id — correlates a turn with its cross-process logs
+  if (!(await columnExists(db, 'chat_log', 'trace_id'))) {
+    await db.schema.alterTable('chat_log', (t) => { t.string('trace_id').nullable().index(); });
   }
 
   // chat_log cleanup (rc.70) — idempotent sweep of two known pollution
@@ -316,6 +323,10 @@ async function createCoreTables(db: Knex): Promise<void> {
       t.index(['chat_id']);
     });
   }
+  // Migration: trace_id — first trace ID associated with this episode
+  if (!(await columnExists(db, 'episodes', 'trace_id'))) {
+    await db.schema.alterTable('episodes', (t) => { t.string('trace_id').nullable().index(); });
+  }
 
   // FTS for episodes
   await createFullTextSearch(db, 'episodes', 'summary', 'episodes_fts');
@@ -440,6 +451,7 @@ export async function appendChatLog(
     provider,
     content,
     created_at: Date.now(),
+    trace_id: getTraceId() ?? null,
   });
 }
 
@@ -897,6 +909,7 @@ export async function insertEpisode(
     key_facts: keyFacts ? JSON.stringify(keyFacts) : null,
     open_threads: openThreads ? JSON.stringify(openThreads) : null,
     source_count: sourceCount, created_at: Date.now(),
+    trace_id: getTraceId() ?? null,
   });
   const episodeId = typeof id === 'number' ? id : Number(id);
 

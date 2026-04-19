@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { Bot, Context, InputFile } from 'grammy';
 import { config, UPLOADS_DIR } from '../config.js';
 import { logger } from '../logger.js';
+import { generateTraceId, withTrace, getTraceId } from '../trace.js';
 import type { PlatformContext } from '../core/context.js';
 import type { CardStatus, CardAssignee } from '../kanban.js';
 import type { DigestFrequency } from '../proactive.js';
@@ -141,6 +142,17 @@ export function splitMessage(
 // ── Message Pipeline ────────────────────────────────────────
 
 async function handleMessage(
+  ctx: Context,
+  rawText: string,
+  pc: PlatformContext,
+  forceVoiceReply: boolean = false,
+  skipTools: boolean = false,
+  isVoice: boolean = false,
+): Promise<void> {
+  return withTrace(generateTraceId(), () => handleMessageInner(ctx, rawText, pc, forceVoiceReply, skipTools, isVoice));
+}
+
+async function handleMessageInner(
   ctx: Context,
   rawText: string,
   pc: PlatformContext,
@@ -585,7 +597,9 @@ async function handleMessage(
     }
   } catch (err) {
     logger.error({ err, chatId }, 'Message handling failed');
-    await ctx.reply('Sorry, something went wrong processing your message.').catch(() => {});
+    const traceId = getTraceId();
+    const traceSuffix = traceId ? ` (trace: ${traceId})` : '';
+    await ctx.reply(`Sorry, something went wrong processing your message.${traceSuffix}`).catch(() => {});
   } finally {
     if (typingInterval) clearInterval(typingInterval);
   }

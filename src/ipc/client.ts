@@ -11,6 +11,7 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { logger } from '../logger.js';
+import { getTraceId } from '../trace.js';
 import { buildChildEnv } from './env-whitelist.js';
 import type { ParentMessage, ChildMessage } from './types.js';
 
@@ -206,6 +207,7 @@ export class ProcessClient {
         tool,
         args,
         chatId,
+        traceId: getTraceId(),
       });
     });
   }

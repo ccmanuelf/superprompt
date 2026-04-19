@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { config, STORE_DIR, UPLOADS_DIR } from '../config.js';
 import { logger } from '../logger.js';
+import { generateTraceId, withTrace, getTraceId } from '../trace.js';
 import type { PlatformContext } from '../core/context.js';
 import type { CardStatus, CardAssignee } from '../kanban.js';
 import type { DigestFrequency } from '../proactive.js';
@@ -109,6 +110,16 @@ function splitMessage(text: string, limit: number = 16384): string[] {
 // ── Message Pipeline ────────────────────────────────────────
 
 async function handleMessage(
+  client: MatrixClient,
+  roomId: string,
+  body: string,
+  ctx: PlatformContext,
+  isVoice: boolean = false,
+): Promise<void> {
+  return withTrace(generateTraceId(), () => handleMessageInner(client, roomId, body, ctx, isVoice));
+}
+
+async function handleMessageInner(
   client: MatrixClient,
   roomId: string,
   body: string,
@@ -386,7 +397,9 @@ async function handleMessage(
     }
   } catch (err) {
     logger.error({ err, roomId }, 'Matrix message handling failed');
-    await sendNotice(client, roomId, 'Sorry, something went wrong processing your message.').catch(() => {});
+    const traceId = getTraceId();
+    const traceSuffix = traceId ? ` (trace: ${traceId})` : '';
+    await sendNotice(client, roomId, `Sorry, something went wrong processing your message.${traceSuffix}`).catch(() => {});
   }
 }
 
