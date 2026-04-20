@@ -312,7 +312,10 @@ let reconnectDelay = 1000;
 let reconnectTimer = null;
 let animFrameId = null;
 let chunks = [];
+let recordingStartedAt = 0;
 const VAD_SILENCE_MS = 1200; // silence before auto-stop
+const MIN_RECORDING_MS = 350; // shorter blobs are almost always unintentional taps
+const MIN_BLOB_BYTES = 2000; // below this the webm has no decodable cluster
 
 // ── Elements ──────────────────────────────────────
 const authScreen = document.getElementById('auth-screen');
@@ -495,12 +498,20 @@ function startRecording() {
   mediaRecorder.onstop = () => {
     if (chunks.length === 0) return;
     const blob = new Blob(chunks, { type: 'audio/webm' });
-    if (blob.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
+    const duration = Date.now() - recordingStartedAt;
+    if (blob.size < MIN_BLOB_BYTES || duration < MIN_RECORDING_MS) {
+      // Avoid round-tripping webms the server would reject as undecodable.
+      console.debug('voice: dropping short recording', { bytes: blob.size, ms: duration });
+      stateIndicator.textContent = conversationActive ? 'Listening...' : 'Ready';
+      return;
+    }
+    if (ws && ws.readyState === WebSocket.OPEN) {
       blob.arrayBuffer().then((buf) => ws.send(buf));
     }
   };
 
   mediaRecorder.start();
+  recordingStartedAt = Date.now();
   isRecording = true;
   updateButton();
   stateIndicator.textContent = 'Listening...';

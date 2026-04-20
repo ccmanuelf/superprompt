@@ -1,6 +1,6 @@
 {
   "name": "clauded",
-  "version": "1.0.0-rc.77",
+  "version": "1.0.0-rc.78",
   "description": "Personal AI assistant daemon — bridges messaging platforms to AI backends",
   "type": "module",
   "engines": {
@@ -53,5 +53,8 @@
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
+  },
+  "overrides": {
+    "tough-cookie": "^4.1.4"
   }
 }

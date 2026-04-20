@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { franc } from 'franc-min';
-import { createReadStream, renameSync } from 'node:fs';
+import { createReadStream, renameSync, statSync } from 'node:fs';
 import { config } from './config.js';
 import { logger } from './logger.js';
 
@@ -11,9 +11,19 @@ const VOICE_MAP: Record<string, { voice: string; lang: string }> = {
 };
 const DEFAULT_VOICE = VOICE_MAP.eng;
 
+// 2 min absorbs Kokoro/Whisper cold-start after Speaches idle-unloads the model.
+const SPEACHES_REQUEST_TIMEOUT_MS = 120_000;
+
+// Minimum webm/opus payload. MediaRecorder writes a ~200-byte EBML header even
+// for an essentially-empty recording; anything below this cannot contain a
+// decodable cluster and Speaches would return 415 Failed to decode.
+const MIN_AUDIO_BYTES = 2_000;
+
 const speachesClient = new OpenAI({
   baseURL: config.SPEACHES_URL,
   apiKey: 'not-needed', // Speaches doesn't require auth
+  timeout: SPEACHES_REQUEST_TIMEOUT_MS,
+  maxRetries: 0, // we handle retries ourselves with targeted strategy
 });
 
 export interface TranscriptionResult {
@@ -37,13 +47,35 @@ export async function transcribeAudio(audioPath: string): Promise<TranscriptionR
     renameSync(audioPath, finalPath);
   }
 
-  logger.debug({ path: finalPath }, 'Transcribing audio');
+  // Guard: tiny files are either truncated recordings or silent blips that
+  // MediaRecorder finalized with only an EBML header. Speaches returns 415
+  // "Failed to decode audio" for these; short-circuit with an empty transcript
+  // so the caller treats it as "no speech" instead of a hard error.
+  const size = statSync(finalPath).size;
+  if (size < MIN_AUDIO_BYTES) {
+    logger.debug({ path: finalPath, size }, 'Audio below minimum size — skipping STT');
+    return { text: '', detectedLanguage: null };
+  }
+
+  logger.debug({ path: finalPath, size }, 'Transcribing audio');
 
   // Omit language param — Faster-whisper auto-detects (supports 99 languages)
-  const transcription = await speachesClient.audio.transcriptions.create({
-    file: createReadStream(finalPath),
-    model: 'Systran/faster-whisper-small',
-  });
+  let transcription: { text: string };
+  try {
+    transcription = await speachesClient.audio.transcriptions.create({
+      file: createReadStream(finalPath),
+      model: 'Systran/faster-whisper-small',
+    });
+  } catch (err) {
+    // Speaches returns 415 when ffmpeg can't decode the payload — happens with
+    // short/malformed browser recordings. Treat as "no speech", not an error.
+    const status = (err as { status?: number })?.status;
+    if (status === 415) {
+      logger.warn({ path: finalPath, size }, 'Speaches could not decode audio (415) — treating as silence');
+      return { text: '', detectedLanguage: null };
+    }
+    throw err;
+  }
 
   // Detect language from the transcribed text (franc on the user's full utterance
   // is more reliable than on the short AI response)
@@ -90,15 +122,49 @@ export async function synthesizeSpeech(text: string, languageHint?: string | nul
   const { voice, lang } = voiceConfig;
   logger.debug({ textLength: text.length, voice, lang, detectionSource }, 'Synthesizing speech');
 
-  const response = await speachesClient.audio.speech.create({
+  // Kokoro is idle-unloaded by Speaches after inactivity; the first request
+  // after unload blocks while the ONNX model loads (~20-40s cpu). The default
+  // keepalive socket timeout can fire before load completes → "Socket timeout".
+  // Retry once on transient connection errors with the model now warm.
+  const request = () => speachesClient.audio.speech.create({
     model: 'speaches-ai/Kokoro-82M-v1.0-ONNX',
     voice,
     input: text,
     response_format: 'mp3',
   });
 
+  let response: Awaited<ReturnType<typeof request>>;
+  try {
+    response = await request();
+  } catch (err) {
+    if (isTransientFetchError(err)) {
+      logger.warn({ err: (err as Error).message, voice }, 'TTS cold-start timeout — retrying once');
+      response = await request();
+    } else {
+      throw err;
+    }
+  }
+
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
+}
+
+/**
+ * Detects transient fetch/socket errors that warrant a single retry. The first
+ * Kokoro request after idle-unload commonly hits ERR_SOCKET_TIMEOUT or a
+ * connection reset while the ONNX runtime warms up.
+ */
+function isTransientFetchError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const code = (err as { code?: string; cause?: { code?: string } }).code
+    ?? (err as { cause?: { code?: string } }).cause?.code;
+  if (code && ['ERR_SOCKET_TIMEOUT', 'ECONNRESET', 'UND_ERR_SOCKET', 'ETIMEDOUT'].includes(code)) {
+    return true;
+  }
+  const name = (err as { name?: string }).name;
+  if (name === 'FetchError' || name === 'AbortError') return true;
+  const message = (err as { message?: string }).message ?? '';
+  return /socket timeout|fetch failed|network/i.test(message);
 }
 
 /**
