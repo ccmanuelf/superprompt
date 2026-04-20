@@ -49,7 +49,12 @@ const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:;",
+  // media-src 'self' blob: is required for TTS playback — the client receives
+  // mp3 bytes over WS, wraps them in a Blob, and plays via URL.createObjectURL
+  // which produces a blob: URL. Without it the <audio> element is blocked
+  // silently (only visible in DevTools console) and every voice reply degrades
+  // to text-only.
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:; media-src 'self' blob:;",
   'Permissions-Policy': 'microphone=(self)',
 };
 
@@ -429,7 +434,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
 
     // Relax CSP for simulation page (needs CDN scripts for Vue, Vuetify, AG Grid)
     const headers = urlPath.startsWith('/sim') || filePath.includes('simulation') || urlPath.startsWith('/capacity') || filePath.includes('capacity') || urlPath.startsWith('/sequence') || filePath.includes('sequencer') || urlPath.startsWith('/vsm') || filePath.includes('vsm') || urlPath.startsWith('/toc') || filePath.includes('/toc/') || urlPath.startsWith('/conwip') || filePath.includes('conwip') || urlPath.startsWith('/doe') || filePath.includes('/doe/') || urlPath.startsWith('/fsm') || filePath.includes('/fsm/') || urlPath.startsWith('/docs') || filePath.includes('/docs/')
-      ? { ...SECURITY_HEADERS, 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com; font-src https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:;" }
+      ? { ...SECURITY_HEADERS, 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com; font-src https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:;" }
       : SECURITY_HEADERS;
 
     try {

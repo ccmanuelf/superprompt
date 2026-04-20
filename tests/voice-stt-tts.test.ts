@@ -166,6 +166,27 @@ describe('synthesizeSpeech: cold-start retry', () => {
   });
 });
 
+// CSP regression test ------------------------------------------------------
+//
+// The web UI plays TTS by wrapping received mp3 bytes in a Blob and calling
+// URL.createObjectURL(), which produces a blob: URL. If the server's CSP
+// lacks `media-src 'self' blob:`, the <audio> element is silently blocked
+// by the browser — replies arrive as text only with no server-side error.
+// This happened in rc.79 and cost us a full retest cycle to diagnose.
+describe('CSP: must allow blob: media for TTS playback', () => {
+  it('SECURITY_HEADERS CSP declares media-src blob:', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/web/server.ts', import.meta.url), 'utf8');
+    // Pull every Content-Security-Policy string from the source and check
+    // each one has an explicit media-src that includes blob:
+    const cspMatches = src.match(/Content-Security-Policy['"]\s*:\s*"[^"]+"/g) ?? [];
+    expect(cspMatches.length).toBeGreaterThan(0);
+    for (const m of cspMatches) {
+      expect(m).toMatch(/media-src[^;]*blob:/);
+    }
+  });
+});
+
 describe('ttsPlainText: markdown sanitization', () => {
   it('strips bold and italic markers', () => {
     expect(ttsPlainText('**Hola** y *adiós*')).toBe('Hola y adiós');
