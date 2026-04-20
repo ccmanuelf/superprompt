@@ -941,12 +941,16 @@ export class ProviderRouter {
       ? (provider.name === 'claude' ? DELIVERABLE_REMINDER_CLAUDE : DELIVERABLE_REMINDER_OLLAMA)
       : '';
 
-    // rc.76 — per-turn language override. Stopword-based detection on
-    // the raw user message; injected near the end of the system
-    // prompt for high recency weight. Fixes Spanish-drift when the
-    // continuity bridge seeded a Spanish-heavy history but the user's
-    // current message is in English (or vice versa).
-    const userLang = detectMessageLanguage(params.rawUserMessage ?? params.message);
+    // rc.76 / rc.82 — per-turn language override. Priority order:
+    //   1. Explicit languageHint (e.g. Whisper STT auto-detection on
+    //      voice turns) — authoritative when present.
+    //   2. Stopword heuristic on the raw user message.
+    // Short utterances like "ok"/"continue" score 0 stopwords and
+    // otherwise fall through with no override, letting the prior
+    // turn's Spanish/English register stick. The STT hint closes that
+    // gap for voice.
+    const userLang: 'en' | 'es' | 'unknown' =
+      params.languageHint ?? detectMessageLanguage(params.rawUserMessage ?? params.message);
     const languageOverride =
       userLang === 'en' ? LANGUAGE_OVERRIDE_EN :
       userLang === 'es' ? LANGUAGE_OVERRIDE_ES :

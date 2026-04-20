@@ -79,3 +79,38 @@ describe('detectMessageLanguage (rc.76)', () => {
     });
   });
 });
+
+// rc.82 — the STT-derived languageHint must take priority over the stopword
+// heuristic. Short utterances ("okay", "continue", "thanks") score 0
+// stopwords so the heuristic returns 'unknown' and no override fires,
+// letting the prior turn's language register stick. The hint closes that
+// gap. These tests pin the priority in the source so a refactor can't
+// silently invert it.
+describe('languageHint priority in router.sendMessage (rc.82)', () => {
+  it('SendMessageParams declares an optional languageHint field', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/providers/types.ts', import.meta.url), 'utf8');
+    expect(src).toMatch(/languageHint\?\s*:\s*'en'\s*\|\s*'es'/);
+  });
+
+  it('router prefers params.languageHint over detectMessageLanguage', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/providers/router.js', import.meta.url)
+      .pathname.replace(/\.js$/, '.ts'), 'utf8');
+    // The resolution line must read the hint first, falling back only when
+    // it's undefined. Written defensively — any future change that does a
+    // plain `detectMessageLanguage(...)` without consulting the hint will
+    // fail this assertion.
+    expect(src).toMatch(/params\.languageHint\s*\?\?\s*detectMessageLanguage/);
+  });
+
+  it('voice-session forwards Whisper detectedLanguage as languageHint', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/web/voice-session.ts', import.meta.url)
+      .pathname.replace(/\.js$/, '.ts'), 'utf8');
+    // Only 'en' and 'es' are valid hints (matching the router's override
+    // languages); any other Whisper result must drop to undefined rather
+    // than leaking e.g. 'pt' / 'fr' into a field the router can't handle.
+    expect(src).toMatch(/languageHint:\s*detectedLanguage\s*===\s*'en'\s*\|\|\s*detectedLanguage\s*===\s*'es'\s*\?\s*detectedLanguage\s*:\s*undefined/);
+  });
+});

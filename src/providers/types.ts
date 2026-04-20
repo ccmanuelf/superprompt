@@ -40,6 +40,15 @@ export interface SendMessageParams {
    * turns and must not pollute the turn log (rc.70).
    */
   skipTurnLog?: boolean;
+  /**
+   * ISO-639-1 language hint ('en' or 'es') derived from a reliable source
+   * (e.g. Whisper STT auto-detection). When set, overrides the router's
+   * stopword-based heuristic — STT on a full utterance is more accurate
+   * than stopword counts on a short text, and short utterances like
+   * "okay" / "continue" otherwise fall back to 'unknown' and let the
+   * prior turn's language inertia win (rc.82).
+   */
+  languageHint?: 'en' | 'es';
 }
 
 export interface GeneratedFile {

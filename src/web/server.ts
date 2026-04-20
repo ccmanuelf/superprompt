@@ -412,6 +412,11 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       filePath = resolve(PUBLIC_DIR, 'board.html');
     } else if (urlPath === '/learn' || urlPath === '/learn/') {
       filePath = resolve(PUBLIC_DIR, 'learn.html');
+    } else if (urlPath === '/favicon.ico') {
+      // No favicon; answer 204 so the browser stops logging a 404 every load.
+      res.writeHead(204, SECURITY_HEADERS);
+      res.end();
+      return;
     } else {
       filePath = resolve(PUBLIC_DIR, urlPath.slice(1));
     }

@@ -94,13 +94,18 @@ export class VoiceSession {
         ? `${memoryContext}\n\n${transcript}`
         : transcript;
 
-      // 4. Send to AI with isVoice flag
+      // 4. Send to AI with isVoice flag.
+      // Whisper's language detection on a full utterance beats stopword
+      // counting on short transcripts — forward it as a hard override so
+      // "okay, continue" after a Spanish turn doesn't keep the Spanish
+      // register (rc.82).
       const response = await this.router.sendMessage({
         chatId: this.chatId,
         message: fullMessage,
         rawUserMessage: transcript,
         isVoice: true,
         platform: 'voice-web',
+        languageHint: detectedLanguage === 'en' || detectedLanguage === 'es' ? detectedLanguage : undefined,
       });
 
       const responseText = response.text || '(No response)';

@@ -9,6 +9,13 @@ import { getOllamaTimeoutMs, buildOllamaTimeoutError } from '../circuit-breaker.
 const MAX_HISTORY_TURNS = 20; // 20 turns = 40 messages (user + assistant)
 const MAX_HISTORY_MESSAGES = MAX_HISTORY_TURNS * 2;
 
+// rc.82 — cap idle model residency. Ollama's default is 5m; on a Mac
+// running Docker + Speaches + Chrome, holding a 9GB model in RAM for
+// 5m blows through available memory and pushes macOS into heavy swap.
+// 3m is long enough that a back-and-forth conversation keeps the model
+// warm, short enough that an abandoned turn reclaims RAM promptly.
+const MODEL_KEEP_ALIVE = '3m';
+
 // rc.72 — model-size-aware agentic ceilings. Small models hallucinate
 // more and spiral longer in tool loops, so we tighten their leash:
 // fewer iterations, lower temperature (less creativity-induced drift),
@@ -381,6 +388,7 @@ export class OllamaProvider implements AIProvider {
       stream: false,
       think: true,
       options,
+      keep_alive: MODEL_KEEP_ALIVE,
     });
 
     const assistantMsg: Message = {
@@ -459,6 +467,7 @@ export class OllamaProvider implements AIProvider {
         stream: false,
         think: true,
         options: agenticOptions,
+        keep_alive: MODEL_KEEP_ALIVE,
       });
 
       const msg = response.message;
