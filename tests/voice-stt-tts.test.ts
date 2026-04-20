@@ -35,7 +35,7 @@ vi.mock('openai', () => {
 });
 
 // Import under test AFTER the mock is registered
-const { transcribeAudio, synthesizeSpeech } = await import('../src/voice.js');
+const { transcribeAudio, synthesizeSpeech, ttsPlainText } = await import('../src/voice.js');
 
 // Helpers -------------------------------------------------------------------
 
@@ -144,5 +144,62 @@ describe('synthesizeSpeech: cold-start retry', () => {
 
     await expect(synthesizeSpeech('hello', 'en')).rejects.toThrow(/Socket timeout/);
     expect(mockCreateSpeech).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns an empty buffer (no HTTP call) when input has nothing speakable', async () => {
+    const buf = await synthesizeSpeech('   \n\n   ', 'en');
+    expect(buf.length).toBe(0);
+    expect(mockCreateSpeech).not.toHaveBeenCalled();
+  });
+
+  it('passes the markdown-stripped text to Speaches, not the raw markdown', async () => {
+    mockCreateSpeech.mockResolvedValueOnce({ arrayBuffer: async () => new Uint8Array([1, 2]).buffer });
+
+    await synthesizeSpeech('**Hola** _mundo_\n- item 1\n- item 2', 'es');
+
+    expect(mockCreateSpeech).toHaveBeenCalledTimes(1);
+    const call = mockCreateSpeech.mock.calls[0][0];
+    expect(call.input).not.toContain('**');
+    expect(call.input).not.toContain('_');
+    expect(call.input).not.toMatch(/^- /m);
+    expect(call.input).toContain('Hola mundo');
+  });
+});
+
+describe('ttsPlainText: markdown sanitization', () => {
+  it('strips bold and italic markers', () => {
+    expect(ttsPlainText('**Hola** y *adiós*')).toBe('Hola y adiós');
+    expect(ttsPlainText('__strong__ and _em_')).toBe('strong and em');
+  });
+
+  it('flattens bullet and numbered lists', () => {
+    expect(ttsPlainText('- one\n- two\n- three')).toBe('one two three');
+    expect(ttsPlainText('1. first\n2. second')).toBe('first second');
+  });
+
+  it('removes heading markers but keeps the heading text', () => {
+    expect(ttsPlainText('# Title\nBody here.')).toBe('Title Body here.');
+    expect(ttsPlainText('### Section\ncontent')).toBe('Section content');
+  });
+
+  it('replaces fenced code blocks with a spoken placeholder', () => {
+    const out = ttsPlainText('Try this:\n```\nconst x = 1;\n```\nOK?');
+    expect(out).not.toContain('```');
+    expect(out).toMatch(/code block/);
+  });
+
+  it('unwraps markdown links to their visible label', () => {
+    expect(ttsPlainText('see [the docs](https://example.com) please'))
+      .toBe('see the docs please');
+  });
+
+  it('collapses whitespace so the TTS speaks naturally', () => {
+    expect(ttsPlainText('line one\n\n\nline two\t\there')).toBe('line one line two here');
+  });
+
+  it('returns empty string when input has nothing speakable', () => {
+    expect(ttsPlainText('')).toBe('');
+    expect(ttsPlainText('```\njust code\n```')).toBe('code block.');
+    expect(ttsPlainText('   \n\n   ')).toBe('');
   });
 });

@@ -607,8 +607,10 @@ function monitorVAD() {
   for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
   const rms = Math.sqrt(sum / data.length);
 
-  // Threshold scaled: slider 1-100 maps to RMS 2-80
-  const threshold = 2 + (vadThreshold / 100) * 78;
+  // Threshold scaled: slider 1-100 maps to RMS 12-80. The previous 2-80
+  // range let HVAC / keyboard noise trip the detector constantly at low
+  // sensitivity, producing a stream of empty "no speech" bubbles.
+  const threshold = 12 + (vadThreshold / 100) * 68;
 
   if (rms > threshold) {
     // Speech detected
@@ -632,24 +634,36 @@ function monitorVAD() {
 
 // ── Audio Playback ────────────────────────────────
 async function playAudio(arrayBuffer) {
+  if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+    console.warn('voice: received empty audio frame, skipping playback');
+    return;
+  }
+
   isPlaying = true;
   updateButton();
   stateIndicator.textContent = 'Speaking...';
 
+  let url = null;
   try {
     const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
-    const url = URL.createObjectURL(blob);
+    url = URL.createObjectURL(blob);
     const audio = new Audio(url);
 
     await new Promise((resolve, reject) => {
       audio.onended = resolve;
-      audio.onerror = reject;
+      audio.onerror = () => reject(new Error('audio element error'));
       audio.play().catch(reject);
     });
-
-    URL.revokeObjectURL(url);
   } catch (err) {
-    console.error('Playback failed:', err);
+    console.error('voice: playback failed', err);
+    // Surface autoplay / decode failures so the user isn't silently left with
+    // text-only replies. Autoplay blocks look like NotAllowedError from play().
+    const isAutoplayBlocked = err && (err.name === 'NotAllowedError' || /user (gesture|activation)/i.test(err.message || ''));
+    stateIndicator.textContent = isAutoplayBlocked
+      ? 'Playback blocked — click to enable voice'
+      : 'Playback error (text still shown)';
+  } finally {
+    if (url) URL.revokeObjectURL(url);
   }
 
   isPlaying = false;

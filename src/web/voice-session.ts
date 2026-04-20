@@ -113,9 +113,18 @@ export class VoiceSession {
       // 6. Synthesize speech (pass STT language for reliable voice selection)
       let audio: Buffer | null = null;
       try {
-        audio = await synthesizeSpeech(responseText, detectedLanguage);
+        const buf = await synthesizeSpeech(responseText, detectedLanguage);
+        // synthesizeSpeech can legitimately return 0 bytes (response was all
+        // markdown, nothing speakable). Don't ship an empty binary frame — the
+        // browser would try to play silent mp3 while we log nothing.
+        if (buf.length > 0) {
+          audio = buf;
+          logger.info({ chatId: this.chatId, bytes: buf.length, provider: response.provider }, 'Voice web: response ready with audio');
+        } else {
+          logger.warn({ chatId: this.chatId, provider: response.provider, responseLength: responseText.length }, 'Voice web: response ready but no audio produced');
+        }
       } catch (err) {
-        logger.warn({ err }, 'Voice web: TTS failed');
+        logger.warn({ err, chatId: this.chatId }, 'Voice web: TTS failed');
       }
 
       return {

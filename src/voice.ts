@@ -120,7 +120,17 @@ export async function synthesizeSpeech(text: string, languageHint?: string | nul
   }
 
   const { voice, lang } = voiceConfig;
-  logger.debug({ textLength: text.length, voice, lang, detectionSource }, 'Synthesizing speech');
+  const spoken = ttsPlainText(text);
+  const startedAt = Date.now();
+  logger.info(
+    { textLength: text.length, spokenLength: spoken.length, voice, lang, detectionSource },
+    'TTS: synthesizing',
+  );
+
+  if (!spoken) {
+    logger.warn({ voice }, 'TTS: nothing speakable after sanitization — returning empty buffer');
+    return Buffer.alloc(0);
+  }
 
   // Kokoro is idle-unloaded by Speaches after inactivity; the first request
   // after unload blocks while the ONNX model loads (~20-40s cpu). The default
@@ -129,7 +139,7 @@ export async function synthesizeSpeech(text: string, languageHint?: string | nul
   const request = () => speachesClient.audio.speech.create({
     model: 'speaches-ai/Kokoro-82M-v1.0-ONNX',
     voice,
-    input: text,
+    input: spoken,
     response_format: 'mp3',
   });
 
@@ -146,7 +156,48 @@ export async function synthesizeSpeech(text: string, languageHint?: string | nul
   }
 
   const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  const buffer = Buffer.from(arrayBuffer);
+  logger.info(
+    { bytes: buffer.length, voice, ms: Date.now() - startedAt },
+    'TTS: synthesized',
+  );
+  return buffer;
+}
+
+/**
+ * Convert AI response text into something Kokoro will read naturally.
+ *
+ * Markdown artifacts (asterisks, bullets, headings, code fences, link syntax)
+ * get vocalized literally ("asterisk asterisk bold asterisk asterisk"), which
+ * makes voice replies unusable. Strip the most common markup and collapse
+ * whitespace so the TTS only sees what a human would actually say.
+ *
+ * Exported for unit testing.
+ */
+export function ttsPlainText(text: string): string {
+  return text
+    // Fenced code blocks and inline code — announce as "code block"
+    .replace(/```[\s\S]*?```/g, ' code block. ')
+    .replace(/`([^`]+)`/g, '$1')
+    // Bold/italic emphasis markers
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/(^|\s)_([^_]+)_(?=\s|$)/g, '$1$2')
+    // Markdown links [text](url) → text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // Headings (leading # characters on a line)
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    // Bullet markers at line start
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    // Blockquotes
+    .replace(/^\s*>\s?/gm, '')
+    // Horizontal rules
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '')
+    // Collapse whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
