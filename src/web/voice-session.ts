@@ -5,6 +5,9 @@ import { logger } from '../logger.js';
 import { transcribeAudio, synthesizeSpeech } from '../voice.js';
 import { buildMemoryContext, saveConversationTurn } from '../memory.js';
 import { getRecentChatLog } from '../db-core.js';
+import {
+  isKanbanAction, parseKanbanAction, executeKanbanAction, stripKanbanBlock,
+} from '../kanban.js';
 import type { ProviderRouter } from '../providers/router.js';
 import {
   getPendingConfirmation, clearPendingConfirmation,
@@ -141,7 +144,40 @@ export class VoiceSession {
         languageHint: detectedLanguage === 'en' || detectedLanguage === 'es' ? detectedLanguage : undefined,
       });
 
-      const responseText = response.text || '(No response)';
+      let responseText = response.text || '(No response)';
+
+      // 4b. rc.84 — intercept kanban_action JSON blocks from Claude.
+      // Claude's kanban pattern is to embed a ```json {"kanban_action": ...}```
+      // block; telegram.ts and matrix.ts parse and execute these blocks,
+      // but voice-web used to pass them straight to TTS where the code-fence
+      // stripper (rc.79) replaced them with "code block." Result: reads
+      // worked (model narrated from context) but creates silently failed —
+      // the JSON block was spoken as text, never executed.
+      if (isKanbanAction(responseText)) {
+        const userWantsKanban =
+          /\b(board|kanban|task|card|ticket|todo|to-?do|tablero|tarea|tarjeta|pendiente|pendientes|por hacer)\b/i.test(transcript);
+        if (userWantsKanban) {
+          const kanbanReq = parseKanbanAction(responseText);
+          if (kanbanReq) {
+            try {
+              const kanbanResult = await executeKanbanAction(this.chatId, kanbanReq);
+              logger.info({ chatId: this.chatId, action: kanbanReq.kanban_action }, 'Voice web: kanban action executed');
+              // Keep the model's context text, drop the JSON block, and
+              // append the tool result so the TTS speaks the confirmation.
+              responseText = `${stripKanbanBlock(responseText)}\n\n${kanbanResult}`.trim();
+            } catch (err) {
+              logger.error({ err, chatId: this.chatId }, 'Voice web: kanban execution failed');
+              responseText = stripKanbanBlock(responseText);
+            }
+          }
+        } else {
+          // Model emitted the JSON block but the user didn't actually ask
+          // for a board action — strip it silently instead of hallucinating
+          // a card into existence.
+          logger.debug({ chatId: this.chatId }, 'Voice web: kanban JSON in response without user intent — stripping');
+          responseText = stripKanbanBlock(responseText);
+        }
+      }
 
       // 5. Save conversation turn (fire-and-forget)
       saveConversationTurn(this.chatId, transcript, responseText).catch((err) => {

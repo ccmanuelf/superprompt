@@ -258,6 +258,59 @@ describe('pickGreetingLanguage', () => {
   });
 });
 
+// rc.84 — voice-web must parse + execute Claude's kanban_action JSON blocks
+// the same way telegram.ts and matrix.ts do. Before this fix, voice-web
+// passed the raw response to TTS; ttsPlainText stripped the fenced block
+// and said "code block." so reads appeared to work (model narrated from
+// context) but creates silently failed. Regression test pins the contract
+// by source-level assertion so future refactors can't regress the fix.
+describe('voice-session must execute kanban_action blocks (rc.84)', () => {
+  it('voice-session.ts imports parseKanbanAction + executeKanbanAction', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(
+      new URL('../src/web/voice-session.ts', import.meta.url).pathname,
+      'utf8',
+    );
+    expect(src).toMatch(/parseKanbanAction/);
+    expect(src).toMatch(/executeKanbanAction/);
+    expect(src).toMatch(/isKanbanAction/);
+    expect(src).toMatch(/stripKanbanBlock/);
+  });
+
+  it('voice-session.ts strips the kanban block BEFORE TTS synthesis of the main response', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(
+      new URL('../src/web/voice-session.ts', import.meta.url).pathname,
+      'utf8',
+    );
+    // Main response TTS is the synthesizeSpeech call that also passes the
+    // STT language hint (synthesizeSpeech(responseText, detectedLanguage)).
+    // The kanban intercept must land BEFORE that call so the JSON block
+    // is executed and removed instead of being spoken aloud.
+    const kanbanIdx = src.indexOf('isKanbanAction(responseText)');
+    const mainSynthIdx = src.indexOf('synthesizeSpeech(responseText, detectedLanguage)');
+    expect(kanbanIdx).toBeGreaterThan(0);
+    expect(mainSynthIdx).toBeGreaterThan(0);
+    expect(kanbanIdx).toBeLessThan(mainSynthIdx);
+  });
+
+  it('requires the user transcript to mention a board/task keyword before executing', async () => {
+    // Guard against the bug where the model spontaneously emits a kanban
+    // action block in a non-board conversation and we execute it.
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(
+      new URL('../src/web/voice-session.ts', import.meta.url).pathname,
+      'utf8',
+    );
+    expect(src).toMatch(/userWantsKanban/);
+    // Bilingual keyword list must be present in the guard regex.
+    expect(src).toContain('tablero');
+    expect(src).toContain('tarea');
+    expect(src).toContain('kanban');
+    expect(src).toContain('board');
+  });
+});
+
 describe('greetingText', () => {
   it('returns the Spanish greeting for es', () => {
     expect(greetingText('es')).toMatch(/hola.*listo/i);
