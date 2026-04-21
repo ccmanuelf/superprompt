@@ -1381,6 +1381,17 @@ export class ProviderRouter {
   }
 
   /**
+   * Warm the Ollama model so the first real turn doesn't pay the cold-load
+   * cost. Used by voice-web's greeting flow. Returns the loaded model name
+   * on success, null if the warmup failed (caller proceeds anyway).
+   */
+  async preloadOllamaForChat(chatId: string, keepAlive: string = '10m'): Promise<string | null> {
+    const model = await this.getOllamaModel(chatId);
+    const ok = await this.ollama.preloadModel(model, keepAlive);
+    return ok ? model : null;
+  }
+
+  /**
    * List Claude models available via the discovery API key.
    * Returns null when discovery is not configured (caller should surface
    * the setup instruction to the user).

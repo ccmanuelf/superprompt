@@ -796,6 +796,35 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
 
     const session = new VoiceSession(sessionChatId, voiceRouter);
 
+    // rc.83 — warmup + greeting. Runs in the background so we don't block
+    // the 'ready' signal; the client shows "Warming up..." until the
+    // 'greeting' message arrives. This is what stops the user from losing
+    // their first sentences to Ollama's cold-load wait.
+    (async () => {
+      try {
+        ws.send(JSON.stringify({ type: 'warming' }));
+        const greeting = await session.warmupAndGreet();
+        if (ws.readyState !== ws.OPEN) return; // client gave up during warmup
+        ws.send(JSON.stringify({
+          type: 'greeting',
+          text: greeting.text,
+          language: greeting.language,
+          warmupTimedOut: greeting.warmupTimedOut,
+          hasAudio: greeting.audio !== null,
+        }));
+        if (greeting.audio) {
+          ws.send(greeting.audio);
+        }
+      } catch (err) {
+        logger.error({ err, chatId: sessionChatId }, 'Voice web: greeting flow failed');
+        if (ws.readyState === ws.OPEN) {
+          // Fall back to a plain ready-without-greeting so the client still
+          // transitions out of the warming state instead of hanging forever.
+          ws.send(JSON.stringify({ type: 'greeting', text: '', language: 'en', warmupTimedOut: true }));
+        }
+      }
+    })();
+
     ws.on('message', async (data: Buffer | string) => {
       // Binary = audio data, string = JSON control message
       if (typeof data === 'string') {

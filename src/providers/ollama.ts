@@ -268,6 +268,31 @@ export class OllamaProvider implements AIProvider {
     }
   }
 
+  /**
+   * Ask Ollama to load a model into memory without generating any tokens.
+   * Used by the voice-web greeting flow so the first user utterance after
+   * connect doesn't eat a 2-3 min cold-load delay. Empty prompt + explicit
+   * keep_alive — Ollama interprets this as "load and hold".
+   *
+   * Best-effort. Swallows errors because a warmup failure must never
+   * block the session — the user can still chat, they just get the
+   * original cold-load wait on their first turn.
+   */
+  async preloadModel(model: string, keepAlive: string = '10m'): Promise<boolean> {
+    try {
+      await this.client.generate({
+        model,
+        prompt: '',
+        keep_alive: keepAlive,
+      });
+      logger.info({ model, keepAlive }, 'Ollama model preloaded');
+      return true;
+    } catch (err) {
+      logger.warn({ err, model }, 'Ollama preload failed — user will see cold-load on first turn');
+      return false;
+    }
+  }
+
   async sendMessage(params: SendMessageParams): Promise<AIResponse> {
     const { message, chatId, onTyping, allowedTools, modelOverride, images, skipTools, isVoice } = params;
 

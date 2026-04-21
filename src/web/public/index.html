@@ -290,7 +290,7 @@
   </div>
 
   <div id="diag-row" style="display:flex;gap:0.5rem;margin-top:0.5rem;align-items:center;font-size:0.7rem;color:var(--text-dim);">
-    <span id="build-tag">build: rc.82</span>
+    <span id="build-tag">build: rc.83</span>
     <button id="test-audio-btn" type="button" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:2px 8px;border-radius:4px;font-size:0.7rem;cursor:pointer;">🔊 Test audio</button>
     <span id="audio-diag"></span>
   </div>
@@ -319,6 +319,7 @@ let reconnectTimer = null;
 let animFrameId = null;
 let chunks = [];
 let recordingStartedAt = 0;
+let greetingReceived = false; // VAD must NOT start until greeting plays
 const VAD_SILENCE_MS = 1200; // silence before auto-stop
 const MIN_RECORDING_MS = 350; // shorter blobs are almost always unintentional taps
 const MIN_BLOB_BYTES = 2000; // below this the webm has no decodable cluster
@@ -386,8 +387,37 @@ function connect() {
         mainScreen.style.display = 'flex';
         setConnected(true);
         await initAudio();
-        // Auto-start conversation mode
-        if (mode === 'vad') {
+        // rc.83 — wait for the greeting before enabling VAD. The server
+        // sends 'warming' immediately, then 'greeting' once Ollama is
+        // warm + the greeting audio is ready. This prevents the user
+        // from losing their first sentences to the cold-load wait.
+        stateIndicator.textContent = 'Warming up…';
+        break;
+
+      case 'warming':
+        // Server confirms warmup started. Keep the UI calm while we wait.
+        stateIndicator.textContent = 'Warming up…';
+        actionBtn.disabled = true;
+        break;
+
+      case 'greeting':
+        greetingReceived = true;
+        actionBtn.disabled = false;
+        if (msg.text) {
+          addMessage(msg.text, 'assistant', 'clauded');
+        }
+        if (msg.warmupTimedOut) {
+          stateIndicator.textContent = msg.language === 'es'
+            ? 'Listo (la primera respuesta puede tardar)'
+            : 'Ready (first reply may be slow)';
+        } else {
+          stateIndicator.textContent = msg.language === 'es' ? 'Listo' : 'Ready';
+        }
+        // If the server has audio for us, it's arriving right after this
+        // JSON as a binary frame. playAudio's tail will call
+        // startConversation() once playback ends. If no audio (TTS failed
+        // or text-only fallback), start VAD immediately.
+        if (!msg.hasAudio && mode === 'vad' && !conversationActive) {
           startConversation();
         }
         break;
@@ -718,6 +748,9 @@ async function playAudio(arrayBuffer) {
   if (conversationActive && vadActive) {
     stateIndicator.textContent = 'Listening...';
     monitorVAD();
+  } else if (greetingReceived && mode === 'vad' && !conversationActive) {
+    // First audio frame was the greeting; kick VAD on now that it's done.
+    startConversation();
   } else {
     stateIndicator.textContent = 'Ready';
   }
