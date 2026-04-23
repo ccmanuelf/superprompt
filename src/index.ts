@@ -123,6 +123,12 @@ async function main(): Promise<void> {
   const { packSubscriptionTableInit } = await import('./packs.js');
   storage.registerTables(packSubscriptionTableInit);
 
+  // Attendance reconciliation (rc.88, Phase A) — sites, modules, shifts,
+  // breaks, absence codes, data-source config, employees, badge records,
+  // attendance records, report snapshots, ingestion reports.
+  const { attendanceTableInit } = await import('./attendance/schema.js');
+  storage.registerTables(attendanceTableInit);
+
   // Guardrails tables (permanent learned constraints)
   const { guardrailsTableInit } = await import('./guardrails.js');
   storage.registerTables(guardrailsTableInit);

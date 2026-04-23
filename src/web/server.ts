@@ -21,6 +21,7 @@ import {
 import type { ProviderRouter } from '../providers/router.js';
 import { handleSimApi } from './sim-api.js';
 import { handleCapacityApi } from './capacity-api.js';
+import { handleAttendanceApi } from './attendance-api.js';
 import { handleSequencerApi } from './sequencer-api.js';
 import { handleVsmApi } from './vsm-api.js';
 import { handleTocApi } from './toc-api.js';
@@ -360,7 +361,9 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
         res.end('Internal Server Error');
       };
 
-      if (urlPath.startsWith('/api/capacity')) {
+      if (urlPath.startsWith('/api/attendance')) {
+        handleAttendanceApi(req, res, urlPath, apiChatId).catch(apiError('Attendance'));
+      } else if (urlPath.startsWith('/api/capacity')) {
         handleCapacityApi(req, res, urlPath, apiChatId).catch(apiError('Capacity'));
       } else if (urlPath.startsWith('/api/sequence')) {
         handleSequencerApi(req, res, urlPath, apiChatId).catch(apiError('Sequencer'));
@@ -412,6 +415,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       filePath = resolve(PUBLIC_DIR, 'board.html');
     } else if (urlPath === '/learn' || urlPath === '/learn/') {
       filePath = resolve(PUBLIC_DIR, 'learn.html');
+    } else if (urlPath === '/attendance' || urlPath === '/attendance/' || urlPath === '/attendance/admin' || urlPath === '/attendance/admin/') {
+      filePath = resolve(PUBLIC_DIR, 'attendance', 'admin.html');
     } else if (urlPath === '/favicon.ico') {
       // No favicon; answer 204 so the browser stops logging a 404 every load.
       res.writeHead(204, SECURITY_HEADERS);

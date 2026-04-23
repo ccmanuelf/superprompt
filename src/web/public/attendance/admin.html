@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luna — Attendance Admin</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #14141f;
+      --surface-2: #1a1a2a;
+      --border: #2a2a3a;
+      --text: #e0e0e8;
+      --text-dim: #888898;
+      --accent: #6c63ff;
+      --danger: #ff4d6a;
+      --success: #4dff8f;
+      --warn: #ffb84d;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      line-height: 1.4;
+    }
+    .wrap { max-width: 1080px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; font-weight: 400; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.1rem; font-weight: 500; margin: 1.5rem 0 0.75rem; }
+    p.hint { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1rem; }
+    .auth, .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    input[type=text], input[type=password], input[type=date], select {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      width: 100%;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    label { display: block; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.35rem; }
+    .row { display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 1rem; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 180px; }
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 0.6rem 1.25rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+    .drop {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .drop.hover { border-color: var(--accent); color: var(--text); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      margin-top: 1rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.4rem 0.6rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--surface-2); font-weight: 500; color: var(--text-dim); }
+    td { background: var(--surface); }
+    .mapping-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem 1rem;
+      margin-top: 1rem;
+      font-size: 0.85rem;
+    }
+    .mapping-grid label { margin-bottom: 0; align-self: center; }
+    .pill { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.7rem; }
+    .pill.ok { background: rgba(77,255,143,0.15); color: var(--success); }
+    .pill.warn { background: rgba(255,184,77,0.15); color: var(--warn); }
+    .pill.err { background: rgba(255,77,106,0.15); color: var(--danger); }
+    pre { background: var(--surface-2); padding: 0.75rem; border-radius: 6px; font-size: 0.75rem; overflow-x: auto; }
+    .log { font-size: 0.8rem; color: var(--text-dim); min-height: 1.5rem; margin-top: 0.5rem; }
+    .hidden { display: none !important; }
+    .danger { color: var(--danger); }
+    .success { color: var(--success); }
+    .warn { color: var(--warn); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Attendance Admin</h1>
+  <p class="hint">Upload a roster or check-in CSV, map its columns to the logical fields, and run ingestion. The file format is not assumed — every logical field is picked from whatever columns the CSV actually contains.</p>
+
+  <!-- ── Auth ─────────────────────────────── -->
+  <div class="auth panel" id="auth-panel">
+    <h2>Sign in</h2>
+    <p class="hint">Paste your web token. Generate one in Telegram with <code>/webtoken create</code>.</p>
+    <div class="row">
+      <div><label for="token">Token</label><input type="password" id="token" placeholder="64-character hex token"></div>
+      <div style="flex:0"><button id="auth-btn">Load workspace</button></div>
+    </div>
+    <div class="log" id="auth-log"></div>
+  </div>
+
+  <!-- ── Main panel ──────────────────────── -->
+  <div id="main" class="hidden">
+    <div class="panel">
+      <h2>1. Pick a module + data type</h2>
+      <div class="row">
+        <div>
+          <label for="module-select">Module</label>
+          <select id="module-select"></select>
+        </div>
+        <div>
+          <label for="datatype-select">Data type</label>
+          <select id="datatype-select">
+            <option value="roster">Roster (employee list)</option>
+            <option value="badge">Badge records (check-ins)</option>
+          </select>
+        </div>
+        <div id="date-row">
+          <label for="expected-date">Shift date (badge only)</label>
+          <input type="date" id="expected-date">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>2. Upload CSV</h2>
+      <p class="hint">Drag and drop a CSV or click to pick one. The file is stored on the server so you can come back to configure the mapping without re-uploading.</p>
+      <div class="drop" id="drop"><span>Drop CSV here or click to choose a file</span><input type="file" id="file-input" accept=".csv,.txt" class="hidden"></div>
+      <div class="log" id="upload-log"></div>
+    </div>
+
+    <div class="panel hidden" id="preview-panel">
+      <h2>3. Preview + map columns</h2>
+      <p class="hint">The table below shows the first rows as the parser sees them. Pick which CSV column corresponds to each logical field. Leave any field blank if your file doesn't carry it.</p>
+      <div id="preview-meta" class="log"></div>
+      <div id="preview-table-wrap" style="overflow-x:auto;"></div>
+      <div class="mapping-grid" id="mapping-grid"></div>
+      <div class="row" style="margin-top:1rem">
+        <div style="flex:0"><button id="save-mapping-btn">Save mapping</button></div>
+        <div style="flex:0"><button id="ingest-btn" class="secondary">Save mapping + ingest</button></div>
+        <div class="log" id="mapping-log"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="reports-panel">
+      <h2>Recent ingestions</h2>
+      <div id="reports-wrap"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────
+const state = {
+  token: '',
+  modules: [],
+  moduleId: '',
+  dataType: 'roster',
+  expectedDate: '',
+  fileId: null,
+  preview: null,
+  existingMapping: null,
+};
+
+const ROSTER_FIELDS = [
+  { key: 'badge_id', label: 'Badge ID', required: true },
+  { key: 'full_name', label: 'Full name', required: true },
+  { key: 'cost_center', label: 'Cost center', required: false },
+  { key: 'labor_type', label: 'Labor type (direct/indirect)', required: true },
+  { key: 'line', label: 'Assembly line', required: true },
+  { key: 'supervisor_name', label: 'Supervisor name', required: false },
+];
+const BADGE_FIELDS = [
+  { key: 'badge_id', label: 'Badge ID', required: true },
+  { key: 'date', label: 'Shift date (optional if timestamps have full datetime)', required: false },
+  { key: 'timestamp_in', label: 'Clock-in timestamp', required: false },
+  { key: 'timestamp_out', label: 'Clock-out timestamp', required: false },
+  { key: 'punch_timestamp', label: 'Punch timestamp (if one row per punch)', required: false },
+  { key: 'punch_direction', label: 'Punch direction IN/OUT (if one row per punch)', required: false },
+];
+
+// ── Elements ─────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const authPanel = $('auth-panel');
+const main = $('main');
+const moduleSelect = $('module-select');
+const datatypeSelect = $('datatype-select');
+const expectedDate = $('expected-date');
+const dateRow = $('date-row');
+const drop = $('drop');
+const fileInput = $('file-input');
+const previewPanel = $('preview-panel');
+const previewMeta = $('preview-meta');
+const previewTableWrap = $('preview-table-wrap');
+const mappingGrid = $('mapping-grid');
+const saveMappingBtn = $('save-mapping-btn');
+const ingestBtn = $('ingest-btn');
+const reportsWrap = $('reports-wrap');
+
+// ── Auth ─────────────────────────────────────────────────────
+$('auth-btn').addEventListener('click', async () => {
+  const token = $('token').value.trim();
+  if (!token) { $('auth-log').textContent = 'Enter a token first.'; return; }
+  state.token = token;
+  try {
+    const modules = await api('/api/attendance/modules');
+    state.modules = modules.modules || [];
+    renderModules();
+    authPanel.classList.add('hidden');
+    main.classList.remove('hidden');
+    await loadReports();
+  } catch (err) {
+    $('auth-log').innerHTML = '<span class="danger">Auth failed: ' + err.message + '</span>';
+  }
+});
+
+// ── Module / data type selection ─────────────────────────────
+function renderModules() {
+  moduleSelect.innerHTML = '';
+  if (state.modules.length === 0) {
+    const opt = document.createElement('option');
+    opt.textContent = '(no modules configured yet — add rows to attendance_modules)';
+    opt.disabled = true;
+    moduleSelect.appendChild(opt);
+    return;
+  }
+  for (const m of state.modules) {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.name + ' — ' + m.supervisor_name;
+    moduleSelect.appendChild(opt);
+  }
+  state.moduleId = moduleSelect.value;
+}
+
+moduleSelect.addEventListener('change', () => {
+  state.moduleId = moduleSelect.value;
+  clearPreview();
+});
+datatypeSelect.addEventListener('change', () => {
+  state.dataType = datatypeSelect.value;
+  dateRow.style.opacity = state.dataType === 'badge' ? '1' : '0.4';
+  clearPreview();
+});
+expectedDate.addEventListener('change', () => { state.expectedDate = expectedDate.value; });
+
+// ── Upload ───────────────────────────────────────────────────
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('hover'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
+drop.addEventListener('drop', (e) => {
+  e.preventDefault(); drop.classList.remove('hover');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+async function handleFile(file) {
+  if (!state.moduleId) { $('upload-log').innerHTML = '<span class="danger">Pick a module first.</span>'; return; }
+  $('upload-log').textContent = 'Uploading ' + file.name + '…';
+  const buf = await file.arrayBuffer();
+  const base64 = bufToBase64(new Uint8Array(buf));
+  try {
+    const res = await api('/api/attendance/preview', 'POST', {
+      moduleId: state.moduleId,
+      dataType: state.dataType,
+      filename: file.name,
+      base64,
+    });
+    state.fileId = res.fileId;
+    state.preview = res.preview;
+    renderPreview();
+    await loadExistingMapping();
+    renderMappingGrid();
+    previewPanel.classList.remove('hidden');
+    $('upload-log').innerHTML = '<span class="success">Uploaded. ' + res.preview.totalRows + ' rows detected. Delimiter: "' + res.preview.delimiter + '".</span>';
+  } catch (err) {
+    $('upload-log').innerHTML = '<span class="danger">Upload failed: ' + err.message + '</span>';
+  }
+}
+
+function bufToBase64(arr) {
+  let binary = '';
+  for (let i = 0; i < arr.byteLength; i++) binary += String.fromCharCode(arr[i]);
+  return btoa(binary);
+}
+
+// ── Preview + mapping UI ─────────────────────────────────────
+function clearPreview() {
+  previewPanel.classList.add('hidden');
+  state.fileId = null;
+  state.preview = null;
+}
+
+function renderPreview() {
+  const p = state.preview;
+  previewMeta.innerHTML = 'Columns: <strong>' + p.headers.length + '</strong> · Delimiter: <strong>"' + p.delimiter + '"</strong> · Rows: <strong>' + p.totalRows + '</strong>';
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+  for (const h of p.headers) {
+    const th = document.createElement('th');
+    th.textContent = h;
+    trh.appendChild(th);
+  }
+  thead.appendChild(trh);
+  table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  for (const row of p.sampleRows) {
+    const tr = document.createElement('tr');
+    for (const h of p.headers) {
+      const td = document.createElement('td');
+      td.textContent = row[h] ?? '';
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  previewTableWrap.innerHTML = '';
+  previewTableWrap.appendChild(table);
+}
+
+async function loadExistingMapping() {
+  try {
+    state.existingMapping = await api('/api/attendance/mapping?moduleId=' + encodeURIComponent(state.moduleId) + '&dataType=' + state.dataType);
+  } catch {
+    state.existingMapping = null;
+  }
+}
+
+function renderMappingGrid() {
+  mappingGrid.innerHTML = '';
+  const fields = state.dataType === 'roster' ? ROSTER_FIELDS : BADGE_FIELDS;
+  const headers = state.preview.headers;
+  const existing = state.existingMapping?.fields ?? {};
+  for (const f of fields) {
+    const label = document.createElement('label');
+    label.textContent = f.label + (f.required ? ' *' : '');
+    const sel = document.createElement('select');
+    sel.dataset.logical = f.key;
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '— not mapped —';
+    sel.appendChild(blank);
+    for (const h of headers) {
+      const opt = document.createElement('option');
+      opt.value = h;
+      opt.textContent = h;
+      if ((existing[f.key] || '').toLowerCase() === h.toLowerCase()) opt.selected = true;
+      else if (!existing[f.key] && headerAutoMatches(h, f.key)) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    mappingGrid.appendChild(label);
+    mappingGrid.appendChild(sel);
+  }
+}
+
+function headerAutoMatches(header, logicalKey) {
+  const h = header.toLowerCase().replace(/[^a-z]/g, '');
+  const k = logicalKey.replace(/_/g, '');
+  if (h === k) return true;
+  if (h.includes(k)) return true;
+  // Common aliases for obvious fields
+  const aliases = {
+    badge_id: ['badge', 'idbadge', 'gafete', 'numero', 'empnum', 'employeeid', 'empid'],
+    full_name: ['name', 'fullname', 'nombre', 'empname', 'employeename'],
+    cost_center: ['costcenter', 'cc', 'centrocostos', 'centrodecostos'],
+    labor_type: ['labortype', 'type', 'tipo', 'directtype', 'direct'],
+    line: ['assembly', 'assemblyline', 'linea', 'workline'],
+    supervisor_name: ['supervisor', 'sup', 'jefe', 'lead'],
+    timestamp_in: ['clockin', 'checkin', 'entrada', 'tsin', 'in'],
+    timestamp_out: ['clockout', 'checkout', 'salida', 'tsout', 'out'],
+    punch_timestamp: ['punch', 'timestamp', 'datetime', 'fechahora'],
+    punch_direction: ['direction', 'inout', 'entradasalida'],
+    date: ['fecha', 'day'],
+  };
+  return (aliases[logicalKey] || []).includes(h);
+}
+
+function collectMapping() {
+  const fields = {};
+  mappingGrid.querySelectorAll('select').forEach((sel) => {
+    if (sel.value) fields[sel.dataset.logical] = sel.value;
+  });
+  return fields;
+}
+
+saveMappingBtn.addEventListener('click', async () => {
+  const fields = collectMapping();
+  try {
+    await api('/api/attendance/mapping', 'POST', {
+      moduleId: state.moduleId,
+      dataType: state.dataType,
+      fields,
+      samplePreview: state.preview.sampleRows,
+    });
+    $('mapping-log').innerHTML = '<span class="success">Mapping saved.</span>';
+  } catch (err) {
+    $('mapping-log').innerHTML = '<span class="danger">Save failed: ' + err.message + '</span>';
+  }
+});
+
+ingestBtn.addEventListener('click', async () => {
+  const fields = collectMapping();
+  $('mapping-log').textContent = 'Saving mapping and ingesting…';
+  try {
+    await api('/api/attendance/mapping', 'POST', {
+      moduleId: state.moduleId,
+      dataType: state.dataType,
+      fields,
+      samplePreview: state.preview.sampleRows,
+    });
+    const res = await api('/api/attendance/ingest', 'POST', {
+      fileId: state.fileId,
+      moduleId: state.moduleId,
+      dataType: state.dataType,
+      expectedDate: state.dataType === 'badge' ? state.expectedDate : null,
+    });
+    const r = res.report;
+    const cls = r.succeeded && r.rowsSkipped === 0 ? 'success' : (r.succeeded ? 'warn' : 'danger');
+    $('mapping-log').innerHTML = '<span class="' + cls + '">Ingested: ' + r.rowsAccepted + ' accepted, ' + r.rowsSkipped + ' skipped, ' + r.warnings.length + ' warnings.</span>';
+    await loadReports();
+  } catch (err) {
+    $('mapping-log').innerHTML = '<span class="danger">Ingestion failed: ' + err.message + '</span>';
+  }
+});
+
+// ── Reports ──────────────────────────────────────────────────
+async function loadReports() {
+  try {
+    const res = await api('/api/attendance/reports');
+    reportsWrap.innerHTML = '';
+    if (!res.reports || res.reports.length === 0) {
+      reportsWrap.innerHTML = '<p class="hint">No ingestions yet.</p>';
+      return;
+    }
+    const table = document.createElement('table');
+    table.innerHTML = '<thead><tr><th>When</th><th>Module</th><th>Type</th><th>Rows</th><th>Accepted</th><th>Skipped</th><th>Warnings</th><th>Status</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+    for (const r of res.reports) {
+      const tr = document.createElement('tr');
+      const when = new Date(r.completedAt).toISOString().replace('T', ' ').slice(0, 19);
+      const statusCls = r.succeeded && r.rowsSkipped === 0 ? 'ok' : (r.succeeded ? 'warn' : 'err');
+      const statusText = r.succeeded ? (r.rowsSkipped === 0 ? 'Clean' : 'Partial') : 'Failed';
+      tr.innerHTML = '<td>' + when + '</td>'
+        + '<td>' + r.moduleId + '</td>'
+        + '<td>' + r.dataType + '</td>'
+        + '<td>' + r.rowsRead + '</td>'
+        + '<td>' + r.rowsAccepted + '</td>'
+        + '<td>' + r.rowsSkipped + '</td>'
+        + '<td>' + r.warnings.length + '</td>'
+        + '<td><span class="pill ' + statusCls + '">' + statusText + '</span></td>';
+      tbody.appendChild(tr);
+
+      if (r.skippedReasons.length > 0 || r.warnings.length > 0) {
+        const detail = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 8;
+        let html = '';
+        if (r.warnings.length > 0) {
+          html += '<strong class="warn">Warnings:</strong><ul>';
+          for (const w of r.warnings) html += '<li>[' + w.kind + '] ' + escapeHtml(w.detail) + '</li>';
+          html += '</ul>';
+        }
+        if (r.skippedReasons.length > 0) {
+          html += '<strong class="danger">Skipped rows:</strong><ul>';
+          for (const s of r.skippedReasons.slice(0, 10)) {
+            html += '<li>row ' + s.rowNumber + ': ' + escapeHtml(s.reason) + '</li>';
+          }
+          if (r.skippedReasons.length > 10) html += '<li>… and ' + (r.skippedReasons.length - 10) + ' more</li>';
+          html += '</ul>';
+        }
+        td.innerHTML = html;
+        detail.appendChild(td);
+        tbody.appendChild(detail);
+      }
+    }
+    table.appendChild(tbody);
+    reportsWrap.innerHTML = '';
+    reportsWrap.appendChild(table);
+  } catch (err) {
+    reportsWrap.innerHTML = '<p class="danger">Could not load reports: ' + err.message + '</p>';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ── API helper ───────────────────────────────────────────────
+async function api(path, method = 'GET', body) {
+  const opts = { method, headers: { 'Authorization': 'Bearer ' + state.token } };
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(res.status + ' ' + errText);
+  }
+  return res.json();
+}
+</script>
+</body>
+</html>
