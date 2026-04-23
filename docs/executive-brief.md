@@ -1,13 +1,13 @@
-# clauded — Executive Brief
+# luna — Executive Brief
 
 **For:** Board of Directors & Executive Leadership
 **Version:** v1.0.0-rc.60 | April 2026
 
 ---
 
-## What is clauded?
+## What is luna?
 
-clauded is a **department-ready AI assistant platform** that runs on company-controlled infrastructure. It's not a generic chatbot — it targets real manufacturing and planning workflows out-of-the-box, with specialized tools for every department.
+luna is a **department-ready AI assistant platform** that runs on company-controlled infrastructure. It's not a generic chatbot — it targets real manufacturing and planning workflows out-of-the-box, with specialized tools for every department.
 
 - **Accessible via Telegram** (text + voice, English + Spanish)
 - **11 web dashboards** for visual operations (simulation, capacity, quality, scheduling)
@@ -22,9 +22,9 @@ clauded is a **department-ready AI assistant platform** that runs on company-con
 
 Our teams handle complex, multi-format workflows across 10+ clients — each with different order formats, terminology, and communication preferences. This complexity limits how many clients and orders the current team can manage effectively, and creates risk when experienced staff are unavailable.
 
-### How clauded Changes the Equation
+### How luna Changes the Equation
 
-clauded doesn't replace people — it **amplifies their capacity**. The same team can handle more clients, respond faster, and catch issues earlier.
+luna doesn't replace people — it **amplifies their capacity**. The same team can handle more clients, respond faster, and catch issues earlier.
 
 | Activity | Without AI Partner | With AI Partner |
 |----------|-------------------|-----------------|
@@ -36,7 +36,7 @@ clauded doesn't replace people — it **amplifies their capacity**. The same tea
 
 ### Value Creation Model
 
-clauded creates value by **unlocking capacity for growth**, not by reducing headcount:
+luna creates value by **unlocking capacity for growth**, not by reducing headcount:
 
 | Value Driver | How It Works |
 |-------------|-------------|
@@ -48,9 +48,9 @@ clauded creates value by **unlocking capacity for growth**, not by reducing head
 
 ### Growth Enablement
 
-clauded positions the company to **grow revenue without proportional cost increase**:
+luna positions the company to **grow revenue without proportional cost increase**:
 
-| Growth Scenario | Without clauded | With clauded |
+| Growth Scenario | Without luna | With luna |
 |----------------|-----------------|-------------|
 | Onboard 5 new clients | Hire 2-3 additional staff | Current team handles it with AI support |
 | Client requests real-time order status | "We'll get back to you" (hours/days) | Instant via Telegram bot or web portal |
@@ -63,7 +63,7 @@ clauded positions the company to **grow revenue without proportional cost increa
 
 ## Revenue Opportunity
 
-clauded enables **new value-added services** for existing clients:
+luna enables **new value-added services** for existing clients:
 
 | Service | What Client Gets | Value Proposition |
 |---------|-----------------|-------------------|
@@ -99,21 +99,21 @@ A sample client integration (ACME Corp) is already pre-built as a proof of conce
 
 ## How It Complements Existing Systems
 
-clauded **does not replace** ERP, MES, or existing tools. It acts as an AI bridge:
+luna **does not replace** ERP, MES, or existing tools. It acts as an AI bridge:
 
 ```
 Clients (Shopify, ERP, EDI)
        ↓
-    clauded (AI middleware)
+    luna (AI middleware)
        ↓
 Production Floor (operators, planners, supervisors)
        ↓
 Existing Systems (ERP, MES, inventory)
 ```
 
-- **ERP:** clauded queries ERP APIs for orders and inventory — doesn't modify ERP data without human approval
-- **MES:** clauded tracks production progress and feeds data back — complements, doesn't replace shop floor systems
-- **Email/Phone:** clauded captures verbal and email orders, normalizes them into structured data
+- **ERP:** luna queries ERP APIs for orders and inventory — doesn't modify ERP data without human approval
+- **MES:** luna tracks production progress and feeds data back — complements, doesn't replace shop floor systems
+- **Email/Phone:** luna captures verbal and email orders, normalizes them into structured data
 
 ---
 
@@ -146,10 +146,10 @@ Existing Systems (ERP, MES, inventory)
 
 ## Recommendation
 
-clauded is ready for **pilot deployment** in 1-2 departments (Manufacturing + Engineering recommended). The architecture, security model, test coverage, and operational documentation support production use with known, documented caveats.
+luna is ready for **pilot deployment** in 1-2 departments (Manufacturing + Engineering recommended). The architecture, security model, test coverage, and operational documentation support production use with known, documented caveats.
 
 **Next step:** Approve pilot deployment and assign IT resources for S3 (production deployment).
 
 ---
 
-*clauded v1.0.0-rc.60 — Department-Ready AI Assistant Platform*
+*luna v1.0.0-rc.60 — Department-Ready AI Assistant Platform*

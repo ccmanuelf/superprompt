@@ -1,4 +1,4 @@
-# clauded — Operations & Support Model
+# luna — Operations & Support Model
 
 **For:** IT Operations, CTO, Department Champions
 
@@ -11,7 +11,7 @@
 | **Software Development Team** | Core platform development, Level 3 packs, dashboards, architecture |
 | **IT Operations** | Deployment, infrastructure, backups, monitoring, credentials |
 | **Department Champions** | Pack configuration, tool tuning, user training, feedback |
-| **clauded (AI)** | Self-service: Level 2 packs, tool creation, skill learning, auto-healing |
+| **luna (AI)** | Self-service: Level 2 packs, tool creation, skill learning, auto-healing |
 
 ---
 
@@ -21,9 +21,9 @@
 
 | Symptom | Likely Cause | Recovery |
 |---------|-------------|----------|
-| Telegram bot not responding | Docker container crashed | `docker compose up -d --build clauded` |
+| Telegram bot not responding | Docker container crashed | `docker compose up -d --build luna` |
 | "Connection refused" errors | Docker not running | Restart Docker Desktop |
-| Health check failing | Process crash inside container | Check `docker logs clauded-bot` |
+| Health check failing | Process crash inside container | Check `docker logs luna-bot` |
 
 **SLO Target:** Respond within 1 hour, resolve within 4 hours (business hours).
 
@@ -52,9 +52,9 @@
 
 | Type | Owner | Process |
 |------|-------|---------|
-| New Level 2 tool | Department Champion + clauded | Conversational creation |
+| New Level 2 tool | Department Champion + luna | Conversational creation |
 | New Level 3 dashboard | Software Development Team | Requirements → development → deployment |
-| Pack configuration change | Department Champion | `/pack enable/disable` or tell clauded |
+| Pack configuration change | Department Champion | `/pack enable/disable` or tell luna |
 | API connection | IT Operations | Add credentials to `.env`, restart container |
 
 **SLO Target:** Acknowledge within 24 hours, prioritize in next sprint.
@@ -68,21 +68,21 @@
 | Metric | Where | Healthy | Warning |
 |--------|-------|---------|---------|
 | Container health | `docker ps` | "healthy" | "unhealthy" or missing |
-| Startup warnings | `docker logs clauded-bot \| grep WARN` | 0 | >0 |
+| Startup warnings | `docker logs luna-bot \| grep WARN` | 0 | >0 |
 | Processes running | Docker logs "spawned" | 3 (core + tools + parsers) | <3 |
 | Packs loaded | Docker logs "Loaded domain pack" | 11 | <11 |
 | Response time | User experience | <10s | >30s |
 | Rate limit hits | User reports | Rare | Frequent |
-| Tool audit logs | `docker logs clauded-bot \| grep "tool_audit"` | Normal activity | Unusual patterns |
-| Event triggers | `docker logs clauded-bot \| grep "event_trigger"` | Firing as expected | Missed events |
-| Auth failures | `docker logs clauded-bot \| grep "auth_fail"` | 0 | >3/min (IP ban at 15/hr) |
-| Caddy TLS (prod) | `docker logs clauded-caddy` | Certificate valid | Renewal errors |
+| Tool audit logs | `docker logs luna-bot \| grep "tool_audit"` | Normal activity | Unusual patterns |
+| Event triggers | `docker logs luna-bot \| grep "event_trigger"` | Firing as expected | Missed events |
+| Auth failures | `docker logs luna-bot \| grep "auth_fail"` | 0 | >3/min (IP ban at 15/hr) |
+| Caddy TLS (prod) | `docker logs luna-caddy` | Certificate valid | Renewal errors |
 
 ### Daily Check (2 minutes)
 
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}" --filter name=clauded
-docker logs clauded-bot --since 24h 2>&1 | grep -c "ERROR"
+docker ps --format "table {{.Names}}\t{{.Status}}" --filter name=luna
+docker logs luna-bot --since 24h 2>&1 | grep -c "ERROR"
 ```
 
 ---
@@ -94,7 +94,7 @@ User → Department Champion → IT Operations → Software Development Team
          (Level 2 fix)        (infra/config)    (Level 3 / core fix)
 ```
 
-1. **User tries self-service first:** Ask clauded for help
+1. **User tries self-service first:** Ask luna for help
 2. **Department Champion:** pack config, tool tuning, user training
 3. **IT Operations:** container restarts, credential rotation, backups
 4. **Software Development:** architecture changes, new dashboards, core bugs
@@ -105,11 +105,11 @@ User → Department Champion → IT Operations → Software Development Team
 
 | Component | Backup Method | Frequency | Recovery Time |
 |-----------|-------------|-----------|---------------|
-| Database | `cp store/clauded.db` or `pg_dump` | Daily (automated) | < 30 minutes |
+| Database | `cp store/luna.db` or `pg_dump` | Daily (automated) | < 30 minutes |
 | Configuration | `.env` file (manual, version controlled separately) | On change | < 5 minutes |
 | Packs | `packs/` directory (in git) | Every commit | `git pull` |
 | User tools | In database (backed up with DB) | With DB backup | With DB restore |
 
 ---
 
-*clauded v1.0.0-rc.60 — Operations & Support Model*
+*luna v1.0.0-rc.60 — Operations & Support Model*

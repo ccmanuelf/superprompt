@@ -5,7 +5,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-skills');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-skills');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'skills-test.db');
 

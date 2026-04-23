@@ -1,4 +1,4 @@
-# clauded -- Verification Audit (rc.62)
+# luna -- Verification Audit (rc.62)
 
 **Prepared for:** Board of Directors
 **Date:** 2026-04-06
@@ -10,15 +10,15 @@
 
 ## Executive Summary
 
-clauded is NOT a fork of OpenClaw. This document provides verifiable, reproducible evidence proving independent origin. Every claim below can be confirmed by cloning the repository and running the cited commands.
+luna is NOT a fork of OpenClaw. This document provides verifiable, reproducible evidence proving independent origin. Every claim below can be confirmed by cloning the repository and running the cited commands.
 
 **Key facts:**
 
 - The repository has a single author (Manuel Campos) across all 191 commits, beginning 2026-02-25.
 - There are zero fork markers: no `.github/FORKED_FROM`, no upstream remote, no merge commits from an external repository.
 - The string "OpenClaw" appears in exactly one source file (`docs/competitive-assessment.md`), used solely for competitive comparison -- the same way a company might reference a competitor in a market analysis.
-- clauded contains 50,689 lines of TypeScript across 159 source files, none of which share structural or naming patterns with OpenClaw's codebase.
-- clauded implements architectural subsystems (3-process isolation, V8 worker sandbox, 43-tool policy engine, manufacturing domain with DES simulation) that have no equivalent in OpenClaw.
+- luna contains 50,689 lines of TypeScript across 159 source files, none of which share structural or naming patterns with OpenClaw's codebase.
+- luna implements architectural subsystems (3-process isolation, V8 worker sandbox, 43-tool policy engine, manufacturing domain with DES simulation) that have no equivalent in OpenClaw.
 
 The surface-level similarity -- "AI assistant connected to messaging platforms" -- is a product category, not evidence of derivation. By the same logic, every web browser would be a fork of Netscape.
 
@@ -62,7 +62,7 @@ Every reference is comparative, not derivative. No OpenClaw source code, configu
 
 ### 1.3 Dependency Analysis
 
-clauded uses 27 production dependencies and 9 dev dependencies. These are standard npm ecosystem packages:
+luna uses 27 production dependencies and 9 dev dependencies. These are standard npm ecosystem packages:
 
 **Production (27):** `@vector-im/matrix-bot-sdk`, `adm-zip`, `better-sqlite3`, `chart.js`, `chartjs-node-canvas`, `chartjs-plugin-datalabels`, `cron-parser`, `csv-parse`, `docx`, `exceljs`, `franc-min`, `grammy`, `knex`, `mammoth`, `mysql2`, `ollama`, `openai`, `pdf-parse`, `pdfkit`, `pg`, `pino`, `pino-pretty`, `pptxgenjs`, `puppeteer-core`, `sqlite-vec`, `undici`, `ws`
 
@@ -74,9 +74,9 @@ Any overlap with OpenClaw's dependencies (e.g., `pino`, `ws`) reflects shared us
 
 ## 2. Security Hardening Comparison
 
-clauded's security architecture was designed to address real deployment risks. The table below maps each risk category to clauded's mitigation and the evidence file.
+luna's security architecture was designed to address real deployment risks. The table below maps each risk category to luna's mitigation and the evidence file.
 
-| Risk Category | OpenClaw Approach | clauded Mitigation | Evidence |
+| Risk Category | OpenClaw Approach | luna Mitigation | Evidence |
 |---------------|-------------------|-------------------|----------|
 | Process isolation | Gateway + Agent + Tool Server (3 logical roles) | 3 OS-level processes via `child_process.fork()`: core (DB), tools (compute), parsers (file I/O). IPC env whitelist prevents credential leakage. | `src/ipc/`, `src/tools-process.ts`, `src/parsers-process.ts`, `src/ipc/env-whitelist.ts` |
 | Code execution sandbox | No documented sandbox | Worker V8 isolate: 64MB memory limit, no shared memory, SSRF blocklist, adaptive timeout with heartbeat | `src/forge/worker-sandbox.ts`, `src/forge/worker-entry.ts` |
@@ -96,7 +96,7 @@ clauded's security architecture was designed to address real deployment risks. T
 
 ### 3.1 Structural Differences
 
-| Dimension | OpenClaw | clauded |
+| Dimension | OpenClaw | luna |
 |-----------|----------|---------|
 | Process model | Gateway + Agent + Tool Server | 3 forked processes with IPC (core/tools/parsers) |
 | Code sandbox | None documented | Worker threads in V8 isolate (64MB, no shared memory) |
@@ -109,7 +109,7 @@ clauded's security architecture was designed to address real deployment risks. T
 | Context management | Not documented | Context health monitor (4 indicators) + budget tracking |
 | Reactive autonomy | Not documented | Event-driven triggers + background task queue |
 
-### 3.2 Unique Architectural Subsystems in clauded
+### 3.2 Unique Architectural Subsystems in luna
 
 **SA1 -- Worker V8 Sandbox (12 files in `src/forge/`):**
 User-generated code executes in isolated Worker threads with V8 memory limits, no access to the parent process's memory, SSRF blocklist for network requests, and adaptive timeout with heartbeat monitoring.
@@ -142,7 +142,7 @@ None of these subsystems exist in OpenClaw.
 
 ## 4. Domain Specialization
 
-clauded includes a complete manufacturing operations domain that has no equivalent in OpenClaw or any other AI assistant framework.
+luna includes a complete manufacturing operations domain that has no equivalent in OpenClaw or any other AI assistant framework.
 
 ### 4.1 Manufacturing Domain Files
 
@@ -242,7 +242,7 @@ OpenClaw has none of these. This is not a feature delta -- it is an entirely dif
 | Total versioned releases | 62 (rc.1 through rc.62) |
 | Release commits with `(rc.N)` tag | 79 commits (some releases span multiple commits) |
 | First release | rc.1 -- `chore: bump version to v1.0.0-rc.1 for multi-department E2E` |
-| Latest release | rc.62 -- `fix: remove CLAUDED.md from Dockerfile (deleted in cleanup)` |
+| Latest release | rc.62 -- `fix: remove LUNA.md from Dockerfile (deleted in cleanup)` |
 | Commit message convention | `type(scope): description (rc.N)` |
 | Co-author attribution | Every commit includes `Co-Authored-By: Claude` trailer |
 
@@ -281,53 +281,53 @@ Every commit follows conventional commit format. Sample from the first 5 commits
 And the latest 5:
 
 ```
-8450f72 fix: remove CLAUDED.md from Dockerfile (deleted in cleanup) (rc.62)
+8450f72 fix: remove LUNA.md from Dockerfile (deleted in cleanup) (rc.62)
 41df580 refactor: repository cleanup -- remove dead code, 9 files deleted (rc.62)
 1331d96 docs: final sweep -- README, ROADMAP, user-guide updates (rc.61)
 5522658 feat: WS3 -- Architecture B Deployment + Documentation Sweep (rc.61)
 39abe49 test: comprehensive platform integration -- 59 tests across ALL modules (rc.60)
 ```
 
-This is not the commit history of a forked project. A fork would show an initial large import commit followed by modifications. clauded shows incremental, phase-by-phase construction from an empty repository.
+This is not the commit history of a forked project. A fork would show an initial large import commit followed by modifications. luna shows incremental, phase-by-phase construction from an empty repository.
 
 ---
 
 ## 7. Comparative Maturity Matrix
 
-| Dimension | OpenClaw | clauded | Advantage |
+| Dimension | OpenClaw | luna | Advantage |
 |-----------|----------|---------|-----------|
 | **Codebase origin** | Independent project | Independent project (191 commits, single author, 2026-02-25 start) | Equivalent |
-| **Source lines** | Not published | 50,689 TypeScript lines across 159 files | clauded (measurable) |
-| **Process isolation** | Gateway + Agent + Tool Server | 3 OS processes via fork() with IPC env whitelist | clauded |
-| **Code sandbox** | None documented | V8 Worker isolate (64MB, SSRF blocklist) | clauded |
-| **Tool permissions** | User approval | 43 tools, 4 risk tiers, per-user trust memory | clauded |
-| **Database abstraction** | Varies | Knex (SQLite/MariaDB/PostgreSQL), 32 files | clauded |
-| **Data isolation** | Not documented | 27 files enforce chat_id scoping, per-user web tokens | clauded |
-| **Threat model** | Partial | 20 vectors with mitigations documented | clauded |
-| **Manufacturing domain** | Absent | 37+ files, 15 tools, DES engine, MiniZinc | clauded (unique) |
-| **Web dashboards** | Absent | 15 interactive dashboards | clauded (unique) |
-| **Test suite** | Not published | 2,003 tests, 84 files, randomized execution | clauded (measurable) |
-| **Circuit breaker** | Not documented | CLOSED/HALF_OPEN/OPEN state machine | clauded |
-| **Rate limiting** | Not documented | Per-user per-provider with IP ban | clauded |
-| **Context health** | Not documented | 4-indicator health monitor | clauded |
-| **Auto-skills** | Not documented | Detection, AI drafting, self-healing | clauded |
-| **Pack system** | Not present | 9 department packs, subscription model, AI builder | clauded (unique) |
-| **Voice (local)** | Not present locally | Speaches sidecar (Kokoro-82M + Faster-whisper) | clauded |
-| **Release discipline** | Not assessed | 62 versioned releases with audit trail | clauded (measurable) |
-| **Secret scanning** | Not documented | Pre-commit hook, 7 secret categories | clauded |
-| **Event triggers** | Not documented | Reactive autonomy, background task queue | clauded |
+| **Source lines** | Not published | 50,689 TypeScript lines across 159 files | luna (measurable) |
+| **Process isolation** | Gateway + Agent + Tool Server | 3 OS processes via fork() with IPC env whitelist | luna |
+| **Code sandbox** | None documented | V8 Worker isolate (64MB, SSRF blocklist) | luna |
+| **Tool permissions** | User approval | 43 tools, 4 risk tiers, per-user trust memory | luna |
+| **Database abstraction** | Varies | Knex (SQLite/MariaDB/PostgreSQL), 32 files | luna |
+| **Data isolation** | Not documented | 27 files enforce chat_id scoping, per-user web tokens | luna |
+| **Threat model** | Partial | 20 vectors with mitigations documented | luna |
+| **Manufacturing domain** | Absent | 37+ files, 15 tools, DES engine, MiniZinc | luna (unique) |
+| **Web dashboards** | Absent | 15 interactive dashboards | luna (unique) |
+| **Test suite** | Not published | 2,003 tests, 84 files, randomized execution | luna (measurable) |
+| **Circuit breaker** | Not documented | CLOSED/HALF_OPEN/OPEN state machine | luna |
+| **Rate limiting** | Not documented | Per-user per-provider with IP ban | luna |
+| **Context health** | Not documented | 4-indicator health monitor | luna |
+| **Auto-skills** | Not documented | Detection, AI drafting, self-healing | luna |
+| **Pack system** | Not present | 9 department packs, subscription model, AI builder | luna (unique) |
+| **Voice (local)** | Not present locally | Speaches sidecar (Kokoro-82M + Faster-whisper) | luna |
+| **Release discipline** | Not assessed | 62 versioned releases with audit trail | luna (measurable) |
+| **Secret scanning** | Not documented | Pre-commit hook, 7 secret categories | luna |
+| **Event triggers** | Not documented | Reactive autonomy, background task queue | luna |
 
 ---
 
 ## 8. Conclusion
 
-clauded was purpose-built for enterprise manufacturing operations over 191 commits spanning 45 days of continuous development. It shares no code, no architecture, and no deployment model with OpenClaw.
+luna was purpose-built for enterprise manufacturing operations over 191 commits spanning 45 days of continuous development. It shares no code, no architecture, and no deployment model with OpenClaw.
 
 The evidence is unambiguous:
 
 1. **Provenance:** Single author, single remote, no fork markers, no import commits. Every line of code traces to Manuel Campos commits beginning 2026-02-25.
 
-2. **Architecture:** clauded implements 5 architectural hardening layers (SA1-SA5) that do not exist in OpenClaw. The 3-process isolation model, V8 worker sandbox, and 43-tool policy engine are fundamentally different from OpenClaw's architecture.
+2. **Architecture:** luna implements 5 architectural hardening layers (SA1-SA5) that do not exist in OpenClaw. The 3-process isolation model, V8 worker sandbox, and 43-tool policy engine are fundamentally different from OpenClaw's architecture.
 
 3. **Domain:** 37+ manufacturing domain files, 15 specialized operations research tools, and 15 interactive web dashboards represent an entirely different product category. OpenClaw has zero manufacturing capability.
 
@@ -335,7 +335,7 @@ The evidence is unambiguous:
 
 5. **Governance:** 62 versioned releases with conventional commits, cleanup audit trails, and 21 documentation files reflect a mature development process, not a hasty fork.
 
-The claim that clauded is a fork of OpenClaw is factually incorrect. Any technical auditor with repository access can verify every claim in this document using the cited commands and file paths.
+The claim that luna is a fork of OpenClaw is factually incorrect. Any technical auditor with repository access can verify every claim in this document using the cited commands and file paths.
 
 ---
 

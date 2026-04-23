@@ -167,7 +167,7 @@ export function stripKanbanBlock(text: string): string {
  *
  * Assignee types:
  * - 'me'            — user handles this
- * - 'bot'           — clauded works on it autonomously
+ * - 'bot'           — Luna works on it autonomously
  * - 'collaborative' — both work together
  * - 'noted'         — reference only, no action needed
  */

@@ -29,7 +29,7 @@ import {
  * NO mocked data. Real functions, real DB, real-world messages.
  */
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-orch');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-orch');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'orch-test.db');
 

@@ -23,7 +23,7 @@ describe('SA3 process separation — real execution', () => {
 
   // ── Process 2 (tools): Real fork + real tool execution ──
 
-  describe('Process 2 (clauded-tools)', () => {
+  describe('Process 2 (luna-tools)', () => {
     it('spawns, sends ready, and executes get_time via IPC', async () => {
       const client = new ProcessClient('tools', 'dist/tools-process.js', TOOLS_PROCESS_ENV);
       clients.push(client);
@@ -104,7 +104,7 @@ describe('SA3 process separation — real execution', () => {
 
   // ── Process 3 (parsers): Real fork + real tool execution ──
 
-  describe('Process 3 (clauded-parsers)', () => {
+  describe('Process 3 (luna-parsers)', () => {
     it('spawns, sends ready, reports 2 tools', async () => {
       const client = new ProcessClient('parsers', 'dist/parsers-process.js', PARSERS_PROCESS_ENV);
       clients.push(client);

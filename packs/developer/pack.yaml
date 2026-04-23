@@ -7,7 +7,7 @@ description: >
   feature development workflow.
 level: 2
 department: engineering
-author: clauded
+author: luna
 capabilities:
   - "Level 3 feature request intake and PRD generation"
   - "Conversational requirement refinement (problem → workflow → outcome → scope → success criteria)"

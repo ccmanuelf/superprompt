@@ -1,11 +1,11 @@
-# clauded — Enhancement Roadmap
+# luna — Enhancement Roadmap
 
 > Last updated: 2026-04-06
 > Previous roadmap versions: `memory/roadmap.md` (2026-03-13), ROADMAP.md (2026-03-18, 2026-03-21, 2026-03-29)
 
 ## Summary
 
-clauded is evolving from personal AI assistant into a **company-wide AI operations platform** serving 9 departments. Core sprints S1-S16 + S9 complete plus architecture hardening (SA1-SA5) and workstation sprints (WS1-WS4). 2003 tests, 80+ files. Currently v1.0.0-rc.60.
+luna is evolving from personal AI assistant into a **company-wide AI operations platform** serving 9 departments. Core sprints S1-S16 + S9 complete plus architecture hardening (SA1-SA5) and workstation sprints (WS1-WS4). 2003 tests, 80+ files. Currently v1.0.0-rc.60.
 
 **Completed:** S1-S8 ✅ → S10-S14 ✅ → S16 ✅ → S15 ✅ → S9 ✅ → SA1-SA5 ✅ → WS1-WS4 ✅ → S4 ✅ → S3 ✅
 
@@ -44,7 +44,7 @@ clauded is evolving from personal AI assistant into a **company-wide AI operatio
 
 ## Sprint S1: Autonomy Core — COMPLETED (2026-03-18)
 
-**Goal:** Make clauded's memory smarter and its provider selection automatic.
+**Goal:** Make luna's memory smarter and its provider selection automatic.
 
 ### Feature 1: Episode Compression
 
@@ -123,13 +123,13 @@ AUTO_ROUTE=false    # Enable automatic provider routing (true/false)
 
 ## Sprint S2: Prompt Intelligence — COMPLETED (2026-03-18)
 
-**Goal:** Make clauded's AI responses higher quality through structured prompting patterns and safety guardrails.
+**Goal:** Make luna's AI responses higher quality through structured prompting patterns and safety guardrails.
 
 ### Feature 1: Superpowers Skills Adaptation
 
 Adapt 4 skills from [Superpowers](https://github.com/obra/superpowers) for personal assistant context:
 
-| Superpowers Skill | clauded Adaptation | Type | Implementation |
+| Superpowers Skill | luna Adaptation | Type | Implementation |
 |-------------------|--------------------|------|----------------|
 | **Systematic Debugging** | `debugger` — structured root-cause analysis | Built-in skill | 4-phase process: investigate → analyze patterns → hypothesize/test → implement. Circuit breaker: 3+ failed approaches = escalate to architectural review |
 | **Brainstorming** | `brainstormer` — design-first thinking | Built-in skill | One-question-at-a-time, YAGNI, explore before implementing. Adapted from dev workflow to research/analysis workflow |
@@ -180,7 +180,7 @@ Add the full `/help` command list to both Claude and Ollama system prompts so th
 
 ## Sprint S5: Proactive Messaging — COMPLETED (2026-03-18)
 
-**Goal:** Make clauded initiate conversations — follow-ups, reminders, digests, task completions.
+**Goal:** Make luna initiate conversations — follow-ups, reminders, digests, task completions.
 
 The bot should reach out to the user, not just respond. This is the single biggest differentiator between a chatbot and an assistant. Builds on existing scheduler infrastructure.
 
@@ -538,7 +538,7 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ## Sprint S14: ClawMFG Chat-Native Tools — COMPLETED (rc.22, 6 tools)
 
-**Goal:** 6 manufacturing optimization tools implemented as clauded Ollama tools + skills. Each tool accepts CSV/JSON input via Telegram, executes core algorithms locally, and returns results + visualizations.
+**Goal:** 6 manufacturing optimization tools implemented as luna Ollama tools + skills. Each tool accepts CSV/JSON input via Telegram, executes core algorithms locally, and returns results + visualizations.
 
 **Source specs:** Google Drive `ClawMFG_Suite_Implementation_Plan` (18 documents, evaluated 2026-03-22). Evaluation: `memory/project_clawmfg_evaluation.md`.
 
@@ -658,7 +658,7 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ## Sprint S15: ClawMFG Web Apps — COMPLETE ✅
 
-**Goal:** 7 manufacturing tools requiring interactive web UIs, implemented as dedicated dashboards served from clauded's web server (same pattern as board.html, learn.html). Each tool gets its own HTML page with WebSocket data flow.
+**Goal:** 7 manufacturing tools requiring interactive web UIs, implemented as dedicated dashboards served from luna's web server (same pattern as board.html, learn.html). Each tool gets its own HTML page with WebSocket data flow.
 
 **Design principle:** These are REAL engineering tools, not demos. Interactive visualizations, real-time updates, drag-and-drop where appropriate. A plant manager or IE should be able to use these for daily decisions.
 
@@ -734,7 +734,7 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ## Sprint S16: Manufacturing Simulations — COMPLETE ✅
 
-**Goal:** Discrete-event simulation (SimPy) and constraint optimization (MiniZinc) engines integrated into clauded for production modeling and optimal scheduling.
+**Goal:** Discrete-event simulation (SimPy) and constraint optimization (MiniZinc) engines integrated into luna for production modeling and optimal scheduling.
 
 ### SimPy Integration
 - Python-based discrete-event simulation via subprocess execution in Docker
@@ -760,7 +760,7 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ## Sprint S9: User Documentation — COMPLETED (2026-03-29)
 
-**Goal:** Comprehensive user documentation for all clauded features.
+**Goal:** Comprehensive user documentation for all luna features.
 
 ### Deliverables
 - `docs/user-guide.md` — Complete user guide (9-step Docker setup, all features, config scope, env var reference)
@@ -780,7 +780,7 @@ Both providers get GitHub/Render access, each using their native mechanism:
 ## Forward Roadmap (2026-04-06)
 
 > Updated based on CTO architecture review, department E2E feedback, and strategic direction.
-> clauded is evolving from an engineering tool into a **company-wide AI operations platform**.
+> luna is evolving from an engineering tool into a **company-wide AI operations platform**.
 >
 > **Target departments (9):** Manufacturing, Engineering, Customer Service, Supply Chain/Procurement,
 > HR, Finance, Business Development, Warehousing, Trade Compliance.
@@ -895,19 +895,19 @@ Currently, `src/index.ts` imports and initializes everything directly. Adding S1
 
 ## Sprint SA3: Process Separation — COMPLETE (rc.18)
 
-**Goal:** Split clauded into multiple processes with minimal shared state. Reduces blast radius if any subsystem is compromised or crashes.
+**Goal:** Split luna into multiple processes with minimal shared state. Reduces blast radius if any subsystem is compromised or crashes.
 
 **CTO concern addressed:** "Promote from well-defended monolith to layered multi-process system."
 
 ### Target Architecture
 
 ```
-Process 1: clauded-core
+Process 1: luna-core
   - Router, memory, skills, packs, scheduler, proactive messaging
   - Telegram + Matrix + Web platform adapters
   - Communicates with Process 2 via IPC or HTTP
 
-Process 2: clauded-tools
+Process 2: luna-tools
   - Tool execution (Worker thread sandbox from SA1)
   - Claude CLI subprocess
   - File parsing (PDF, XLSX, DOCX — untrusted input)
@@ -924,7 +924,7 @@ Process 3: Database
 - IPC channel (or local HTTP) between core and tools
 - Process 2 runs with restricted filesystem access (no .env, no store/)
 - Process 1 manages lifecycle of Process 2 (start, health check, restart)
-- Docker Compose updated: `clauded-core` + `clauded-tools` + `clauded-speaches`
+- Docker Compose updated: `luna-core` + `luna-tools` + `luna-speaches`
 
 ### Estimated effort: 2-3 weeks
 
@@ -1026,9 +1026,9 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 ## Auto-Generated Skills — CORE SUBSYSTEM — COMPLETE (rc.18)
 
-> Note: Originally planned as Sprint S19. Reclassified as a core subsystem per CTO direction (2026-04-03). Auto-skills are as fundamental as memory — they're how clauded learns, regardless of department or role.
+> Note: Originally planned as Sprint S19. Reclassified as a core subsystem per CTO direction (2026-04-03). Auto-skills are as fundamental as memory — they're how luna learns, regardless of department or role.
 
-**Goal:** When a user completes a complex multi-step task successfully, clauded offers to save the workflow as a reusable skill. This applies to every department, every user, every task.
+**Goal:** When a user completes a complex multi-step task successfully, luna offers to save the workflow as a reusable skill. This applies to every department, every user, every task.
 
 **Source:** Hermes Agent evaluation — auto-skill-generation identified as the single highest-value concept to adopt.
 
@@ -1041,9 +1041,9 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 ### Why It's Core (Not a Feature Sprint)
 - Every department benefits: manufacturing, finance, supply chain, HR, engineering
-- Each user's clauded experience gets smarter over time without developer intervention
+- Each user's luna experience gets smarter over time without developer intervention
 - Client integrations (SaaS phase) auto-learn client-specific patterns
-- Combined with the quality techniques (rc.9/rc.10), clauded doesn't just answer — it learns and improves
+- Combined with the quality techniques (rc.9/rc.10), luna doesn't just answer — it learns and improves
 
 ### Implemented as part of: SA2 (Formal Application Core)
 ### Estimated effort: 1-2 weeks within SA2 scope
@@ -1052,7 +1052,7 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 
 ## Sprint S3: Production Deployment — COMPLETED (rc.61, WS1-WS4, InMotion guide)
 
-**Goal:** Deploy clauded to production infrastructure for company-wide use across 9 departments.
+**Goal:** Deploy luna to production infrastructure for company-wide use across 9 departments.
 
 **Status:** Foundational work complete (Knex DB abstraction, Caddy reverse proxy, production docker-compose). Pending final deployment approval. Hosting options evaluated: InMotion dedicated server (most likely), VMware VM, or Render.
 
@@ -1074,14 +1074,14 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 - SQLite extensions or network DB (sqlite-vec for embeddings, or pgvector/MariaDB equivalent)
 - Web UI with VOICE_WEB_TOKEN/PORT (dashboards are core, not optional)
 - Quality techniques (rc.9/rc.10 patterns — core behavior for all users)
-- Auto-generated skills (core subsystem — clauded learns from every user)
+- Auto-generated skills (core subsystem — luna learns from every user)
 
 ### Database Architecture
 - **Development/E2E:** SQLite with WAL mode (`DB_DRIVER=sqlite`, default)
 - **Production:** MariaDB (`DB_DRIVER=mariadb`) or PostgreSQL (`DB_DRIVER=postgres`)
 - **All database access through Knex** query builder — no raw SQLite calls remain
 - **Migration:** `npx ts-node scripts/migrate-database.ts` migrates schema across drivers
-- **Multi-instance requirement:** If a single Anthropic Max $200/month account is insufficient for company-wide usage, multiple clauded instances with separate Anthropic accounts connect to the SAME shared database
+- **Multi-instance requirement:** If a single Anthropic Max $200/month account is insufficient for company-wide usage, multiple luna instances with separate Anthropic accounts connect to the SAME shared database
 - **`docker-compose.production.yml`** supports multi-instance deployments
 
 ### Anthropic Max Capacity Assessment
@@ -1092,7 +1092,7 @@ After SA5, the manufacturing tools become a pack that happens to be built at Lev
 | One department (15-20 users) | 300-500 | Likely yes | Single instance |
 | Company-wide (80-150 users) | 2,000-5,000 | Almost certainly no | Multiple instances, shared DB |
 
-If multiple accounts are needed, each department (or group of departments) gets its own clauded instance with its own Anthropic Max account, all connected to one shared database — single source of truth company-wide.
+If multiple accounts are needed, each department (or group of departments) gets its own luna instance with its own Anthropic Max account, all connected to one shared database — single source of truth company-wide.
 
 ### Remaining Scope (when approved)
 - Database migration execution: SQLite → MariaDB or PostgreSQL via `DB_DRIVER` + `scripts/migrate-database.ts` ✅ ready
@@ -1114,7 +1114,7 @@ If multiple accounts are needed, each department (or group of departments) gets 
 > Board of Directors strategic direction (2026-04-03). Post-production deployment.
 > Full analysis: `reference/saas-trajectory.md`
 
-**Vision:** clauded becomes a managed integration platform that generates recurring revenue. Novalink operates the AI middleware connecting client systems to Novalink's production floor. Clients connect their Shopify, ERP, or EDI endpoints — clauded handles the translation, order flow, status updates, and notifications.
+**Vision:** luna becomes a managed integration platform that generates recurring revenue. Novalink operates the AI middleware connecting client systems to Novalink's production floor. Clients connect their Shopify, ERP, or EDI endpoints — luna handles the translation, order flow, status updates, and notifications.
 
 ### Service Tiers
 
@@ -1123,7 +1123,7 @@ If multiple accounts are needed, each department (or group of departments) gets 
 | **Basic** | Submit orders via Telegram, receive production status updates | Included in manufacturing contract |
 | **Standard** | API integration — orders auto-ingested from client's Shopify/ERP, shipments auto-posted back | Monthly integration fee |
 | **Premium** | Full EDI integration + BOM visibility + shortage alerts + approval workflows | Higher monthly fee |
-| **Custom** | Dedicated clauded pack with client-specific tools, skills, and automation | Professional services engagement |
+| **Custom** | Dedicated luna pack with client-specific tools, skills, and automation | Professional services engagement |
 
 ### How It Works (Architecture)
 
@@ -1150,7 +1150,7 @@ packs/
 │       └── betacorp-coordinator.md
 ```
 
-**Declarative HTTP tools** (already existing in clauded) enable API integrations in markdown — no TypeScript required for standard REST APIs. Example Shopify order pull:
+**Declarative HTTP tools** (already existing in luna) enable API integrations in markdown — no TypeScript required for standard REST APIs. Example Shopify order pull:
 
 ```markdown
 ---
@@ -1165,7 +1165,7 @@ endpoint:
 ---
 ```
 
-**Auto-generated skills** learn client-specific patterns: the first ACME order takes manual processing; by the tenth, clauded offers to automate the entire workflow.
+**Auto-generated skills** learn client-specific patterns: the first ACME order takes manual processing; by the tenth, luna offers to automate the entire workflow.
 
 ### What's Needed Beyond Current Architecture
 
@@ -1235,13 +1235,13 @@ endpoint:
 
 ## External Source Evaluations (2026-03-18)
 
-Comprehensive evaluation of 7 external sources against clauded's architecture:
+Comprehensive evaluation of 7 external sources against luna's architecture:
 
 ### 1. Slate (Random Labs) — Thread Weaving & Episodes
 - **Paper:** https://randomlabs.ai/blog/slate (33 pages, read in full)
 - **Key concept:** Threads as bounded worker units producing compressed "episodes." Episodes compose back into orchestrator context. Solves working memory degradation, strategy/tactics balance, context synchronization.
 - **Adopted:** Episode compression concept for memory system (S1)
-- **Not adopted:** Full thread weaving architecture (clauded is a chatbot, not a coding agent — threads are overkill)
+- **Not adopted:** Full thread weaving architecture (luna is a chatbot, not a coding agent — threads are overkill)
 - **Connection to existing work:** Maps to professor.md Filtration Analysis framework (relevance → feasibility → impact filters)
 
 ### 2. gstack (Garry Tan) — 21 Structured Skills for Claude Code
@@ -1253,7 +1253,7 @@ Comprehensive evaluation of 7 external sources against clauded's architecture:
 ### 3. open-terminal (Open WebUI) — Execution Sandbox
 - **Repo:** https://github.com/open-webui/open-terminal (2k stars, MIT)
 - **Key concept:** REST API-accessible shell for AI agents
-- **Not adopted:** Clauded already has execution via Claude CLI subprocess and Ollama in-process tools. Adding HTTP sandbox would increase complexity without clear benefit.
+- **Not adopted:** Luna already has execution via Claude CLI subprocess and Ollama in-process tools. Adding HTTP sandbox would increase complexity without clear benefit.
 - **Revisit if:** Ollama needs sandboxed arbitrary code execution in the future
 
 ### 4. Superpowers (obra) — Composable Skills for AI Agents
@@ -1266,7 +1266,7 @@ Comprehensive evaluation of 7 external sources against clauded's architecture:
 ### 5. build-your-own-openclaw — AI Agent Tutorial
 - **Repo:** https://github.com/czl9707/build-your-own-openclaw (425 stars)
 - **Key concept:** 18-step tutorial building an AI agent (skills, tools, persistence, channels, scheduling)
-- **Not adopted:** Clauded already implements 90%+ of this tutorial's scope
+- **Not adopted:** Luna already implements 90%+ of this tutorial's scope
 - **Noted:** Multi-agent routing and proactive messaging as nice-to-have (deferred)
 
 ### 6. HiClaw (Alibaba) — Multi-Agent OS
@@ -1277,7 +1277,7 @@ Comprehensive evaluation of 7 external sources against clauded's architecture:
 ### 7. Oracle Cloud Always Free — Deployment
 - **Article:** https://pub.towardsai.net/how-to-run-your-own-ai-assistant-for-free-openclaw-on-oracle-cloud-with-ollama-dead8ae62726
 - **Specs:** 4 ARM cores, 24GB RAM, 200GB storage, free forever
-- **Assessment:** Feasible for clauded + Ollama. Voice (Speaches) tight on RAM. ARM image compatibility needs verification. Instance reclamation risk.
+- **Assessment:** Feasible for luna + Ollama. Voice (Speaches) tight on RAM. ARM image compatibility needs verification. Instance reclamation risk.
 - **Status:** Deferred (S3) — user evaluating paid alternatives
 
 ---

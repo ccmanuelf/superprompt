@@ -1,5 +1,5 @@
 #!/bin/sh
-# Entrypoint for clauded Docker container.
+# Entrypoint for Luna Docker container.
 # Ensures Claude CLI has the required onboarding flag and config.
 
 CLAUDE_JSON=/home/node/.claude.json
@@ -15,7 +15,7 @@ if [ ! -f "$CLAUDE_JSON" ] || ! grep -q "hasCompletedOnboarding" "$CLAUDE_JSON" 
 fi
 
 # Clean up stale PID file from previous container runs
-rm -f /app/store/clauded.pid
+rm -f /app/store/luna.pid
 
 # Pre-load Speaches models (non-blocking — runs in background)
 SPEACHES_URL="${SPEACHES_URL:-http://speaches:8000/v1}"

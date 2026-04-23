@@ -2,7 +2,7 @@
 
 ## Dual-Model Strategy
 
-clauded uses two Ollama models with automatic switching:
+luna uses two Ollama models with automatic switching:
 
 - **Chat model** (`OLLAMA_CHAT_MODEL`): `qwen3:4b`
   - Used for general conversation, reasoning, analysis
@@ -236,7 +236,7 @@ async function runAgenticLoop(
 ### System Prompt for Tool Model
 
 ```
-You are clauded, a helpful AI assistant. You have access to tools that let you interact with the system.
+You are luna, a helpful AI assistant. You have access to tools that let you interact with the system.
 
 When the user asks you to do something that requires tools, use them. Don't say you can't do something if there's a tool that can help.
 

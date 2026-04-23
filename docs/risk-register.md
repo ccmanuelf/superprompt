@@ -1,4 +1,4 @@
-# clauded — Risk Register
+# luna — Risk Register
 
 **Version:** v1.0.0-rc.62 | April 2026
 **Owner:** CTO
@@ -50,4 +50,4 @@
 
 ---
 
-*clauded v1.0.0-rc.62 — Risk Register*
+*luna v1.0.0-rc.62 — Risk Register*

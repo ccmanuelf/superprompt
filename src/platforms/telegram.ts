@@ -1061,7 +1061,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
   bot.command('start', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
     await ctx.reply(
-      'Hello! I\'m <b>clauded</b>, your AI engineering partner.\n\n' +
+      'Hello! I\'m <b>Luna</b>, your AI engineering partner.\n\n' +
 
         '<b>💬 Chat &amp; AI</b>\n' +
         '/newchat — Fresh session  •  /memory — Stored memories\n' +
@@ -1098,7 +1098,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
   bot.command('help', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
     await ctx.reply(
-      '<b>clauded — Command Reference</b>\n\n' +
+      '<b>Luna — Command Reference</b>\n\n' +
 
         '<b>💬 Chat &amp; AI</b>\n' +
         '/newchat — Clear conversation history\n' +
@@ -3598,7 +3598,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
               '1. Edit <code>pack.yaml</code> — describe capabilities &amp; intent patterns\n' +
               '2. Add tools in <code>tools/*.md</code>\n' +
               '3. Add skills in <code>skills/*.md</code>\n' +
-              '4. Restart clauded or use /reload\n' +
+              '4. Restart Luna or use /reload\n' +
               '5. Verify with <code>/pack info ' + name + '</code>\n\n' +
               'See <code>docs/customization-guide.md</code> for the full guide.',
             { parse_mode: 'HTML' },

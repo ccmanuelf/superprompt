@@ -1,7 +1,7 @@
 /**
  * Auto-Generated Skills — Core Engine
  *
- * When a user completes a complex task successfully, clauded offers to save
+ * When a user completes a complex task successfully, Luna offers to save
  * the workflow as a reusable skill. This is how the Jarvis-like assistant
  * learns — as fundamental as memory.
  *

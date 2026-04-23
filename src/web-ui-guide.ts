@@ -1,7 +1,7 @@
 /**
  * Web UI Knowledge Base — onboarding guidance for every web dashboard.
  *
- * clauded uses this to:
+ * Luna uses this to:
  * 1. Proactively suggest the right web UI in conversation context
  * 2. Provide onboarding guidance when users ask "how do I use /sim?"
  * 3. Know what each dashboard does so it doesn't rebuild existing features
@@ -33,7 +33,7 @@ export const WEB_UI_GUIDES: WebUIGuide[] = [
     url: '/',
     name: 'Voice Chat',
     nameEs: 'Chat de Voz',
-    description: 'Browser-based voice conversation with clauded. Speak naturally and get spoken responses.',
+    description: 'Browser-based voice conversation with Luna. Speak naturally and get spoken responses.',
     descriptionEs: 'Conversacion por voz desde el navegador. Habla naturalmente y recibe respuestas habladas.',
     features: [
       'Real-time speech-to-text (99 languages)',
@@ -50,7 +50,7 @@ export const WEB_UI_GUIDES: WebUIGuide[] = [
     whenToSuggest: [
       'User mentions hands-free or voice interaction',
       'User is on production floor (can\'t type easily)',
-      'User asks about browser access to clauded',
+      'User asks about browser access to Luna',
     ],
     tips: [
       'You need an access token to connect — ask your IT administrator or department champion for it',
@@ -349,7 +349,7 @@ export const WEB_UI_GUIDES: WebUIGuide[] = [
 
 /**
  * Build the web UI awareness prompt for injection into the system prompt.
- * This teaches clauded to proactively suggest web UIs in the right context.
+ * This teaches Luna to proactively suggest web UIs in the right context.
  */
 export function buildWebUIAwarenessPrompt(): string {
   const lines = WEB_UI_GUIDES.map((g) => {

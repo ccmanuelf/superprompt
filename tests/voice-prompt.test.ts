@@ -22,8 +22,8 @@ const CLAUDE_DOCUMENT_PROMPT = '## Document Capabilities\n\n### Reading Files\nW
 
 // ── Ollama system prompts matching src/providers/ollama.ts ───
 
-const TOOL_MODEL_SYSTEM_PROMPT = 'You are clauded, a helpful AI assistant. You have access to tools...';
-const CHAT_MODEL_SYSTEM_PROMPT = `You are clauded, a helpful AI assistant with strong reasoning capabilities. Be helpful, concise, and accurate.
+const TOOL_MODEL_SYSTEM_PROMPT = 'You are Luna (Inge Luna in Spanish), a helpful AI assistant. You have access to tools...';
+const CHAT_MODEL_SYSTEM_PROMPT = `You are Luna (Inge Luna in Spanish), a helpful AI assistant with strong reasoning capabilities. Be helpful, concise, and accurate.
 
 IMPORTANT: Always respond in the same language the user's latest message is written in. If they switch languages, you switch too — immediately, without being asked.`;
 

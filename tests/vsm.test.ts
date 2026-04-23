@@ -13,7 +13,7 @@ vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('../src/config.js', () => ({
-  STORE_DIR: resolve(tmpdir(), 'clauded-test-vsm'),
+  STORE_DIR: resolve(tmpdir(), 'luna-test-vsm'),
   config: { NODE_ENV: 'test' },
 }));
 

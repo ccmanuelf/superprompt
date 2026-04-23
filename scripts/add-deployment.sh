@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# clauded — Add New Deployment
+# Luna — Add New Deployment
 # ═══════════════════════════════════════════════════════════════
 #
 # Creates the directory structure and env file for a new deployment.
@@ -34,7 +34,7 @@ WEBHOOK_SECRET=$(openssl rand -hex 32)
 
 # Create env file
 cat > "$ENV_FILE" << EOF
-# clauded Deployment ${DEPLOY_NUM}: ${DEPLOY_NAME}
+# Luna Deployment ${DEPLOY_NUM}: ${DEPLOY_NAME}
 # Created: $(date -Iseconds)
 
 DEPLOYMENT_NAME=${DEPLOY_NAME}
@@ -59,9 +59,9 @@ EOF
 if [ "$ISOLATED" = "--isolated" ]; then
   echo "" >> "$ENV_FILE"
   echo "# Isolated database (client data separation)" >> "$ENV_FILE"
-  echo "DB_NAME=clauded_deploy_${DEPLOY_NUM}" >> "$ENV_FILE"
+  echo "DB_NAME=luna_deploy_${DEPLOY_NUM}" >> "$ENV_FILE"
   echo ""
-  echo "  Mode: ISOLATED database (clauded_deploy_${DEPLOY_NUM})"
+  echo "  Mode: ISOLATED database (luna_deploy_${DEPLOY_NUM})"
 else
   echo ""
   echo "  Mode: SHARED database (uses .env.production DB_NAME)"

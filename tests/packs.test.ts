@@ -298,11 +298,11 @@ describe('Docs Files', () => {
     });
   }
 
-  it('README.md exists and mentions clauded', () => {
+  it('README.md exists and mentions Luna', () => {
     const path = resolve(process.cwd(), 'README.md');
     expect(existsSync(path)).toBe(true);
     const content = readFileSync(path, 'utf-8');
-    expect(content).toContain('clauded');
+    expect(content).toContain('Luna');
     expect(content).toContain('Docker');
   });
 

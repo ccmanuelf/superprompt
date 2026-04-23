@@ -80,7 +80,7 @@ Requires `VOICE_WEB_PORT=3030` and `VOICE_WEB_TOKEN` set in `.env`, container po
 |---|------|----------|--------|
 | 4.0a | Add `VOICE_WEB_PORT=3030` and `VOICE_WEB_TOKEN=<token>` to `.env` | Vars set | [ ] |
 | 4.0b | Uncomment port in `docker-compose.yml`: `"127.0.0.1:3030:3030"` | Port exposed | [ ] |
-| 4.0c | Rebuild: `docker compose up -d --build clauded` | Container starts, logs show "Voice web server started" | [ ] |
+| 4.0c | Rebuild: `docker compose up -d --build luna` | Container starts, logs show "Voice web server started" | [ ] |
 
 ### 4.1 Connection & Auth
 
@@ -149,4 +149,4 @@ Tests that combine voice, forge, and existing features.
 - All Phase 1-3 tests pass on Telegram
 - Phase 4 tests pass in browser (Chrome/Safari)
 - Phase 5 cross-feature tests pass
-- Zero crashes or unhandled errors in `docker logs clauded-bot`
+- Zero crashes or unhandled errors in `docker logs luna-bot`

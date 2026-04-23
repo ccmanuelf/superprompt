@@ -1,6 +1,6 @@
-# clauded -- InMotion Dedicated Server Deployment Guide
+# luna -- InMotion Dedicated Server Deployment Guide
 
-Complete deployment guide for clauded on an InMotion Hosting dedicated server running AlmaLinux 8. Covers MariaDB and PostgreSQL with equal detail -- the CTO chooses which database at deploy time.
+Complete deployment guide for luna on an InMotion Hosting dedicated server running AlmaLinux 8. Covers MariaDB and PostgreSQL with equal detail -- the CTO chooses which database at deploy time.
 
 ---
 
@@ -39,10 +39,10 @@ Complete deployment guide for clauded on an InMotion Hosting dedicated server ru
 ### Before You Begin
 
 1. **Root SSH access** to the InMotion server (provided in your welcome email).
-2. **Domain name** pointed to the server IP via an A record (e.g., `clauded.yourcompany.com`). DNS propagation takes up to 24 hours -- set this first.
+2. **Domain name** pointed to the server IP via an A record (e.g., `luna.yourcompany.com`). DNS propagation takes up to 24 hours -- set this first.
 3. **Telegram bot tokens** -- one per deployment. Create bots via [@BotFather](https://t.me/BotFather) on Telegram. Each bot must have a unique token.
 4. **Claude OAuth token** -- generated on a machine with Claude CLI installed via `claude setup-token`. This is a subscription token (no per-token API cost).
-5. **Git repository access** -- clone URL for the clauded repo.
+5. **Git repository access** -- clone URL for the luna repo.
 
 ---
 
@@ -60,15 +60,15 @@ dnf install -y epel-release
 dnf install -y git curl wget openssl tar jq htop tmux
 ```
 
-### 2.2 Create the clauded System User
+### 2.2 Create the luna System User
 
-Never run clauded as root. Create a dedicated system user:
+Never run luna as root. Create a dedicated system user:
 
 ```bash
-useradd -r -m -s /bin/bash -d /opt/clauded clauded
-passwd clauded  # set a strong password
+useradd -r -m -s /bin/bash -d /opt/luna luna
+passwd luna  # set a strong password
 
-# Allow clauded user to run Docker (added to docker group in section 2.5)
+# Allow luna user to run Docker (added to docker group in section 2.5)
 ```
 
 ### 2.3 Configure firewalld
@@ -144,13 +144,13 @@ docker --version          # Docker version 27.x or later
 docker compose version    # Docker Compose version v2.x
 ```
 
-### 2.6 Add clauded User to Docker Group
+### 2.6 Add luna User to Docker Group
 
 ```bash
-usermod -aG docker clauded
+usermod -aG docker luna
 
-# Verify (as clauded user)
-su - clauded -c "docker ps"
+# Verify (as luna user)
+su - luna -c "docker ps"
 ```
 
 ### 2.7 Configure Docker Daemon
@@ -184,7 +184,7 @@ systemctl restart docker
 
 ## 3. Database Setup
 
-clauded supports both MariaDB and PostgreSQL via the `StorageProvider` abstraction. Choose ONE. Both run inside Docker (defined in `docker-compose.production.yml`) and are never exposed outside the internal Docker network.
+luna supports both MariaDB and PostgreSQL via the `StorageProvider` abstraction. Choose ONE. Both run inside Docker (defined in `docker-compose.production.yml`) and are never exposed outside the internal Docker network.
 
 ---
 
@@ -200,8 +200,8 @@ The production compose file uses `mariadb:11` (MariaDB 11.x LTS). No host-level 
 DB_DRIVER=mariadb
 DB_HOST=mariadb
 DB_PORT=3306
-DB_NAME=clauded
-DB_USER=clauded
+DB_NAME=luna
+DB_USER=luna
 DB_PASSWORD=<generate-with-openssl-rand-base64-32>
 DB_ROOT_PASSWORD=<generate-a-different-strong-password>
 DB_POOL_MIN=2
@@ -222,38 +222,38 @@ docker compose -f docker-compose.production.yml --profile mariadb up -d mariadb
 
 # Wait for healthy status
 docker compose -f docker-compose.production.yml ps mariadb
-# Should show: clauded-mariadb   ... (healthy)
+# Should show: luna-mariadb   ... (healthy)
 ```
 
 #### 3a.4 Verify Database and User
 
 ```bash
 # Connect as root to verify
-docker exec -it clauded-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
+docker exec -it luna-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
   SHOW DATABASES;
-  SELECT User, Host FROM mysql.user WHERE User='clauded';
+  SELECT User, Host FROM mysql.user WHERE User='luna';
 "
 ```
 
-The `clauded` database and user are created automatically by the MariaDB image from the `MYSQL_DATABASE`, `MYSQL_USER`, and `MYSQL_PASSWORD` environment variables.
+The `luna` database and user are created automatically by the MariaDB image from the `MYSQL_DATABASE`, `MYSQL_USER`, and `MYSQL_PASSWORD` environment variables.
 
 #### 3a.5 Create Isolated Databases (for Client Mode)
 
 If you plan to run isolated deployments (section 8), pre-create their databases:
 
 ```bash
-docker exec -it clauded-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
-  CREATE DATABASE IF NOT EXISTS clauded_deploy_3;
-  CREATE DATABASE IF NOT EXISTS clauded_deploy_4;
-  GRANT ALL PRIVILEGES ON clauded_deploy_3.* TO 'clauded'@'%';
-  GRANT ALL PRIVILEGES ON clauded_deploy_4.* TO 'clauded'@'%';
+docker exec -it luna-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
+  CREATE DATABASE IF NOT EXISTS luna_deploy_3;
+  CREATE DATABASE IF NOT EXISTS luna_deploy_4;
+  GRANT ALL PRIVILEGES ON luna_deploy_3.* TO 'luna'@'%';
+  GRANT ALL PRIVILEGES ON luna_deploy_4.* TO 'luna'@'%';
   FLUSH PRIVILEGES;
 "
 ```
 
 #### 3a.6 Connection Pooling
 
-Connection pooling is handled application-side by the clauded `StorageProvider`. The `DB_POOL_MIN` and `DB_POOL_MAX` settings in `.env.production` control pool size:
+Connection pooling is handled application-side by the luna `StorageProvider`. The `DB_POOL_MIN` and `DB_POOL_MAX` settings in `.env.production` control pool size:
 
 | Setting | Default | Recommended (10 deployments) |
 |---------|---------|------------------------------|
@@ -263,7 +263,7 @@ Connection pooling is handled application-side by the clauded `StorageProvider`.
 MariaDB's default `max_connections` is 151. For more than 10 deployments, increase it:
 
 ```bash
-docker exec -it clauded-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
+docker exec -it luna-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
   SET GLOBAL max_connections = 300;
 "
 ```
@@ -292,15 +292,15 @@ volumes:
 
 MariaDB is already secured by default in the production compose file:
 
-- **No host port binding** -- accessible only on Docker's internal `clauded-net` network.
-- **Non-root application user** -- the `clauded` user has privileges only on its own database(s).
+- **No host port binding** -- accessible only on Docker's internal `luna-net` network.
+- **Non-root application user** -- the `luna` user has privileges only on its own database(s).
 - **Health checks** -- Docker restarts unhealthy containers automatically.
 
 Additional hardening:
 
 ```bash
 # Remove the test database (if present)
-docker exec -it clauded-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
+docker exec -it luna-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
   DROP DATABASE IF EXISTS test;
   DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
   FLUSH PRIVILEGES;
@@ -309,51 +309,51 @@ docker exec -it clauded-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
 
 #### 3a.8 Backup Strategy
 
-Create `/opt/clauded/scripts/backup-mariadb.sh`:
+Create `/opt/luna/scripts/backup-mariadb.sh`:
 
 ```bash
 #!/bin/bash
-# MariaDB backup script for clauded
-# Run via cron: 0 2 * * * /opt/clauded/scripts/backup-mariadb.sh
+# MariaDB backup script for luna
+# Run via cron: 0 2 * * * /opt/luna/scripts/backup-mariadb.sh
 
 set -euo pipefail
 
-BACKUP_DIR="/opt/clauded/backups/mariadb"
+BACKUP_DIR="/opt/luna/backups/mariadb"
 RETENTION_DAYS=30
 DATE=$(date +%Y%m%d-%H%M%S)
-CONTAINER="clauded-mariadb"
+CONTAINER="luna-mariadb"
 
 mkdir -p "${BACKUP_DIR}"
 
 # Dump all databases
 docker exec "${CONTAINER}" mariadb-dump \
   -u root \
-  -p"$(grep DB_ROOT_PASSWORD /opt/clauded/.env.production | cut -d= -f2)" \
+  -p"$(grep DB_ROOT_PASSWORD /opt/luna/.env.production | cut -d= -f2)" \
   --all-databases \
   --single-transaction \
   --routines \
   --triggers \
   --events \
-  | gzip > "${BACKUP_DIR}/clauded-mariadb-${DATE}.sql.gz"
+  | gzip > "${BACKUP_DIR}/luna-mariadb-${DATE}.sql.gz"
 
 # Remove backups older than retention period
 find "${BACKUP_DIR}" -name "*.sql.gz" -mtime +${RETENTION_DAYS} -delete
 
-echo "[$(date -Iseconds)] MariaDB backup complete: clauded-mariadb-${DATE}.sql.gz"
+echo "[$(date -Iseconds)] MariaDB backup complete: luna-mariadb-${DATE}.sql.gz"
 ```
 
 ```bash
-chmod +x /opt/clauded/scripts/backup-mariadb.sh
+chmod +x /opt/luna/scripts/backup-mariadb.sh
 
 # Schedule daily at 2:00 AM
-crontab -l 2>/dev/null | cat - <(echo "0 2 * * * /opt/clauded/scripts/backup-mariadb.sh >> /opt/clauded/backups/backup.log 2>&1") | crontab -
+crontab -l 2>/dev/null | cat - <(echo "0 2 * * * /opt/luna/scripts/backup-mariadb.sh >> /opt/luna/backups/backup.log 2>&1") | crontab -
 ```
 
 #### 3a.9 Restore from Backup
 
 ```bash
-gunzip < /opt/clauded/backups/mariadb/clauded-mariadb-YYYYMMDD-HHMMSS.sql.gz \
-  | docker exec -i clauded-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}"
+gunzip < /opt/luna/backups/mariadb/luna-mariadb-YYYYMMDD-HHMMSS.sql.gz \
+  | docker exec -i luna-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}"
 ```
 
 ---
@@ -370,8 +370,8 @@ The production compose file uses `postgres:16-alpine` (PostgreSQL 16.x on Alpine
 DB_DRIVER=postgres
 DB_HOST=postgres
 DB_PORT=5432
-DB_NAME=clauded
-DB_USER=clauded
+DB_NAME=luna
+DB_USER=luna
 DB_PASSWORD=<generate-with-openssl-rand-base64-32>
 DB_POOL_MIN=2
 DB_POOL_MAX=20
@@ -392,18 +392,18 @@ docker compose -f docker-compose.production.yml --profile postgres up -d postgre
 
 # Wait for healthy status
 docker compose -f docker-compose.production.yml ps postgres
-# Should show: clauded-postgres   ... (healthy)
+# Should show: luna-postgres   ... (healthy)
 ```
 
 #### 3b.4 Verify Database and User
 
 ```bash
-docker exec -it clauded-postgres psql -U clauded -d clauded -c "
+docker exec -it luna-postgres psql -U luna -d luna -c "
   SELECT current_database(), current_user, version();
 "
 ```
 
-The `clauded` database and user are created automatically by the PostgreSQL image from the `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` environment variables.
+The `luna` database and user are created automatically by the PostgreSQL image from the `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` environment variables.
 
 #### 3b.5 Install pgvector Extension (for Vector Search)
 
@@ -420,7 +420,7 @@ Then enable the extension:
 ```bash
 docker compose -f docker-compose.production.yml --profile postgres up -d postgres
 
-docker exec -it clauded-postgres psql -U clauded -d clauded -c "
+docker exec -it luna-postgres psql -U luna -d luna -c "
   CREATE EXTENSION IF NOT EXISTS vector;
   SELECT * FROM pg_extension WHERE extname = 'vector';
 "
@@ -431,9 +431,9 @@ If you do not need vector search, the default `postgres:16-alpine` image is suff
 #### 3b.6 Create Isolated Databases (for Client Mode)
 
 ```bash
-docker exec -it clauded-postgres psql -U clauded -c "
-  CREATE DATABASE clauded_deploy_3 OWNER clauded;
-  CREATE DATABASE clauded_deploy_4 OWNER clauded;
+docker exec -it luna-postgres psql -U luna -c "
+  CREATE DATABASE luna_deploy_3 OWNER luna;
+  CREATE DATABASE luna_deploy_4 OWNER luna;
 "
 ```
 
@@ -473,13 +473,13 @@ Alternatively, for PgBouncer-based connection pooling (external pooler), add a P
 ```yaml
 pgbouncer:
   image: bitnami/pgbouncer:1
-  container_name: clauded-pgbouncer
+  container_name: luna-pgbouncer
   environment:
     - POSTGRESQL_HOST=postgres
     - POSTGRESQL_PORT=5432
-    - POSTGRESQL_USERNAME=clauded
+    - POSTGRESQL_USERNAME=luna
     - POSTGRESQL_PASSWORD=${DB_PASSWORD}
-    - POSTGRESQL_DATABASE=clauded
+    - POSTGRESQL_DATABASE=luna
     - PGBOUNCER_MAX_CLIENT_CONN=300
     - PGBOUNCER_DEFAULT_POOL_SIZE=30
     - PGBOUNCER_POOL_MODE=transaction
@@ -487,7 +487,7 @@ pgbouncer:
     postgres:
       condition: service_healthy
   networks:
-    - clauded-net
+    - luna-net
   restart: unless-stopped
   profiles:
     - postgres
@@ -500,7 +500,7 @@ When using PgBouncer, set `DB_HOST=pgbouncer` and `DB_PORT=6432` in `.env.produc
 PostgreSQL is already secured in the production compose file:
 
 - **No host port binding** -- internal Docker network only.
-- **Single application user** -- `clauded` user owns only its database(s).
+- **Single application user** -- `luna` user owns only its database(s).
 - **Health checks** via `pg_isready`.
 
 Additional hardening -- restrict connections to the Docker subnet. Create `docker/pg_hba_custom.conf`:
@@ -508,7 +508,7 @@ Additional hardening -- restrict connections to the Docker subnet. Create `docke
 ```
 # TYPE  DATABASE    USER        ADDRESS         METHOD
 local   all         all                         peer
-host    all         clauded     172.16.0.0/12   scram-sha-256
+host    all         luna     172.16.0.0/12   scram-sha-256
 host    all         all         0.0.0.0/0       reject
 ```
 
@@ -523,45 +523,45 @@ command: postgres -c hba_file=/etc/postgresql/pg_hba.conf
 
 #### 3b.9 Backup Strategy
 
-Create `/opt/clauded/scripts/backup-postgres.sh`:
+Create `/opt/luna/scripts/backup-postgres.sh`:
 
 ```bash
 #!/bin/bash
-# PostgreSQL backup script for clauded
-# Run via cron: 0 2 * * * /opt/clauded/scripts/backup-postgres.sh
+# PostgreSQL backup script for luna
+# Run via cron: 0 2 * * * /opt/luna/scripts/backup-postgres.sh
 
 set -euo pipefail
 
-BACKUP_DIR="/opt/clauded/backups/postgres"
+BACKUP_DIR="/opt/luna/backups/postgres"
 RETENTION_DAYS=30
 DATE=$(date +%Y%m%d-%H%M%S)
-CONTAINER="clauded-postgres"
-DB_USER="clauded"
+CONTAINER="luna-postgres"
+DB_USER="luna"
 
 mkdir -p "${BACKUP_DIR}"
 
 # Dump all databases (custom format for pg_restore)
 docker exec "${CONTAINER}" pg_dumpall -U "${DB_USER}" \
-  | gzip > "${BACKUP_DIR}/clauded-postgres-${DATE}.sql.gz"
+  | gzip > "${BACKUP_DIR}/luna-postgres-${DATE}.sql.gz"
 
 # Remove backups older than retention period
 find "${BACKUP_DIR}" -name "*.sql.gz" -mtime +${RETENTION_DAYS} -delete
 
-echo "[$(date -Iseconds)] PostgreSQL backup complete: clauded-postgres-${DATE}.sql.gz"
+echo "[$(date -Iseconds)] PostgreSQL backup complete: luna-postgres-${DATE}.sql.gz"
 ```
 
 ```bash
-chmod +x /opt/clauded/scripts/backup-postgres.sh
+chmod +x /opt/luna/scripts/backup-postgres.sh
 
 # Schedule daily at 2:00 AM
-crontab -l 2>/dev/null | cat - <(echo "0 2 * * * /opt/clauded/scripts/backup-postgres.sh >> /opt/clauded/backups/backup.log 2>&1") | crontab -
+crontab -l 2>/dev/null | cat - <(echo "0 2 * * * /opt/luna/scripts/backup-postgres.sh >> /opt/luna/backups/backup.log 2>&1") | crontab -
 ```
 
 #### 3b.10 Restore from Backup
 
 ```bash
-gunzip < /opt/clauded/backups/postgres/clauded-postgres-YYYYMMDD-HHMMSS.sql.gz \
-  | docker exec -i clauded-postgres psql -U clauded
+gunzip < /opt/luna/backups/postgres/luna-postgres-YYYYMMDD-HHMMSS.sql.gz \
+  | docker exec -i luna-postgres psql -U luna
 ```
 
 ---
@@ -571,12 +571,12 @@ gunzip < /opt/clauded/backups/postgres/clauded-postgres-YYYYMMDD-HHMMSS.sql.gz \
 ### 4.1 Clone the Repository
 
 ```bash
-su - clauded
-cd /opt/clauded
+su - luna
+cd /opt/luna
 
-git clone https://github.com/YOUR_ORG/clauded.git .
+git clone https://github.com/YOUR_ORG/luna.git .
 # Or if private:
-git clone git@github.com:YOUR_ORG/clauded.git .
+git clone git@github.com:YOUR_ORG/luna.git .
 ```
 
 ### 4.2 Configure `.env.production`
@@ -591,13 +591,13 @@ Edit `.env.production` with your chosen database driver and credentials:
 
 ```bash
 # .env.production
-CADDY_DOMAIN=clauded.yourcompany.com
+CADDY_DOMAIN=luna.yourcompany.com
 
 DB_DRIVER=mariadb
 DB_HOST=mariadb
 DB_PORT=3306
-DB_NAME=clauded
-DB_USER=clauded
+DB_NAME=luna
+DB_USER=luna
 DB_PASSWORD=<your-generated-password>
 DB_ROOT_PASSWORD=<your-generated-root-password>
 DB_POOL_MIN=2
@@ -616,13 +616,13 @@ NODE_ENV=production
 
 ```bash
 # .env.production
-CADDY_DOMAIN=clauded.yourcompany.com
+CADDY_DOMAIN=luna.yourcompany.com
 
 DB_DRIVER=postgres
 DB_HOST=postgres
 DB_PORT=5432
-DB_NAME=clauded
-DB_USER=clauded
+DB_NAME=luna
+DB_USER=luna
 DB_PASSWORD=<your-generated-password>
 DB_POOL_MIN=2
 DB_POOL_MAX=20
@@ -662,11 +662,11 @@ docker compose -f docker-compose.production.yml ps
 
 # Expected output (MariaDB example):
 # NAME                STATUS              PORTS
-# clauded-caddy       Up (healthy)        0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
-# clauded-mariadb     Up (healthy)
-# clauded-ollama      Up
-# clauded-searxng     Up (healthy)
-# clauded-speaches    Up (healthy)
+# luna-caddy       Up (healthy)        0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
+# luna-mariadb     Up (healthy)
+# luna-ollama      Up
+# luna-searxng     Up (healthy)
+# luna-speaches    Up (healthy)
 ```
 
 ### 4.5 Pull the Ollama Model
@@ -674,10 +674,10 @@ docker compose -f docker-compose.production.yml ps
 Ollama starts with no models. Pull the required model:
 
 ```bash
-docker exec -it clauded-ollama ollama pull qwen3.5:latest
+docker exec -it luna-ollama ollama pull qwen3.5:latest
 
 # Verify the model is available
-docker exec -it clauded-ollama ollama list
+docker exec -it luna-ollama ollama list
 ```
 
 This downloads approximately 4.7 GB. On a 1 Gbps connection, expect 1-2 minutes.
@@ -685,7 +685,7 @@ This downloads approximately 4.7 GB. On a 1 Gbps connection, expect 1-2 minutes.
 ### 4.6 Verify SearXNG Health
 
 ```bash
-docker exec -it clauded-searxng wget -qO- http://localhost:8080/healthz
+docker exec -it luna-searxng wget -qO- http://localhost:8080/healthz
 # Should print: OK
 ```
 
@@ -698,7 +698,7 @@ Speaches takes up to 2 minutes on first start (model download). Wait for healthy
 docker compose -f docker-compose.production.yml ps speaches
 
 # Or check directly
-docker exec -it clauded-speaches python3 -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/health').read().decode())"
+docker exec -it luna-speaches python3 -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/health').read().decode())"
 ```
 
 ---
@@ -708,7 +708,7 @@ docker exec -it clauded-speaches python3 -c "import urllib.request; print(urllib
 ### 5.1 Create Deployment 1
 
 ```bash
-cd /opt/clauded
+cd /opt/luna
 ./scripts/add-deployment.sh 1 "Production"
 ```
 
@@ -743,8 +743,8 @@ Replace `TELEGRAM_BOT_TOKEN` with your actual token from @BotFather. Replace `AL
 ### 5.3 Build and Start Deployment 1
 
 ```bash
-# Build the clauded image (first time takes 3-5 minutes)
-docker compose -f docker-compose.production.yml build clauded-1
+# Build the luna image (first time takes 3-5 minutes)
+docker compose -f docker-compose.production.yml build luna-1
 
 # Start deployment 1
 docker compose -f docker-compose.production.yml --profile deploy-1 up -d
@@ -757,10 +757,10 @@ docker compose -f docker-compose.production.yml --profile deploy-1 up -d
 docker compose -f docker-compose.production.yml --profile deploy-1 ps
 
 # Check logs for successful startup
-docker logs clauded-bot-1 --tail 50
+docker logs luna-bot-1 --tail 50
 
 # Look for:
-#   "clauded started"
+#   "luna started"
 #   "Telegram bot connected"
 #   "Web server listening on port 3031"
 ```
@@ -770,7 +770,7 @@ docker logs clauded-bot-1 --tail 50
 Open Telegram, find your bot, and send `/ping`. The bot should respond. If it does not respond, check the logs:
 
 ```bash
-docker logs clauded-bot-1 -f
+docker logs luna-bot-1 -f
 ```
 
 ### 5.6 Create First Web Token
@@ -794,7 +794,7 @@ Caddy is already running from section 4.3. It handles TLS certificate acquisitio
 Ensure `CADDY_DOMAIN` is set correctly in `.env.production`:
 
 ```bash
-CADDY_DOMAIN=clauded.yourcompany.com
+CADDY_DOMAIN=luna.yourcompany.com
 ```
 
 ### 6.2 Verify DNS Resolution
@@ -802,7 +802,7 @@ CADDY_DOMAIN=clauded.yourcompany.com
 From the server:
 
 ```bash
-dig +short clauded.yourcompany.com
+dig +short luna.yourcompany.com
 # Should return your server's public IP
 ```
 
@@ -818,7 +818,7 @@ docker compose -f docker-compose.production.yml up -d caddy
 
 ```bash
 # Check Caddy logs for certificate events
-docker logs clauded-caddy --tail 30
+docker logs luna-caddy --tail 30
 
 # Look for:
 #   "certificate obtained successfully"
@@ -828,7 +828,7 @@ docker logs clauded-caddy --tail 30
 Caddy obtains certificates on first request. Trigger it:
 
 ```bash
-curl -I https://clauded.yourcompany.com/
+curl -I https://luna.yourcompany.com/
 # Should return HTTP/2 200 with Strict-Transport-Security header
 ```
 
@@ -836,7 +836,7 @@ If the certificate fails (e.g., DNS not propagated yet), Caddy retries automatic
 
 ### 6.5 Verify Web UI Access
 
-Open `https://clauded.yourcompany.com/` in a browser. You should see the clauded web UI login page. Use the web token from section 5.6 to authenticate.
+Open `https://luna.yourcompany.com/` in a browser. You should see the luna web UI login page. Use the web token from section 5.6 to authenticate.
 
 ### 6.6 Certificate Renewal
 
@@ -846,7 +846,7 @@ Caddy handles renewal automatically. Certificates are stored in the `caddy-data`
 
 ## 7. Enable Telegram Webhook
 
-By default, clauded uses Telegram long-polling (the bot connects outbound to Telegram). For production, webhooks are more reliable and reduce latency.
+By default, luna uses Telegram long-polling (the bot connects outbound to Telegram). For production, webhooks are more reliable and reduce latency.
 
 ### 7.1 Prerequisites
 
@@ -859,7 +859,7 @@ Edit `.env.deploy-1`:
 
 ```bash
 # Uncomment and set these lines:
-TELEGRAM_WEBHOOK_URL=https://clauded.yourcompany.com/webhook/deploy-1
+TELEGRAM_WEBHOOK_URL=https://luna.yourcompany.com/webhook/deploy-1
 TELEGRAM_WEBHOOK_SECRET=<paste-the-generated-secret-from-env-file>
 ```
 
@@ -872,7 +872,7 @@ openssl rand -hex 32
 ### 7.3 Restart Deployment
 
 ```bash
-docker compose -f docker-compose.production.yml --profile deploy-1 up -d clauded-1
+docker compose -f docker-compose.production.yml --profile deploy-1 up -d luna-1
 ```
 
 ### 7.4 Verify Webhook is Active
@@ -888,7 +888,7 @@ Expected response:
 {
   "ok": true,
   "result": {
-    "url": "https://clauded.yourcompany.com/webhook/deploy-1",
+    "url": "https://luna.yourcompany.com/webhook/deploy-1",
     "has_custom_certificate": false,
     "pending_update_count": 0,
     "max_connections": 40,
@@ -900,7 +900,7 @@ Expected response:
 If `url` is empty, the bot failed to register the webhook. Check container logs:
 
 ```bash
-docker logs clauded-bot-1 --tail 50
+docker logs luna-bot-1 --tail 50
 ```
 
 ### 7.5 Test Webhook
@@ -908,7 +908,7 @@ docker logs clauded-bot-1 --tail 50
 Send a message to your bot in Telegram. Check Caddy's access log for the incoming POST:
 
 ```bash
-docker exec clauded-caddy cat /data/access.log | tail -5
+docker exec luna-caddy cat /data/access.log | tail -5
 ```
 
 You should see POST requests to `/webhook/deploy-1`.
@@ -922,7 +922,7 @@ You should see POST requests to `/webhook/deploy-1`.
 Departments within the same organization share data (work orders, cards, memories). Each department gets its own bot but reads/writes the same database.
 
 ```bash
-cd /opt/clauded
+cd /opt/luna
 
 # Create deployment 2
 ./scripts/add-deployment.sh 2 "Engineering"
@@ -945,7 +945,7 @@ For client-facing deployments where data must be completely separated:
 # Create deployment 3 in isolated mode
 ./scripts/add-deployment.sh 3 "Client ACME" --isolated
 
-# This adds DB_NAME=clauded_deploy_3 to .env.deploy-3
+# This adds DB_NAME=luna_deploy_3 to .env.deploy-3
 ```
 
 Create the isolated database:
@@ -953,9 +953,9 @@ Create the isolated database:
 **MariaDB:**
 
 ```bash
-docker exec -it clauded-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
-  CREATE DATABASE IF NOT EXISTS clauded_deploy_3;
-  GRANT ALL PRIVILEGES ON clauded_deploy_3.* TO 'clauded'@'%';
+docker exec -it luna-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
+  CREATE DATABASE IF NOT EXISTS luna_deploy_3;
+  GRANT ALL PRIVILEGES ON luna_deploy_3.* TO 'luna'@'%';
   FLUSH PRIVILEGES;
 "
 ```
@@ -963,17 +963,17 @@ docker exec -it clauded-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
 **PostgreSQL:**
 
 ```bash
-docker exec -it clauded-postgres psql -U clauded -c "
-  CREATE DATABASE clauded_deploy_3 OWNER clauded;
+docker exec -it luna-postgres psql -U luna -c "
+  CREATE DATABASE luna_deploy_3 OWNER luna;
 "
 ```
 
 ### 8.3 Add Deployments 3-10 to Docker Compose
 
-Deployments 1 and 2 are pre-defined in `docker-compose.production.yml`. For deployments 3-10, add a new service block following the same pattern. Copy the `clauded-2` service and change:
+Deployments 1 and 2 are pre-defined in `docker-compose.production.yml`. For deployments 3-10, add a new service block following the same pattern. Copy the `luna-2` service and change:
 
-- Service name: `clauded-3`
-- `container_name`: `clauded-bot-3`
+- Service name: `luna-3`
+- `container_name`: `luna-bot-3`
 - `env_file`: `.env.deploy-3`
 - Volume paths: `./store/deploy-3`, `./workspace/deploy-3`, `./forge/deploy-3`
 - Profile: `deploy-3`
@@ -981,11 +981,11 @@ Deployments 1 and 2 are pre-defined in `docker-compose.production.yml`. For depl
 Example for deployment 3:
 
 ```yaml
-clauded-3:
+luna-3:
   build:
     context: .
-    dockerfile: docker/clauded.dockerfile
-  container_name: clauded-bot-3
+    dockerfile: docker/luna.dockerfile
+  container_name: luna-bot-3
   env_file:
     - .env.production
     - .env.deploy-3
@@ -1006,7 +1006,7 @@ clauded-3:
     speaches:
       condition: service_started
   networks:
-    - clauded-net
+    - luna-net
   restart: unless-stopped
   deploy:
     resources:
@@ -1023,21 +1023,21 @@ Each deployment must have a unique webhook path in the Caddyfile. Edit `docker/C
 
 ```
 handle /webhook/deploy-3/* {
-    reverse_proxy clauded-bot-3:3033
+    reverse_proxy luna-bot-3:3033
 }
 ```
 
 And in `.env.deploy-3`:
 
 ```bash
-TELEGRAM_WEBHOOK_URL=https://clauded.yourcompany.com/webhook/deploy-3
+TELEGRAM_WEBHOOK_URL=https://luna.yourcompany.com/webhook/deploy-3
 VOICE_WEB_PORT=3033
 ```
 
 Reload Caddy after editing:
 
 ```bash
-docker exec clauded-caddy caddy reload --config /etc/caddy/Caddyfile
+docker exec luna-caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 
 ---
@@ -1051,13 +1051,13 @@ docker exec clauded-caddy caddy reload --config /etc/caddy/Caddyfile
 docker compose -f docker-compose.production.yml logs --tail 100
 
 # Specific service
-docker logs clauded-bot-1 --tail 50
-docker logs clauded-mariadb --tail 50    # or clauded-postgres
-docker logs clauded-ollama --tail 50
-docker logs clauded-caddy --tail 50
+docker logs luna-bot-1 --tail 50
+docker logs luna-mariadb --tail 50    # or luna-postgres
+docker logs luna-ollama --tail 50
+docker logs luna-caddy --tail 50
 
 # Follow logs in real time
-docker logs -f clauded-bot-1
+docker logs -f luna-bot-1
 ```
 
 ### 9.2 Caddy Access Logs
@@ -1065,10 +1065,10 @@ docker logs -f clauded-bot-1
 Caddy writes JSON access logs to `/data/access.log` inside the container:
 
 ```bash
-docker exec clauded-caddy cat /data/access.log | jq '.' | tail -50
+docker exec luna-caddy cat /data/access.log | jq '.' | tail -50
 
 # Or copy the log to the host
-docker cp clauded-caddy:/data/access.log /opt/clauded/logs/caddy-access.log
+docker cp luna-caddy:/data/access.log /opt/luna/logs/caddy-access.log
 ```
 
 ### 9.3 Database Backup Verification
@@ -1080,10 +1080,10 @@ Check that backups are running:
 crontab -l
 
 # Check backup log
-tail -20 /opt/clauded/backups/backup.log
+tail -20 /opt/luna/backups/backup.log
 
 # List recent backups
-ls -lh /opt/clauded/backups/mariadb/   # or /opt/clauded/backups/postgres/
+ls -lh /opt/luna/backups/mariadb/   # or /opt/luna/backups/postgres/
 ```
 
 ### 9.4 Ollama Model Updates
@@ -1091,26 +1091,26 @@ ls -lh /opt/clauded/backups/mariadb/   # or /opt/clauded/backups/postgres/
 Update the AI model periodically:
 
 ```bash
-docker exec -it clauded-ollama ollama pull qwen3.5:latest
+docker exec -it luna-ollama ollama pull qwen3.5:latest
 
 # Verify current model
-docker exec -it clauded-ollama ollama list
+docker exec -it luna-ollama ollama list
 ```
 
-### 9.5 Update clauded Application
+### 9.5 Update luna Application
 
 ```bash
-cd /opt/clauded
+cd /opt/luna
 
 # Pull latest code
 git pull origin main
 
-# Rebuild the clauded image
+# Rebuild the luna image
 docker compose -f docker-compose.production.yml build
 
 # Restart all deployments (one at a time to avoid downtime)
-docker compose -f docker-compose.production.yml --profile deploy-1 up -d clauded-1
-docker compose -f docker-compose.production.yml --profile deploy-2 up -d clauded-2
+docker compose -f docker-compose.production.yml --profile deploy-1 up -d luna-1
+docker compose -f docker-compose.production.yml --profile deploy-2 up -d luna-2
 # ... repeat for each deployment
 ```
 
@@ -1119,7 +1119,7 @@ docker compose -f docker-compose.production.yml --profile deploy-2 up -d clauded
 Caddy handles this automatically. To verify certificate status:
 
 ```bash
-curl -vI https://clauded.yourcompany.com/ 2>&1 | grep -A 5 "Server certificate"
+curl -vI https://luna.yourcompany.com/ 2>&1 | grep -A 5 "Server certificate"
 ```
 
 ### 9.7 Disk Space Monitoring
@@ -1139,7 +1139,7 @@ docker system prune -f
 docker builder prune -f
 ```
 
-Set up a disk space alert. Create `/opt/clauded/scripts/check-disk.sh`:
+Set up a disk space alert. Create `/opt/luna/scripts/check-disk.sh`:
 
 ```bash
 #!/bin/bash
@@ -1147,14 +1147,14 @@ THRESHOLD=85
 USAGE=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
 if [ "$USAGE" -gt "$THRESHOLD" ]; then
   echo "[ALERT] Disk usage at ${USAGE}% on $(hostname) at $(date)" \
-    | mail -s "clauded: Disk space warning" admin@yourcompany.com
+    | mail -s "luna: Disk space warning" admin@yourcompany.com
 fi
 ```
 
 ```bash
-chmod +x /opt/clauded/scripts/check-disk.sh
+chmod +x /opt/luna/scripts/check-disk.sh
 # Run every hour
-crontab -l | cat - <(echo "0 * * * * /opt/clauded/scripts/check-disk.sh") | crontab -
+crontab -l | cat - <(echo "0 * * * * /opt/luna/scripts/check-disk.sh") | crontab -
 ```
 
 ---
@@ -1183,7 +1183,7 @@ docker compose -f docker-compose.production.yml up -d caddy
 
 ```bash
 # Check DNS resolution from the server
-dig +short clauded.yourcompany.com
+dig +short luna.yourcompany.com
 
 # Verify ports 80 and 443 are open from outside
 # (Use a service like https://www.yougetsignal.com/tools/open-ports/)
@@ -1196,24 +1196,24 @@ firewall-cmd --list-all
 
 ### 10.3 Database Connection Errors
 
-**Symptom:** clauded logs show "ECONNREFUSED" or "connection refused" to database.
+**Symptom:** luna logs show "ECONNREFUSED" or "connection refused" to database.
 
 ```bash
 # Verify database container is running
 docker ps | grep -E "mariadb|postgres"
 
 # Check database health
-docker inspect clauded-mariadb --format='{{.State.Health.Status}}'   # MariaDB
-docker inspect clauded-postgres --format='{{.State.Health.Status}}'  # PostgreSQL
+docker inspect luna-mariadb --format='{{.State.Health.Status}}'   # MariaDB
+docker inspect luna-postgres --format='{{.State.Health.Status}}'  # PostgreSQL
 
 # Check database logs
-docker logs clauded-mariadb --tail 30   # or clauded-postgres
+docker logs luna-mariadb --tail 30   # or luna-postgres
 
 # Verify network connectivity from bot container
-docker exec clauded-bot-1 ping -c 1 mariadb    # or postgres
+docker exec luna-bot-1 ping -c 1 mariadb    # or postgres
 
 # Verify credentials
-docker exec clauded-bot-1 env | grep DB_
+docker exec luna-bot-1 env | grep DB_
 ```
 
 **Common causes:**
@@ -1239,7 +1239,7 @@ curl -s "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
 
 # Comment out TELEGRAM_WEBHOOK_URL in .env.deploy-1
 # Restart the deployment to use polling mode
-docker compose -f docker-compose.production.yml --profile deploy-1 up -d clauded-1
+docker compose -f docker-compose.production.yml --profile deploy-1 up -d luna-1
 ```
 
 ### 10.5 Ollama Model Not Loading
@@ -1248,16 +1248,16 @@ docker compose -f docker-compose.production.yml --profile deploy-1 up -d clauded
 
 ```bash
 # Check Ollama is running
-docker logs clauded-ollama --tail 20
+docker logs luna-ollama --tail 20
 
 # Check available models
-docker exec -it clauded-ollama ollama list
+docker exec -it luna-ollama ollama list
 
 # If model is missing, pull it again
-docker exec -it clauded-ollama ollama pull qwen3.5:latest
+docker exec -it luna-ollama ollama pull qwen3.5:latest
 
 # Check memory usage (Ollama needs ~4-6 GB for qwen3.5)
-docker stats clauded-ollama --no-stream
+docker stats luna-ollama --no-stream
 ```
 
 ### 10.6 Speaches Voice Service Down
@@ -1266,10 +1266,10 @@ docker stats clauded-ollama --no-stream
 
 ```bash
 # Speaches takes up to 2 minutes on first start (model download)
-docker logs clauded-speaches --tail 30
+docker logs luna-speaches --tail 30
 
 # Check health
-docker exec clauded-speaches python3 -c "
+docker exec luna-speaches python3 -c "
 import urllib.request
 print(urllib.request.urlopen('http://localhost:8000/health').read().decode())
 "
@@ -1282,10 +1282,10 @@ docker compose -f docker-compose.production.yml restart speaches
 
 ```bash
 # Check exit code and restart count
-docker inspect clauded-bot-1 --format='Exit: {{.State.ExitCode}}, Restarts: {{.RestartCount}}'
+docker inspect luna-bot-1 --format='Exit: {{.State.ExitCode}}, Restarts: {{.RestartCount}}'
 
 # Check OOM (out of memory) kills
-docker inspect clauded-bot-1 --format='{{.State.OOMKilled}}'
+docker inspect luna-bot-1 --format='{{.State.OOMKilled}}'
 dmesg | grep -i "oom\|killed" | tail -10
 
 # If OOM, increase memory limit in docker-compose.production.yml
@@ -1295,14 +1295,14 @@ dmesg | grep -i "oom\|killed" | tail -10
 
 | Component | Log Location |
 |-----------|-------------|
-| Bot deployment N | `docker logs clauded-bot-N` |
-| MariaDB | `docker logs clauded-mariadb` |
-| PostgreSQL | `docker logs clauded-postgres` |
-| Ollama | `docker logs clauded-ollama` |
-| SearXNG | `docker logs clauded-searxng` |
-| Speaches | `docker logs clauded-speaches` |
-| Caddy access log | `docker exec clauded-caddy cat /data/access.log` |
-| Backup log | `/opt/clauded/backups/backup.log` |
+| Bot deployment N | `docker logs luna-bot-N` |
+| MariaDB | `docker logs luna-mariadb` |
+| PostgreSQL | `docker logs luna-postgres` |
+| Ollama | `docker logs luna-ollama` |
+| SearXNG | `docker logs luna-searxng` |
+| Speaches | `docker logs luna-speaches` |
+| Caddy access log | `docker exec luna-caddy cat /data/access.log` |
+| Backup log | `/opt/luna/backups/backup.log` |
 | System / Docker daemon | `journalctl -u docker.service` |
 | SELinux denials | `ausearch -m avc -ts recent` |
 
@@ -1328,9 +1328,9 @@ If Docker containers cannot write to bind-mounted volumes:
 
 ```bash
 # Option A: Apply SELinux labels to volume directories
-chcon -R -t container_file_t /opt/clauded/store/
-chcon -R -t container_file_t /opt/clauded/workspace/
-chcon -R -t container_file_t /opt/clauded/forge/
+chcon -R -t container_file_t /opt/luna/store/
+chcon -R -t container_file_t /opt/luna/workspace/
+chcon -R -t container_file_t /opt/luna/forge/
 
 # Option B: Use :Z flag on volume mounts (relabels automatically)
 # In docker-compose.production.yml, change:
@@ -1419,7 +1419,7 @@ fail2ban-client status
 # Disable root login and password authentication
 cat >> /etc/ssh/sshd_config << 'EOF'
 
-# clauded hardening
+# luna hardening
 PermitRootLogin no
 PasswordAuthentication no
 PubkeyAuthentication yes
@@ -1462,7 +1462,7 @@ systemctl enable --now dnf-automatic-install.timer
 
 | Service | Memory Limit | CPU Limit | Typical Usage |
 |---------|-------------|-----------|---------------|
-| clauded-bot-N | 1 GB | 0.5 cores | 300-500 MB |
+| luna-bot-N | 1 GB | 0.5 cores | 300-500 MB |
 
 ### 12.3 Total for N Deployments
 
@@ -1523,7 +1523,7 @@ docker compose -f docker-compose.production.yml --profile deploy-1 up -d       #
 docker compose -f docker-compose.production.yml --profile deploy-1 down        # Stop bot 1
 
 # ── Logs ──
-docker logs clauded-bot-1 -f                                                   # Follow bot 1 logs
+docker logs luna-bot-1 -f                                                   # Follow bot 1 logs
 docker compose -f docker-compose.production.yml logs --tail 100                # All services
 
 # ── Health ──
@@ -1531,20 +1531,20 @@ docker compose -f docker-compose.production.yml ps                             #
 docker stats --no-stream                                                       # Resource usage
 
 # ── Database ──
-docker exec -it clauded-mariadb mariadb -u clauded -p                          # MariaDB shell
-docker exec -it clauded-postgres psql -U clauded -d clauded                    # PostgreSQL shell
+docker exec -it luna-mariadb mariadb -u luna -p                          # MariaDB shell
+docker exec -it luna-postgres psql -U luna -d luna                    # PostgreSQL shell
 
 # ── Ollama ──
-docker exec -it clauded-ollama ollama list                                     # List models
-docker exec -it clauded-ollama ollama pull qwen3.5:latest                      # Update model
+docker exec -it luna-ollama ollama list                                     # List models
+docker exec -it luna-ollama ollama pull qwen3.5:latest                      # Update model
 
 # ── Caddy ──
-docker exec clauded-caddy caddy reload --config /etc/caddy/Caddyfile           # Reload config
-docker exec clauded-caddy cat /data/access.log | tail -20                      # Access log
+docker exec luna-caddy caddy reload --config /etc/caddy/Caddyfile           # Reload config
+docker exec luna-caddy cat /data/access.log | tail -20                      # Access log
 
 # ── Backup (manual) ──
-/opt/clauded/scripts/backup-mariadb.sh                                         # MariaDB backup
-/opt/clauded/scripts/backup-postgres.sh                                        # PostgreSQL backup
+/opt/luna/scripts/backup-mariadb.sh                                         # MariaDB backup
+/opt/luna/scripts/backup-postgres.sh                                        # PostgreSQL backup
 
 # ── Add deployment ──
 ./scripts/add-deployment.sh 3 "Team Name"                                      # Shared DB

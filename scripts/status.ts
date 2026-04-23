@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Health check / status script for clauded.
+ * Health check / status script for Luna.
  *
  * Usage: npx tsx scripts/status.ts
  */
@@ -40,7 +40,7 @@ function tryExec(cmd: string): string | null {
   }
 }
 
-console.log('\n=== clauded Status Check ===\n');
+console.log('\n=== Luna Status Check ===\n');
 
 // 1. Node version
 const nodeVersion = process.version;
@@ -104,7 +104,7 @@ if (existsSync(envPath)) {
 }
 
 // 6. Database
-const dbPath = resolve(PROJECT_ROOT, 'store', 'clauded.db');
+const dbPath = resolve(PROJECT_ROOT, 'store', 'luna.db');
 if (existsSync(dbPath)) {
   pass('Database exists');
 } else {
@@ -138,14 +138,14 @@ if (synapseHealth !== null) {
 // 10. Background service status
 const os = platform();
 if (os === 'darwin') {
-  const launchdStatus = tryExec('launchctl list com.clauded.daemon 2>/dev/null');
+  const launchdStatus = tryExec('launchctl list com.luna.daemon 2>/dev/null');
   if (launchdStatus) {
     pass('launchd service registered');
   } else {
     warn('launchd service not installed');
   }
 } else if (os === 'linux') {
-  const systemdStatus = tryExec('systemctl --user is-active clauded 2>/dev/null');
+  const systemdStatus = tryExec('systemctl --user is-active luna 2>/dev/null');
   if (systemdStatus === 'active') {
     pass('systemd service is active');
   } else {
@@ -154,17 +154,17 @@ if (os === 'darwin') {
 }
 
 // 11. PID file check
-const pidPath = resolve(PROJECT_ROOT, 'store', 'clauded.pid');
+const pidPath = resolve(PROJECT_ROOT, 'store', 'luna.pid');
 if (existsSync(pidPath)) {
   const pid = readFileSync(pidPath, 'utf-8').trim();
   const isRunning = tryExec(`kill -0 ${pid} 2>/dev/null && echo yes`);
   if (isRunning) {
-    pass(`clauded is running (PID ${pid})`);
+    pass(`Luna is running (PID ${pid})`);
   } else {
     warn(`Stale PID file (PID ${pid} not running)`);
   }
 } else {
-  warn('clauded is not running (no PID file)');
+  warn('Luna is not running (no PID file)');
 }
 
 console.log('');

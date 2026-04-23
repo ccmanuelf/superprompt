@@ -415,7 +415,7 @@ export function githubCommitPush(args: { repo: string; message: string; branch?:
     try {
       execSync(`cd ${shellEscape(repoPath)} && git config user.name`, { encoding: 'utf-8' });
     } catch {
-      execSync(`cd ${shellEscape(repoPath)} && git config user.name 'clauded' && git config user.email 'clauded@bot.local'`, { encoding: 'utf-8' });
+      execSync(`cd ${shellEscape(repoPath)} && git config user.name 'luna' && git config user.email 'luna@bot.local'`, { encoding: 'utf-8' });
     }
 
     // Check for changes first

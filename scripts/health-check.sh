@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# clauded — Dependency & System Health Check
+# Luna — Dependency & System Health Check
 # Usage: ./scripts/health-check.sh [--fix]
 #
 # Checks:
@@ -9,7 +9,7 @@
 # 4. Node.js version compatibility
 # 5. TypeScript compilation
 #
-# Run manually or via cron: 0 9 * * 1 /path/to/health-check.sh >> /var/log/clauded-health.log
+# Run manually or via cron: 0 9 * * 1 /path/to/health-check.sh >> /var/log/luna-health.log
 
 set -euo pipefail
 
@@ -26,7 +26,7 @@ ISSUES=0
 WARNINGS=0
 
 echo -e "${BLUE}╔══════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║   clauded — Health Check                 ║${NC}"
+echo -e "${BLUE}║   Luna — Health Check                 ║${NC}"
 echo -e "${BLUE}║   $(date '+%Y-%m-%d %H:%M:%S')                 ║${NC}"
 echo -e "${BLUE}╚══════════════════════════════════════════╝${NC}"
 echo ""

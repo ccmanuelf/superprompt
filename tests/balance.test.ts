@@ -27,7 +27,7 @@ import {
 
 // ── Test DB setup (raw SQL, same pattern as kanban.test.ts) ──
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-balance');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-balance');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'balance-test.db');
 

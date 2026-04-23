@@ -1,6 +1,6 @@
-# Convenience alias — points to the main clauded dockerfile
-# Usage: docker build -t clauded .
-# For docker-compose, use docker-compose.yml which references docker/clauded.dockerfile directly.
+# Convenience alias — points to the main Luna dockerfile
+# Usage: docker build -t luna .
+# For docker-compose, use docker-compose.yml which references docker/luna.dockerfile directly.
 
 FROM node:22-slim AS builder
 
@@ -24,16 +24,16 @@ RUN apt-get update && \
     npm install -g @anthropic-ai/claude-code && \
     rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -r clauded && useradd -r -g clauded -m clauded
+RUN groupadd -r luna && useradd -r -g luna -m luna
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY package.json ./
 
 RUN mkdir -p /app/store /app/workspace/uploads && \
-    chown -R clauded:clauded /app
+    chown -R luna:luna /app
 
-USER clauded
+USER luna
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD node -e "process.exit(0)" || exit 1

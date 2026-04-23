@@ -1,4 +1,4 @@
-# SearXNG settings for clauded
+# SearXNG settings for Luna
 # Optimized for AI tool use: JSON API only, no browser UI, privacy-first.
 
 use_default_settings: true
@@ -6,7 +6,7 @@ use_default_settings: true
 general:
   # No debug, no public instance
   debug: false
-  instance_name: "clauded-search"
+  instance_name: "luna-search"
 
 search:
   # Safe search moderate by default

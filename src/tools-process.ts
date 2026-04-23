@@ -1,5 +1,5 @@
 /**
- * clauded-tools — Process 2 entry point.
+ * luna-tools — Process 2 entry point.
  *
  * Stateless tool executor for DB-free tools:
  * - Network tools: web_search, summarize_url, github_*, render_*

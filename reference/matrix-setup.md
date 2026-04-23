@@ -12,7 +12,7 @@
 │  └─────┬─────┘              │
 │        │                    │
 │  ┌─────┴─────┐              │
-│  │  clauded   │             │
+│  │  luna   │             │
 │  │  (bot)     │             │
 │  └───────────┘              │
 └─────────────────────────────┘
@@ -33,7 +33,7 @@
 services:
   synapse:
     image: matrixdotorg/synapse:latest
-    container_name: clauded-synapse
+    container_name: luna-synapse
     volumes:
       - synapse-data:/data
       - ./homeserver.yaml:/data/homeserver.yaml:ro
@@ -55,7 +55,7 @@ volumes:
 ### `docker/synapse/homeserver.yaml` (key settings)
 
 ```yaml
-server_name: "clauded.local"
+server_name: "luna.local"
 pid_file: /data/homeserver.pid
 public_baseurl: "http://localhost:8008/"
 
@@ -91,10 +91,10 @@ media_store_path: /data/media_store
 max_upload_size: 50M
 
 # Logging
-log_config: "/data/clauded.local.log.config"
+log_config: "/data/luna.local.log.config"
 
 # Signing key (auto-generated on first run)
-signing_key_path: "/data/clauded.local.signing.key"
+signing_key_path: "/data/luna.local.signing.key"
 
 # Trusted key servers (empty since no federation)
 trusted_key_servers: []
@@ -110,13 +110,13 @@ suppress_key_server_warning: true
 1. Start Synapse container
 2. Generate Synapse config if not exists: `docker exec synapse generate`
 3. Register admin account: `docker exec synapse register_new_matrix_user -c /data/homeserver.yaml -a -u admin -p <password>`
-4. Register bot account: `register_new_matrix_user -u clauded-bot -p <password>`
+4. Register bot account: `register_new_matrix_user -u luna-bot -p <password>`
 5. Get bot access token via login API:
    ```
    POST http://localhost:8008/_matrix/client/r0/login
    {
      "type": "m.login.password",
-     "user": "clauded-bot",
+     "user": "luna-bot",
      "password": "<password>"
    }
    ```
@@ -202,7 +202,7 @@ client.on('room.message', async (roomId: string, event: any) => {
 
 4. **Start time filter**: Store `Date.now()` at startup and ignore events with `origin_server_ts` before it. Prevents processing historical messages.
 
-5. **Room ID as chat ID**: Use the Matrix room ID (`!abc:clauded.local`) as the chat ID for sessions, memory, etc.
+5. **Room ID as chat ID**: Use the Matrix room ID (`!abc:luna.local`) as the chat ID for sessions, memory, etc.
 
 ---
 

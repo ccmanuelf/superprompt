@@ -39,7 +39,7 @@ const { transcribeAudio, synthesizeSpeech, ttsPlainText } = await import('../src
 
 // Helpers -------------------------------------------------------------------
 
-const TMP = mkdtempSync(join(tmpdir(), 'clauded-voice-test-'));
+const TMP = mkdtempSync(join(tmpdir(), 'luna-voice-test-'));
 
 function writeAudio(name: string, bytes: number): string {
   const path = join(TMP, name);

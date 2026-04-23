@@ -1,10 +1,10 @@
-# Caddy reverse proxy for clauded
+# Caddy reverse proxy for Luna
 #
 # Provides: automatic HTTPS (Let's Encrypt), HTTP/2, WebSocket proxy,
 # request size limits, basic security headers.
 #
 # Configuration via environment variables:
-#   CADDY_DOMAIN — your domain (e.g. clauded.example.com)
+#   CADDY_DOMAIN — your domain (e.g. luna.example.com)
 #                  Set to ":443" for IP-based access with self-signed cert
 #                  Set to "localhost" for local development
 #
@@ -18,7 +18,7 @@
 		max_size 10MB
 	}
 
-	# ── Security headers (supplement clauded's own headers) ──
+	# ── Security headers (supplement Luna's own headers) ──
 	header {
 		# HSTS — enforce HTTPS for 1 year
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -38,9 +38,9 @@
 	# Basic connection rate limiting (Caddy built-in)
 	# For advanced rate limiting, use fail2ban at the OS level
 
-	# ── Reverse proxy to clauded web server ──
+	# ── Reverse proxy to Luna web server ──
 	# WebSocket upgrade handled automatically by Caddy
-	reverse_proxy clauded:3030 {
+	reverse_proxy luna:3030 {
 		# Health check — Caddy marks backend unhealthy if it fails
 		health_uri /
 		health_interval 30s

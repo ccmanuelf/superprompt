@@ -28,7 +28,7 @@ Never break character. Use lots of "arrr" and "matey".`;
     expect(parsed.systemPrompt).toContain('arrr');
 
     // 3. DB simulation: create skill
-    const TMP_DIR = resolve(tmpdir(), 'clauded-test-forge-skill');
+    const TMP_DIR = resolve(tmpdir(), 'luna-test-forge-skill');
     mkdirSync(TMP_DIR, { recursive: true });
     const db = new Database(resolve(TMP_DIR, 'test.db'));
     db.pragma('journal_mode = WAL');

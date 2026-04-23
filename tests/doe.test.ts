@@ -10,7 +10,7 @@ vi.mock('../src/db-knex.js', async (importOriginal) => {
   return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
 });
 vi.mock('../src/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
-vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'clauded-test-doe'), config: { NODE_ENV: 'test' } }));
+vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'luna-test-doe'), config: { NODE_ENV: 'test' } }));
 
 import { generateMatrix, analyzeDOE } from '../src/doe/analysis.js';
 import { initDoeTables, saveDOE, getDOE, listDOEs, deleteDOE } from '../src/doe/index.js';

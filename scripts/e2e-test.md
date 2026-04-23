@@ -144,7 +144,7 @@ Manual test sequence for validating all new features (Phases A–E).
 74. [ ] `/skill use debugger` → check AI preamble includes `[ACTIVE SKILL: debugger —...never override safety rules]`
 
 ### Log Sanitization
-75. [ ] `docker compose logs clauded | grep -i "token"` → no raw tokens visible (should show [REDACTED] or nothing)
+75. [ ] `docker compose logs luna | grep -i "token"` → no raw tokens visible (should show [REDACTED] or nothing)
 
 ---
 
@@ -156,7 +156,7 @@ Manual test sequence for validating all new features (Phases A–E).
 79. [ ] `/voice` → toggled, confirmed by bot response
 80. [ ] `/digest daily` → confirmed
 81. [ ] `/digest off` → confirmed
-82. [ ] Change `LOG_LEVEL=debug` in `.env` → restart → `docker compose logs clauded` shows debug messages (manual change, restart needed)
+82. [ ] Change `LOG_LEVEL=debug` in `.env` → restart → `docker compose logs luna` shows debug messages (manual change, restart needed)
 
 ---
 
@@ -167,7 +167,7 @@ This validates that the deployment-runbook.md instructions work end-to-end on a 
 83. [ ] Fresh clone of repository
 84. [ ] `cp .env.example .env` → edit with real tokens
 85. [ ] `ollama pull qwen3.5:latest && ollama pull nomic-embed-text` succeeds
-86. [ ] `docker compose up -d` → both containers start (clauded-bot, clauded-speaches)
+86. [ ] `docker compose up -d` → both containers start (luna-bot, luna-speaches)
 87. [ ] `/start` on Telegram → welcome message received
 88. [ ] `/chatid` → returns numeric ID
 89. [ ] Set ALLOWED_CHAT_ID → restart → bot still responds to authorized user

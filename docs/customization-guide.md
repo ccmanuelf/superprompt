@@ -1,6 +1,6 @@
-# clauded — Customization Guide
+# luna — Customization Guide
 
-How to extend clauded with domain-specific capabilities for your department. Three levels of customization, from simple (5 minutes, no code) to full TypeScript modules (1-2 days, developer-level).
+How to extend luna with domain-specific capabilities for your department. Three levels of customization, from simple (5 minutes, no code) to full TypeScript modules (1-2 days, developer-level).
 
 ---
 
@@ -29,7 +29,7 @@ graph TD
     D -->|No| F{Need a single<br/>calculation or<br/>lookup?}
     F -->|Yes| G[Level 1: Generate a Tool]
     F -->|No| H{Can it be solved<br/>with conversation<br/>alone?}
-    H -->|Yes| I[No customization needed —<br/>just ask clauded]
+    H -->|Yes| I[No customization needed —<br/>just ask luna]
     H -->|No| G
 ```
 
@@ -58,23 +58,23 @@ graph TD
 
 **For:** Any user who needs a single calculation, lookup, or API integration.
 **Time:** 5 minutes.
-**Prerequisites:** Access to clauded via Telegram or Matrix.
+**Prerequisites:** Access to luna via Telegram or Matrix.
 
 ### What is a Tool?
 
-A tool is a function the AI can call during conversation. When you ask clauded to calculate NPV, it calls the `calculate_npv` tool with your parameters and returns the result. Tools are the building blocks of all clauded capabilities.
+A tool is a function the AI can call during conversation. When you ask luna to calculate NPV, it calls the `calculate_npv` tool with your parameters and returns the result. Tools are the building blocks of all luna capabilities.
 
 ### Step-by-Step Procedure
 
 #### Step 1: Generate the tool
 
-Tell clauded what you need in plain English:
+Tell luna what you need in plain English:
 
 ```
 /tool generate "calculate Net Present Value given a discount rate and a list of annual cash flows"
 ```
 
-clauded uses AI to create the tool code, define parameters, and register it.
+luna uses AI to create the tool code, define parameters, and register it.
 
 **Expected output:**
 ```
@@ -85,13 +85,13 @@ Status: Registered and ready to use.
 
 #### Step 2: Test it
 
-Ask clauded to use the tool naturally:
+Ask luna to use the tool naturally:
 
 ```
 Calculate the NPV with a 10% discount rate and cash flows of -100000, 30000, 35000, 40000, 45000
 ```
 
-clauded should invoke the `calculate_npv` tool and return the result.
+luna should invoke the `calculate_npv` tool and return the result.
 
 #### Step 3: If it fails — fix it
 
@@ -99,7 +99,7 @@ clauded should invoke the `calculate_npv` tool and return the result.
 /tool fix calculate_npv
 ```
 
-clauded analyzes the error and regenerates the code. This can be repeated until the tool works correctly.
+luna analyzes the error and regenerates the code. This can be repeated until the tool works correctly.
 
 #### Step 4: Verify the result
 
@@ -182,7 +182,7 @@ packs/finance/
   README.md         ← Pack documentation
 ```
 
-When clauded starts, it automatically loads all packs, registers their tools and skills, and injects their capability descriptions into the AI's system prompt.
+When luna starts, it automatically loads all packs, registers their tools and skills, and injects their capability descriptions into the AI's system prompt.
 
 ### Step-by-Step Procedure
 
@@ -204,7 +204,7 @@ Next steps:
 1. Edit pack.yaml — describe capabilities & intent patterns
 2. Add tools in tools/*.md
 3. Add skills in skills/*.md
-4. Restart clauded or use /reload
+4. Restart luna or use /reload
 5. Verify with /pack info finance
 ```
 
@@ -235,7 +235,7 @@ This text is injected directly into the AI's system prompt. Write it as if you'r
 
 #### Step 3: Edit pack.yaml — Intent Patterns
 
-Intent patterns tell clauded when to suggest your tools. Each pattern is a regex tested against the user's message.
+Intent patterns tell luna when to suggest your tools. Each pattern is a regex tested against the user's message.
 
 ```yaml
 intent_patterns:
@@ -369,13 +369,13 @@ Operations,Utilities,25000,24000,Q1 2026
 
 Users can request templates with `/pack templates finance` and the bot will send the file.
 
-#### Step 7: Restart clauded
+#### Step 7: Restart luna
 
 ```bash
-docker compose restart clauded
+docker compose restart luna
 ```
 
-**Important:** You must restart clauded after any pack changes — this includes new tools, new skills, and pack.yaml edits. Pack discovery and import only happens at startup. The `/reload` command refreshes tools already in the database but does not scan for new pack files.
+**Important:** You must restart luna after any pack changes — this includes new tools, new skills, and pack.yaml edits. Pack discovery and import only happens at startup. The `/reload` command refreshes tools already in the database but does not scan for new pack files.
 
 #### Step 8: Verify — pack is loaded
 
@@ -422,7 +422,7 @@ Send a message that should trigger your intent patterns:
 I need to calculate the NPV for a new equipment purchase
 ```
 
-clauded should recognize this as a finance domain request and suggest using the `calculate_npv` tool.
+luna should recognize this as a finance domain request and suggest using the `calculate_npv` tool.
 
 #### Step 10: Test tool execution
 
@@ -444,8 +444,8 @@ Verify the result is correct (NPV should be approximately $82,390).
 To share the pack:
 
 1. Zip the `packs/finance/` directory
-2. Have teammates extract it into their clauded `packs/` directory
-3. Restart their clauded instance
+2. Have teammates extract it into their luna `packs/` directory
+3. Restart their luna instance
 4. Verify with `/pack list`
 
 For organization-wide distribution, put the pack in a shared git repository.
@@ -659,7 +659,7 @@ Use `{{ args.paramName }}` to inject parameters and `{{ env.VAR_NAME }}` for env
 | Tool not registered | Is the `.md` file in `tools/`? Run `/reload`. Check for parse errors in logs. |
 | Intent not triggering | Test your regex at regex101.com. Ensure double-escaping (`\\b` not `\b`) in YAML. |
 | Tool returns error | Check tool code syntax. Test with simple inputs first. Use `/tool fix <name>`. |
-| Capabilities not in system prompt | Capabilities require restart, not just `/reload`. Check `docker compose logs clauded`. |
+| Capabilities not in system prompt | Capabilities require restart, not just `/reload`. Check `docker compose logs luna`. |
 | Safety scanner rejects tool | Your code uses blocked patterns (eval, process, fs). Rewrite without them. |
 
 ---
@@ -668,7 +668,7 @@ Use `{{ args.paramName }}` to inject parameters and `{{ env.VAR_NAME }}` for env
 
 **For:** Developers who need interactive web dashboards, custom database tables, chart rendering, or deep integration with the existing system.
 **Time:** 1-2 days for a basic module; longer for complex dashboards.
-**Prerequisites:** TypeScript, Node.js, understanding of the clauded architecture (see `docs/architecture.md`).
+**Prerequisites:** TypeScript, Node.js, understanding of the luna architecture (see `docs/architecture.md`).
 
 ### When You Need Level 3
 
@@ -1084,19 +1084,19 @@ These are things the platform does NOT currently support. Each boundary includes
 
 ### No Hot-Reload of Packs
 
-**What it means:** After any pack change — new tools, new skills, or pack.yaml edits — you must restart clauded.
+**What it means:** After any pack change — new tools, new skills, or pack.yaml edits — you must restart luna.
 
 **Why:** Pack discovery, tool/skill import, and capability injection all happen at startup. Changing them at runtime would require complex state management with potential consistency issues.
 
-**What to do instead:** Restart with `docker compose restart clauded` (takes about 10 seconds). The `/reload` command only refreshes tools already in the database — it does not scan packs for new files.
+**What to do instead:** Restart with `docker compose restart luna` (takes about 10 seconds). The `/reload` command only refreshes tools already in the database — it does not scan packs for new files.
 
 ### No Pack-Level Permissions
 
 **What it means:** All loaded packs are accessible to all authorized users. You cannot restrict "only Finance team members can use Finance tools."
 
-**Why:** clauded is a personal assistant — authentication is at the platform level (Telegram chat ID, Matrix user ID), not at the pack level.
+**Why:** luna is a personal assistant — authentication is at the platform level (Telegram chat ID, Matrix user ID), not at the pack level.
 
-**What to do instead:** If you need per-department access control, run separate clauded instances with different `.env` configurations and different `packs/` directories. Each instance serves one department's bot with only their domain packs.
+**What to do instead:** If you need per-department access control, run separate luna instances with different `.env` configurations and different `packs/` directories. Each instance serves one department's bot with only their domain packs.
 
 ### No Pack-Specific Database Tables
 
@@ -1123,21 +1123,21 @@ These are things the platform does NOT currently support. Each boundary includes
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
 | `/pack list` shows empty | Pack not in `packs/` directory | Check `packs/<name>/pack.yaml` exists |
-| Pack loads but tools don't work | Tool `.md` file has syntax error | Check logs: `docker compose logs clauded \| grep "pack"` |
+| Pack loads but tools don't work | Tool `.md` file has syntax error | Check logs: `docker compose logs luna \| grep "pack"` |
 | Intent patterns don't trigger | Regex syntax error in YAML | Double-escape backslashes: `\\b` not `\b`. Test at regex101.com |
 | "Pack already exists" on create | Directory already present | Delete or rename the existing directory |
 | Tool rejected by safety scanner | Code uses blocked patterns | Remove: eval, process, fs, require, exec. Use fetch() for HTTP |
-| Capabilities not appearing | Didn't restart after pack.yaml change | `docker compose restart clauded` |
+| Capabilities not appearing | Didn't restart after pack.yaml change | `docker compose restart luna` |
 | TypeScript build errors (Level 3) | Missing imports or type errors | Run `npx tsc --noEmit` to see errors |
 
 ### Reading Logs
 
 ```bash
 # Pack loading messages
-docker compose logs clauded | grep -i pack
+docker compose logs luna | grep -i pack
 
 # Tool import messages
-docker compose logs clauded | grep -i "imported\|skipping\|failed"
+docker compose logs luna | grep -i "imported\|skipping\|failed"
 
 # Intent scoring (enable debug level)
 # Set LOG_LEVEL=debug in .env, restart, then check logs
@@ -1148,4 +1148,4 @@ docker compose logs clauded | grep -i "imported\|skipping\|failed"
 1. Check this guide's worked examples for your department
 2. Check `docs/architecture.md` for system internals
 3. Check `docs/commands.md` for all available commands
-4. Ask clauded: "How do I create a tool that calculates X?" — it knows its own capabilities
+4. Ask luna: "How do I create a tool that calculates X?" — it knows its own capabilities

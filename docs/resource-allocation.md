@@ -1,4 +1,4 @@
-# clauded — Resource Allocation Guide
+# luna — Resource Allocation Guide
 
 **For:** IT Team / CTO
 **Version:** v1.0.0-rc.60 | April 2026
@@ -38,7 +38,7 @@
 
 | Service | RAM Limit | CPU Limit | Idle RAM | Peak RAM |
 |---------|-----------|-----------|----------|----------|
-| clauded-bot (each) | 1GB | 0.5 core | 200MB | 800MB |
+| luna-bot (each) | 1GB | 0.5 core | 200MB | 800MB |
 | **10 deployments** | **10GB** | **5 cores** | **2GB** | **8GB** |
 
 ### Total Allocation
@@ -139,7 +139,7 @@ With GPU, Ollama can handle 20-50 tool calls/second, eliminating the inference b
 docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
 
 # Per-service logs
-docker compose -f docker-compose.production.yml logs -f clauded-bot-1
+docker compose -f docker-compose.production.yml logs -f luna-bot-1
 docker compose -f docker-compose.production.yml logs -f ollama
 ```
 
@@ -188,7 +188,7 @@ grep '"status":5' docker/caddy-data/access.log | wc -l
 **MariaDB:**
 ```bash
 # Add to crontab: 0 2 * * * /path/to/backup-mariadb.sh
-docker exec clauded-mariadb mysqldump -u clauded -p clauded > backup-$(date +%Y%m%d).sql
+docker exec luna-mariadb mysqldump -u luna -p luna > backup-$(date +%Y%m%d).sql
 gzip backup-$(date +%Y%m%d).sql
 # Retain 30 days
 find /backups/ -name "backup-*.sql.gz" -mtime +30 -delete
@@ -196,7 +196,7 @@ find /backups/ -name "backup-*.sql.gz" -mtime +30 -delete
 
 **PostgreSQL:**
 ```bash
-docker exec clauded-postgres pg_dump -U clauded clauded > backup-$(date +%Y%m%d).sql
+docker exec luna-postgres pg_dump -U luna luna > backup-$(date +%Y%m%d).sql
 gzip backup-$(date +%Y%m%d).sql
 find /backups/ -name "backup-*.sql.gz" -mtime +30 -delete
 ```
@@ -205,7 +205,7 @@ find /backups/ -name "backup-*.sql.gz" -mtime +30 -delete
 
 ```bash
 # Store directories (per-deployment forge tools, workspace files)
-tar czf clauded-data-$(date +%Y%m%d).tar.gz store/ forge/ workspace/
+tar czf luna-data-$(date +%Y%m%d).tar.gz store/ forge/ workspace/
 ```
 
 ### TLS certificates
@@ -214,4 +214,4 @@ Caddy manages certificates automatically. The `caddy-data` volume contains them.
 
 ---
 
-*clauded v1.0.0-rc.60 — Resource Allocation Guide*
+*luna v1.0.0-rc.60 — Resource Allocation Guide*

@@ -1,7 +1,7 @@
 services:
   synapse:
     image: matrixdotorg/synapse:latest
-    container_name: clauded-synapse
+    container_name: luna-synapse
     volumes:
       - synapse-data:/data
       - ./homeserver.yaml:/data/homeserver.yaml:ro

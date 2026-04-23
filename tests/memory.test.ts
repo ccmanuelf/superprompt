@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 // We test memory.ts logic by reimplementing its core functions against a test DB
 // because memory.ts imports from db.ts and config.ts which have eager side effects.
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-memory');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-memory');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'memory-test.db');
 

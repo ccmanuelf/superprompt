@@ -1,4 +1,4 @@
-server_name: "clauded.local"
+server_name: "luna.local"
 pid_file: /data/homeserver.pid
 public_baseurl: "http://localhost:8008/"
 
@@ -34,10 +34,10 @@ media_store_path: /data/media_store
 max_upload_size: 50M
 
 # Logging
-log_config: "/data/clauded.local.log.config"
+log_config: "/data/luna.local.log.config"
 
 # Signing key (auto-generated on first run)
-signing_key_path: "/data/clauded.local.signing.key"
+signing_key_path: "/data/luna.local.signing.key"
 
 # Trusted key servers (empty since no federation)
 trusted_key_servers: []

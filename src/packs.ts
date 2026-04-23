@@ -840,7 +840,7 @@ ${description}
 1. Edit \`pack.yaml\` to describe your capabilities and intent patterns
 2. Replace the example tool with your own tools in \`tools/\`
 3. Customize the skill in \`skills/\`
-4. Restart clauded or use \`/reload\`
+4. Restart Luna or use \`/reload\`
 5. Test with \`/pack info ${name}\`
 
 See \`docs/customization-guide.md\` for the full guide.

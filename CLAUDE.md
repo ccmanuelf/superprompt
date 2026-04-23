@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working in this repository.
 
 ## What This Repo Is
 
-This is the **build system** for **clauded** — a personal AI assistant daemon that bridges messaging platforms (Telegram, Matrix) to AI backends (Claude CLI, Ollama) running on the user's machine. It includes local voice processing, persistent memory, scheduled tasks, and Docker containerization.
+This is the **build system** for **luna** — a personal AI assistant daemon that bridges messaging platforms (Telegram, Matrix) to AI backends (Claude CLI, Ollama) running on the user's machine. It includes local voice processing, persistent memory, scheduled tasks, and Docker containerization.
 
 The repo contains:
 - `PROJECT_PLAN.md` — Master implementation plan with phase checkboxes (read this first)

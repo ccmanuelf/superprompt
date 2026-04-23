@@ -1,4 +1,4 @@
-# clauded — Command Reference
+# luna — Command Reference
 
 Quick reference for all commands across Telegram, Matrix, and the web interface.
 

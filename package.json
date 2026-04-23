@@ -1,7 +1,7 @@
 {
-  "name": "clauded",
-  "version": "1.0.0-rc.84",
-  "description": "Personal AI assistant daemon — bridges messaging platforms to AI backends",
+  "name": "luna",
+  "version": "1.0.0-rc.85",
+  "description": "Luna (Inge Luna) — Personal AI assistant daemon bridging messaging platforms to AI backends",
   "type": "module",
   "engines": {
     "node": ">=20.0.0"

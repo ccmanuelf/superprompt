@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 
 // ── Test DB Setup ───────────────────────────────────────────────
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-s15-sanity');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-s15-sanity');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 's15-sanity.db');
 let db: Database.Database;
@@ -24,7 +24,7 @@ vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('../src/config.js', () => ({
-  STORE_DIR: resolve(tmpdir(), 'clauded-test-s15-sanity'),
+  STORE_DIR: resolve(tmpdir(), 'luna-test-s15-sanity'),
   config: { NODE_ENV: 'test' },
 }));
 

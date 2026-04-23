@@ -7,11 +7,11 @@
  *
  * Usage:
  *   # Migrate to MariaDB
- *   DB_DRIVER=mariadb DB_HOST=localhost DB_USER=clauded DB_PASSWORD=secret DB_NAME=clauded \
+ *   DB_DRIVER=mariadb DB_HOST=localhost DB_USER=luna DB_PASSWORD=secret DB_NAME=luna \
  *     npx tsx scripts/migrate-database.ts
  *
  *   # Migrate to PostgreSQL
- *   DB_DRIVER=postgres DB_HOST=localhost DB_USER=clauded DB_PASSWORD=secret DB_NAME=clauded \
+ *   DB_DRIVER=postgres DB_HOST=localhost DB_USER=luna DB_PASSWORD=secret DB_NAME=luna \
  *     npx tsx scripts/migrate-database.ts
  *
  *   # Dry run (show what would be migrated)
@@ -42,7 +42,7 @@ if (DB_DRIVER === 'sqlite') {
 
 // ── Source (SQLite) ────────────────────────────────────────
 
-const sqlitePath = resolve(STORE_DIR, 'clauded.db');
+const sqlitePath = resolve(STORE_DIR, 'luna.db');
 console.log(`Source: SQLite at ${sqlitePath}`);
 
 const source = Knex.default({
@@ -58,9 +58,9 @@ const targetConfig: KnexType.Config = DB_DRIVER === 'postgres' ? {
   connection: {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
-    user: process.env.DB_USER || 'clauded',
+    user: process.env.DB_USER || 'luna',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'clauded',
+    database: process.env.DB_NAME || 'luna',
   },
   pool: { min: 2, max: 10 },
 } : {
@@ -68,9 +68,9 @@ const targetConfig: KnexType.Config = DB_DRIVER === 'postgres' ? {
   connection: {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '3306'),
-    user: process.env.DB_USER || 'clauded',
+    user: process.env.DB_USER || 'luna',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'clauded',
+    database: process.env.DB_NAME || 'luna',
     charset: 'utf8mb4',
   } as KnexType.StaticConnectionConfig,
   pool: { min: 2, max: 10 },

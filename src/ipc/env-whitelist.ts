@@ -6,7 +6,7 @@
  */
 
 /**
- * Process 2 (clauded-tools): network + compute tools.
+ * Process 2 (luna-tools): network + compute tools.
  * Gets API keys for web services but NO database path, NO bot tokens.
  */
 export const TOOLS_PROCESS_ENV: string[] = [
@@ -32,7 +32,7 @@ export const TOOLS_PROCESS_ENV: string[] = [
 ];
 
 /**
- * Process 3 (clauded-parsers): file parsing only.
+ * Process 3 (luna-parsers): file parsing only.
  * Gets ONLY file paths — no API keys, no tokens, no network config.
  * Tightest sandbox: even if a parsing library is exploited,
  * the attacker has no credentials and no network access.

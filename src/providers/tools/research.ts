@@ -102,7 +102,7 @@ async function searchSemanticScholar(query: string, limit: number, yearFrom?: nu
   try {
     const response = await fetch(url, {
       signal: AbortSignal.timeout(FETCH_TIMEOUT),
-      headers: { 'User-Agent': 'clauded/1.0 (research-tool)' },
+      headers: { 'User-Agent': 'luna/1.0 (research-tool)' },
     });
 
     if (!response.ok) {

@@ -36,9 +36,9 @@ These items use **sample/placeholder data**. They work, but show fabricated numb
 
 | Mocked Item | Where | What to Replace With | How |
 |-------------|-------|---------------------|-----|
-| **WO numbering** | `hub_create_order` tool | Your actual convention (e.g., WO-YYYY-NNN) | Tell clauded: "Our WO format is WO-2026-XXXX where XXXX is sequential" |
+| **WO numbering** | `hub_create_order` tool | Your actual convention (e.g., WO-YYYY-NNN) | Tell luna: "Our WO format is WO-2026-XXXX where XXXX is sequential" |
 | **Sample orders** | `hub_order_status` tool | Real order data from your system | Provide 5-10 real WOs (redacted if needed) |
-| **Client names** | Sample data in tools | Your actual client list | Tell clauded: "Our clients are ACME, BetaCorp, Delta Textiles..." |
+| **Client names** | Sample data in tools | Your actual client list | Tell luna: "Our clients are ACME, BetaCorp, Delta Textiles..." |
 | **Part numbers** | Sample data (FG-7710-BLU) | Your actual FG part numbers | Provide 20-30 real part numbers so we can build validation |
 | **Dashboard KPIs** | `/hub` dashboard | Connected to real DB queries | Requires software team (Level 3 upgrade) |
 
@@ -49,8 +49,8 @@ These items use **sample/placeholder data**. They work, but show fabricated numb
 | **BOM data** | `hub_bom_lookup` tool | Your BOM API or exported BOM spreadsheet | Provide: API endpoint + auth, OR export a BOM as CSV/Excel |
 | **Inventory levels** | `hub_shortage_check` tool | Your Inventory API or exported snapshot | Provide: API endpoint + auth, OR export inventory as CSV |
 | **Component part numbers** | Sample data (RM-4471-BLK) | Your actual raw material part numbers | Provide a list of 30-50 RM part numbers |
-| **Alternative materials** | Sample suggestions | Your approved alternatives list | Tell clauded: "RM-4471-BLK can be replaced by RM-4480-BLK" |
-| **Shortage thresholds** | Hardcoded in sample data | Your safety stock / min levels | Tell clauded: "Safety stock for RM-4471 is 200 yards" |
+| **Alternative materials** | Sample suggestions | Your approved alternatives list | Tell luna: "RM-4471-BLK can be replaced by RM-4480-BLK" |
+| **Shortage thresholds** | Hardcoded in sample data | Your safety stock / min levels | Tell luna: "Safety stock for RM-4471 is 200 yards" |
 
 ---
 
@@ -58,15 +58,15 @@ These items use **sample/placeholder data**. They work, but show fabricated numb
 
 ### Priority 1 — Unblocks core functionality
 
-- [ ] **Current Excel template** — The blank spreadsheet your team currently uses to normalize orders. This defines the target schema. Upload it to clauded: send the file on Telegram.
-- [ ] **WO numbering convention** — What format? Who assigns? Is it auto-generated or manual? Tell clauded conversationally.
+- [ ] **Current Excel template** — The blank spreadsheet your team currently uses to normalize orders. This defines the target schema. Upload it to luna: send the file on Telegram.
+- [ ] **WO numbering convention** — What format? Who assigns? Is it auto-generated or manual? Tell luna conversationally.
 - [ ] **FG part number samples** — 20-30 real finished goods part numbers. Helps build validation patterns. Send as a list or spreadsheet.
 
 ### Priority 2 — Enables real data
 
-- [ ] **2-3 real order documents** (redacted) — Different clients, different formats. The messier the better — this teaches clauded to parse your actual order shapes. Upload via Telegram.
-- [ ] **Email body example** — What does an order-by-email actually look like? Forward one to clauded (redacted).
-- [ ] **Client list** — Names, contact info, preferred formats, shipping carriers. Tell clauded or send as spreadsheet.
+- [ ] **2-3 real order documents** (redacted) — Different clients, different formats. The messier the better — this teaches luna to parse your actual order shapes. Upload via Telegram.
+- [ ] **Email body example** — What does an order-by-email actually look like? Forward one to luna (redacted).
+- [ ] **Client list** — Names, contact info, preferred formats, shipping carriers. Tell luna or send as spreadsheet.
 
 ### Priority 3 — Connects external systems
 
@@ -79,12 +79,12 @@ These items use **sample/placeholder data**. They work, but show fabricated numb
 ## How to Load Templates
 
 ### Via Telegram (easiest)
-Send any CSV, Excel, or document file to clauded on Telegram. The AI parses it automatically.
+Send any CSV, Excel, or document file to luna on Telegram. The AI parses it automatically.
 
 Example:
 ```
 You: [attach order-template.xlsx]
-clauded: "I've parsed your Excel file. It has columns: WO Number, Client, 
+luna: "I've parsed your Excel file. It has columns: WO Number, Client, 
 Part Number, Qty, Due Date, Priority. Want me to use this as the template 
 for order ingestion?"
 You: "Yes, use this as our standard order template"
@@ -101,11 +101,11 @@ packs/operations-hub/templates/
 ```
 
 ### Via conversational description
-Tell clauded what you need:
+Tell luna what you need:
 ```
 You: "Our orders come in Excel with columns: PO Number, Style, Color, 
      Size Run, Total Qty, Ship Date. Style maps to our part number."
-clauded: [updates the tool to use your column mapping]
+luna: [updates the tool to use your column mapping]
 ```
 
 ---
@@ -114,9 +114,9 @@ clauded: [updates the tool to use your column mapping]
 
 ### Conversational (what YOU can do)
 
-These changes can be made by talking to clauded — no IT team needed:
+These changes can be made by talking to luna — no IT team needed:
 
-| What to Change | How to Tell clauded |
+| What to Change | How to Tell luna |
 |---------------|-------------------|
 | WO number format | "Our WO format is WO-YYYY-NNN, sequential" |
 | Client terminology | "ACME calls part numbers 'Style Numbers'" |
@@ -141,26 +141,26 @@ These changes can be made by talking to clauded — no IT team needed:
 ## When You Hit a Wall
 
 ### "The tool gives wrong results"
-**Tell clauded what's wrong.** Example:
+**Tell luna what's wrong.** Example:
 ```
 You: "The BOM lookup for FG-7710 shows wrong components. The real BOM 
      has 8 components, not 5. Here's the correct list: [paste list]"
-clauded: [updates the tool with correct data]
+luna: [updates the tool with correct data]
 ```
 
 ### "I need a feature the tool doesn't have"
-**Describe what you need.** clauded can build Level 2 tools conversationally:
+**Describe what you need.** luna can build Level 2 tools conversationally:
 ```
 You: "I need a tool that calculates production ETA based on 
      current progress rate and remaining quantity"
-clauded: [creates the tool, tests it, asks you to verify]
+luna: [creates the tool, tests it, asks you to verify]
 ```
 
 ### "The dashboard doesn't show what I need"
-**This requires the software team.** Tell clauded:
+**This requires the software team.** Tell luna:
 ```
 You: "I need the dashboard to show a Gantt chart of all active WOs"
-clauded: "That dashboard modification needs the development team. 
+luna: "That dashboard modification needs the development team. 
          I can draft the requirements document for them. The tool to 
          calculate the timeline data is ready — they build the visual."
 ```
@@ -169,14 +169,14 @@ clauded: "That dashboard modification needs the development team.
 **Contact IT.** API connections require:
 1. API endpoint URL added to `.env`
 2. Authentication credentials added to `.env`
-3. Tool updated with real endpoint (clauded or IT can do this)
+3. Tool updated with real endpoint (luna or IT can do this)
 4. Test with real data to verify
 
-### How to request support from the team behind clauded
-Tell clauded directly:
+### How to request support from the team behind luna
+Tell luna directly:
 ```
 You: "I need help from the development team with [description]"
-clauded: [drafts a requirements document and tells you who to contact]
+luna: [drafts a requirements document and tells you who to contact]
 ```
 
 Or contact the software development team directly with:
@@ -245,9 +245,9 @@ When you see this banner, the data is fabricated.
 
 ## Current Assumptions in Sample Data
 
-These assumptions were made to build the preview. **Correct them** by telling clauded the real values:
+These assumptions were made to build the preview. **Correct them** by telling luna the real values:
 
-| Assumption | Sample Value | Tell clauded your real value |
+| Assumption | Sample Value | Tell luna your real value |
 |-----------|-------------|---------------------------|
 | WO format | WO-YYYY-NNNN (random) | "Our WOs are formatted as [your format]" |
 | Default quantity | 500 pcs | "Our typical order is [your range] pcs" |
@@ -266,11 +266,11 @@ These assumptions were made to build the preview. **Correct them** by telling cl
 2. **THIS WEEK:** Provide Priority 1 items (Excel template, WO format, part numbers)
 3. **NEXT WEEK:** Provide Priority 2 items (sample orders, email examples, client list)
 4. **WHEN READY:** Provide Priority 3 items (API endpoints and credentials)
-5. **ONGOING:** Fine-tune via conversation — clauded adapts to your corrections
+5. **ONGOING:** Fine-tune via conversation — luna adapts to your corrections
 
-The more data you provide, the more accurate the hub becomes. Start with what you have — clauded learns incrementally.
+The more data you provide, the more accurate the hub becomes. Start with what you have — luna learns incrementally.
 
 ---
 
-*Operations Hub Completion Guide — clauded v1.0.0-rc.30*
-*Questions? Tell clauded: "I need help with the operations hub setup"*
+*Operations Hub Completion Guide — luna v1.0.0-rc.30*
+*Questions? Tell luna: "I need help with the operations hub setup"*

@@ -1,5 +1,5 @@
 /**
- * Application — the orchestration core of clauded.
+ * Application — the orchestration core of Luna.
  *
  * Composes subsystems via typed registration, manages lifecycle (startup/shutdown),
  * and provides the unified notification channel for autonomous behavior.
@@ -211,7 +211,7 @@ export class Application {
     if (this._shuttingDown) return;
     this._shuttingDown = true;
 
-    logger.info({ signal }, 'Shutting down clauded...');
+    logger.info({ signal }, 'Shutting down Luna...');
 
     // 1. Stop platforms
     for (const platform of this._platforms) {
@@ -255,7 +255,7 @@ export class Application {
     }
 
     this._started = false;
-    logger.info('clauded stopped. Goodbye.');
+    logger.info('Luna stopped. Goodbye.');
   }
 
   // ── Signal Handlers ────────────────────────────────────────

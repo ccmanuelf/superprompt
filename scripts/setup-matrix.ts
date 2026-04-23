@@ -55,7 +55,7 @@ async function waitForHealth(url: string, maxWaitMs: number = 60_000): Promise<v
 }
 
 async function main(): Promise<void> {
-  console.log('=== clauded Matrix/Synapse Setup ===\n');
+  console.log('=== Luna Matrix/Synapse Setup ===\n');
 
   // 1. Start Synapse
   console.log('1. Starting Synapse container...');
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   console.log('3. Registering admin account...');
   try {
     run(
-      `docker exec clauded-synapse register_new_matrix_user ` +
+      `docker exec luna-synapse register_new_matrix_user ` +
         `-c /data/homeserver.yaml ` +
         `--admin ` +
         `-u admin -p ${adminPassword}`,
@@ -84,12 +84,12 @@ async function main(): Promise<void> {
 
   // 4. Register bot
   const botPassword = generatePassword();
-  console.log('\n4. Registering bot account (clauded-bot)...');
+  console.log('\n4. Registering bot account (luna-bot)...');
   try {
     run(
-      `docker exec clauded-synapse register_new_matrix_user ` +
+      `docker exec luna-synapse register_new_matrix_user ` +
         `-c /data/homeserver.yaml ` +
-        `-u clauded-bot -p ${botPassword}`,
+        `-u luna-bot -p ${botPassword}`,
       { silent: true },
     );
     console.log(`   Bot account created.`);
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       type: 'm.login.password',
-      user: 'clauded-bot',
+      user: 'luna-bot',
       password: botPassword,
     }),
   });
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
     console.log('\n   If the bot account already exists, log in manually:');
     console.log('   curl -X POST http://localhost:8008/_matrix/client/r0/login \\');
     console.log('     -H "Content-Type: application/json" \\');
-    console.log('     -d \'{"type":"m.login.password","user":"clauded-bot","password":"YOUR_PASSWORD"}\'');
+    console.log('     -d \'{"type":"m.login.password","user":"luna-bot","password":"YOUR_PASSWORD"}\'');
     return;
   }
 
@@ -124,15 +124,15 @@ async function main(): Promise<void> {
   console.log(`\n   Add this to your .env file:`);
   console.log(`   MATRIX_HOMESERVER=http://localhost:8008`);
   console.log(`   MATRIX_ACCESS_TOKEN=${loginData.access_token}`);
-  console.log(`   MATRIX_ALLOWED_USERS=${loginData.user_id.replace('clauded-bot', 'admin')}`);
+  console.log(`   MATRIX_ALLOWED_USERS=${loginData.user_id.replace('luna-bot', 'admin')}`);
 
   console.log('\n=== Setup Complete ===');
   console.log('\nNext steps:');
   console.log('1. Add the above values to your .env file');
   console.log('2. Connect with Element or another Matrix client to http://localhost:8008');
   console.log('3. Log in as admin and create a room');
-  console.log('4. Invite @clauded-bot:clauded.local to the room');
-  console.log('5. Start clauded — the bot will auto-join and respond');
+  console.log('4. Invite @luna-bot:luna.local to the room');
+  console.log('5. Start Luna — the bot will auto-join and respond');
 }
 
 main().catch((err) => {

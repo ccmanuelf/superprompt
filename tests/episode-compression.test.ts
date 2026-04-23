@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
  * Uses a real SQLite database with sqlite-vec loaded, matching production schema.
  */
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-episodes');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-episodes');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'episodes-test.db');
 

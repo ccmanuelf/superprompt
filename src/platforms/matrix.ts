@@ -432,7 +432,7 @@ async function handleCommand(
       await sendNotice(
         client,
         roomId,
-        'clauded — Command Reference\n\n' +
+        'Luna — Command Reference\n\n' +
 
           '💬 Chat & AI\n' +
           '!newchat — Clear conversation history\n' +
@@ -1159,7 +1159,7 @@ async function handleCommand(
         try {
           scaffoldPack(name, description);
           await sendNotice(client, roomId,
-            `Pack scaffolded: packs/${name}/\n\nNext: edit pack.yaml, add tools, restart clauded, verify with !pack info ${name}`,
+            `Pack scaffolded: packs/${name}/\n\nNext: edit pack.yaml, add tools, restart Luna, verify with !pack info ${name}`,
           );
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);

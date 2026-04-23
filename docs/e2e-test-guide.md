@@ -1,10 +1,10 @@
-# clauded v1.0.0-rc.29 — End-to-End Test Guide & Checklist
+# luna v1.0.0-rc.29 — End-to-End Test Guide & Checklist
 
 Complete E2E validation for the architecture-hardened version (SA1-SA5).
 Run all sections to certify a deployment is production-ready.
 
 **Estimated time:** 60-75 minutes
-**Prerequisites:** clauded running, Telegram bot connected, Ollama responding
+**Prerequisites:** luna running, Telegram bot connected, Ollama responding
 
 ---
 
@@ -12,13 +12,13 @@ Run all sections to certify a deployment is production-ready.
 
 | # | Test | Expected | Pass |
 |---|------|----------|------|
-| 1.1 | `docker ps` shows clauded-bot healthy | Status: healthy | [ ] |
-| 1.2 | `docker logs clauded-bot \| grep "Application started"` | Log entry present | [ ] |
-| 1.3 | `docker logs clauded-bot \| grep "Tools process (P2) spawned"` | Process 2 running | [ ] |
-| 1.4 | `docker logs clauded-bot \| grep "Parsers process (P3) spawned"` | Process 3 running | [ ] |
-| 1.5 | `docker logs clauded-bot \| grep "Loaded domain pack" \| wc -l` | 9 packs loaded | [ ] |
-| 1.6 | `docker logs clauded-bot \| grep "Telegram bot started"` | Bot connected | [ ] |
-| 1.7 | `docker logs clauded-bot \| grep -c "WARN\|ERROR"` | 0 warnings/errors | [ ] |
+| 1.1 | `docker ps` shows luna-bot healthy | Status: healthy | [ ] |
+| 1.2 | `docker logs luna-bot \| grep "Application started"` | Log entry present | [ ] |
+| 1.3 | `docker logs luna-bot \| grep "Tools process (P2) spawned"` | Process 2 running | [ ] |
+| 1.4 | `docker logs luna-bot \| grep "Parsers process (P3) spawned"` | Process 3 running | [ ] |
+| 1.5 | `docker logs luna-bot \| grep "Loaded domain pack" \| wc -l` | 9 packs loaded | [ ] |
+| 1.6 | `docker logs luna-bot \| grep "Telegram bot started"` | Bot connected | [ ] |
+| 1.7 | `docker logs luna-bot \| grep -c "WARN\|ERROR"` | 0 warnings/errors | [ ] |
 | 1.8 | Voice web server started on configured port | Log entry present | [ ] |
 
 ## Section 2: Basic Messaging (5 min)
@@ -190,12 +190,12 @@ After passing the E2E checklist, the **Production Planning team** should complet
 - How to validate real data vs sample data (step-by-step)
 - Current assumptions and how to correct them
 
-**This guide is for the Planning team, not IT.** Most configuration is done by talking to clauded.
+**This guide is for the Planning team, not IT.** Most configuration is done by talking to luna.
 
 ---
 
 ## Claude Subscription Note
 
-clauded uses the Claude CLI (`claude -p`) which runs on an **Anthropic subscription** (fixed monthly fee). This is the same subscription used for the demo. **No per-token API consumption** — the deployed version costs the same as the development environment.
+luna uses the Claude CLI (`claude -p`) which runs on an **Anthropic subscription** (fixed monthly fee). This is the same subscription used for the demo. **No per-token API consumption** — the deployed version costs the same as the development environment.
 
 Authentication: `CLAUDE_CODE_OAUTH_TOKEN` env var, generated via `claude setup-token`.

@@ -4,25 +4,25 @@
 
 This pack manages the lifecycle of Level 3 feature requests — features that require web UI development, new server routes, or TypeScript code changes that can't be created conversationally.
 
-It implements a 13-step workflow where clauded handles intake, documentation, scheduling, code drafting, and monitoring, while the dev team handles review, approval, and deployment.
+It implements a 13-step workflow where luna handles intake, documentation, scheduling, code drafting, and monitoring, while the dev team handles review, approval, and deployment.
 
 ## The 13-Step Workflow
 
 | Step | Actor | What happens |
 |------|-------|-------------|
 | 1 | User | Describes the desired feature in conversation |
-| 2 | clauded (feature-architect skill) | Guides user through structured PRD conversation: problem → workflow → outcome → scope → success criteria |
-| 3 | clauded | Creates kanban card with PRD document attached |
-| 4 | clauded | Notifies user: "Request will be reviewed during off-hours" |
-| 5 | clauded (off-hours) | Reviews PRD draft, starts coding the feature |
-| 6 | clauded | Assigns review task to dev team, notifies them |
-| 7 | clauded | Notifies user: "Submitted to dev team, expect response in 48h" |
+| 2 | luna (feature-architect skill) | Guides user through structured PRD conversation: problem → workflow → outcome → scope → success criteria |
+| 3 | luna | Creates kanban card with PRD document attached |
+| 4 | luna | Notifies user: "Request will be reviewed during off-hours" |
+| 5 | luna (off-hours) | Reviews PRD draft, starts coding the feature |
+| 6 | luna | Assigns review task to dev team, notifies them |
+| 7 | luna | Notifies user: "Submitted to dev team, expect response in 48h" |
 | 8 | Dev team | Reviews code and PRD, marks task as reviewed |
-| 9 | clauded | Monitors card status, notifies user of changes |
+| 9 | luna | Monitors card status, notifies user of changes |
 | 10 | Dev team (if approved) | Adjusts code, commits, marks as approved |
 | 11 | Dev team (if rejected) | Cancels task, includes reasons |
-| 12 | clauded (off-hours) | Verifies commit, deploys during off-hours, runs tests |
-| 13 | clauded | Notifies user, marks kanban card as completed |
+| 12 | luna (off-hours) | Verifies commit, deploys during off-hours, runs tests |
+| 13 | luna | Notifies user, marks kanban card as completed |
 
 ## Skills
 
@@ -50,7 +50,7 @@ It implements a 13-step workflow where clauded handles intake, documentation, sc
 ### For users (via Telegram):
 ```
 "I need a new dashboard for tracking production orders"
-→ clauded activates feature-architect skill
+→ luna activates feature-architect skill
 → Guides through PRD conversation
 → Generates document and kanban card
 → User waits for dev team response
@@ -66,7 +66,7 @@ feature_request reject <id>      # Reject with reason
 
 ## Configuration
 
-No configuration needed. The pack auto-loads from the `packs/developer/` directory on clauded restart.
+No configuration needed. The pack auto-loads from the `packs/developer/` directory on luna restart.
 
 ## Dependencies
 

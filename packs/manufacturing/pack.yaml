@@ -6,7 +6,7 @@ description: >
   job sequencing, value stream mapping, theory of constraints, CONWIP/Heijunka,
   design of experiments, and finite state machine simulation.
 version: 1.0.0
-author: clauded
+author: luna
 enabled: true
 level: 3
 

@@ -8,7 +8,7 @@ All decisions below were researched and confirmed during planning. They should N
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Project name | **clauded** | Daemon naming convention (like `sshd`, `httpd`). "ClaudeClaw" was the prototype name. |
+| Project name | **luna** | Daemon naming convention (like `sshd`, `httpd`). "ClaudeClaw" was the prototype name. |
 | Repo | `superprompt/` | Retains existing repo, REBUILD_PROMPT.md kept as reference |
 
 ---

@@ -14,7 +14,7 @@ vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('../src/config.js', () => ({
-  STORE_DIR: resolve(tmpdir(), 'clauded-test-inventory'),
+  STORE_DIR: resolve(tmpdir(), 'luna-test-inventory'),
   config: { NODE_ENV: 'test' },
 }));
 
@@ -52,7 +52,7 @@ async function initTestDb(): Promise<void> {
 }
 
 beforeEach(async () => {
-  mkdirSync(resolve(tmpdir(), 'clauded-test-inventory'), { recursive: true });
+  mkdirSync(resolve(tmpdir(), 'luna-test-inventory'), { recursive: true });
   await initTestDb();
 });
 afterAll(async () => { if (testKnex) await testKnex.destroy(); });

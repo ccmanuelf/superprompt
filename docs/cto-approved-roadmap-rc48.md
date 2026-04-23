@@ -1,4 +1,4 @@
-# clauded — CTO-Approved Enhancement Roadmap
+# luna — CTO-Approved Enhancement Roadmap
 
 **Approved by:** CTO
 **Date:** April 10, 2026
@@ -27,11 +27,11 @@ Four workstreams approved for execution before public deployment. All items clas
 | # | Action | Why | Effort | Deliverable |
 |---|--------|-----|--------|-------------|
 | 1.1 | TLS mandatory | All traffic encrypted. Browsers block microphone without HTTPS. | Config — already supported | `VOICE_WEB_TLS_CERT/KEY` in `.env` |
-| 1.2 | Reverse proxy (Caddy) | Automatic HTTPS via Let's Encrypt, DDoS basic protection, request size limits, HTTP/2. clauded's built-in HTTP server is not production-grade for public exposure. | Add Caddy service to docker-compose.yml | `docker/Caddyfile` + compose service |
+| 1.2 | Reverse proxy (Caddy) | Automatic HTTPS via Let's Encrypt, DDoS basic protection, request size limits, HTTP/2. luna's built-in HTTP server is not production-grade for public exposure. | Add Caddy service to docker-compose.yml | `docker/Caddyfile` + compose service |
 | 1.3 | Firewall rules | Only expose port 443 (HTTPS). Ports 3030, 8080, 8000 stay internal. | InMotion server config | Firewall rule documentation |
 | 1.4 | Telegram webhook mode | Long-polling is inefficient for public servers. Webhook requires HTTPS. | grammy config change (not code) | `.env` flag: `TELEGRAM_WEBHOOK_URL` |
 | 1.5 | Tighten auth rate limits | 5 failures/min too generous. Reduce to 3/min, IP ban after 15/hour. | Small code change in `server.ts` | Updated rate limiter |
-| 1.6 | WAF / fail2ban | Block automated scanners, known attack patterns, brute force. | InMotion server-level config | fail2ban rules for clauded logs |
+| 1.6 | WAF / fail2ban | Block automated scanners, known attack patterns, brute force. | InMotion server-level config | fail2ban rules for luna logs |
 
 ### SHOULD Do (Recommended, Not Optional per CTO)
 
@@ -76,10 +76,10 @@ InMotion Server (Alma Linux 8, 64GB, 16 cores)
 │   ├── SearXNG (web search)
 │   └── Speaches (voice STT/TTS)
 ├── Per-Deployment (up to 10)
-│   ├── clauded-bot-1 (Telegram bot + web UI, own DB)
-│   ├── clauded-bot-2
+│   ├── luna-bot-1 (Telegram bot + web UI, own DB)
+│   ├── luna-bot-2
 │   ├── ...
-│   └── clauded-bot-10
+│   └── luna-bot-10
 ├── Caddy (reverse proxy, TLS termination)
 └── MariaDB (shared, per-deployment databases)
 ```
@@ -106,7 +106,7 @@ InMotion Server (Alma Linux 8, 64GB, 16 cores)
 | Speaches (shared) | 2GB | 2 cores | 1 |
 | Caddy (shared) | 128MB | 0.5 core | 1 |
 | MariaDB (shared) | 4GB | 2 cores | 1 |
-| clauded-bot (per deployment) | 1GB each | 0.5 core each | Up to 10 |
+| luna-bot (per deployment) | 1GB each | 0.5 core each | Up to 10 |
 | **Total** | **~25GB allocated, ~39GB headroom** | **~12 cores allocated, 4 headroom** | |
 
 ---
@@ -148,7 +148,7 @@ src/db/
 
 | Deliverable | Description |
 |-------------|-------------|
-| Schema generation script | Creates all tables in MariaDB from clauded's table definitions |
+| Schema generation script | Creates all tables in MariaDB from luna's table definitions |
 | Data migration script | Exports SQLite data → imports into MariaDB (handles type mapping) |
 | Dual-backend test runner | CI runs full test suite against both SQLite and MariaDB |
 | Rollback procedure | MariaDB → SQLite export if needed |
@@ -193,4 +193,4 @@ src/db/
 
 ---
 
-*clauded v1.0.0-rc.48 — CTO-Approved Enhancement Roadmap*
+*luna v1.0.0-rc.48 — CTO-Approved Enhancement Roadmap*

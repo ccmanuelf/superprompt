@@ -1,8 +1,8 @@
 /**
  * IPC Message Protocol — shared between all processes.
  *
- * Process 1 (clauded-core) communicates with Process 2 (clauded-tools)
- * and Process 3 (clauded-parsers) via child_process.fork() IPC channels.
+ * Process 1 (luna-core) communicates with Process 2 (luna-tools)
+ * and Process 3 (luna-parsers) via child_process.fork() IPC channels.
  *
  * All messages use discriminated unions for type-safe handling.
  */

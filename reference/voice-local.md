@@ -34,7 +34,7 @@ Speaches is defined as a service in the main `docker-compose.yml`:
 services:
   speaches:
     image: ghcr.io/speaches-ai/speaches:latest-cpu
-    container_name: clauded-speaches
+    container_name: luna-speaches
     volumes:
       - speaches-models:/root/.cache
     environment:
@@ -48,7 +48,7 @@ services:
       retries: 5
       start_period: 120s  # Models need time to load on first start
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:

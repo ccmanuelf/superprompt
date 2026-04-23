@@ -44,7 +44,7 @@ export const config = {
 
   // Telegram
   TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN || '',
-  TELEGRAM_WEBHOOK_URL: env.TELEGRAM_WEBHOOK_URL || '', // e.g. https://clauded.example.com/telegram/webhook
+  TELEGRAM_WEBHOOK_URL: env.TELEGRAM_WEBHOOK_URL || '', // e.g. https://luna.example.com/telegram/webhook
   TELEGRAM_WEBHOOK_SECRET: env.TELEGRAM_WEBHOOK_SECRET || '',
   ALLOWED_CHAT_ID: env.ALLOWED_CHAT_ID || '',
 
@@ -66,7 +66,7 @@ export const config = {
   VOICE_WEB_TOKEN: env.VOICE_WEB_TOKEN || '',
   VOICE_WEB_TLS_CERT: env.VOICE_WEB_TLS_CERT || '',
   VOICE_WEB_TLS_KEY: env.VOICE_WEB_TLS_KEY || '',
-  VOICE_WEB_ORIGIN: env.VOICE_WEB_ORIGIN || '',  // Allowed Origin for cloud (e.g., https://clauded.example.com)
+  VOICE_WEB_ORIGIN: env.VOICE_WEB_ORIGIN || '',  // Allowed Origin for cloud (e.g., https://luna.example.com)
 
   // Paths
   PROJECT_ROOT,

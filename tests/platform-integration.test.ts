@@ -1,5 +1,5 @@
 /**
- * Comprehensive user-facing integration tests for ALL major clauded functionalities.
+ * Comprehensive user-facing integration tests for ALL major Luna functionalities.
  *
  * No mocked databases — real Knex SQLite, real function calls.
  * Tests real user scenarios from the platform perspective.
@@ -34,8 +34,8 @@ vi.mock('../src/logger.js', () => ({
 }));
 
 vi.mock('../src/config.js', () => ({
-  STORE_DIR: '/tmp/clauded-platform-test',
-  PROJECT_ROOT: '/tmp/clauded-platform-test',
+  STORE_DIR: '/tmp/luna-platform-test',
+  PROJECT_ROOT: '/tmp/luna-platform-test',
   config: { NODE_ENV: 'test', ALLOWED_CHAT_ID: '111,222' },
 }));
 

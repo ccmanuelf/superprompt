@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>clauded — Voice Chat</title>
+  <title>Luna — Voice Chat</title>
   <style>
     :root {
       --bg: #0a0a0f;
@@ -248,7 +248,7 @@
 
 <!-- Auth Screen -->
 <div id="auth-screen">
-  <h1>clauded voice</h1>
+  <h1>Luna voice</h1>
   <p style="color: var(--text-dim); font-size: 0.85rem; max-width: 340px; margin: 0 auto 1rem; line-height: 1.5;">
     Enter your personal access token to connect.<br>
     Generate one in Telegram: <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px; font-size: 0.8rem;">/webtoken create</code>
@@ -404,7 +404,7 @@ function connect() {
         greetingReceived = true;
         actionBtn.disabled = false;
         if (msg.text) {
-          addMessage(msg.text, 'assistant', 'clauded');
+          addMessage(msg.text, 'assistant', 'Luna');
         }
         if (msg.warmupTimedOut) {
           stateIndicator.textContent = msg.language === 'es'

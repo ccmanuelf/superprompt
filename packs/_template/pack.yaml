@@ -4,7 +4,7 @@
 # Copy this directory to packs/<your-name>/ and customize.
 # See docs/customization-guide.md for the full guide.
 #
-# After editing, restart clauded or use /reload for tool/skill changes.
+# After editing, restart luna or use /reload for tool/skill changes.
 # pack.yaml changes (capabilities, intent_patterns) require a restart.
 # ============================================================
 

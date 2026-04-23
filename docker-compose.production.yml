@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# clauded — Production Multi-Instance Deployment
+# Luna — Production Multi-Instance Deployment
 # ═══════════════════════════════════════════════════════════════
 #
 # Architecture B: Shared infrastructure with per-deployment bots.
@@ -41,7 +41,7 @@ services:
   # instances based on path prefix or subdomain.
   caddy:
     image: caddy:2-alpine
-    container_name: clauded-caddy
+    container_name: luna-caddy
     environment:
       - CADDY_DOMAIN=${CADDY_DOMAIN:-localhost}
     volumes:
@@ -52,7 +52,7 @@ services:
       - "80:80"
       - "443:443"
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:
@@ -66,12 +66,12 @@ services:
   # MariaDB (default):
   mariadb:
     image: mariadb:11
-    container_name: clauded-mariadb
+    container_name: luna-mariadb
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-clauded-root-change-me}
-      - MYSQL_DATABASE=${DB_NAME:-clauded}
-      - MYSQL_USER=${DB_USER:-clauded}
-      - MYSQL_PASSWORD=${DB_PASSWORD:-clauded-change-me}
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-luna-root-change-me}
+      - MYSQL_DATABASE=${DB_NAME:-luna}
+      - MYSQL_USER=${DB_USER:-luna}
+      - MYSQL_PASSWORD=${DB_PASSWORD:-luna-change-me}
     volumes:
       - mariadb-data:/var/lib/mysql
     # Not exposed to host — internal network only
@@ -82,7 +82,7 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:
@@ -95,21 +95,21 @@ services:
   # PostgreSQL (alternative):
   postgres:
     image: postgres:16-alpine
-    container_name: clauded-postgres
+    container_name: luna-postgres
     environment:
-      - POSTGRES_DB=${DB_NAME:-clauded}
-      - POSTGRES_USER=${DB_USER:-clauded}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-clauded-change-me}
+      - POSTGRES_DB=${DB_NAME:-luna}
+      - POSTGRES_USER=${DB_USER:-luna}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-luna-change-me}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-clauded}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-luna}"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 15s
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:
@@ -122,11 +122,11 @@ services:
   # ── Ollama (shared AI model inference) ──────────────────────
   ollama:
     image: ollama/ollama:latest
-    container_name: clauded-ollama
+    container_name: luna-ollama
     volumes:
       - ollama-models:/root/.ollama
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:
@@ -137,7 +137,7 @@ services:
   # ── SearXNG (shared web search) ─────────────────────────────
   searxng:
     image: searxng/searxng:latest
-    container_name: clauded-searxng
+    container_name: luna-searxng
     volumes:
       - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
     environment:
@@ -149,7 +149,7 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:
@@ -160,7 +160,7 @@ services:
   # ── Speaches (shared voice STT/TTS) ────────────────────────
   speaches:
     image: ghcr.io/speaches-ai/speaches:latest-cpu
-    container_name: clauded-speaches
+    container_name: luna-speaches
     volumes:
       - speaches-models:/root/.cache
     environment:
@@ -172,7 +172,7 @@ services:
       retries: 5
       start_period: 120s
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:
@@ -184,7 +184,7 @@ services:
   # Per-Deployment Bot Instances
   # ══════════════════════════════════════════════════════════════
   #
-  # Each deployment is a separate clauded bot with its own:
+  # Each deployment is a separate Luna bot with its own:
   #   - Telegram bot token (TELEGRAM_BOT_TOKEN)
   #   - Authorized user list (ALLOWED_CHAT_ID)
   #   - Web UI port (VOICE_WEB_PORT)
@@ -203,11 +203,11 @@ services:
   # ══════════════════════════════════════════════════════════════
 
   # ── Deployment 1 ────────────────────────────────────────────
-  clauded-1:
+  luna-1:
     build:
       context: .
-      dockerfile: docker/clauded.dockerfile
-    container_name: clauded-bot-1
+      dockerfile: docker/luna.dockerfile
+    container_name: luna-bot-1
     env_file:
       - .env.production
       - .env.deploy-1
@@ -228,7 +228,7 @@ services:
       speaches:
         condition: service_started
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:
@@ -239,11 +239,11 @@ services:
       - deploy-1
 
   # ── Deployment 2 ────────────────────────────────────────────
-  clauded-2:
+  luna-2:
     build:
       context: .
-      dockerfile: docker/clauded.dockerfile
-    container_name: clauded-bot-2
+      dockerfile: docker/luna.dockerfile
+    container_name: luna-bot-2
     env_file:
       - .env.production
       - .env.deploy-2
@@ -264,7 +264,7 @@ services:
       speaches:
         condition: service_started
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:
@@ -276,7 +276,7 @@ services:
 
   # ── Deployments 3-10: Copy the pattern above ────────────────
   # Each deployment follows the same template:
-  #   - container_name: clauded-bot-N
+  #   - container_name: luna-bot-N
   #   - env_file: .env.deploy-N
   #   - volumes: ./store/deploy-N, ./workspace/deploy-N, ./forge/deploy-N
   #   - profile: deploy-N
@@ -284,7 +284,7 @@ services:
   # For convenience, use the script: scripts/add-deployment.sh N
 
 networks:
-  clauded-net:
+  luna-net:
     driver: bridge
 
 volumes:

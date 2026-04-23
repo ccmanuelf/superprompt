@@ -43,7 +43,7 @@ const order = {
   progress_percent: 0,
   source: args.source || 'telegram',
   created_at: now.toISOString(),
-  created_by: 'clauded-bot',
+  created_by: 'luna-bot',
 };
 return {
   order,

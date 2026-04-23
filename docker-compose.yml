@@ -1,10 +1,10 @@
 services:
-  # ── clauded bot ──────────────────────────────────────────────
-  clauded:
+  # ── Luna bot ─────────────────────────────────────────────────
+  luna:
     build:
       context: .
-      dockerfile: docker/clauded.dockerfile
-    container_name: clauded-bot
+      dockerfile: docker/luna.dockerfile
+    container_name: luna-bot
     env_file:
       - .env
       - docker/.env.docker
@@ -41,7 +41,7 @@ services:
       searxng:
         condition: service_healthy
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     # SECURITY: no access to sensitive host directories
     # Mounted: .env (ro), store (rw), workspace (rw), packs (rw), forge (rw), docs (ro)
@@ -49,7 +49,7 @@ services:
   # ── Speaches voice sidecar ─────────────────────────────────
   speaches:
     image: ghcr.io/speaches-ai/speaches:latest-cpu
-    container_name: clauded-speaches
+    container_name: luna-speaches
     volumes:
       - speaches-models:/root/.cache
     environment:
@@ -62,7 +62,7 @@ services:
       retries: 5
       start_period: 120s
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:
@@ -79,12 +79,12 @@ services:
   # web_search tool. Internal network only (not exposed to host).
   searxng:
     image: searxng/searxng:latest
-    container_name: clauded-searxng
+    container_name: luna-searxng
     volumes:
       - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
     environment:
       - SEARXNG_BASE_URL=http://searxng:8080
-    # No ports exposed — only accessible from clauded via Docker network
+    # No ports exposed — only accessible from the Luna service via Docker network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]
       interval: 30s
@@ -92,7 +92,7 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     deploy:
       resources:
@@ -105,7 +105,7 @@ services:
   # Only service that exposes ports to the network (80 + 443).
   caddy:
     image: caddy:2-alpine
-    container_name: clauded-caddy
+    container_name: luna-caddy
     environment:
       - CADDY_DOMAIN=${CADDY_DOMAIN:-localhost}
     volumes:
@@ -116,19 +116,19 @@ services:
       - "80:80"     # HTTP → HTTPS redirect
       - "443:443"   # HTTPS (production)
     depends_on:
-      - clauded
+      - luna
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     profiles:
       # Only starts when explicitly requested: docker compose --profile production up
-      # For local dev, access clauded directly on port 3030
+      # For local dev, access Luna directly on port 3030
       - production
 
   # ── Synapse Matrix homeserver (optional) ───────────────────
   synapse:
     image: matrixdotorg/synapse:latest
-    container_name: clauded-synapse
+    container_name: luna-synapse
     volumes:
       - synapse-data:/data
       - ./docker/synapse/homeserver.yaml:/data/homeserver.yaml:ro
@@ -143,14 +143,14 @@ services:
       timeout: 5s
       retries: 3
     networks:
-      - clauded-net
+      - luna-net
     restart: unless-stopped
     profiles:
       # Only starts when explicitly requested: docker compose --profile matrix up
       - matrix
 
 networks:
-  clauded-net:
+  luna-net:
     driver: bridge
 
 volumes:

@@ -5,7 +5,7 @@
 
 ## What This Demonstrates
 
-This pack shows how clauded integrates with a client's systems to generate recurring revenue:
+This pack shows how luna integrates with a client's systems to generate recurring revenue:
 
 1. **Order ingestion:** Pull orders from the client's Shopify store
 2. **Status tracking:** Check fulfillment progress per order

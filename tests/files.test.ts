@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 // We test parseFile by calling it directly on test fixture files
 import { parseFile } from '../src/files.js';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-files');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-files');
 
 beforeAll(() => {
   mkdirSync(TMP_DIR, { recursive: true });

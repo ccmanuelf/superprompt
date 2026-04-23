@@ -20,7 +20,7 @@ import { validateCron } from '../src/scheduler.js';
  * NO mocked data. All tests use real SQLite with production schema.
  */
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-proactive');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-proactive');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'proactive-test.db');
 

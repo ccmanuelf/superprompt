@@ -14,9 +14,9 @@ vi.mock('../src/db-core.js', () => ({
 }));
 
 // Mock config to point to temp directory
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-auto-import');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-auto-import');
 vi.mock('../src/config.js', () => ({
-  PROJECT_ROOT: resolve(tmpdir(), 'clauded-test-auto-import'),
+  PROJECT_ROOT: resolve(tmpdir(), 'luna-test-auto-import'),
 }));
 
 vi.mock('../src/logger.js', () => ({

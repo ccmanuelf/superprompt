@@ -21,7 +21,7 @@ import {
   classifyMessage,
 } from '../src/providers/router.js';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-s2');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-s2');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 's2-test.db');
 

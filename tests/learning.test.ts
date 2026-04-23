@@ -407,7 +407,7 @@ describe('NLP fallback marker detection', () => {
 
 // ── DB CRUD (real SQLite) ───────────────────────────────────
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-learning');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-learning');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'learning-test.db');
 

@@ -10,7 +10,7 @@ vi.mock('../src/db-knex.js', async (importOriginal) => {
   return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
 });
 vi.mock('../src/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
-vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'clauded-test-conwip'), config: { NODE_ENV: 'test' } }));
+vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'luna-test-conwip'), config: { NODE_ENV: 'test' } }));
 
 import { analyzeCONWIP, analyzeHeijunka } from '../src/conwip/analysis.js';
 import { initConwipTables, saveConwip, getConwip, listConwips, deleteConwip } from '../src/conwip/index.js';

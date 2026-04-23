@@ -1,7 +1,7 @@
 # Caddy Production Config — Multi-Instance Reverse Proxy
 #
 # Routes traffic to per-deployment bot instances based on path prefix.
-# Each deployment gets: /deploy-N/* → clauded-bot-N:PORT
+# Each deployment gets: /deploy-N/* → luna-bot-N:PORT
 #
 # Default (no prefix) routes to deployment 1.
 
@@ -23,16 +23,16 @@
 	# ── Telegram Webhooks (per-deployment) ──
 	# Each deployment has a unique webhook path
 	handle /webhook/deploy-1/* {
-		reverse_proxy clauded-bot-1:3031
+		reverse_proxy luna-bot-1:3031
 	}
 	handle /webhook/deploy-2/* {
-		reverse_proxy clauded-bot-2:3032
+		reverse_proxy luna-bot-2:3032
 	}
 
 	# ── Deployment 1 (default — no prefix) ──
 	# Main deployment accessible at the root domain
 	handle {
-		reverse_proxy clauded-bot-1:3031 {
+		reverse_proxy luna-bot-1:3031 {
 			header_up X-Real-IP {remote_host}
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}

@@ -1,22 +1,22 @@
-# clauded — User Help Guide
+# luna — User Help Guide
 
 Everything you need to know to work effectively with your AI assistant.
-Available in English and Spanish — clauded responds in your language.
+Available in English and Spanish — luna responds in your language.
 
 ---
 
 ## Getting Started
 
-**clauded** is your department's AI partner. It helps with tasks, remembers context, learns from experience, and connects to your department's specialized tools.
+**luna** is your department's AI partner. It helps with tasks, remembers context, learns from experience, and connects to your department's specialized tools.
 
 ### First Steps
-1. Open Telegram and find your department's clauded bot
-2. Send "Hello" — clauded will introduce itself
+1. Open Telegram and find your department's luna bot
+2. Send "Hello" — luna will introduce itself
 3. Try `/help` to see all available commands
 4. Ask about your department: "What tools do you have for [your area]?"
 
 ### Voice Messages
-Send a voice note in Telegram — clauded transcribes it automatically. Works in English and Spanish. Enable voice replies with `/voice`.
+Send a voice note in Telegram — luna transcribes it automatically. Works in English and Spanish. Enable voice replies with `/voice`.
 
 ### Web Dashboards
 Open your browser to access visual tools:
@@ -28,20 +28,20 @@ Manufacturing users also have: `/sim`, `/capacity`, `/sequence`, `/vsm`, `/toc`,
 
 ---
 
-## What clauded Can Do For You
+## What luna Can Do For You
 
 ### Answer Questions
-Just ask naturally. clauded remembers your previous conversations and uses that context to give better answers over time.
+Just ask naturally. luna remembers your previous conversations and uses that context to give better answers over time.
 
 ### Use Department Tools
-Each department has specialized tools. Ask clauded: "What tools are available?" Examples:
+Each department has specialized tools. Ask luna: "What tools are available?" Examples:
 - **Manufacturing:** "Calculate capacity for 3 shifts" → runs capacity planning tool
 - **Finance:** "Calculate NPV for a $50K investment at 8% over 5 years"
 - **HR:** "Calculate PTO balance for 8 months at 15 days annual"
 - **Engineering:** "Generate a code review checklist for the API changes"
 
 ### Create Documents
-clauded creates real files — not just descriptions:
+luna creates real files — not just descriptions:
 - "Create a spreadsheet with monthly sales data" → Excel file
 - "Generate a PDF report on project status" → PDF document
 - "Make a presentation about Q2 results" → PowerPoint file
@@ -57,7 +57,7 @@ clauded creates real files — not just descriptions:
 
 ### Learn New Topics
 - `/learn plan Machine Learning basics` — creates a learning plan
-- clauded teaches with Socratic questions, not lectures
+- luna teaches with Socratic questions, not lectures
 - Tracks your progress with spaced repetition
 
 ---
@@ -70,7 +70,7 @@ clauded creates real files — not just descriptions:
 | `/help` | Show all commands |
 | `/newchat` | Start fresh (memories preserved) |
 | `/voice` | Toggle voice replies |
-| `/memory` | Show what clauded remembers about you |
+| `/memory` | Show what luna remembers about you |
 
 ### AI Provider
 | Command | What it does |
@@ -103,35 +103,35 @@ clauded creates real files — not just descriptions:
 | `/trust revoke [tool]` | Remove trust for a specific tool |
 | `/trust clear` | Reset all trust decisions |
 
-When a critical tool (like running a system command) is used for the first time, clauded asks for confirmation. You can reply:
+When a critical tool (like running a system command) is used for the first time, luna asks for confirmation. You can reply:
 - **"confirm" / "confirmar"** — allow this once
 - **"always" / "siempre"** — always allow (remembered)
 - **"never" / "nunca"** — block this tool permanently
 
 ---
 
-## What clauded Learns Automatically
+## What luna Learns Automatically
 
 ### From Your Conversations
-clauded remembers facts you share and events you discuss. This builds over time — the more you interact, the more relevant context it provides.
+luna remembers facts you share and events you discuss. This builds over time — the more you interact, the more relevant context it provides.
 
 ### From Complex Tasks
-When you complete a task using 3+ tools, clauded offers to save the workflow as a reusable skill. Next time you have a similar task, it activates automatically.
+When you complete a task using 3+ tools, luna offers to save the workflow as a reusable skill. Next time you have a similar task, it activates automatically.
 
 ### From Mistakes
-When something doesn't work well, clauded learns from it:
+When something doesn't work well, luna learns from it:
 - **Tool failures** become guardrails (permanent rules)
 - **Your corrections** ("no, try it this way") improve skills
 - **Low quality responses** create notes to use tools next time
 
 ### From Your Usage Patterns
-Packs you use successfully get boosted in priority. Packs whose tools fail get dampened. clauded adapts to what works for you.
+Packs you use successfully get boosted in priority. Packs whose tools fail get dampened. luna adapts to what works for you.
 
 ---
 
-## What clauded CANNOT Do
+## What luna CANNOT Do
 
-clauded is honest about its boundaries:
+luna is honest about its boundaries:
 
 ### Can build conversationally:
 - New calculation tools ("I need a tool that calculates X")
@@ -145,7 +145,7 @@ clauded is honest about its boundaries:
 - **Database schema changes** — requires developer expertise
 - **New Telegram commands** — requires platform code changes
 
-If you ask for something that needs the dev team, clauded will:
+If you ask for something that needs the dev team, luna will:
 1. Build what it CAN right now (the tools and logic)
 2. Draft requirements for the dev team
 3. Guide you on what to request
@@ -156,7 +156,7 @@ If you ask for something that needs the dev team, clauded will:
 
 1. **Be specific** — "Calculate capacity for Line 3 with 2 shifts, 8 hours, 22 days" works better than "how much can we make?"
 2. **Use voice** — production floor workers can speak naturally in Spanish or English
-3. **Upload data** — send CSV/Excel files directly; clauded parses and analyzes them
+3. **Upload data** — send CSV/Excel files directly; luna parses and analyzes them
 4. **Say "remember"** — "Remember that Line 3 runs 2 shifts" stores it permanently
 5. **Check your packs** — `/pack list` shows what tools your department has
 6. **Start fresh when stuck** — `/newchat` clears conversation history but keeps memories
@@ -171,8 +171,8 @@ If you ask for something that needs the dev team, clauded will:
 | Bot doesn't respond | Check if Docker is running: `docker ps` |
 | Slow responses | Close memory-heavy apps, or switch to `/ollama` for local processing |
 | Voice not working | Voice requires Speaches sidecar running |
-| Wrong language | clauded auto-detects — just write/speak in your preferred language |
-| Tool keeps failing | clauded learns from failures automatically via guardrails |
+| Wrong language | luna auto-detects — just write/speak in your preferred language |
+| Tool keeps failing | luna learns from failures automatically via guardrails |
 | Too many confirmations | Say "always" / "siempre" to trust a tool permanently |
 | Conversation feels off | Try `/newchat` — memories and skills are preserved |
 
@@ -180,12 +180,12 @@ If you ask for something that needs the dev team, clauded will:
 
 ## Contact
 
-For issues beyond what clauded can help with:
+For issues beyond what luna can help with:
 - **Software development requests** (dashboards, new commands) → Software Development Team
 - **Account/access issues** → IT Department
-- **New department pack requests** → Ask clauded: "I need a pack for [your area]" — it builds Level 2 packs conversationally
+- **New department pack requests** → Ask luna: "I need a pack for [your area]" — it builds Level 2 packs conversationally
 
 ---
 
-*clauded v1.0.0-rc.29 — Your AI Engineering Partner*
+*luna v1.0.0-rc.29 — Your AI Engineering Partner*
 *Bilingual: English + Spanish | Voice + Text | 10 Department Packs*

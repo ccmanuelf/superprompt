@@ -28,7 +28,7 @@ vi.mock('../src/logger.js', () => ({
 }));
 
 vi.mock('../src/config.js', () => ({
-  STORE_DIR: '/tmp/clauded-ws-integration',
+  STORE_DIR: '/tmp/luna-ws-integration',
   config: { NODE_ENV: 'test', ALLOWED_CHAT_ID: '111,222' },
 }));
 

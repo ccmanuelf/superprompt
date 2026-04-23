@@ -1,5 +1,5 @@
 /**
- * Core subsystem interfaces — the single source of truth for all clauded contracts.
+ * Core subsystem interfaces — the single source of truth for all Luna contracts.
  *
  * Every subsystem boundary in the application is defined here. Implementations
  * live in their respective modules; this file defines what they must provide.
@@ -159,7 +159,7 @@ export interface IntentMatch {
 
 /**
  * Domain pack loading, capability aggregation, and intent scoring.
- * Packs extend clauded with department-specific tools, skills, and templates.
+ * Packs extend Luna with department-specific tools, skills, and templates.
  */
 export interface PackProvider {
   /** Load all packs from the packs/ directory */

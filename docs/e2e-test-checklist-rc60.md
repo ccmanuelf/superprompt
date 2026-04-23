@@ -1,4 +1,4 @@
-# clauded — E2E Test Checklist
+# luna — E2E Test Checklist
 
 **Version:** v1.0.0-rc.60 | April 2026
 **Coverage:** All features including WS1 (Security), WS2 (Multi-Agent), WS4 (Database Abstraction)
@@ -16,7 +16,7 @@ Then walk through manual checks in order.
 
 ## 1. Platform Startup
 
-- [ ] `docker compose up -d` — all 3 services start (clauded-bot, clauded-searxng, clauded-speaches)
+- [ ] `docker compose up -d` — all 3 services start (luna-bot, luna-searxng, luna-speaches)
 - [ ] `docker compose ps` — all services show "healthy"
 - [ ] Telegram bot responds to `/start`
 - [ ] Startup logs show: "Knex database initialized", "Event trigger system initialized", "Background task queue initialized"
@@ -75,7 +75,7 @@ Then walk through manual checks in order.
 - [ ] Results show titles, URLs, snippets from multiple engines
 - [ ] Spanish query: "busca en internet manufactura esbelta" → returns Spanish results
 - [ ] With Claude: web search works (Claude's built-in)
-- [ ] SearXNG health: `docker exec clauded-bot wget -q -O- http://searxng:8080/healthz` returns OK
+- [ ] SearXNG health: `docker exec luna-bot wget -q -O- http://searxng:8080/healthz` returns OK
 
 ## 6. Manufacturing Tools (with Ollama)
 
@@ -262,4 +262,4 @@ For each tool, switch to `/ollama` first:
 
 ---
 
-*clauded v1.0.0-rc.60 — E2E Test Checklist*
+*luna v1.0.0-rc.60 — E2E Test Checklist*

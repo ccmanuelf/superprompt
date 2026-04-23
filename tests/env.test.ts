@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readEnvFile } from '../src/env.js';
 
-const TMP = resolve(tmpdir(), 'clauded-test-env');
+const TMP = resolve(tmpdir(), 'luna-test-env');
 mkdirSync(TMP, { recursive: true });
 
 function writeEnv(name: string, content: string): string {

@@ -3,10 +3,10 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-exporter');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-exporter');
 
 vi.mock('../src/config.js', () => ({
-  PROJECT_ROOT: resolve(tmpdir(), 'clauded-test-exporter'),
+  PROJECT_ROOT: resolve(tmpdir(), 'luna-test-exporter'),
 }));
 
 import { exportSkillToMarkdown, exportToolToMarkdown } from '../src/forge/exporter.js';

@@ -1,6 +1,6 @@
-# clauded — Deployment Guide
+# luna — Deployment Guide
 
-How to deploy clauded on any platform: office workstations, local servers, VPS providers, or dedicated hosting.
+How to deploy luna on any platform: office workstations, local servers, VPS providers, or dedicated hosting.
 
 ---
 
@@ -24,10 +24,10 @@ Regardless of where you deploy, the core is identical:
 
 | Component | What It Is | Same Everywhere? |
 |-----------|-----------|:---:|
-| Docker image | `clauded-bot` + `clauded-speaches` | Yes |
+| Docker image | `luna-bot` + `luna-speaches` | Yes |
 | `.env` configuration | Tokens, model names, feature flags | Yes (values differ) |
 | Ollama | Local AI inference engine | Yes |
-| SQLite database | `./store/clauded.db` | Yes |
+| SQLite database | `./store/luna.db` | Yes |
 | Domain packs | `./packs/` directory | Yes |
 
 The Docker image, the code, the startup sequence, and the application behavior are identical in every deployment. The only thing that changes is the networking configuration around it.
@@ -39,7 +39,7 @@ The Docker image, the code, the startup sequence, and the application behavior a
 | Port binding | `127.0.0.1` (localhost only) | `0.0.0.0` (all interfaces) or behind reverse proxy |
 | TLS / HTTPS | Not needed (localhost) | Required for web UI over network |
 | Reverse proxy | Not needed | Nginx or Caddy recommended |
-| DNS | Not needed | Optional (e.g., `clauded.yourcompany.com`) |
+| DNS | Not needed | Optional (e.g., `luna.yourcompany.com`) |
 | `VOICE_WEB_ORIGIN` | Not needed | Required (your domain URL) |
 | Persistence | Docker Desktop auto-manages | Volume mounts + backup strategy |
 | Ollama location | Same machine | Same machine or dedicated GPU server |
@@ -73,7 +73,7 @@ Follow the [User Guide — Getting Started](user-guide.md#getting-started) steps
 
 ### Accessing from Another Machine on the LAN
 
-If you need to access one workstation's clauded from another machine (e.g., for testing the web UI from a phone):
+If you need to access one workstation's luna from another machine (e.g., for testing the web UI from a phone):
 
 1. Change the port binding in `docker-compose.yml`:
 ```yaml
@@ -116,8 +116,8 @@ ollama pull nomic-embed-text
 ### Step 2: Clone and Configure
 
 ```bash
-git clone https://github.com/your-org/superprompt.git /opt/clauded
-cd /opt/clauded
+git clone https://github.com/your-org/superprompt.git /opt/luna
+cd /opt/luna
 cp .env.example .env
 # Edit .env with your tokens and configuration
 ```
@@ -129,11 +129,11 @@ Install Nginx:
 sudo apt install -y nginx
 ```
 
-Create `/etc/nginx/sites-available/clauded`:
+Create `/etc/nginx/sites-available/luna`:
 ```nginx
 server {
     listen 80;
-    server_name clauded.local;  # Or your server's hostname/IP
+    server_name luna.local;  # Or your server's hostname/IP
 
     location / {
         proxy_pass http://127.0.0.1:3030;
@@ -151,7 +151,7 @@ server {
 
 Enable and start:
 ```bash
-sudo ln -s /etc/nginx/sites-available/clauded /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/luna /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
@@ -161,19 +161,19 @@ For LAN access where you don't have a public domain:
 
 ```bash
 sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout /etc/ssl/private/clauded.key \
-  -out /etc/ssl/certs/clauded.crt \
-  -subj "/CN=clauded.local"
+  -keyout /etc/ssl/private/luna.key \
+  -out /etc/ssl/certs/luna.crt \
+  -subj "/CN=luna.local"
 ```
 
 Update Nginx config to add HTTPS:
 ```nginx
 server {
     listen 443 ssl;
-    server_name clauded.local;
+    server_name luna.local;
 
-    ssl_certificate /etc/ssl/certs/clauded.crt;
-    ssl_certificate_key /etc/ssl/private/clauded.key;
+    ssl_certificate /etc/ssl/certs/luna.crt;
+    ssl_certificate_key /etc/ssl/private/luna.key;
 
     location / {
         proxy_pass http://127.0.0.1:3030;
@@ -187,29 +187,29 @@ server {
 
 server {
     listen 80;
-    server_name clauded.local;
+    server_name luna.local;
     return 301 https://$host$request_uri;
 }
 ```
 
 Update `.env`:
 ```bash
-VOICE_WEB_ORIGIN=https://clauded.local
+VOICE_WEB_ORIGIN=https://luna.local
 ```
 
 ### Step 5: Auto-Start with systemd
 
-Create `/etc/systemd/system/clauded.service`:
+Create `/etc/systemd/system/luna.service`:
 ```ini
 [Unit]
-Description=clauded AI Assistant
+Description=luna AI Assistant
 After=docker.service ollama.service
 Requires=docker.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/clauded
+WorkingDirectory=/opt/luna
 ExecStart=/usr/bin/docker compose up -d
 ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=120
@@ -221,24 +221,24 @@ WantedBy=multi-user.target
 Enable:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable clauded
-sudo systemctl start clauded
+sudo systemctl enable luna
+sudo systemctl start luna
 ```
 
 ### Step 6: Backup Strategy
 
-Create `/etc/cron.daily/clauded-backup`:
+Create `/etc/cron.daily/luna-backup`:
 ```bash
 #!/bin/bash
-BACKUP_DIR=/var/backups/clauded
+BACKUP_DIR=/var/backups/luna
 mkdir -p "$BACKUP_DIR"
-cp /opt/clauded/store/clauded.db "$BACKUP_DIR/clauded-$(date +%Y%m%d).db"
+cp /opt/luna/store/luna.db "$BACKUP_DIR/luna-$(date +%Y%m%d).db"
 # Keep last 30 days
 find "$BACKUP_DIR" -name "*.db" -mtime +30 -delete
 ```
 
 ```bash
-sudo chmod +x /etc/cron.daily/clauded-backup
+sudo chmod +x /etc/cron.daily/luna-backup
 ```
 
 ---
@@ -271,12 +271,12 @@ sudo chmod +x /etc/cron.daily/clauded-backup
 sudo apt install -y certbot python3-certbot-nginx
 
 # Get certificate (replace with your domain)
-sudo certbot --nginx -d clauded.yourdomain.com
+sudo certbot --nginx -d luna.yourdomain.com
 ```
 
 Update `.env`:
 ```bash
-VOICE_WEB_ORIGIN=https://clauded.yourdomain.com
+VOICE_WEB_ORIGIN=https://luna.yourdomain.com
 ```
 
 5. **Set up Nginx** (same as Local Server Step 3, with your domain name).
@@ -291,13 +291,13 @@ sudo ufw allow 443/tcp   # HTTPS
 sudo ufw enable
 ```
 
-8. **Verify**: Open `https://clauded.yourdomain.com/docs` — you should see the documentation viewer.
+8. **Verify**: Open `https://luna.yourdomain.com/docs` — you should see the documentation viewer.
 
 ### VPS-Specific Notes
 
 - **Ollama GPU**: Most VPS providers offer GPU instances. If available, Ollama will use the GPU automatically — inference is 5-10x faster.
 - **Swap**: If RAM is tight (16GB), add 8GB swap: `sudo fallocate -l 8G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`
-- **Monitoring**: Use `docker compose logs -f clauded` or set up a log aggregator.
+- **Monitoring**: Use `docker compose logs -f luna` or set up a log aggregator.
 
 ---
 
@@ -357,10 +357,10 @@ firewall-cmd --reload
    - Install Nginx alongside Apache on a different port
    - Disable Apache and use Nginx exclusively
 
-Apache reverse proxy config (`/etc/httpd/conf.d/clauded.conf`):
+Apache reverse proxy config (`/etc/httpd/conf.d/luna.conf`):
 ```apache
 <VirtualHost *:443>
-    ServerName clauded.yourdomain.com
+    ServerName luna.yourdomain.com
     SSLEngine on
     SSLCertificateFile /path/to/cert.pem
     SSLCertificateKeyFile /path/to/key.pem
@@ -386,7 +386,7 @@ Apache reverse proxy config (`/etc/httpd/conf.d/clauded.conf`):
 
 | Component | Fits? | Notes |
 |-----------|:---:|-------|
-| clauded bot | Yes | Node.js works on ARM |
+| luna bot | Yes | Node.js works on ARM |
 | Ollama | Yes | ARM-native, 24GB fits qwen3.5 |
 | Speaches (voice) | Tight | ~1.5GB RAM; leaves ~22GB for Ollama |
 | Docker | Yes | Oracle Linux supports Docker |
@@ -427,7 +427,7 @@ Apache reverse proxy config (`/etc/httpd/conf.d/clauded.conf`):
 | Ollama (qwen3.5:latest loaded) | 6-8 GB |
 | Ollama (nomic-embed-text loaded) | 0.5 GB |
 | Speaches (STT + TTS models) | 1.0-1.5 GB |
-| clauded Node.js process | 200-500 MB |
+| luna Node.js process | 200-500 MB |
 | Chromium (screenshots, if used) | 200-500 MB |
 | OS + Docker overhead | 1-2 GB |
 | **Total** | **10-13 GB active** |
@@ -438,7 +438,7 @@ On a 32GB machine, this leaves ~20GB headroom — comfortable. On 16GB, it's tig
 
 ## Multi-Instance Considerations
 
-When multiple departments each run their own clauded instance:
+When multiple departments each run their own luna instance:
 
 ### What's Isolated (Per Instance)
 
@@ -452,7 +452,7 @@ When multiple departments each run their own clauded instance:
 ### What Could Be Shared (Optional)
 
 - **Git repository**: All instances clone the same repo. Department-specific packs are added locally.
-- **Ollama server**: Multiple clauded instances could point to a single Ollama server on the network by changing `OLLAMA_HOST`. This saves RAM but creates a single point of failure.
+- **Ollama server**: Multiple luna instances could point to a single Ollama server on the network by changing `OLLAMA_HOST`. This saves RAM but creates a single point of failure.
 - **Telegram bot**: NOT recommended to share. Each department should have their own bot for clear ownership and `ALLOWED_CHAT_ID` separation.
 
 ### Updating All Instances
@@ -473,9 +473,9 @@ For organizations running multiple instances, consider a naming convention:
 
 | Department | Bot Name | Container Prefix | Web Port |
 |------------|----------|------------------|----------|
-| Engineering | @eng_clauded_bot | clauded-eng | 3030 |
-| Manufacturing | @mfg_clauded_bot | clauded-mfg | 3030 |
-| Finance | @fin_clauded_bot | clauded-fin | 3030 |
-| HR | @hr_clauded_bot | clauded-hr | 3030 |
+| Engineering | @eng_luna_bot | luna-eng | 3030 |
+| Manufacturing | @mfg_luna_bot | luna-mfg | 3030 |
+| Finance | @fin_luna_bot | luna-fin | 3030 |
+| HR | @hr_luna_bot | luna-hr | 3030 |
 
 Since each runs on a separate machine, port conflicts don't apply. The container names are only for Docker management clarity.

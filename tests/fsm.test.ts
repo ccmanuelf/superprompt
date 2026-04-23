@@ -10,7 +10,7 @@ vi.mock('../src/db-knex.js', async (importOriginal) => {
   return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
 });
 vi.mock('../src/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
-vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'clauded-test-fsm'), config: { NODE_ENV: 'test' } }));
+vi.mock('../src/config.js', () => ({ STORE_DIR: resolve(tmpdir(), 'luna-test-fsm'), config: { NODE_ENV: 'test' } }));
 
 import {
   initSimulation, processEvent, stepSimulation, runToCompletion, generateDemoEvents, analyzeSimulation,

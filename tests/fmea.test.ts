@@ -14,7 +14,7 @@ vi.mock('../src/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('../src/config.js', () => ({
-  STORE_DIR: resolve(tmpdir(), 'clauded-test-fmea'),
+  STORE_DIR: resolve(tmpdir(), 'luna-test-fmea'),
   config: { NODE_ENV: 'test' },
 }));
 
@@ -34,7 +34,7 @@ async function initTestDb(): Promise<void> {
 }
 
 beforeEach(async () => {
-  mkdirSync(resolve(tmpdir(), 'clauded-test-fmea'), { recursive: true });
+  mkdirSync(resolve(tmpdir(), 'luna-test-fmea'), { recursive: true });
   await initTestDb();
 });
 afterAll(async () => { if (testKnex) await testKnex.destroy(); });

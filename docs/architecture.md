@@ -1,4 +1,4 @@
-# clauded — Architecture Guide
+# luna — Architecture Guide
 
 Internal architecture reference for developers and contributors.
 
@@ -41,8 +41,8 @@ graph LR
         Ollama["Ollama<br/>qwen3.5 + nomic-embed-text<br/>Port 11434"]
     end
 
-    subgraph Docker["Docker Compose (clauded-net)"]
-        subgraph Bot["clauded-bot (Node 22)"]
+    subgraph Docker["Docker Compose (luna-net)"]
+        subgraph Bot["luna-bot (Node 22)"]
             Router["Provider Router"]
             Claude["Claude CLI"]
             Memory["Memory System<br/>SQLite + FTS5 + sqlite-vec"]
@@ -52,12 +52,12 @@ graph LR
             Packs["Domain Packs"]
         end
 
-        subgraph Voice["clauded-speaches"]
+        subgraph Voice["luna-speaches"]
             STT["Faster-whisper STT<br/>~850MB"]
             TTS["Kokoro-82M TTS<br/>~200MB"]
         end
 
-        subgraph Matrix["clauded-synapse (optional)"]
+        subgraph Matrix["luna-synapse (optional)"]
             Synapse["Matrix Homeserver<br/>Port 8008"]
         end
     end
@@ -86,13 +86,13 @@ graph LR
 
 | Container | Image | Purpose | Network Access |
 |-----------|-------|---------|---------------|
-| `clauded-bot` | `node:22-slim` (custom) | Main application | Internal + port 3030 (localhost) |
-| `clauded-speaches` | `ghcr.io/speaches-ai/speaches:latest-cpu` | Voice STT/TTS | Internal only |
-| `clauded-searxng` | `searxng/searxng:latest` | Web search (Ollama) | Internal only |
-| `clauded-caddy` | `caddy:2-alpine` | Reverse proxy + HTTPS (production profile) | Ports 80, 443 |
-| `clauded-synapse` | `matrixdotorg/synapse:latest` | Matrix homeserver (optional) | Internal + port 8008 (localhost) |
+| `luna-bot` | `node:22-slim` (custom) | Main application | Internal + port 3030 (localhost) |
+| `luna-speaches` | `ghcr.io/speaches-ai/speaches:latest-cpu` | Voice STT/TTS | Internal only |
+| `luna-searxng` | `searxng/searxng:latest` | Web search (Ollama) | Internal only |
+| `luna-caddy` | `caddy:2-alpine` | Reverse proxy + HTTPS (production profile) | Ports 80, 443 |
+| `luna-synapse` | `matrixdotorg/synapse:latest` | Matrix homeserver (optional) | Internal + port 8008 (localhost) |
 
-### Build Stages (clauded.dockerfile)
+### Build Stages (luna.dockerfile)
 
 **Builder stage** (node:22-slim):
 1. Install native module build deps (python3, make, g++, cairo, pango)
@@ -103,7 +103,7 @@ graph LR
 1. Install runtime deps: curl, git, chromium (puppeteer), minizinc, claude-code CLI, gh CLI
 2. Copy compiled `dist/` and `node_modules/` from builder
 3. Copy static web assets to `dist/web/public/`
-4. Create non-root `clauded:clauded` user
+4. Create non-root `luna:luna` user
 5. Entrypoint: `/entrypoint.sh` → `node dist/index.js`
 
 ### Entrypoint Script (docker/entrypoint.sh)
@@ -116,7 +116,7 @@ graph LR
 
 ### Networking
 
-All containers share `clauded-net` (bridge network). The bot reaches:
+All containers share `luna-net` (bridge network). The bot reaches:
 - Speaches at `http://speaches:8000`
 - Synapse at `http://synapse:8008`
 - Ollama at `http://host.docker.internal:11434` (host machine)
@@ -141,7 +141,7 @@ All containers share `clauded-net` (bridge network). The bot reaches:
 ```
 1. Show banner (banner.txt)
 2. Validate configuration (src/config.ts)
-3. Acquire PID lock (store/clauded.pid)
+3. Acquire PID lock (store/luna.pid)
 4. Initialize SQLite database (WAL mode, FTS5, sqlite-vec)
 5. Register 49+ builtin tools
 6. Load user tools from database
@@ -225,7 +225,7 @@ When `AUTO_ROUTE=true`, the router analyzes each message:
 The router assembles the system prompt from multiple components:
 
 ```
-[System Prompt (CLAUDED.md)]
+[System Prompt (LUNA.md)]
 [Capabilities Prompt (src/capabilities.ts)]
 [Quality Rules]
 [Command List]
@@ -366,7 +366,7 @@ Ollama has a fixed context window (default: 32,768 tokens). Context budgeting en
 ```mermaid
 flowchart LR
     subgraph Components
-        A["System Prompt<br/>(CLAUDED.md)"]
+        A["System Prompt<br/>(LUNA.md)"]
         B["Capabilities<br/>(base + pack)"]
         C["Active Skill"]
         D["Quality Rules"]
@@ -747,7 +747,7 @@ Express HTTP server + WebSocket (ws) on a single port.
 
 - CSP headers on all responses (relaxed for CDN-loaded SPA libraries)
 - CSWSH protection: Origin validation on WebSocket upgrade
-- Non-root container user (`clauded:clauded`)
+- Non-root container user (`luna:luna`)
 
 ### Static Serving
 
@@ -860,7 +860,7 @@ FTS5 virtual tables require manual synchronization — INSERT/UPDATE/DELETE trig
 
 **Source**: `src/packs.ts`
 
-Domain Packs allow non-engineering departments to extend clauded with custom tools, skills, and AI context.
+Domain Packs allow non-engineering departments to extend luna with custom tools, skills, and AI context.
 
 ### Pack Loading Flow
 
@@ -918,7 +918,7 @@ See `docs/customization-guide.md` for complete procedures at each level.
 ### Container Isolation
 
 - Claude CLI runs with `--dangerously-skip-permissions` **inside Docker** — the container boundary is the sandbox
-- Non-root user (`clauded:clauded`) inside the container
+- Non-root user (`luna:luna`) inside the container
 - Only `./store` (rw) and `./workspace` (rw) are mounted from host
 - No access to host home directory, SSH keys, or other sensitive paths
 
@@ -954,15 +954,15 @@ See `docs/customization-guide.md` for complete procedures at each level.
 
 ## 3-Process Architecture
 
-clauded uses OS-level process separation (SA3) to limit the blast radius of any single component compromise.
+luna uses OS-level process separation (SA3) to limit the blast radius of any single component compromise.
 
 ```mermaid
 graph LR
     User[User] --> Platform[Telegram / Matrix / Voice]
-    Platform --> P1[Process 1: clauded-core]
+    Platform --> P1[Process 1: luna-core]
     P1 --> DB[(SQLite/PostgreSQL)]
-    P1 -->|IPC fork| P2[Process 2: clauded-tools]
-    P1 -->|IPC fork| P3[Process 3: clauded-parsers]
+    P1 -->|IPC fork| P2[Process 2: luna-tools]
+    P1 -->|IPC fork| P3[Process 3: luna-parsers]
     P2 --> Worker[Worker Threads V8 Isolate]
     P1 --> Speaches[Speaches STT/TTS]
 ```
@@ -971,9 +971,9 @@ graph LR
 
 | Process | Role | Has DB? | Has Credentials? | Has Network? |
 |---------|------|---------|-------------------|-------------|
-| **P1: clauded-core** | Router, memory, platforms, scheduler | Yes | Yes (all tokens) | Yes |
-| **P2: clauded-tools** | Network tools, compute tools, Worker sandbox | No | No | Yes (outbound only) |
-| **P3: clauded-parsers** | PDF, DOCX, XLSX, PPTX parsing | No | No | No |
+| **P1: luna-core** | Router, memory, platforms, scheduler | Yes | Yes (all tokens) | Yes |
+| **P2: luna-tools** | Network tools, compute tools, Worker sandbox | No | No | Yes (outbound only) |
+| **P3: luna-parsers** | PDF, DOCX, XLSX, PPTX parsing | No | No | No |
 
 ### IPC Protocol
 
@@ -1081,7 +1081,7 @@ If an auto-generated skill causes errors or poor responses, the self-healing mec
 
 ## Pack System Architecture
 
-Domain Packs extend clauded with department-specific capabilities without modifying core code.
+Domain Packs extend luna with department-specific capabilities without modifying core code.
 
 ### Pack Format Levels
 
@@ -1157,7 +1157,7 @@ Recommended deployment for InfoSec sign-off:
                     │     Docker Host (VMware)     │
                     │                              │
                     │  ┌─────────────────────┐     │
-                    │  │   clauded-bot        │     │
+                    │  │   luna-bot        │     │
                     │  │   Process 1: Core    │     │
                     │  │   Process 2: Tools   │     │
                     │  │   Process 3: Parsers │     │
@@ -1165,7 +1165,7 @@ Recommended deployment for InfoSec sign-off:
                     │  └─────────┬───────────┘     │
                     │            │                  │
                     │  ┌─────────┴───────────┐     │
-                    │  │   clauded-speaches   │     │
+                    │  │   luna-speaches   │     │
                     │  │   STT + TTS          │     │
                     │  │   (no external access)│     │
                     │  └─────────────────────┘     │

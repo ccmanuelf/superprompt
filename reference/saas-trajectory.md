@@ -1,4 +1,4 @@
-# clauded SaaS Trajectory — Client Integration Platform
+# luna SaaS Trajectory — Client Integration Platform
 
 > Board of Directors strategic direction (2026-04-03)
 > Supporting analysis for ROADMAP.md Phase 4
@@ -9,7 +9,7 @@
 
 Novalink provides nearshoring manufacturing services. Clients send production orders through various channels (ERP, email, PDF, phone), and Novalink manages the manufacturing process from order receipt through production, quality control, and shipment.
 
-**The opportunity:** clauded already handles internal order management, production tracking, and cross-department communication. Extending this to client-facing integrations transforms clauded from an internal operations tool into a **managed integration platform** — a revenue-generating service.
+**The opportunity:** luna already handles internal order management, production tracking, and cross-department communication. Extending this to client-facing integrations transforms luna from an internal operations tool into a **managed integration platform** — a revenue-generating service.
 
 **The value proposition to clients:** "Connect your systems to Novalink's production floor. Submit orders from Shopify, receive real-time status updates, get proactive shortage alerts, approve BOM changes — all through the same AI platform your production team uses."
 
@@ -17,7 +17,7 @@ Novalink provides nearshoring manufacturing services. Clients send production or
 
 ## Why This Is Viable
 
-Three existing clauded capabilities make client integration realistic:
+Three existing luna capabilities make client integration realistic:
 
 ### 1. Declarative HTTP Tools (existing)
 
@@ -29,7 +29,7 @@ Per-client isolation is already architected. Each client gets their own `packs/c
 
 ### 3. Auto-Generated Skills (core subsystem)
 
-When a Planner processes a client's order workflow manually, clauded learns the pattern and offers to automate it. Each client's integration gets smarter over time without developer intervention.
+When a Planner processes a client's order workflow manually, luna learns the pattern and offers to automate it. Each client's integration gets smarter over time without developer intervention.
 
 ---
 
@@ -37,7 +37,7 @@ When a Planner processes a client's order workflow manually, clauded learns the 
 
 ### Pattern A: Shopify / E-commerce API
 
-**Flow:** Client's Shopify store → clauded pulls orders → normalizes to internal DB → production proceeds → clauded posts shipment confirmation back to Shopify.
+**Flow:** Client's Shopify store → luna pulls orders → normalizes to internal DB → production proceeds → luna posts shipment confirmation back to Shopify.
 
 **Implementation:** Two declarative HTTP tools in a client pack:
 1. `shopify-pull-orders.md` — GET orders by status
@@ -47,7 +47,7 @@ When a Planner processes a client's order workflow manually, clauded learns the 
 
 ### Pattern B: Client ERP API
 
-**Flow:** Client's ERP system → clauded pulls/receives order data → normalizes fields (their PO# → our WO#, their Style → our FG Part#) → production proceeds → clauded pushes status updates back.
+**Flow:** Client's ERP system → luna pulls/receives order data → normalizes fields (their PO# → our WO#, their Style → our FG Part#) → production proceeds → luna pushes status updates back.
 
 **Implementation:** Declarative HTTP tools + client pack with terminology mapping in `pack.yaml`.
 
@@ -55,7 +55,7 @@ When a Planner processes a client's order workflow manually, clauded learns the 
 
 ### Pattern C: EDI (X12 / EDIFACT)
 
-**Flow:** Client sends EDI 850 (Purchase Order) → clauded parses → normalizes → production → clauded generates EDI 856 (Ship Notice) + EDI 810 (Invoice) → transmits back.
+**Flow:** Client sends EDI 850 (Purchase Order) → luna parses → normalizes → production → luna generates EDI 856 (Ship Notice) + EDI 810 (Invoice) → transmits back.
 
 **Implementation:** EDI parser tools (Level 3 — TypeScript, not declarative HTTP). Reusable across all EDI clients.
 
@@ -70,9 +70,9 @@ When a Planner processes a client's order workflow manually, clauded learns the 
 
 ### Pattern D: Webhook-Based (Real-Time)
 
-**Flow:** Client's system pushes events to clauded (e.g., Shopify order webhook on new purchase) → clauded processes immediately → confirms receipt.
+**Flow:** Client's system pushes events to luna (e.g., Shopify order webhook on new purchase) → luna processes immediately → confirms receipt.
 
-**Implementation:** Requires webhook ingestion endpoint in clauded's web server. Not yet built.
+**Implementation:** Requires webhook ingestion endpoint in luna's web server. Not yet built.
 
 **Complexity:** Medium for the infrastructure, low per-client once built.
 
@@ -108,7 +108,7 @@ Even before client-facing SaaS, internal deployment generates measurable returns
 
 ### Time Savings
 
-| Role | Current Process | With clauded | Hours Saved/Day | Annual Value (×$20/hr×260 days) |
+| Role | Current Process | With luna | Hours Saved/Day | Annual Value (×$20/hr×260 days) |
 |------|----------------|-------------|:---:|:---:|
 | Data Collector (×5) | Paper forms → Excel entry | Voice input → auto-recorded | 2-3 hrs each | $52,000-78,000 |
 | Production Planner (×2) | Excel priority juggling | Telegram command → instant | 1-2 hrs each | $10,400-20,800 |
@@ -122,7 +122,7 @@ Even before client-facing SaaS, internal deployment generates measurable returns
 
 ### Error Prevention
 
-| Error Type | Current Frequency | Cost Per Incident | With clauded |
+| Error Type | Current Frequency | Cost Per Incident | With luna |
 |-----------|:---:|:---:|---|
 | Shortage detected late (line stops) | 2-4/month | $5,000-15,000 | Proactive alerts (S18) — detect hours earlier |
 | BOM error (wrong materials picked) | 1-2/month | $2,000-8,000 | WO-scoped BOM with approval workflow (S18) |

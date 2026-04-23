@@ -1,11 +1,11 @@
-# clauded v1.0.0-rc.60 — Department Onboarding Runbook
+# luna v1.0.0-rc.60 — Department Onboarding Runbook
 
-Get your own clauded instance running in 45-60 minutes. This guide is for team members receiving the repository who need to set up their own independent instance.
+Get your own luna instance running in 45-60 minutes. This guide is for team members receiving the repository who need to set up their own independent instance.
 
 **What you'll have when done:** Your own autonomous AI assistant on Telegram with:
 - Voice processing (EN/ES), 10 department packs (manufacturing, finance, HR, engineering, etc.)
 - 43+ tools with 4-layer security (policy engine → process isolation → Worker sandbox → SSRF protection)
-- Auto-skill learning (clauded gets smarter from complex tasks)
+- Auto-skill learning (luna gets smarter from complex tasks)
 - Web dashboards (/sim, /capacity, /sequence, /vsm, /toc, /conwip, /doe, /fsm, /board, /learn)
 - Document generation (Excel, PDF, Word, CSV, PowerPoint)
 - Circuit breaker, rate limiting, guardrails memory, context health monitoring, self-tuning pack weights
@@ -20,7 +20,7 @@ Get your own clauded instance running in 45-60 minutes. This guide is for team m
 
 ## Hardware Requirements
 
-**Check your machine BEFORE starting setup.** clauded runs AI models locally — this requires significant RAM and a modern processor. Running on under-spec hardware will cause the machine to hang or responses to take minutes instead of seconds.
+**Check your machine BEFORE starting setup.** luna runs AI models locally — this requires significant RAM and a modern processor. Running on under-spec hardware will cause the machine to hang or responses to take minutes instead of seconds.
 
 ### Minimum (functional but slow)
 
@@ -46,7 +46,7 @@ Get your own clauded instance running in 45-60 minutes. This guide is for team m
 | Ollama (qwen3.5 model loaded) | 6-8 GB | Largest consumer — loads the AI model into memory |
 | Ollama (nomic-embed-text) | 0.5 GB | Memory search embeddings |
 | Speaches (voice STT + TTS) | 1.0-1.5 GB | Loads on first voice message |
-| Docker + clauded Node.js | 0.5-1.0 GB | Application + container overhead |
+| Docker + luna Node.js | 0.5-1.0 GB | Application + container overhead |
 | macOS + other apps | 4-6 GB | Operating system baseline |
 | **Total active** | **12-17 GB** | |
 
@@ -71,13 +71,13 @@ Docker Desktop has its OWN memory limit separate from system RAM. By default it 
 
 ### "My machine only has 16GB — will it work?"
 
-Yes, but close memory-heavy applications before starting clauded:
+Yes, but close memory-heavy applications before starting luna:
 - Close Chrome/Firefox (can use 2-4 GB)
 - Close Slack/Teams (500 MB-1 GB each)
 - Close VS Code/IDEs (500 MB-1 GB)
 - Don't run multiple Docker projects simultaneously
 
-With 16 GB and other apps closed, response times should be 5-15 seconds. With 32 GB, you can keep your normal apps open and clauded responds in 3-8 seconds.
+With 16 GB and other apps closed, response times should be 5-15 seconds. With 32 GB, you can keep your normal apps open and luna responds in 3-8 seconds.
 
 ### "My machine only has 8GB — can I use it?"
 
@@ -114,7 +114,7 @@ Verify you have:
 1. Open Telegram on your phone
 2. Search for **@BotFather** and start a conversation
 3. Send `/newbot`
-4. Choose a name (e.g., "Engineering clauded") and a username (e.g., `eng_clauded_bot`)
+4. Choose a name (e.g., "Engineering luna") and a username (e.g., `eng_luna_bot`)
 5. BotFather gives you a token like: `7123456789:AAFxxx...`
 6. **Save this token** — you'll need it in Step 3
 
@@ -187,12 +187,12 @@ VOICE_WEB_PORT=3030
 # VOICE_WEB_TOKEN=paste-your-random-token-here
 ```
 
-After starting clauded, each user generates their own web token:
+After starting luna, each user generates their own web token:
 ```
 /webtoken create my-laptop 30d
 ```
 
-## Step 4: Start clauded (5 minutes)
+## Step 4: Start luna (5 minutes)
 
 ```bash
 docker compose up -d
@@ -203,7 +203,7 @@ This starts the bot, Speaches voice sidecar, and SearXNG web search engine. Sear
 **For production deployments with HTTPS**, add the Caddy reverse proxy:
 ```bash
 # Set your domain first in .env:
-# CADDY_DOMAIN=clauded.example.com
+# CADDY_DOMAIN=luna.example.com
 docker compose --profile production up -d
 ```
 Caddy provides automatic HTTPS via Let's Encrypt, HTTP-to-HTTPS redirect, security headers, and WebSocket proxying. See `.env.example` for details.
@@ -211,7 +211,7 @@ Caddy provides automatic HTTPS via Let's Encrypt, HTTP-to-HTTPS redirect, securi
 **For Telegram webhook mode** (production, optional):
 ```bash
 # In .env:
-# TELEGRAM_WEBHOOK_URL=https://clauded.example.com/telegram/webhook
+# TELEGRAM_WEBHOOK_URL=https://luna.example.com/telegram/webhook
 # TELEGRAM_WEBHOOK_SECRET=generate-with-openssl-rand-hex-32
 ```
 Webhook mode is more efficient than the default long-polling on public servers. Requires Caddy or another HTTPS reverse proxy.
@@ -219,14 +219,14 @@ Webhook mode is more efficient than the default long-polling on public servers. 
 First run takes 3-5 minutes (building the Docker image, downloading voice models). Watch progress:
 
 ```bash
-docker compose logs -f clauded
+docker compose logs -f luna
 ```
 
 **What to look for:**
 ```
-[clauded] Database initialized
-[clauded] Provider router initialized
-[clauded] Telegram bot started
+[luna] Database initialized
+[luna] Provider router initialized
+[luna] Telegram bot started
 [entrypoint] Speaches is ready, loading models...
 [entrypoint] STT model (faster-whisper-small) loaded
 [entrypoint] TTS model (Kokoro-82M) loaded
@@ -246,13 +246,13 @@ Press `Ctrl+C` to stop following logs (the bot keeps running in the background).
 > **IMPORTANT — First-run mode:** Because `ALLOWED_CHAT_ID` is empty right now, the bot accepts messages from anyone. This is intentional — you need to message it first to get your chat ID. You'll lock it down in Step 6.
 
 1. Open Telegram on your phone
-2. Search for your bot's username (e.g., `@eng_clauded_bot`) — it works like any Telegram contact
+2. Search for your bot's username (e.g., `@eng_luna_bot`) — it works like any Telegram contact
 3. Tap **Start** (or send `/start`)
 4. You should see a welcome message with all available commands
 
 **If the bot doesn't respond:**
 - Check that `ALLOWED_CHAT_ID` is empty in `.env` (not set to someone else's ID)
-- Check logs: `docker compose logs -f clauded`
+- Check logs: `docker compose logs -f luna`
 - Make sure you're messaging the right bot (check the username matches)
 
 Try:
@@ -262,7 +262,7 @@ Try:
 
 ## Step 6: Add Your Team (5 minutes)
 
-clauded supports multiple users on one instance. Each user gets their own private conversation — they cannot see each other's messages, memories, or learning progress.
+luna supports multiple users on one instance. Each user gets their own private conversation — they cannot see each other's messages, memories, or learning progress.
 
 ### Single user
 
@@ -273,7 +273,7 @@ ALLOWED_CHAT_ID=123456789
 ```
 3. Restart:
 ```bash
-docker compose restart clauded
+docker compose restart luna
 ```
 
 ### Multiple users (recommended for E2E testing)
@@ -286,7 +286,7 @@ ALLOWED_CHAT_ID=123456789,987654321,555555555
 
 Restart once:
 ```bash
-docker compose restart clauded
+docker compose restart luna
 ```
 
 All users can now message the bot independently.
@@ -351,8 +351,8 @@ The pre-installed Finance pack demonstrates the pattern:
 docker compose up -d                      # Start (runs in background)
 docker compose --profile production up -d  # Start with Caddy HTTPS (production)
 docker compose down                        # Stop
-docker compose restart clauded             # Restart after .env changes
-docker compose logs -f clauded             # View live logs
+docker compose restart luna             # Restart after .env changes
+docker compose logs -f luna             # View live logs
 ```
 
 ### Updating
@@ -371,7 +371,7 @@ Your `.env`, database (`store/`), workspace, and domain packs are preserved acro
 
 | Problem | Check |
 |---------|-------|
-| Bot not responding | `docker compose logs clauded` — look for errors |
+| Bot not responding | `docker compose logs luna` — look for errors |
 | Voice not working | `docker compose logs speaches` — model loading status |
 | Ollama errors | Is Ollama running? `curl http://localhost:11434/api/tags` |
 | Out of memory | Close other apps. Check: `docker stats` |
@@ -379,7 +379,7 @@ Your `.env`, database (`store/`), workspace, and domain packs are preserved acro
 
 ### Getting Help
 
-Ask clauded itself: "How do I configure [feature]?" — it knows its own setup and can walk you through any configuration.
+Ask luna itself: "How do I configure [feature]?" — it knows its own setup and can walk you through any configuration.
 
 For setup questions the bot can't answer (because they require file edits), see:
 - `.env.example` — every variable documented with step-by-step instructions
@@ -420,7 +420,7 @@ For setup questions the bot can't answer (because they require file edits), see:
 **Fix:**
 1. If this is first-time setup: make sure `ALLOWED_CHAT_ID=` is **empty** (not set to any value). The bot accepts all users when this is empty.
 2. Send `/chatid` to the bot. If you get a response, the bot is working — proceed to Step 6.
-3. If you get NO response at all, check the logs: `docker compose logs -f clauded`
+3. If you get NO response at all, check the logs: `docker compose logs -f luna`
 4. After getting your chat ID, add it to `.env` and restart.
 
 If **multiple people** are already configured and a **new person** can't get in: add their chat ID to the comma-separated list, then restart.
@@ -430,9 +430,9 @@ If **multiple people** are already configured and a **new person** can't get in:
 **No.** Only one person (the department admin) creates the bot via BotFather. Everyone else just searches for the bot's username in Telegram and taps Start — exactly like adding a regular contact.
 
 The process:
-1. **Admin** creates bot once → gets username like `@eng_clauded_bot`
+1. **Admin** creates bot once → gets username like `@eng_luna_bot`
 2. **Admin** shares the username with the team (text message, email, Slack — any way)
-3. **Each team member** opens Telegram → searches `@eng_clauded_bot` → taps Start → sends `/chatid`
+3. **Each team member** opens Telegram → searches `@eng_luna_bot` → taps Start → sends `/chatid`
 4. **Each team member** sends their chat ID number back to the admin
 5. **Admin** adds all IDs to `.env`: `ALLOWED_CHAT_ID=111,222,333` → restarts once
 
@@ -442,7 +442,7 @@ After restart, all team members can use the bot independently.
 
 **You generate it yourself** — it's not provided by anyone else.
 
-clauded uses two AI providers. You only need one:
+luna uses two AI providers. You only need one:
 
 | Provider | What It Is | Cost | How to Get |
 |----------|-----------|------|-----------|
@@ -471,15 +471,15 @@ This is different from platforms that use API keys. Claude uses a subscription +
 
 After any `.env` change, you must restart:
 ```bash
-docker compose restart clauded
+docker compose restart luna
 ```
 If `ALLOWED_CHAT_ID` was changed to only include some IDs, users whose IDs were removed will no longer get responses.
 
 ### "What's the difference between this and ChatGPT / other AI chatbots?"
 
-clauded runs **on your own machine** — your conversations, data, and files never leave your workstation. It also has specialized capabilities that general-purpose chatbots don't:
+luna runs **on your own machine** — your conversations, data, and files never leave your workstation. It also has specialized capabilities that general-purpose chatbots don't:
 
-| Feature | General Chatbots | clauded |
+| Feature | General Chatbots | luna |
 |---------|:---:|:---:|
 | Manufacturing engineering tools | No | 15 modules with web dashboards |
 | Persistent memory across conversations | Limited | Full dual-layer with AI compression |

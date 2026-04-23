@@ -33,7 +33,7 @@ function isBlockedUrl(urlStr: string): boolean {
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') return true;
 
     // Docker internal hostnames
-    if (hostname === 'speaches' || hostname === 'synapse' || hostname === 'clauded-bot' || hostname === 'clauded-speaches' || hostname === 'clauded-synapse') return true;
+    if (hostname === 'speaches' || hostname === 'synapse' || hostname === 'luna-bot' || hostname === 'luna-speaches' || hostname === 'luna-synapse') return true;
 
     // host.docker.internal
     if (hostname.includes('docker.internal')) return true;

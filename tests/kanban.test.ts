@@ -31,7 +31,7 @@ import {
 // We need to mock getDatabase since kanban.ts imports from db.ts which has eager init
 // Instead, we'll test the DB-level behavior with raw SQL AND test pure functions directly
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-kanban');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-kanban');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'kanban-test.db');
 

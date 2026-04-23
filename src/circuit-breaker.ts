@@ -2,7 +2,7 @@
  * Circuit Breaker — prevents runaway tool loops and subprocess hangs.
  *
  * Inspired by frankbria/ralph-claude-code's Nygard circuit breaker pattern.
- * Adapted for clauded's dual-provider architecture:
+ * Adapted for Luna's dual-provider architecture:
  *
  * Ollama: Full loop-level protection (repetition, errors, stagnation)
  * Claude: Subprocess-level protection (timeout, quality gate)

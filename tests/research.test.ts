@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 
 // ── Citation CRUD (real SQLite) ─────────────────────────────
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-research');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-research');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'research-test.db');
 

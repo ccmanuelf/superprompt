@@ -90,7 +90,7 @@ import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-tools');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-tools');
 mkdirSync(TMP_DIR, { recursive: true });
 
 function isPathAllowed(filePath: string, allowedPaths: string[]): boolean {

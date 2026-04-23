@@ -19,7 +19,7 @@ import { SKILL_TRIGGERS, type SkillTrigger } from '../src/skills.js';
  * 5. Short messages and commands are excluded
  */
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-trigger');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-trigger');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'trigger-test.db');
 

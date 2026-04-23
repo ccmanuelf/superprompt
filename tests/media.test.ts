@@ -164,7 +164,7 @@ describe('buildVideoMessage', () => {
 
 // ── cleanupOldUploads logic ──────────────────────────────────
 
-const CLEANUP_DIR = resolve(tmpdir(), 'clauded-test-cleanup');
+const CLEANUP_DIR = resolve(tmpdir(), 'luna-test-cleanup');
 
 function cleanupOldUploads(uploadsDir: string, maxAgeMs: number): number {
   mkdirSync(uploadsDir, { recursive: true });
@@ -234,7 +234,7 @@ describe('cleanupOldUploads', () => {
   });
 
   it('handles nonexistent directory gracefully', () => {
-    const deleted = cleanupOldUploads('/tmp/nonexistent-clauded-dir', 0);
+    const deleted = cleanupOldUploads('/tmp/nonexistent-luna-dir', 0);
     expect(deleted).toBe(0);
   });
 });

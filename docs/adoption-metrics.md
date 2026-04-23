@@ -1,4 +1,4 @@
-# clauded — Adoption & ROI Metrics Guide
+# luna — Adoption & ROI Metrics Guide
 
 **For:** CTO, Department Champions, Board of Directors
 
@@ -10,12 +10,12 @@
 
 | Metric | How to Measure | What It Tells You |
 |--------|---------------|-------------------|
-| **Messages per day** (by department) | `docker logs` grep for chatId prefixes | Which departments are actually using clauded |
+| **Messages per day** (by department) | `docker logs` grep for chatId prefixes | Which departments are actually using luna |
 | **Tool calls per day** (by tool name) | Pack tuner `pack_weights` table | Which tools deliver value, which are unused |
 | **Provider split** (Claude vs Ollama) | Rate limiter records | Cost distribution across providers |
 | **Pack usage** (by pack name) | Pack tuner weights | Which department packs are succeeding |
 | **Skill activations** (auto-triggered) | Skill activation logs | How often specialized personas engage |
-| **Auto-skills created** | `skill_proposals` table (status=approved) | How much clauded is learning from users |
+| **Auto-skills created** | `skill_proposals` table (status=approved) | How much luna is learning from users |
 | **Voice vs text** | Voice transcription logs | Production floor adoption (voice = floor workers) |
 | **Dashboard visits** | Web server access logs | Which visual tools get used |
 | **Learning sessions** | `learning_sessions` table | Training engagement |
@@ -43,7 +43,7 @@
 | 50+ messages/day from one department | Department engaged | Expand to second department |
 | <10 messages/day company-wide | Low adoption | Check onboarding, assign champions |
 | Voice messages >30% | Production floor using it | Voice is working — good sign |
-| 5+ auto-skills created | clauded learning from real workflows | Platform is adapting — showcase |
+| 5+ auto-skills created | luna learning from real workflows | Platform is adapting — showcase |
 
 ### Growth (Month 1-2)
 
@@ -69,13 +69,13 @@
 
 ### Messages by department (last 24h)
 ```bash
-docker logs clauded-bot --since 24h 2>&1 | grep "Routing message" | wc -l
+docker logs luna-bot --since 24h 2>&1 | grep "Routing message" | wc -l
 ```
 
 ### Most used tools (from pack tuner)
 ```bash
-docker exec clauded-bot node -e "
-const db = require('better-sqlite3')('/app/store/clauded.db');
+docker exec luna-bot node -e "
+const db = require('better-sqlite3')('/app/store/luna.db');
 const rows = db.prepare('SELECT pack_name, SUM(total_calls) as calls, ROUND(AVG(weight),2) as avg_weight FROM pack_weights GROUP BY pack_name ORDER BY calls DESC').all();
 rows.forEach(r => console.log(r.pack_name + ': ' + r.calls + ' calls, weight: ' + r.avg_weight));
 db.close();
@@ -84,8 +84,8 @@ db.close();
 
 ### Auto-skills created
 ```bash
-docker exec clauded-bot node -e "
-const db = require('better-sqlite3')('/app/store/clauded.db');
+docker exec luna-bot node -e "
+const db = require('better-sqlite3')('/app/store/luna.db');
 const count = db.prepare(\"SELECT COUNT(*) as n FROM skill_proposals WHERE status='approved'\").get();
 console.log('Auto-skills approved:', count.n);
 db.close();
@@ -94,8 +94,8 @@ db.close();
 
 ### Guardrails accumulated
 ```bash
-docker exec clauded-bot node -e "
-const db = require('better-sqlite3')('/app/store/clauded.db');
+docker exec luna-bot node -e "
+const db = require('better-sqlite3')('/app/store/luna.db');
 const rows = db.prepare('SELECT source, COUNT(*) as n FROM guardrails GROUP BY source').all();
 rows.forEach(r => console.log(r.source + ': ' + r.n));
 db.close();
@@ -109,7 +109,7 @@ db.close();
 ### Monthly Report Template
 
 ```
-clauded Adoption Report — [Month Year]
+luna Adoption Report — [Month Year]
 
 USAGE
 - Total messages: ___
@@ -139,4 +139,4 @@ NEXT STEPS
 
 ---
 
-*clauded v1.0.0-rc.31 — Adoption & ROI Metrics Guide*
+*luna v1.0.0-rc.31 — Adoption & ROI Metrics Guide*

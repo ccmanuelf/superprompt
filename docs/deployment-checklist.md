@@ -1,4 +1,4 @@
-# clauded v1.0.0-rc.60 — Deployment Checklist
+# luna v1.0.0-rc.60 — Deployment Checklist
 
 Pre-deployment criteria, considerations, and decision factors for production deployment.
 
@@ -57,7 +57,7 @@ Pre-deployment criteria, considerations, and decision factors for production dep
 - [ ] Reverse proxy configured for HTTPS (Caddy recommended, Nginx/Apache also supported)
 
 ### Caddy Reverse Proxy (production HTTPS)
-- [ ] `CADDY_DOMAIN` set in `.env` (e.g., `clauded.example.com`)
+- [ ] `CADDY_DOMAIN` set in `.env` (e.g., `luna.example.com`)
 - [ ] Started with `docker compose --profile production up -d`
 - [ ] Automatic HTTPS via Let's Encrypt confirmed (check Caddy logs)
 - [ ] HTTP-to-HTTPS redirect working
@@ -65,7 +65,7 @@ Pre-deployment criteria, considerations, and decision factors for production dep
 - [ ] Caddyfile at `docker/Caddyfile` reviewed for security headers
 
 ### Telegram Webhook (production, optional)
-- [ ] `TELEGRAM_WEBHOOK_URL` set (e.g., `https://clauded.example.com/telegram/webhook`)
+- [ ] `TELEGRAM_WEBHOOK_URL` set (e.g., `https://luna.example.com/telegram/webhook`)
 - [ ] `TELEGRAM_WEBHOOK_SECRET` generated: `openssl rand -hex 32`
 - [ ] HTTPS required for webhook (use Caddy or other reverse proxy)
 
@@ -112,9 +112,9 @@ Run the full E2E test guide: `docs/e2e-test-guide.md` (17 sections, 65+ tests)
 - [ ] Production-specific settings applied (log levels, resource limits)
 
 ### Quick Smoke Test (5 minutes)
-- [ ] `docker ps` shows clauded-bot healthy
-- [ ] `docker logs clauded-bot | grep "Application started"` — present
-- [ ] `docker logs clauded-bot | grep "WARN\|ERROR" | wc -l` — 0
+- [ ] `docker ps` shows luna-bot healthy
+- [ ] `docker logs luna-bot | grep "Application started"` — present
+- [ ] `docker logs luna-bot | grep "WARN\|ERROR" | wc -l` — 0
 - [ ] 3 processes running (core + tools + parsers)
 - [ ] 10 packs loaded
 - [ ] Send "Hello" on Telegram — response within 10s
@@ -146,7 +146,7 @@ Run the full E2E test guide: `docs/e2e-test-guide.md` (17 sections, 65+ tests)
 | Company-wide (80-150 users) | 2,000-5,000 | No — multiple instances |
 
 ### Multi-Instance Architecture
-Each department (or group) gets its own clauded instance:
+Each department (or group) gets its own luna instance:
 - Own Docker container
 - Own Anthropic Max subscription ($200/month)
 - **Shared database** (MariaDB/PostgreSQL) — single source of truth
@@ -168,7 +168,7 @@ Each department (or group) gets its own clauded instance:
 - Circuit breaker detects stuck tool loops
 
 ### Log Monitoring
-- `docker logs -f clauded-bot` for real-time
+- `docker logs -f luna-bot` for real-time
 - Structured JSON logs (pino) — parseable by any log aggregator
 - Log levels: debug, info, warn, error
 
@@ -184,7 +184,7 @@ Each department (or group) gets its own clauded instance:
 ## 6. Backup & Recovery
 
 ### Database
-- **SQLite:** Copy `store/clauded.db` (stop container first or use WAL checkpoint)
+- **SQLite:** Copy `store/luna.db` (stop container first or use WAL checkpoint)
 - **PostgreSQL/MariaDB:** `pg_dump` / `mysqldump` with automated cron
 - Daily automated backups recommended
 - Test restore procedure before going live
@@ -195,8 +195,8 @@ Each department (or group) gets its own clauded instance:
 - `forge/` directory — user-created tools/skills, include in backups
 
 ### Recovery
-- If DB corrupts: delete `store/clauded.db`, restart (auto-recreates, but data lost)
-- If container crashes: `docker compose up -d --build clauded`
+- If DB corrupts: delete `store/luna.db`, restart (auto-recreates, but data lost)
+- If container crashes: `docker compose up -d --build luna`
 - If child process crashes: auto-restart built-in (SA3)
 
 ---
@@ -207,8 +207,8 @@ Each department (or group) gets its own clauded instance:
 - **Auth:** `CLAUDE_CODE_OAUTH_TOKEN` env var (generated via `claude setup-token`)
 - **Cost:** Fixed monthly fee (Anthropic Max ~$200/month) — **no per-token API consumption**
 - **The deployed version runs on the same subscription model as the demo**
-- **Scaling:** One subscription per clauded instance. Company-wide = N instances × $200/month
+- **Scaling:** One subscription per luna instance. Company-wide = N instances × $200/month
 
 ---
 
-*clauded v1.0.0-rc.60 — Deployment Checklist*
+*luna v1.0.0-rc.60 — Deployment Checklist*

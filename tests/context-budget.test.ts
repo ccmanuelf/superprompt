@@ -29,7 +29,7 @@ describe('estimateTokens (real function)', () => {
   });
 
   it('handles realistic text', () => {
-    const systemPrompt = 'You are clauded, a helpful AI assistant. Follow quality rules.';
+    const systemPrompt = 'You are Luna, a helpful AI assistant. Follow quality rules.';
     const tokens = estimateTokens(systemPrompt);
     expect(tokens).toBeGreaterThan(10);
     expect(tokens).toBeLessThan(30);
@@ -193,7 +193,7 @@ describe('real-world budget scenarios', () => {
   it('typical message fits comfortably', () => {
     // Simulate: system prompt (~2000 chars) + memory (~600 chars) + user message (~200 chars)
     const components: ContextComponent[] = [
-      { label: 'system', content: 'You are clauded...' + 'x'.repeat(2000), priority: ContextPriority.SYSTEM, trimmable: false },
+      { label: 'system', content: 'You are Luna...' + 'x'.repeat(2000), priority: ContextPriority.SYSTEM, trimmable: false },
       { label: 'quality_rules', content: 'Never say should work...' + 'x'.repeat(400), priority: ContextPriority.QUALITY_RULES, trimmable: false },
       { label: 'command_list', content: '/newchat, /memory...' + 'x'.repeat(1000), priority: ContextPriority.DOC_CAPABILITIES, trimmable: false },
       { label: 'memory', content: '- User likes coffee (semantic)\n- Past conversation about AI (episode)', priority: ContextPriority.MEMORY_SEMANTIC, trimmable: true },

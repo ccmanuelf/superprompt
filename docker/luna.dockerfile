@@ -78,6 +78,6 @@ USER node
 
 # Health check — verify the app process is running (PID file created at startup)
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=30s \
-    CMD test -f /app/store/clauded.pid && kill -0 $(cat /app/store/clauded.pid) 2>/dev/null || exit 1
+    CMD test -f /app/store/luna.pid && kill -0 $(cat /app/store/luna.pid) 2>/dev/null || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

@@ -17,7 +17,7 @@ import type { AIResponse } from '../src/providers/types.js';
  * Verifies quality checks detect actual response problems.
  */
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-monitor');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-monitor');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'monitor-test.db');
 

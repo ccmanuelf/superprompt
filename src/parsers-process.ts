@@ -1,5 +1,5 @@
 /**
- * clauded-parsers — Process 3 entry point.
+ * luna-parsers — Process 3 entry point.
  *
  * File parsing only — the tightest sandbox:
  * - parse_file: PDF, XLSX, DOCX, CSV, PPTX, JSON, MD, TXT

@@ -8,7 +8,7 @@
 
 ## Vision
 
-A single conversational operations hub where clauded acts as the communication bridge connecting order sources, production roles, inventory systems, and BOM management. The AI **does not make decisions** — it detects issues, computes options, presents them to humans, and executes only after explicit approval. Everything is public, traceable, and auditable.
+A single conversational operations hub where luna acts as the communication bridge connecting order sources, production roles, inventory systems, and BOM management. The AI **does not make decisions** — it detects issues, computes options, presents them to humans, and executes only after explicit approval. Everything is public, traceable, and auditable.
 
 ---
 
@@ -40,7 +40,7 @@ NovaLink Operations Hub
     └── API Config     BOM + Inventory API endpoints (S18)
 ```
 
-Web UI served at `/hub` on the existing clauded web server (port 3030). Same authentication via `VOICE_WEB_TOKEN`. Real-time updates via WebSocket or 30-60 second auto-refresh.
+Web UI served at `/hub` on the existing luna web server (port 3030). Same authentication via `VOICE_WEB_TOKEN`. Real-time updates via WebSocket or 30-60 second auto-refresh.
 
 ---
 
@@ -190,7 +190,7 @@ Served at `/hub`. Design language matches prototype (Inter + JetBrains Mono, dar
 - Color-coded badges for status and priority
 
 **Bot / AI page:**
-- Embedded chat panel (connected to clauded via WebSocket)
+- Embedded chat panel (connected to luna via WebSocket)
 - Intent reference cards showing example commands and expected outcomes
 - Quick command buttons
 

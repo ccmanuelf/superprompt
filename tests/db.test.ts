@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 
 // Use a temp directory for the test database
-const TMP_DB_DIR = resolve(tmpdir(), 'clauded-test-db');
+const TMP_DB_DIR = resolve(tmpdir(), 'luna-test-db');
 mkdirSync(TMP_DB_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DB_DIR, 'test.db');
 

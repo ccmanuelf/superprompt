@@ -17,7 +17,7 @@ vi.mock('../src/db-knex.js', async (importOriginal) => {
 });
 
 vi.mock('../src/config.js', () => ({
-  STORE_DIR: '/tmp/clauded-test',
+  STORE_DIR: '/tmp/luna-test',
 }));
 
 vi.mock('../src/logger.js', () => ({

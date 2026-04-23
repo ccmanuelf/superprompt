@@ -1,8 +1,8 @@
-# clauded — Master Implementation Plan
+# luna — Master Implementation Plan
 
 ## Context
 
-We are transforming `REBUILD_PROMPT.md` (a 906-line mega-prompt for "ClaudeClaw") into a modular, deterministic build system for **clauded** — a personal AI assistant daemon that bridges messaging platforms to AI backends running on the user's machine.
+We are transforming `REBUILD_PROMPT.md` (a 906-line mega-prompt for "ClaudeClaw") into a modular, deterministic build system for **luna** — a personal AI assistant daemon that bridges messaging platforms to AI backends running on the user's machine.
 
 ### Why This Change
 The original prompt has architectural issues discovered through research:
@@ -28,7 +28,7 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
 - Automatic switching: when tools are needed, router uses qwen3:latest; for chat-only, uses qwen3:4b
 
 ### Key Decisions (Confirmed)
-- Rename: ClaudeClaw → **clauded**
+- Rename: ClaudeClaw → **luna**
 - Auth: Claude subscription via `claude -p` subprocess (NOT the Agent SDK)
 - Auth in Docker: `CLAUDE_CODE_OAUTH_TOKEN` env var (generated via `claude setup-token`, valid 1 year)
 - Docker: Required for sandboxing `--dangerously-skip-permissions`
@@ -341,12 +341,12 @@ src/media.ts    — downloadMedia(), buildPhotoMessage(), buildDocumentMessage()
 ```
 Dockerfile
 docker-compose.yml
-docker/clauded.dockerfile
+docker/luna.dockerfile
 docker/.env.docker
 ```
 
 **Architecture:**
-- `clauded` container: Node 22, claude CLI, project code
+- `luna` container: Node 22, claude CLI, project code
 - `speaches` sidecar: Piper TTS + Faster-whisper STT (port 8000 internal)
 - `synapse` container: Matrix homeserver (port 8008 localhost)
 - Bot runs non-root, authenticated via `CLAUDE_CODE_OAUTH_TOKEN` env var (no credential mounts needed)
@@ -363,7 +363,7 @@ docker/.env.docker
 scripts/setup.ts     — interactive setup wizard
 scripts/status.ts    — health check
 scripts/notify.sh    — send message from shell
-CLAUDED.md           — system prompt template
+LUNA.md           — system prompt template
 banner.txt           — ASCII art banner
 ```
 

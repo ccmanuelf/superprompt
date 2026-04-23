@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 /**
- * clauded — Personal AI Assistant Daemon
+ * Luna (Inge Luna) — Personal AI Assistant Daemon
  *
  * Entry point. Composes subsystems via the Application core and manages lifecycle.
  *
  * Startup sequence:
  * 1. Show banner
  * 2. Validate required config
- * 3. Acquire PID lock
- * 4. Create Application + register storage, table initializers, subsystems, platforms
- * 5. app.startup() — init storage → init tables → init subsystems → setup (autonomous) → start platforms
- * 6. Register signal handlers
+ * 3. Run rebrand data-file migration (rc.85; see src/migrations/)
+ * 4. Acquire PID lock
+ * 5. Create Application + register storage, table initializers, subsystems, platforms
+ * 6. app.startup() — init storage → init tables → init subsystems → setup (autonomous) → start platforms
+ * 7. Register signal handlers
  */
 
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
@@ -19,9 +20,10 @@ import { config, PROJECT_ROOT, STORE_DIR } from './config.js';
 import { logger } from './logger.js';
 import { createStorageProvider, getUnembeddedMemoryCount } from './db-core.js';
 import { Application } from './core/app.js';
+import { migrateRebrandDataFiles } from './migrations/rebrand-data-files.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const PID_FILE = resolve(STORE_DIR, 'clauded.pid');
+const PID_FILE = resolve(STORE_DIR, 'luna.pid');
 
 // ── PID Lock ─────────────────────────────────────���───────────
 
@@ -34,7 +36,7 @@ function acquireLock(): void {
       process.kill(Number(oldPid), 0);
       logger.error(
         { pid: oldPid },
-        'Another clauded instance is running. Remove store/clauded.pid if stale.',
+        'Another Luna instance is running. Remove store/luna.pid if stale.',
       );
       process.exit(1);
     } catch {
@@ -77,7 +79,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // 3. Acquire PID lock
+  // 3. Rebrand migration (rc.85): rename legacy data files to luna.*.
+  // Must run BEFORE acquireLock() and BEFORE any DB open, so an upgraded instance
+  // finds its data under the new name on first boot. See
+  // src/migrations/rebrand-data-files.ts for the file-level mapping.
+  mkdirSync(STORE_DIR, { recursive: true });
+  migrateRebrandDataFiles(STORE_DIR, logger);
+
+  // 4. Acquire PID lock
   acquireLock();
 
   // 4. Create Application and register all components
@@ -443,12 +452,12 @@ async function main(): Promise<void> {
       provider: config.AI_PROVIDER,
       node: process.version,
     },
-    'clauded is running',
+    'Luna is running',
   );
 }
 
 main().catch((err) => {
-  logger.fatal({ err }, 'clauded failed to start');
+  logger.fatal({ err }, 'Luna failed to start');
   releaseLock();
   process.exit(1);
 });

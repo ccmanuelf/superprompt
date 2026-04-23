@@ -58,13 +58,13 @@ export function readDbConfig(env: Record<string, string> = {}): DbConfig {
   return {
     driver,
     // SQLite
-    sqliteFilename: env.DB_SQLITE_PATH || resolve(storeDir, 'clauded.db'),
+    sqliteFilename: env.DB_SQLITE_PATH || resolve(storeDir, 'luna.db'),
     // MariaDB / PostgreSQL
     host: env.DB_HOST || 'localhost',
     port: parseInt(env.DB_PORT || (driver === 'postgres' ? '5432' : '3306')),
-    user: env.DB_USER || 'clauded',
+    user: env.DB_USER || 'luna',
     password: env.DB_PASSWORD || '',
-    database: env.DB_NAME || 'clauded',
+    database: env.DB_NAME || 'luna',
     // Pool
     poolMin: parseInt(env.DB_POOL_MIN || '2'),
     poolMax: parseInt(env.DB_POOL_MAX || '10'),

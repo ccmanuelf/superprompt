@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 const { TMP, UPLOADS } = vi.hoisted(() => {
   const { resolve } = require('node:path');
   const { tmpdir } = require('node:os');
-  const root = resolve(tmpdir(), `clauded-upload-manifest-test-${process.pid}`);
+  const root = resolve(tmpdir(), `luna-upload-manifest-test-${process.pid}`);
   return { TMP: root, UPLOADS: resolve(root, 'uploads') };
 });
 

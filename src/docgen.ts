@@ -577,7 +577,7 @@ async function generatePptx(req: DocGenRequest): Promise<Buffer> {
   const DIM_COLOR = '8b949e';
 
   pptx.layout = 'LAYOUT_WIDE'; // 13.33" x 7.5"
-  pptx.author = 'clauded';
+  pptx.author = 'Luna';
   if (req.title) pptx.title = req.title;
 
   // Determine slides from content

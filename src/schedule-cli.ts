@@ -32,7 +32,7 @@ const command = args[0];
 
 function usage(): void {
   console.log(`
-clauded schedule-cli — Manage scheduled tasks
+luna schedule-cli — Manage scheduled tasks
 
 Commands:
   create <chat_id> "<prompt>" "<cron>"   Create a new task

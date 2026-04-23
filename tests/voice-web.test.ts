@@ -458,7 +458,7 @@ describe('static file path traversal protection', () => {
   });
 
   it('blocks traversal to sibling directory', () => {
-    expect(isPathSafe('/../../../app/store/clauded.db', publicDir)).toBe(false);
+    expect(isPathSafe('/../../../app/store/luna.db', publicDir)).toBe(false);
   });
 
   it('allows nested valid path', () => {

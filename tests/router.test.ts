@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 // Test the routing logic in isolation by recreating the session DB schema
 // and testing the routing decision logic directly.
 
-const TMP_DIR = resolve(tmpdir(), 'clauded-test-router');
+const TMP_DIR = resolve(tmpdir(), 'luna-test-router');
 mkdirSync(TMP_DIR, { recursive: true });
 const DB_PATH = resolve(TMP_DIR, 'router-test.db');
 
