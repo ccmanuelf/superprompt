@@ -1,16 +1,31 @@
 /**
- * Attendance Admin HTTP API (rc.88, Phase A).
+ * Attendance Admin HTTP API (rc.88 → rc.89 hardened).
  *
  * Mounted on the existing web server at /api/attendance/*. All endpoints
- * require the standard web-token auth (handled at the server entrypoint).
+ * require the standard web-token auth (handled at the server entrypoint)
+ * AND, for every mutating / privileged route, an attendance-specific
+ * role check (rc.89):
  *
- * Endpoints:
- *   POST   /api/attendance/preview    — upload a CSV buffer, return header + 10 sample rows
- *   POST   /api/attendance/mapping    — save { moduleId, dataType, fields } as the active mapping
- *   GET    /api/attendance/mapping    — ?moduleId&dataType → current mapping
- *   POST   /api/attendance/ingest     — run ingestion for a previously-uploaded file + saved mapping
- *   GET    /api/attendance/reports    — list recent IngestionReports
- *   GET    /api/attendance/modules    — list configured modules (for the dropdown in the UI)
+ *   POST   /api/attendance/preview       (admin | hr)  — upload CSV, return preview
+ *   POST   /api/attendance/mapping       (admin | hr)  — save column mapping
+ *   GET    /api/attendance/mapping       (any role)    — read mapping
+ *   POST   /api/attendance/ingest        (admin | hr)  — run ingestion
+ *   GET    /api/attendance/reports       (any role)    — recent ingestion reports
+ *   GET    /api/attendance/modules       (public read) — modules dropdown
+ *   GET    /api/attendance/whoami        (authed)      — role info for UI
+ *   GET    /api/attendance/sites         (admin)       — list
+ *   POST   /api/attendance/sites         (admin)       — create
+ *   GET    /api/attendance/shifts        (admin)       — list (?siteId=)
+ *   POST   /api/attendance/shifts        (admin)       — create w/ breaks
+ *   POST   /api/attendance/modules       (admin)       — create
+ *   GET    /api/attendance/absence-codes (admin)       — list (?siteId=)
+ *   POST   /api/attendance/absence-codes (admin)       — upsert one
+ *   POST   /api/attendance/absence-codes/seed (admin)  — seed VP's 7 defaults
+ *
+ * Role model:
+ *   admin → full CRUD + ingestion. Bootstrap: chat_id in ALLOWED_CHAT_ID.
+ *   hr    → ingestion + mapping. Cannot create sites/shifts/modules.
+ *   any   → read mappings + reports (mostly for UI dropdowns).
  *
  * The admin UI lives at /attendance/admin and is served as a static
  * file (see src/web/public/attendance/).
@@ -18,7 +33,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, existsSync } from 'node:fs';
 import { logger } from '../logger.js';
 import { UPLOADS_DIR } from '../config.js';
 import { getKnex } from '../db-knex.js';
@@ -29,14 +44,34 @@ import {
   listRecentIngestionReports,
 } from '../attendance/ingestion.js';
 import type { ColumnMapping, IngestionReport } from '../attendance/types.js';
+import {
+  hasRole,
+  hasAnyAttendanceRole,
+  listRoles,
+  isBootstrapAdmin,
+  RoleRequiredError,
+} from '../attendance/roles.js';
+import {
+  createSite, listSites,
+  createShift, listShifts,
+  createModule, listModules as listModulesSetup,
+  upsertAbsenceCode, listAbsenceCodes, seedDefaultAbsenceCodes,
+} from '../attendance/setup.js';
 
 const ATTENDANCE_UPLOADS = resolve(UPLOADS_DIR, 'attendance');
+
+/**
+ * How long uploaded preview CSVs stay on disk before opportunistic
+ * cleanup removes them. Runs on every upload. 24h gives HR enough time
+ * to come back and map the columns across a shift change or weekend.
+ */
+const UPLOAD_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 export async function handleAttendanceApi(
   req: IncomingMessage,
   res: ServerResponse,
   urlPath: string,
-  _chatId: string,
+  chatId: string,
 ): Promise<boolean> {
   if (!urlPath.startsWith('/api/attendance')) return false;
 
@@ -49,34 +84,166 @@ export async function handleAttendanceApi(
   const route = urlPath.replace('/api/attendance', '') || '/';
 
   try {
+    // Public-read routes (need token but no specific role)
+    if (req.method === 'GET' && route === '/whoami') {
+      return await handleWhoami(res, chatId);
+    }
+    if (req.method === 'GET' && route === '/modules') {
+      await requireAny(chatId);
+      return await handleListModules(res);
+    }
+    if (req.method === 'GET' && route === '/mapping') {
+      await requireAny(chatId);
+      return await handleGetMapping(req, res);
+    }
+    if (req.method === 'GET' && route === '/reports') {
+      await requireAny(chatId);
+      return await handleListReports(res);
+    }
+
+    // Ingestion-role routes (admin | hr)
     if (req.method === 'POST' && route === '/preview') {
+      await requireAdminOrHr(chatId);
       return await handlePreview(req, res);
     }
     if (req.method === 'POST' && route === '/mapping') {
+      await requireAdminOrHr(chatId);
       return await handleSaveMapping(req, res);
     }
-    if (req.method === 'GET' && route === '/mapping') {
-      return await handleGetMapping(req, res);
-    }
     if (req.method === 'POST' && route === '/ingest') {
+      await requireAdminOrHr(chatId);
       return await handleIngest(req, res);
     }
-    if (req.method === 'GET' && route === '/reports') {
-      return await handleListReports(res);
+
+    // Setup routes (admin only)
+    if (req.method === 'GET' && route === '/sites') {
+      await requireAdmin(chatId);
+      return json(res, 200, { sites: await listSites() });
     }
-    if (req.method === 'GET' && route === '/modules') {
-      return await handleListModules(res);
+    if (req.method === 'POST' && route === '/sites') {
+      await requireAdmin(chatId);
+      const body = await readJsonBody(req);
+      const id = await createSite({
+        name: String(body.name ?? ''),
+        clientName: String(body.clientName ?? ''),
+        timezone: body.timezone ? String(body.timezone) : undefined,
+      });
+      return json(res, 200, { id });
+    }
+    if (req.method === 'GET' && route === '/shifts') {
+      await requireAdmin(chatId);
+      const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+      return json(res, 200, { shifts: await listShifts(url.searchParams.get('siteId') ?? undefined) });
+    }
+    if (req.method === 'POST' && route === '/shifts') {
+      await requireAdmin(chatId);
+      const body = await readJsonBody(req);
+      const id = await createShift({
+        siteId: String(body.siteId ?? ''),
+        name: String(body.name ?? ''),
+        clockStart: String(body.clockStart ?? ''),
+        clockEnd: String(body.clockEnd ?? ''),
+        billingHoursMonThu: Number(body.billingHoursMonThu),
+        billingHoursFri: Number(body.billingHoursFri),
+        breaks: Array.isArray(body.breaks) ? body.breaks as Array<{ name: string; durationMinutes: number; paid: boolean }> : [],
+      });
+      return json(res, 200, { id });
+    }
+    if (req.method === 'POST' && route === '/modules') {
+      await requireAdmin(chatId);
+      const body = await readJsonBody(req);
+      const id = await createModule({
+        siteId: String(body.siteId ?? ''),
+        name: String(body.name ?? ''),
+        supervisorName: String(body.supervisorName ?? ''),
+        supervisorChatId: body.supervisorChatId ? String(body.supervisorChatId) : null,
+        shiftId: String(body.shiftId ?? ''),
+      });
+      return json(res, 200, { id });
+    }
+    if (req.method === 'GET' && route === '/absence-codes') {
+      await requireAdmin(chatId);
+      const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+      const siteId = url.searchParams.get('siteId');
+      if (!siteId) return json(res, 400, { error: 'siteId query param required' });
+      return json(res, 200, { codes: await listAbsenceCodes(siteId) });
+    }
+    if (req.method === 'POST' && route === '/absence-codes') {
+      await requireAdmin(chatId);
+      const body = await readJsonBody(req);
+      await upsertAbsenceCode({
+        siteId: String(body.siteId ?? ''),
+        code: String(body.code ?? ''),
+        descriptionEn: String(body.descriptionEn ?? ''),
+        descriptionEs: String(body.descriptionEs ?? ''),
+        countsAsPresent: Boolean(body.countsAsPresent),
+        billingHoursFactor: Number(body.billingHoursFactor ?? 0),
+      });
+      return json(res, 200, { saved: true });
+    }
+    if (req.method === 'POST' && route === '/absence-codes/seed') {
+      await requireAdmin(chatId);
+      const body = await readJsonBody(req);
+      const count = await seedDefaultAbsenceCodes(String(body.siteId ?? ''));
+      return json(res, 200, { seeded: count });
     }
 
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: `Unknown route ${route}` }));
     return true;
   } catch (err) {
-    logger.error({ err, route }, 'Attendance API handler failed');
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: (err as Error).message }));
+    // RoleRequiredError → 403, readable message. Validation-style
+    // Error thrown from setup.ts (FK prerequisites, format errors) → 400.
+    // Anything else → 500.
+    if (err instanceof RoleRequiredError) {
+      logger.warn({ chatId, route, role: err.role }, 'Attendance API: role denied');
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `This action requires the "${err.role}" role. Ask your admin to grant it.` }));
+      return true;
+    }
+    const msg = (err as Error).message ?? 'Internal error';
+    const isValidation = /required|does not exist|must be|must have|invalid|unknown|cannot delete/i.test(msg);
+    const status = isValidation ? 400 : 500;
+    if (!isValidation) {
+      logger.error({ err, route }, 'Attendance API handler failed');
+    }
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: msg }));
     return true;
   }
+}
+
+// ── Role gates ────────────────────────────────────────────────
+
+async function requireAny(chatId: string): Promise<void> {
+  if (!(await hasAnyAttendanceRole(chatId))) {
+    throw new RoleRequiredError('hr', chatId);
+  }
+}
+
+async function requireAdminOrHr(chatId: string): Promise<void> {
+  if (await hasRole(chatId, 'admin')) return;
+  if (await hasRole(chatId, 'hr')) return;
+  throw new RoleRequiredError('hr', chatId);
+}
+
+async function requireAdmin(chatId: string): Promise<void> {
+  if (await hasRole(chatId, 'admin')) return;
+  throw new RoleRequiredError('admin', chatId);
+}
+
+async function handleWhoami(res: ServerResponse, chatId: string): Promise<boolean> {
+  const roles = await listRoles(chatId);
+  return json(res, 200, {
+    chatId,
+    bootstrap: isBootstrapAdmin(chatId),
+    roles,
+    can: {
+      setup: roles.some((r) => r.role === 'admin'),
+      ingest: roles.some((r) => r.role === 'admin' || r.role === 'hr'),
+      read: roles.length > 0,
+    },
+  });
 }
 
 // ── Route handlers ────────────────────────────────────────────
@@ -110,6 +277,7 @@ async function handlePreview(req: IncomingMessage, res: ServerResponse): Promise
   }
 
   mkdirSync(ATTENDANCE_UPLOADS, { recursive: true });
+  cleanupStaleUploads(); // opportunistic — never blocks the request
   const fileId = `att_${moduleId}_${dataType}_${Date.now()}_${randomUUID().slice(0, 8)}`;
   const storedPath = resolve(ATTENDANCE_UPLOADS, `${fileId}.csv`);
   writeFileSync(storedPath, buf);
@@ -291,5 +459,37 @@ function json(res: ServerResponse, status: number, body: unknown): boolean {
   return true;
 }
 
+/**
+ * Opportunistic cleanup of preview uploads older than the retention
+ * window. Called on every successful upload. Best-effort — errors are
+ * swallowed so a failing sweep never takes down the upload itself.
+ */
+function cleanupStaleUploads(): void {
+  try {
+    if (!existsSync(ATTENDANCE_UPLOADS)) return;
+    const now = Date.now();
+    const entries = readdirSync(ATTENDANCE_UPLOADS);
+    let removed = 0;
+    for (const name of entries) {
+      if (!name.endsWith('.csv')) continue;
+      const full = resolve(ATTENDANCE_UPLOADS, name);
+      try {
+        const age = now - statSync(full).mtimeMs;
+        if (age > UPLOAD_RETENTION_MS) {
+          unlinkSync(full);
+          removed += 1;
+        }
+      } catch {
+        // Ignore; file may have been removed by a concurrent call.
+      }
+    }
+    if (removed > 0) {
+      logger.info({ removed }, 'Attendance: cleaned up stale preview uploads');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Attendance: upload cleanup failed (non-fatal)');
+  }
+}
+
 /** Exported so the test suite can import it without pulling in the whole server. */
-export const _internals = { readJsonBody, loadMapping, loadSiteIdForModule };
+export const _internals = { readJsonBody, loadMapping, loadSiteIdForModule, cleanupStaleUploads };

@@ -91,9 +91,19 @@ export function buildKnexConfig(config: DbConfig): KnexType.Config {
           // SQLite: single connection, no pool
           min: 1,
           max: 1,
-          // Enable WAL mode, foreign keys, and sqlite-vec on connection create
           afterCreate: (conn: { pragma: (sql: string) => void }, done: (err: Error | null, conn: unknown) => void) => {
-            conn.pragma('journal_mode = WAL');
+            // Journal mode is configurable because WAL has a known
+            // interaction problem with Docker Desktop's virtiofs bind
+            // mounts on macOS: the -shm/-wal sidecar files can become
+            // orphaned (FDs marked "(deleted)") after external writes
+            // to the main DB file, and subsequent writes silently
+            // fail-persist. DELETE mode keeps everything in a single
+            // rollback journal in the main DB file — no sidecars to
+            // desync. docker-compose.yml sets this to DELETE by default
+            // for the pilot container. Native / Postgres / MariaDB
+            // deployments should leave it unset → WAL.
+            const journalMode = (process.env.SQLITE_JOURNAL_MODE || 'WAL').toUpperCase();
+            conn.pragma(`journal_mode = ${journalMode}`);
             conn.pragma('foreign_keys = ON');
             if (sqliteVecModule) {
               try {

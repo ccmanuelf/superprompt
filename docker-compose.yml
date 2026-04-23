@@ -16,6 +16,15 @@ services:
       - GH_TOKEN=${GH_TOKEN:-}
       # Render API key (optional — for render_* tools)
       - RENDER_API_KEY=${RENDER_API_KEY:-}
+      # SQLite journal mode. DELETE (rollback-journal) is chosen for the
+      # containerized pilot because WAL's -shm/-wal sidecar files can
+      # become orphaned under Docker Desktop's virtiofs bind mounts on
+      # macOS when the host writes to the DB (backups, manual sqlite3
+      # commands). DELETE keeps everything in the main DB file — no
+      # sidecars to desync. Override with WAL only when running on a
+      # Linux host with native overlay (no virtiofs) for higher
+      # concurrency.
+      - SQLITE_JOURNAL_MODE=${SQLITE_JOURNAL_MODE:-DELETE}
     volumes:
       # Config files (readEnvFile reads from disk, not process.env)
       - ./.env:/app/.env:ro

@@ -24,20 +24,38 @@
       color: var(--text);
       min-height: 100vh;
       padding: 2rem 1rem;
-      line-height: 1.4;
+      line-height: 1.45;
     }
     .wrap { max-width: 1080px; margin: 0 auto; }
-    h1 { font-size: 1.5rem; font-weight: 400; margin-bottom: 0.5rem; }
-    h2 { font-size: 1.1rem; font-weight: 500; margin: 1.5rem 0 0.75rem; }
-    p.hint { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1rem; }
-    .auth, .panel {
+    h1 { font-size: 1.5rem; font-weight: 400; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.05rem; font-weight: 500; margin: 1.25rem 0 0.75rem; }
+    h3 { font-size: 0.9rem; font-weight: 500; margin: 1rem 0 0.5rem; color: var(--text-dim); }
+    p.hint { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 0.75rem; }
+    p.hint code { background: rgba(108,99,255,0.12); padding: 1px 5px; border-radius: 3px; color: var(--accent); font-size: 0.78rem; }
+    .panel {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 1.5rem;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
     }
-    input[type=text], input[type=password], input[type=date], select {
+    .tabs {
+      display: flex;
+      gap: 0.25rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1.25rem;
+    }
+    .tab {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      padding: 0.6rem 1rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+    input[type=text], input[type=password], input[type=date], input[type=time], input[type=number], select, textarea {
       background: var(--surface-2);
       border: 1px solid var(--border);
       color: var(--text);
@@ -46,22 +64,25 @@
       font-size: 0.9rem;
       width: 100%;
       outline: none;
+      font-family: inherit;
     }
-    input:focus, select:focus { border-color: var(--accent); }
-    label { display: block; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.35rem; }
-    .row { display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 1rem; flex-wrap: wrap; }
-    .row > div { flex: 1; min-width: 180px; }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    label { display: block; font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.3rem; }
+    .row { display: flex; gap: 0.75rem; align-items: flex-end; margin-bottom: 0.75rem; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 160px; }
     button {
       background: var(--accent);
       color: white;
       border: none;
       border-radius: 6px;
-      padding: 0.6rem 1.25rem;
-      font-size: 0.9rem;
+      padding: 0.55rem 1.1rem;
+      font-size: 0.88rem;
       cursor: pointer;
+      white-space: nowrap;
     }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
     button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+    button.danger { background: var(--danger); }
     .drop {
       border: 2px dashed var(--border);
       border-radius: 10px;
@@ -75,8 +96,8 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.8rem;
-      margin-top: 1rem;
+      font-size: 0.82rem;
+      margin-top: 0.75rem;
     }
     th, td {
       border: 1px solid var(--border);
@@ -89,32 +110,42 @@
     .mapping-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 0.5rem 1rem;
+      gap: 0.45rem 0.9rem;
       margin-top: 1rem;
       font-size: 0.85rem;
     }
     .mapping-grid label { margin-bottom: 0; align-self: center; }
-    .pill { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.7rem; }
+    .pill { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.72rem; }
     .pill.ok { background: rgba(77,255,143,0.15); color: var(--success); }
     .pill.warn { background: rgba(255,184,77,0.15); color: var(--warn); }
     .pill.err { background: rgba(255,77,106,0.15); color: var(--danger); }
-    pre { background: var(--surface-2); padding: 0.75rem; border-radius: 6px; font-size: 0.75rem; overflow-x: auto; }
-    .log { font-size: 0.8rem; color: var(--text-dim); min-height: 1.5rem; margin-top: 0.5rem; }
+    .log { font-size: 0.8rem; color: var(--text-dim); min-height: 1.5rem; margin-top: 0.4rem; }
     .hidden { display: none !important; }
     .danger { color: var(--danger); }
     .success { color: var(--success); }
     .warn { color: var(--warn); }
+    .empty-state {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+    .empty-state .big { font-size: 1.2rem; margin-bottom: 0.5rem; }
+    .breaks-list { margin-top: 0.5rem; }
+    .breaks-row { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 0.5rem; margin-bottom: 0.35rem; align-items: center; }
+    .breaks-row input { padding: 0.3rem 0.5rem; }
+    .breaks-row button { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
   </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Attendance Admin</h1>
-  <p class="hint">Upload a roster or check-in CSV, map its columns to the logical fields, and run ingestion. The file format is not assumed — every logical field is picked from whatever columns the CSV actually contains.</p>
+  <p class="hint">Configure sites, shifts, and modules — then upload roster or check-in CSVs with runtime column mapping (no HR-schema assumptions).</p>
 
   <!-- ── Auth ─────────────────────────────── -->
-  <div class="auth panel" id="auth-panel">
+  <div class="panel" id="auth-panel">
     <h2>Sign in</h2>
-    <p class="hint">Paste your web token. Generate one in Telegram with <code>/webtoken create</code>.</p>
+    <p class="hint">Paste your web token. Generate one in Telegram with <code>/webtoken create attendance</code>.</p>
     <div class="row">
       <div><label for="token">Token</label><input type="password" id="token" placeholder="64-character hex token"></div>
       <div style="flex:0"><button id="auth-btn">Load workspace</button></div>
@@ -122,52 +153,148 @@
     <div class="log" id="auth-log"></div>
   </div>
 
-  <!-- ── Main panel ──────────────────────── -->
   <div id="main" class="hidden">
-    <div class="panel">
-      <h2>1. Pick a module + data type</h2>
-      <div class="row">
-        <div>
-          <label for="module-select">Module</label>
-          <select id="module-select"></select>
+    <div class="tabs">
+      <button class="tab active" data-tab="ingest">Ingest CSV</button>
+      <button class="tab" data-tab="setup">Setup</button>
+      <button class="tab" data-tab="reports">Reports</button>
+    </div>
+    <p class="log" id="whoami-log"></p>
+
+    <!-- ── INGEST TAB ───────────────────────── -->
+    <div class="tab-panel" data-tab="ingest">
+      <div id="ingest-empty" class="panel hidden">
+        <div class="empty-state">
+          <div class="big">No modules configured yet</div>
+          <p>Before you can ingest attendance data, you need at least one site, one shift, and one module.</p>
+          <p style="margin-top: 0.75rem;">Click <strong>Setup</strong> above to create them.</p>
         </div>
-        <div>
-          <label for="datatype-select">Data type</label>
-          <select id="datatype-select">
-            <option value="roster">Roster (employee list)</option>
-            <option value="badge">Badge records (check-ins)</option>
-          </select>
+      </div>
+
+      <div id="ingest-main" class="hidden">
+        <div class="panel">
+          <h2>1. Pick a module + data type</h2>
+          <div class="row">
+            <div>
+              <label for="module-select">Module</label>
+              <select id="module-select"></select>
+            </div>
+            <div>
+              <label for="datatype-select">Data type</label>
+              <select id="datatype-select">
+                <option value="roster">Roster (employee list)</option>
+                <option value="badge">Badge records (check-ins)</option>
+              </select>
+            </div>
+            <div id="date-row">
+              <label for="expected-date">Shift date (badge only)</label>
+              <input type="date" id="expected-date">
+            </div>
+          </div>
         </div>
-        <div id="date-row">
-          <label for="expected-date">Shift date (badge only)</label>
-          <input type="date" id="expected-date">
+
+        <div class="panel">
+          <h2>2. Upload CSV</h2>
+          <p class="hint">Drag and drop a CSV (or .txt, or Excel-saved CSV) — or click to choose.</p>
+          <div class="drop" id="drop"><span>Drop CSV here or click to choose</span><input type="file" id="file-input" accept=".csv,.txt" class="hidden"></div>
+          <div class="log" id="upload-log"></div>
+        </div>
+
+        <div class="panel hidden" id="preview-panel">
+          <h2>3. Preview + map columns</h2>
+          <p class="hint">Each dropdown picks which CSV column matches the logical field. Leave blank if the file doesn't carry it. Fields marked <span class="danger">*</span> are required.</p>
+          <div id="preview-meta" class="log"></div>
+          <div id="preview-table-wrap" style="overflow-x:auto;"></div>
+          <div class="mapping-grid" id="mapping-grid"></div>
+          <div class="row" style="margin-top:1rem">
+            <div style="flex:0"><button id="save-mapping-btn">Save mapping</button></div>
+            <div style="flex:0"><button id="ingest-btn" class="secondary">Save mapping + ingest</button></div>
+            <div class="log" id="mapping-log"></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="panel">
-      <h2>2. Upload CSV</h2>
-      <p class="hint">Drag and drop a CSV or click to pick one. The file is stored on the server so you can come back to configure the mapping without re-uploading.</p>
-      <div class="drop" id="drop"><span>Drop CSV here or click to choose a file</span><input type="file" id="file-input" accept=".csv,.txt" class="hidden"></div>
-      <div class="log" id="upload-log"></div>
-    </div>
+    <!-- ── SETUP TAB ────────────────────────── -->
+    <div class="tab-panel hidden" data-tab="setup">
+      <div id="setup-needs-admin" class="panel hidden">
+        <div class="empty-state">
+          <div class="big">Setup requires the admin role</div>
+          <p>Your chat ID isn't listed in <code>ALLOWED_CHAT_ID</code> and you haven't been granted the admin role.</p>
+          <p style="margin-top: 0.5rem;">Ask an existing admin to grant it, or set <code>ALLOWED_CHAT_ID</code> in <code>.env</code> and restart.</p>
+        </div>
+      </div>
+      <div id="setup-main" class="hidden">
 
-    <div class="panel hidden" id="preview-panel">
-      <h2>3. Preview + map columns</h2>
-      <p class="hint">The table below shows the first rows as the parser sees them. Pick which CSV column corresponds to each logical field. Leave any field blank if your file doesn't carry it.</p>
-      <div id="preview-meta" class="log"></div>
-      <div id="preview-table-wrap" style="overflow-x:auto;"></div>
-      <div class="mapping-grid" id="mapping-grid"></div>
-      <div class="row" style="margin-top:1rem">
-        <div style="flex:0"><button id="save-mapping-btn">Save mapping</button></div>
-        <div style="flex:0"><button id="ingest-btn" class="secondary">Save mapping + ingest</button></div>
-        <div class="log" id="mapping-log"></div>
+        <div class="panel">
+          <h2>Sites</h2>
+          <p class="hint">A site represents one plant. Multiple plants are supported — each has its own shifts, modules, and absence codes.</p>
+          <div class="row">
+            <div><label>Name</label><input type="text" id="new-site-name" placeholder="Plant B"></div>
+            <div><label>Client</label><input type="text" id="new-site-client" placeholder="FRANKLIN PRODUCTS"></div>
+            <div><label>Timezone</label><input type="text" id="new-site-tz" value="America/Mexico_City"></div>
+            <div style="flex:0"><button id="new-site-btn">Add site</button></div>
+          </div>
+          <div class="log" id="site-log"></div>
+          <div id="sites-table"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Shifts + breaks</h2>
+          <p class="hint">Each shift has clock start/end, billing hours (Mon–Thu and Fri may differ), and break slots (paid or unpaid).</p>
+          <div class="row">
+            <div><label>Site</label><select id="new-shift-site"></select></div>
+            <div><label>Name</label><input type="text" id="new-shift-name" placeholder="First Shift"></div>
+            <div><label>Clock start</label><input type="time" id="new-shift-start" value="07:00"></div>
+            <div><label>Clock end</label><input type="time" id="new-shift-end" value="17:00"></div>
+          </div>
+          <div class="row">
+            <div><label>Billing hrs Mon–Thu</label><input type="number" id="new-shift-bh-monthu" step="0.25" value="9.5"></div>
+            <div><label>Billing hrs Fri</label><input type="number" id="new-shift-bh-fri" step="0.25" value="10.0"></div>
+          </div>
+          <h3>Breaks</h3>
+          <div class="breaks-list" id="breaks-list"></div>
+          <button class="secondary" id="add-break-btn">+ Add break</button>
+          <div class="row" style="margin-top:1rem">
+            <div style="flex:0"><button id="new-shift-btn">Add shift</button></div>
+            <div class="log" id="shift-log"></div>
+          </div>
+          <div id="shifts-table"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Modules (supervisor + line grouping)</h2>
+          <p class="hint">A module is one supervisor's responsibility. It maps one shift to a group of assembly lines (e.g., "ASSY CELL 1,4,5").</p>
+          <div class="row">
+            <div><label>Site</label><select id="new-module-site"></select></div>
+            <div><label>Name</label><input type="text" id="new-module-name" placeholder="ASSY CELL 1,4,5"></div>
+            <div><label>Supervisor name</label><input type="text" id="new-module-sup" placeholder="SANCHEZ TENORIO, ODILON"></div>
+            <div><label>Shift</label><select id="new-module-shift"></select></div>
+            <div style="flex:0"><button id="new-module-btn">Add module</button></div>
+          </div>
+          <div class="log" id="module-log"></div>
+          <div id="modules-table"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Absence codes</h2>
+          <p class="hint">Codes used on the attendance sheet (U, V, DI, PP, P, PT, SI per the pilot spec). Seed the defaults once per site, then edit/extend as needed.</p>
+          <div class="row">
+            <div><label>Site</label><select id="absence-site"></select></div>
+            <div style="flex:0"><button id="seed-absence-btn">Seed VP defaults (7 codes)</button></div>
+            <div class="log" id="absence-log"></div>
+          </div>
+          <div id="absence-table"></div>
+        </div>
       </div>
     </div>
 
-    <div class="panel" id="reports-panel">
-      <h2>Recent ingestions</h2>
-      <div id="reports-wrap"></div>
+    <!-- ── REPORTS TAB ──────────────────────── -->
+    <div class="tab-panel hidden" data-tab="reports">
+      <div class="panel">
+        <h2>Recent ingestions</h2>
+        <div id="reports-wrap"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -176,49 +303,39 @@
 // ── State ────────────────────────────────────────────────────
 const state = {
   token: '',
+  whoami: null,
+  sites: [],
+  shifts: [],
   modules: [],
+  absenceCodes: [],
   moduleId: '',
   dataType: 'roster',
   expectedDate: '',
   fileId: null,
   preview: null,
   existingMapping: null,
+  breaks: [],
 };
 
 const ROSTER_FIELDS = [
-  { key: 'badge_id', label: 'Badge ID', required: true },
-  { key: 'full_name', label: 'Full name', required: true },
-  { key: 'cost_center', label: 'Cost center', required: false },
-  { key: 'labor_type', label: 'Labor type (direct/indirect)', required: true },
-  { key: 'line', label: 'Assembly line', required: true },
-  { key: 'supervisor_name', label: 'Supervisor name', required: false },
+  { key: 'badge_id',        label: 'Badge ID',                                 required: true },
+  { key: 'full_name',       label: 'Full name',                                required: true },
+  { key: 'cost_center',     label: 'Cost center',                              required: false },
+  { key: 'labor_type',      label: 'Labor type (direct/indirect)',             required: true },
+  { key: 'line',            label: 'Assembly line',                            required: true },
+  { key: 'supervisor_name', label: 'Supervisor name',                          required: false },
 ];
 const BADGE_FIELDS = [
-  { key: 'badge_id', label: 'Badge ID', required: true },
-  { key: 'date', label: 'Shift date (optional if timestamps have full datetime)', required: false },
-  { key: 'timestamp_in', label: 'Clock-in timestamp', required: false },
-  { key: 'timestamp_out', label: 'Clock-out timestamp', required: false },
-  { key: 'punch_timestamp', label: 'Punch timestamp (if one row per punch)', required: false },
-  { key: 'punch_direction', label: 'Punch direction IN/OUT (if one row per punch)', required: false },
+  { key: 'badge_id',         label: 'Badge ID',                                required: true },
+  { key: 'date',             label: 'Shift date (optional if timestamp has date)', required: false },
+  { key: 'timestamp_in',     label: 'Clock-in timestamp',                      required: false },
+  { key: 'timestamp_out',    label: 'Clock-out timestamp',                     required: false },
+  { key: 'punch_timestamp',  label: 'Punch timestamp (if one row per punch)',  required: false },
+  { key: 'punch_direction',  label: 'Punch direction IN/OUT (if one row per punch)', required: false },
 ];
 
 // ── Elements ─────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
-const authPanel = $('auth-panel');
-const main = $('main');
-const moduleSelect = $('module-select');
-const datatypeSelect = $('datatype-select');
-const expectedDate = $('expected-date');
-const dateRow = $('date-row');
-const drop = $('drop');
-const fileInput = $('file-input');
-const previewPanel = $('preview-panel');
-const previewMeta = $('preview-meta');
-const previewTableWrap = $('preview-table-wrap');
-const mappingGrid = $('mapping-grid');
-const saveMappingBtn = $('save-mapping-btn');
-const ingestBtn = $('ingest-btn');
-const reportsWrap = $('reports-wrap');
 
 // ── Auth ─────────────────────────────────────────────────────
 $('auth-btn').addEventListener('click', async () => {
@@ -226,62 +343,359 @@ $('auth-btn').addEventListener('click', async () => {
   if (!token) { $('auth-log').textContent = 'Enter a token first.'; return; }
   state.token = token;
   try {
-    const modules = await api('/api/attendance/modules');
-    state.modules = modules.modules || [];
-    renderModules();
-    authPanel.classList.add('hidden');
-    main.classList.remove('hidden');
-    await loadReports();
+    state.whoami = await api('/api/attendance/whoami');
+    $('auth-panel').classList.add('hidden');
+    $('main').classList.remove('hidden');
+    $('whoami-log').innerHTML = whoamiSummary(state.whoami);
+    await refreshSites();
+    await refreshShifts();
+    await refreshModules();
+    setActiveTab('ingest');
+    await populateIngestDropdowns();
   } catch (err) {
-    $('auth-log').innerHTML = '<span class="danger">Auth failed: ' + err.message + '</span>';
+    $('auth-log').innerHTML = '<span class="danger">' + escapeHtml(err.message) + '</span>';
   }
 });
 
-// ── Module / data type selection ─────────────────────────────
-function renderModules() {
-  moduleSelect.innerHTML = '';
-  if (state.modules.length === 0) {
-    const opt = document.createElement('option');
-    opt.textContent = '(no modules configured yet — add rows to attendance_modules)';
-    opt.disabled = true;
-    moduleSelect.appendChild(opt);
+function whoamiSummary(w) {
+  const parts = [];
+  if (w.bootstrap) parts.push('<span class="pill ok">admin (bootstrap)</span>');
+  for (const r of w.roles) {
+    if (r.grantedBy === 'bootstrap') continue;
+    parts.push('<span class="pill ok">' + r.role + (r.moduleId ? ' · ' + r.moduleId : '') + '</span>');
+  }
+  if (parts.length === 0) {
+    return '<span class="danger">No attendance role assigned. Ask an admin to grant one.</span>';
+  }
+  return 'Signed in as <code>' + w.chatId + '</code> &nbsp; ' + parts.join(' ');
+}
+
+// ── Tabs ─────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach((b) => {
+  b.addEventListener('click', () => setActiveTab(b.dataset.tab));
+});
+function setActiveTab(tab) {
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.tab !== tab));
+  if (tab === 'setup') renderSetupTab();
+  if (tab === 'reports') loadReports();
+  if (tab === 'ingest') refreshIngestEmptyState();
+}
+
+// ── Setup tab ────────────────────────────────────────────────
+function renderSetupTab() {
+  if (!state.whoami?.can.setup) {
+    $('setup-needs-admin').classList.remove('hidden');
+    $('setup-main').classList.add('hidden');
     return;
   }
+  $('setup-needs-admin').classList.add('hidden');
+  $('setup-main').classList.remove('hidden');
+  renderSitesTable();
+  populateShiftSiteDropdown();
+  populateModuleSiteDropdown();
+  populateAbsenceSiteDropdown();
+  renderShiftsTable();
+  renderModulesTable();
+  renderAbsenceTable();
+}
+
+// Sites
+$('new-site-btn').addEventListener('click', async () => {
+  const name = $('new-site-name').value.trim();
+  const clientName = $('new-site-client').value.trim();
+  const timezone = $('new-site-tz').value.trim();
+  if (!name || !clientName) { flash('site-log', 'Name and client are required', 'danger'); return; }
+  try {
+    await api('/api/attendance/sites', 'POST', { name, clientName, timezone });
+    $('new-site-name').value = ''; $('new-site-client').value = '';
+    await refreshSites();
+    renderSitesTable();
+    populateShiftSiteDropdown();
+    populateModuleSiteDropdown();
+    populateAbsenceSiteDropdown();
+    flash('site-log', 'Site added.', 'success');
+  } catch (err) { flash('site-log', err.message, 'danger'); }
+});
+
+async function refreshSites() {
+  try {
+    const res = await api('/api/attendance/sites');
+    state.sites = res.sites || [];
+  } catch { state.sites = []; }
+}
+
+function renderSitesTable() {
+  const wrap = $('sites-table');
+  if (state.sites.length === 0) { wrap.innerHTML = '<p class="hint" style="margin-top:0.75rem;">No sites yet.</p>'; return; }
+  let html = '<table><thead><tr><th>Name</th><th>Client</th><th>Timezone</th></tr></thead><tbody>';
+  for (const s of state.sites) {
+    html += '<tr><td>' + escapeHtml(s.name) + '</td><td>' + escapeHtml(s.clientName) + '</td><td>' + escapeHtml(s.timezone) + '</td></tr>';
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+// Shifts + breaks
+state.breaks = [];
+renderBreaksList();
+$('add-break-btn').addEventListener('click', () => {
+  state.breaks.push({ name: 'Break', durationMinutes: 10, paid: true });
+  renderBreaksList();
+});
+function renderBreaksList() {
+  const wrap = $('breaks-list');
+  if (state.breaks.length === 0) { wrap.innerHTML = '<p class="hint">No breaks yet. Click Add break to include one.</p>'; return; }
+  wrap.innerHTML = '';
+  state.breaks.forEach((b, i) => {
+    const row = document.createElement('div');
+    row.className = 'breaks-row';
+    row.innerHTML =
+      '<input type="text" value="' + escapeHtml(b.name) + '" data-i="' + i + '" data-f="name" placeholder="Lunch">' +
+      '<input type="number" value="' + b.durationMinutes + '" data-i="' + i + '" data-f="durationMinutes" min="1">' +
+      '<select data-i="' + i + '" data-f="paid">' +
+        '<option value="true"' + (b.paid ? ' selected' : '') + '>Paid</option>' +
+        '<option value="false"' + (!b.paid ? ' selected' : '') + '>Unpaid</option>' +
+      '</select>' +
+      '<button class="secondary" data-i="' + i + '" data-f="remove">✕</button>';
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll('input, select').forEach((el) => {
+    el.addEventListener('change', (e) => {
+      const i = Number(e.target.dataset.i);
+      const f = e.target.dataset.f;
+      let v = e.target.value;
+      if (f === 'durationMinutes') v = Number(v);
+      if (f === 'paid') v = v === 'true';
+      state.breaks[i][f] = v;
+    });
+  });
+  wrap.querySelectorAll('button').forEach((b) => {
+    b.addEventListener('click', (e) => {
+      state.breaks.splice(Number(e.target.dataset.i), 1);
+      renderBreaksList();
+    });
+  });
+}
+
+$('new-shift-btn').addEventListener('click', async () => {
+  const payload = {
+    siteId: $('new-shift-site').value,
+    name: $('new-shift-name').value.trim(),
+    clockStart: $('new-shift-start').value,
+    clockEnd: $('new-shift-end').value,
+    billingHoursMonThu: Number($('new-shift-bh-monthu').value),
+    billingHoursFri: Number($('new-shift-bh-fri').value),
+    breaks: state.breaks,
+  };
+  try {
+    await api('/api/attendance/shifts', 'POST', payload);
+    $('new-shift-name').value = '';
+    state.breaks = [];
+    renderBreaksList();
+    await refreshShifts();
+    renderShiftsTable();
+    populateModuleShiftDropdown();
+    flash('shift-log', 'Shift added.', 'success');
+  } catch (err) { flash('shift-log', err.message, 'danger'); }
+});
+
+async function refreshShifts() {
+  try {
+    const res = await api('/api/attendance/shifts');
+    state.shifts = res.shifts || [];
+  } catch { state.shifts = []; }
+}
+
+function renderShiftsTable() {
+  const wrap = $('shifts-table');
+  if (state.shifts.length === 0) { wrap.innerHTML = '<p class="hint" style="margin-top:0.75rem;">No shifts yet.</p>'; return; }
+  let html = '<table><thead><tr><th>Name</th><th>Site</th><th>Clock</th><th>Billing Mon–Thu / Fri</th><th>Breaks</th></tr></thead><tbody>';
+  for (const s of state.shifts) {
+    const site = state.sites.find((x) => x.id === s.siteId);
+    const brks = s.breaks.map((b) => b.name + ' (' + b.durationMinutes + 'm, ' + (b.paid ? 'paid' : 'unpaid') + ')').join('; ');
+    html += '<tr><td>' + escapeHtml(s.name) + '</td><td>' + escapeHtml(site?.name || s.siteId) + '</td>'
+         + '<td>' + s.clockStart + '–' + s.clockEnd + '</td>'
+         + '<td>' + s.billingHoursMonThu + ' / ' + s.billingHoursFri + '</td>'
+         + '<td>' + escapeHtml(brks || '—') + '</td></tr>';
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function populateShiftSiteDropdown() {
+  const sel = $('new-shift-site');
+  sel.innerHTML = '';
+  for (const s of state.sites) {
+    const opt = document.createElement('option');
+    opt.value = s.id; opt.textContent = s.name;
+    sel.appendChild(opt);
+  }
+}
+
+// Modules
+$('new-module-btn').addEventListener('click', async () => {
+  const payload = {
+    siteId: $('new-module-site').value,
+    name: $('new-module-name').value.trim(),
+    supervisorName: $('new-module-sup').value.trim(),
+    shiftId: $('new-module-shift').value,
+  };
+  try {
+    await api('/api/attendance/modules', 'POST', payload);
+    $('new-module-name').value = ''; $('new-module-sup').value = '';
+    await refreshModules();
+    renderModulesTable();
+    await populateIngestDropdowns();
+    flash('module-log', 'Module added.', 'success');
+  } catch (err) { flash('module-log', err.message, 'danger'); }
+});
+
+async function refreshModules() {
+  try {
+    const res = await api('/api/attendance/modules');
+    state.modules = res.modules || [];
+  } catch { state.modules = []; }
+}
+
+function renderModulesTable() {
+  const wrap = $('modules-table');
+  if (state.modules.length === 0) { wrap.innerHTML = '<p class="hint" style="margin-top:0.75rem;">No modules yet.</p>'; return; }
+  let html = '<table><thead><tr><th>Name</th><th>Site</th><th>Supervisor</th><th>Shift</th></tr></thead><tbody>';
+  for (const m of state.modules) {
+    const site = state.sites.find((s) => s.id === m.site_id);
+    const shift = state.shifts.find((s) => s.id === m.shift_id);
+    html += '<tr><td>' + escapeHtml(m.name) + '</td>'
+         + '<td>' + escapeHtml(site?.name || m.site_id) + '</td>'
+         + '<td>' + escapeHtml(m.supervisor_name) + '</td>'
+         + '<td>' + escapeHtml(shift?.name || m.shift_id) + '</td></tr>';
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function populateModuleSiteDropdown() {
+  const sel = $('new-module-site');
+  sel.innerHTML = '';
+  for (const s of state.sites) {
+    const opt = document.createElement('option');
+    opt.value = s.id; opt.textContent = s.name;
+    sel.appendChild(opt);
+  }
+  populateModuleShiftDropdown();
+}
+
+function populateModuleShiftDropdown() {
+  const sel = $('new-module-shift');
+  const siteId = $('new-module-site').value;
+  sel.innerHTML = '';
+  for (const s of state.shifts.filter((x) => x.siteId === siteId)) {
+    const opt = document.createElement('option');
+    opt.value = s.id; opt.textContent = s.name;
+    sel.appendChild(opt);
+  }
+}
+$('new-module-site').addEventListener('change', populateModuleShiftDropdown);
+
+// Absence codes
+$('seed-absence-btn').addEventListener('click', async () => {
+  const siteId = $('absence-site').value;
+  if (!siteId) { flash('absence-log', 'Pick a site first', 'danger'); return; }
+  try {
+    const res = await api('/api/attendance/absence-codes/seed', 'POST', { siteId });
+    flash('absence-log', 'Seeded ' + res.seeded + ' codes.', 'success');
+    await refreshAbsenceCodes(siteId);
+    renderAbsenceTable();
+  } catch (err) { flash('absence-log', err.message, 'danger'); }
+});
+$('absence-site').addEventListener('change', async () => {
+  await refreshAbsenceCodes($('absence-site').value);
+  renderAbsenceTable();
+});
+
+async function refreshAbsenceCodes(siteId) {
+  if (!siteId) { state.absenceCodes = []; return; }
+  try {
+    const res = await api('/api/attendance/absence-codes?siteId=' + encodeURIComponent(siteId));
+    state.absenceCodes = res.codes || [];
+  } catch { state.absenceCodes = []; }
+}
+
+function renderAbsenceTable() {
+  const wrap = $('absence-table');
+  if (state.absenceCodes.length === 0) { wrap.innerHTML = '<p class="hint" style="margin-top:0.75rem;">No codes for this site yet.</p>'; return; }
+  let html = '<table><thead><tr><th>Code</th><th>English</th><th>Spanish</th><th>Present?</th><th>Billing factor</th></tr></thead><tbody>';
+  for (const c of state.absenceCodes) {
+    html += '<tr><td><strong>' + escapeHtml(c.code) + '</strong></td>'
+         + '<td>' + escapeHtml(c.descriptionEn) + '</td>'
+         + '<td>' + escapeHtml(c.descriptionEs) + '</td>'
+         + '<td>' + (c.countsAsPresent ? '✓' : '') + '</td>'
+         + '<td>' + c.billingHoursFactor + '</td></tr>';
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function populateAbsenceSiteDropdown() {
+  const sel = $('absence-site');
+  sel.innerHTML = '<option value="">— pick site —</option>';
+  for (const s of state.sites) {
+    const opt = document.createElement('option');
+    opt.value = s.id; opt.textContent = s.name;
+    sel.appendChild(opt);
+  }
+}
+
+// ── Ingest tab ────────────────────────────────────────────────
+async function populateIngestDropdowns() {
+  const sel = $('module-select');
+  sel.innerHTML = '';
+  if (state.modules.length === 0) { refreshIngestEmptyState(); return; }
   for (const m of state.modules) {
     const opt = document.createElement('option');
     opt.value = m.id;
     opt.textContent = m.name + ' — ' + m.supervisor_name;
-    moduleSelect.appendChild(opt);
+    sel.appendChild(opt);
   }
-  state.moduleId = moduleSelect.value;
+  state.moduleId = sel.value;
+  refreshIngestEmptyState();
 }
 
-moduleSelect.addEventListener('change', () => {
-  state.moduleId = moduleSelect.value;
-  clearPreview();
-});
-datatypeSelect.addEventListener('change', () => {
-  state.dataType = datatypeSelect.value;
-  dateRow.style.opacity = state.dataType === 'badge' ? '1' : '0.4';
-  clearPreview();
-});
-expectedDate.addEventListener('change', () => { state.expectedDate = expectedDate.value; });
+function refreshIngestEmptyState() {
+  if (state.modules.length === 0) {
+    $('ingest-empty').classList.remove('hidden');
+    $('ingest-main').classList.add('hidden');
+  } else {
+    $('ingest-empty').classList.add('hidden');
+    $('ingest-main').classList.remove('hidden');
+  }
+}
 
-// ── Upload ───────────────────────────────────────────────────
-drop.addEventListener('click', () => fileInput.click());
-drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('hover'); });
-drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
-drop.addEventListener('drop', (e) => {
-  e.preventDefault(); drop.classList.remove('hover');
+$('module-select').addEventListener('change', () => {
+  state.moduleId = $('module-select').value;
+  clearPreview();
+});
+$('datatype-select').addEventListener('change', () => {
+  state.dataType = $('datatype-select').value;
+  $('date-row').style.opacity = state.dataType === 'badge' ? '1' : '0.4';
+  clearPreview();
+});
+$('expected-date').addEventListener('change', () => { state.expectedDate = $('expected-date').value; });
+
+$('drop').addEventListener('click', () => $('file-input').click());
+$('drop').addEventListener('dragover', (e) => { e.preventDefault(); $('drop').classList.add('hover'); });
+$('drop').addEventListener('dragleave', () => $('drop').classList.remove('hover'));
+$('drop').addEventListener('drop', (e) => {
+  e.preventDefault(); $('drop').classList.remove('hover');
   if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
 });
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+$('file-input').addEventListener('change', () => {
+  if ($('file-input').files[0]) handleFile($('file-input').files[0]);
 });
 
 async function handleFile(file) {
-  if (!state.moduleId) { $('upload-log').innerHTML = '<span class="danger">Pick a module first.</span>'; return; }
-  $('upload-log').textContent = 'Uploading ' + file.name + '…';
+  if (!state.moduleId) { flash('upload-log', 'Pick a module first (Setup tab).', 'danger'); return; }
+  flash('upload-log', 'Uploading ' + file.name + '…', null);
   const buf = await file.arrayBuffer();
   const base64 = bufToBase64(new Uint8Array(buf));
   try {
@@ -296,10 +710,10 @@ async function handleFile(file) {
     renderPreview();
     await loadExistingMapping();
     renderMappingGrid();
-    previewPanel.classList.remove('hidden');
-    $('upload-log').innerHTML = '<span class="success">Uploaded. ' + res.preview.totalRows + ' rows detected. Delimiter: "' + res.preview.delimiter + '".</span>';
+    $('preview-panel').classList.remove('hidden');
+    flash('upload-log', 'Uploaded. ' + res.preview.totalRows + ' rows detected · delimiter: "' + res.preview.delimiter + '".', 'success');
   } catch (err) {
-    $('upload-log').innerHTML = '<span class="danger">Upload failed: ' + err.message + '</span>';
+    flash('upload-log', err.message, 'danger');
   }
 }
 
@@ -309,16 +723,15 @@ function bufToBase64(arr) {
   return btoa(binary);
 }
 
-// ── Preview + mapping UI ─────────────────────────────────────
 function clearPreview() {
-  previewPanel.classList.add('hidden');
+  $('preview-panel').classList.add('hidden');
   state.fileId = null;
   state.preview = null;
 }
 
 function renderPreview() {
   const p = state.preview;
-  previewMeta.innerHTML = 'Columns: <strong>' + p.headers.length + '</strong> · Delimiter: <strong>"' + p.delimiter + '"</strong> · Rows: <strong>' + p.totalRows + '</strong>';
+  $('preview-meta').innerHTML = 'Columns: <strong>' + p.headers.length + '</strong> · Delimiter: <strong>"' + p.delimiter + '"</strong> · Rows: <strong>' + p.totalRows + '</strong>';
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const trh = document.createElement('tr');
@@ -340,26 +753,25 @@ function renderPreview() {
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  previewTableWrap.innerHTML = '';
-  previewTableWrap.appendChild(table);
+  $('preview-table-wrap').innerHTML = '';
+  $('preview-table-wrap').appendChild(table);
 }
 
 async function loadExistingMapping() {
   try {
     state.existingMapping = await api('/api/attendance/mapping?moduleId=' + encodeURIComponent(state.moduleId) + '&dataType=' + state.dataType);
-  } catch {
-    state.existingMapping = null;
-  }
+  } catch { state.existingMapping = null; }
 }
 
 function renderMappingGrid() {
-  mappingGrid.innerHTML = '';
+  const grid = $('mapping-grid');
+  grid.innerHTML = '';
   const fields = state.dataType === 'roster' ? ROSTER_FIELDS : BADGE_FIELDS;
   const headers = state.preview.headers;
   const existing = state.existingMapping?.fields ?? {};
   for (const f of fields) {
     const label = document.createElement('label');
-    label.textContent = f.label + (f.required ? ' *' : '');
+    label.innerHTML = f.label + (f.required ? ' <span class="danger">*</span>' : '');
     const sel = document.createElement('select');
     sel.dataset.logical = f.key;
     const blank = document.createElement('option');
@@ -374,8 +786,8 @@ function renderMappingGrid() {
       else if (!existing[f.key] && headerAutoMatches(h, f.key)) opt.selected = true;
       sel.appendChild(opt);
     }
-    mappingGrid.appendChild(label);
-    mappingGrid.appendChild(sel);
+    grid.appendChild(label);
+    grid.appendChild(sel);
   }
 }
 
@@ -384,32 +796,31 @@ function headerAutoMatches(header, logicalKey) {
   const k = logicalKey.replace(/_/g, '');
   if (h === k) return true;
   if (h.includes(k)) return true;
-  // Common aliases for obvious fields
   const aliases = {
-    badge_id: ['badge', 'idbadge', 'gafete', 'numero', 'empnum', 'employeeid', 'empid'],
-    full_name: ['name', 'fullname', 'nombre', 'empname', 'employeename'],
-    cost_center: ['costcenter', 'cc', 'centrocostos', 'centrodecostos'],
-    labor_type: ['labortype', 'type', 'tipo', 'directtype', 'direct'],
-    line: ['assembly', 'assemblyline', 'linea', 'workline'],
-    supervisor_name: ['supervisor', 'sup', 'jefe', 'lead'],
-    timestamp_in: ['clockin', 'checkin', 'entrada', 'tsin', 'in'],
-    timestamp_out: ['clockout', 'checkout', 'salida', 'tsout', 'out'],
-    punch_timestamp: ['punch', 'timestamp', 'datetime', 'fechahora'],
-    punch_direction: ['direction', 'inout', 'entradasalida'],
-    date: ['fecha', 'day'],
+    badge_id: ['badge', 'idbadge', 'gafete', 'numero', 'empnum', 'employeeid', 'empid', 'numeroempleado'],
+    full_name: ['name', 'fullname', 'nombre', 'empname', 'employeename', 'nombrecompleto'],
+    cost_center: ['costcenter', 'cc', 'centrocostos', 'centrodecostos', 'ccenter'],
+    labor_type: ['labortype', 'type', 'tipo', 'tipomanodeobra', 'directo', 'direct'],
+    line: ['assembly', 'assemblyline', 'linea', 'workline', 'lineaensamble'],
+    supervisor_name: ['supervisor', 'sup', 'jefe', 'lead', 'supervisorname'],
+    timestamp_in: ['clockin', 'checkin', 'entrada', 'tsin', 'horaentrada', 'horain'],
+    timestamp_out: ['clockout', 'checkout', 'salida', 'tsout', 'horasalida', 'horaout'],
+    punch_timestamp: ['punch', 'timestamp', 'datetime', 'fechahora', 'marcacion'],
+    punch_direction: ['direction', 'inout', 'entradasalida', 'tipomarca'],
+    date: ['fecha', 'day', 'dia', 'fechadeturno'],
   };
-  return (aliases[logicalKey] || []).includes(h);
+  return (aliases[logicalKey] || []).some((a) => h === a || h.includes(a));
 }
 
 function collectMapping() {
   const fields = {};
-  mappingGrid.querySelectorAll('select').forEach((sel) => {
+  $('mapping-grid').querySelectorAll('select').forEach((sel) => {
     if (sel.value) fields[sel.dataset.logical] = sel.value;
   });
   return fields;
 }
 
-saveMappingBtn.addEventListener('click', async () => {
+$('save-mapping-btn').addEventListener('click', async () => {
   const fields = collectMapping();
   try {
     await api('/api/attendance/mapping', 'POST', {
@@ -418,15 +829,17 @@ saveMappingBtn.addEventListener('click', async () => {
       fields,
       samplePreview: state.preview.sampleRows,
     });
-    $('mapping-log').innerHTML = '<span class="success">Mapping saved.</span>';
-  } catch (err) {
-    $('mapping-log').innerHTML = '<span class="danger">Save failed: ' + err.message + '</span>';
-  }
+    flash('mapping-log', 'Mapping saved.', 'success');
+  } catch (err) { flash('mapping-log', err.message, 'danger'); }
 });
 
-ingestBtn.addEventListener('click', async () => {
+$('ingest-btn').addEventListener('click', async () => {
   const fields = collectMapping();
-  $('mapping-log').textContent = 'Saving mapping and ingesting…';
+  if (state.dataType === 'badge' && !state.expectedDate) {
+    flash('mapping-log', 'Pick a shift date first.', 'danger');
+    return;
+  }
+  flash('mapping-log', 'Saving mapping and ingesting…', null);
   try {
     await api('/api/attendance/mapping', 'POST', {
       moduleId: state.moduleId,
@@ -442,20 +855,20 @@ ingestBtn.addEventListener('click', async () => {
     });
     const r = res.report;
     const cls = r.succeeded && r.rowsSkipped === 0 ? 'success' : (r.succeeded ? 'warn' : 'danger');
-    $('mapping-log').innerHTML = '<span class="' + cls + '">Ingested: ' + r.rowsAccepted + ' accepted, ' + r.rowsSkipped + ' skipped, ' + r.warnings.length + ' warnings.</span>';
-    await loadReports();
+    flash('mapping-log', 'Ingested: ' + r.rowsAccepted + ' accepted, ' + r.rowsSkipped + ' skipped, ' + r.warnings.length + ' warnings.', cls);
   } catch (err) {
-    $('mapping-log').innerHTML = '<span class="danger">Ingestion failed: ' + err.message + '</span>';
+    flash('mapping-log', err.message, 'danger');
   }
 });
 
-// ── Reports ──────────────────────────────────────────────────
+// ── Reports tab ──────────────────────────────────────────────
 async function loadReports() {
   try {
     const res = await api('/api/attendance/reports');
-    reportsWrap.innerHTML = '';
+    const wrap = $('reports-wrap');
+    wrap.innerHTML = '';
     if (!res.reports || res.reports.length === 0) {
-      reportsWrap.innerHTML = '<p class="hint">No ingestions yet.</p>';
+      wrap.innerHTML = '<p class="hint">No ingestions yet.</p>';
       return;
     }
     const table = document.createElement('table');
@@ -467,7 +880,7 @@ async function loadReports() {
       const statusCls = r.succeeded && r.rowsSkipped === 0 ? 'ok' : (r.succeeded ? 'warn' : 'err');
       const statusText = r.succeeded ? (r.rowsSkipped === 0 ? 'Clean' : 'Partial') : 'Failed';
       tr.innerHTML = '<td>' + when + '</td>'
-        + '<td>' + r.moduleId + '</td>'
+        + '<td>' + escapeHtml(r.moduleId) + '</td>'
         + '<td>' + r.dataType + '</td>'
         + '<td>' + r.rowsRead + '</td>'
         + '<td>' + r.rowsAccepted + '</td>'
@@ -500,18 +913,23 @@ async function loadReports() {
       }
     }
     table.appendChild(tbody);
-    reportsWrap.innerHTML = '';
-    reportsWrap.appendChild(table);
+    wrap.appendChild(table);
   } catch (err) {
-    reportsWrap.innerHTML = '<p class="danger">Could not load reports: ' + err.message + '</p>';
+    $('reports-wrap').innerHTML = '<p class="danger">Could not load reports: ' + escapeHtml(err.message) + '</p>';
   }
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// ── Utilities ────────────────────────────────────────────────
+function flash(elId, msg, kind) {
+  const el = $(elId);
+  if (!el) return;
+  el.innerHTML = kind ? '<span class="' + kind + '">' + escapeHtml(msg) + '</span>' : escapeHtml(msg);
 }
 
-// ── API helper ───────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 async function api(path, method = 'GET', body) {
   const opts = { method, headers: { 'Authorization': 'Bearer ' + state.token } };
   if (body !== undefined) {
@@ -519,11 +937,12 @@ async function api(path, method = 'GET', body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(path, opts);
+  let data;
+  try { data = await res.json(); } catch { data = null; }
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(res.status + ' ' + errText);
+    throw new Error(data?.error || (res.status + ' ' + res.statusText));
   }
-  return res.json();
+  return data;
 }
 </script>
 </body>
