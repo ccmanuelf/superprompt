@@ -62,6 +62,13 @@ EXCLUDES=(
   # location for "clauded.*" string literals post-rebrand.
   --exclude=rebrand-data-files.ts
   --exclude=rebrand-data-files.test.ts
+  # On-demand DB cleanup script: same authorization — it's the tool that
+  # rewrites the old brand to the new one, so it must name the old one.
+  --exclude=rebrand-db-cleanup.ts
+  # Docker entrypoint clears both legacy + new PID files during container
+  # startup so an in-place upgrade from the old brand can't trip the
+  # PID-lock guard (observed in rc.85 rollout).
+  --exclude=entrypoint.sh
   --exclude=package-lock.json
 )
 

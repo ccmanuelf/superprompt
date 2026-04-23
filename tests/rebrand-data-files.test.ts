@@ -45,7 +45,7 @@ describe('migrateRebrandDataFiles', () => {
     store = freshStore();
   });
 
-  it('renames every legacy file that exists without a successor (happy path upgrade)', () => {
+  it('renames DB files and DELETES legacy PID file (happy path upgrade)', () => {
     writeFileSync(join(store, 'clauded.db'), 'db-bytes');
     writeFileSync(join(store, 'clauded.db-shm'), 'shm-bytes');
     writeFileSync(join(store, 'clauded.db-wal'), 'wal-bytes');
@@ -54,22 +54,26 @@ describe('migrateRebrandDataFiles', () => {
     const log = makeStubLogger();
     const result = migrateRebrandDataFiles(store, log);
 
+    // DB + sidecars carried forward
     expect(result.renamed).toEqual([
       'clauded.db → luna.db',
       'clauded.db-shm → luna.db-shm',
       'clauded.db-wal → luna.db-wal',
-      'clauded.pid → luna.pid',
     ]);
+    // PID deleted — carrying a stale container-PID into acquireLock caused
+    // a false "another instance is running" trip in the rc.85 rollout.
+    expect(result.deleted).toEqual(['clauded.pid']);
     expect(result.conflicts).toEqual([]);
 
-    // Legacy paths gone, new paths present with original bytes
+    // Legacy paths gone, new paths present with original bytes, no new luna.pid
     expect(existsSync(join(store, 'clauded.db'))).toBe(false);
     expect(existsSync(join(store, 'clauded.pid'))).toBe(false);
+    expect(existsSync(join(store, 'luna.pid'))).toBe(false);
     expect(readFileSync(join(store, 'luna.db'), 'utf8')).toBe('db-bytes');
     expect(readFileSync(join(store, 'luna.db-shm'), 'utf8')).toBe('shm-bytes');
     expect(readFileSync(join(store, 'luna.db-wal'), 'utf8')).toBe('wal-bytes');
-    expect(readFileSync(join(store, 'luna.pid'), 'utf8')).toBe('12345');
 
+    // 3 renames + 1 delete = 4 info logs
     expect(log._info.length).toBe(4);
     expect(log._warn.length).toBe(0);
 
@@ -118,17 +122,18 @@ describe('migrateRebrandDataFiles', () => {
     rmSync(store, { recursive: true, force: true });
   });
 
-  it('handles a partial upgrade (only clauded.pid exists, DB already migrated)', () => {
+  it('deletes legacy clauded.pid even when DB is already migrated', () => {
     writeFileSync(join(store, 'luna.db'), 'db-bytes');
     writeFileSync(join(store, 'clauded.pid'), '999');
 
     const log = makeStubLogger();
     const result = migrateRebrandDataFiles(store, log);
 
-    expect(result.renamed).toEqual(['clauded.pid → luna.pid']);
+    expect(result.renamed).toEqual([]);
+    expect(result.deleted).toEqual(['clauded.pid']);
     expect(result.alreadyNew).toContain('luna.db');
     expect(existsSync(join(store, 'clauded.pid'))).toBe(false);
-    expect(readFileSync(join(store, 'luna.pid'), 'utf8')).toBe('999');
+    expect(existsSync(join(store, 'luna.pid'))).toBe(false);
     expect(readFileSync(join(store, 'luna.db'), 'utf8')).toBe('db-bytes');
 
     rmSync(store, { recursive: true, force: true });

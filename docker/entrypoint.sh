@@ -14,8 +14,10 @@ if [ ! -f "$CLAUDE_JSON" ] || ! grep -q "hasCompletedOnboarding" "$CLAUDE_JSON" 
   echo "[entrypoint] Created $CLAUDE_JSON with onboarding flag"
 fi
 
-# Clean up stale PID file from previous container runs
-rm -f /app/store/luna.pid
+# Clean up stale PID files from previous container runs.
+# Both names are cleared so an upgrade from the old clauded brand can't
+# stash a PID 1 value that would trip acquireLock on first boot.
+rm -f /app/store/luna.pid /app/store/clauded.pid
 
 # Pre-load Speaches models (non-blocking — runs in background)
 SPEACHES_URL="${SPEACHES_URL:-http://speaches:8000/v1}"

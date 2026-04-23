@@ -218,6 +218,9 @@ export async function generateDocument(req: DocGenRequest): Promise<DocGenResult
 async function generateXlsx(req: DocGenRequest): Promise<Buffer> {
   const ExcelJS = await import('exceljs');
   const workbook = new ExcelJS.default.Workbook();
+  // Brand metadata — shows up in Excel's Info panel for recipients.
+  workbook.creator = 'Luna';
+  workbook.lastModifiedBy = 'Luna';
 
   if (isSpreadsheet(req.content)) {
     for (const sheet of req.content.sheets) {
@@ -405,6 +408,9 @@ async function generateDocx(req: DocGenRequest): Promise<Buffer> {
   }
 
   const doc = new Document({
+    creator: 'Luna',
+    title: req.title,
+    description: req.title,
     sections: [{ children }],
   });
 
@@ -430,7 +436,16 @@ async function generatePdf(req: DocGenRequest): Promise<Buffer> {
   }
 
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50 });
+    const doc = new PDFDocument({
+      margin: 50,
+      info: {
+        // Author shows in Adobe/Preview's document properties.
+        Author: 'Luna',
+        Creator: 'Luna',
+        Producer: 'Luna',
+        Title: req.title,
+      },
+    });
     const chunks: Buffer[] = [];
 
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));

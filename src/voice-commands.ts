@@ -179,9 +179,17 @@ export function pickGreetingLanguage(
   return defaultLang;
 }
 
-/** Spoken greeting text — kept short so it plays fast after warmup. */
+/**
+ * Spoken greeting text — kept short so it plays fast after warmup.
+ *
+ * Self-identifies by name so a first-time user hearing the greeting
+ * immediately knows who they're talking to. "Inge" in Spanish is the
+ * short form for "Ingeniera" (female engineer) and reads naturally —
+ * "Soy Inge Luna" maps to the English "I'm Luna" without the job title
+ * prefix since English doesn't carry the same professional salutation.
+ */
 export function greetingText(lang: 'en' | 'es'): string {
   return lang === 'es'
-    ? 'Hola, estoy listo. ¿En qué te puedo ayudar?'
-    : "Hi, I'm ready. What can I help you with?";
+    ? 'Hola, soy Inge Luna. ¿En qué te puedo ayudar?'
+    : "Hi, I'm Luna. What can I help you with?";
 }

@@ -312,12 +312,18 @@ describe('voice-session must execute kanban_action blocks (rc.84)', () => {
 });
 
 describe('greetingText', () => {
-  it('returns the Spanish greeting for es', () => {
-    expect(greetingText('es')).toMatch(/hola.*listo/i);
-    expect(greetingText('es')).toMatch(/ayudar/i);
+  // rc.86: greeting must self-identify the bot by name — first-time
+  // voice users otherwise don't know who they're speaking to.
+  it('returns the Spanish greeting naming Inge Luna and offering help', () => {
+    const text = greetingText('es');
+    expect(text).toMatch(/hola/i);
+    expect(text).toMatch(/inge\s+luna/i);
+    expect(text).toMatch(/ayudar/i);
   });
-  it('returns the English greeting for en', () => {
-    expect(greetingText('en')).toMatch(/hi.*ready/i);
-    expect(greetingText('en')).toMatch(/help/i);
+  it('returns the English greeting naming Luna and offering help', () => {
+    const text = greetingText('en');
+    expect(text).toMatch(/hi/i);
+    expect(text).toMatch(/\bluna\b/i);
+    expect(text).toMatch(/help/i);
   });
 });
