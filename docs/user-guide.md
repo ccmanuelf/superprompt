@@ -1,6 +1,6 @@
-# luna User Guide
+# Luna User Guide
 
-luna is a personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. It connects Telegram and Matrix to Claude and Ollama, with local voice processing, persistent memory, scheduled tasks, a learning coach, manufacturing engineering tools, and Docker containerization.
+Luna is a personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. It connects Telegram and Matrix to Claude and Ollama, with local voice processing, persistent memory, scheduled tasks, a learning coach, manufacturing engineering tools, and Docker containerization.
 
 ---
 
@@ -95,7 +95,7 @@ This opens a browser for authentication. After completing the flow, a long-lived
 CLAUDE_CODE_OAUTH_TOKEN=your-token-from-setup-token
 ```
 
-**If you don't have a Claude subscription**: Set `AI_PROVIDER=ollama` in `.env` and skip this step. luna works with Ollama alone — Claude is optional.
+**If you don't have a Claude subscription**: Set `AI_PROVIDER=ollama` in `.env` and skip this step. Luna works with Ollama alone — Claude is optional.
 
 ### Step 5: Start with Docker Compose
 
@@ -151,7 +151,7 @@ ALLOWED_CHAT_ID=123456789
 
 Restart to apply:
 ```bash
-docker compose restart luna
+docker compose restart Luna
 ```
 
 **Why this matters**: Without `ALLOWED_CHAT_ID`, your bot accepts messages from ANY Telegram user who finds it. Setting this restricts access to only your chat ID. For multiple users, comma-separate: `ALLOWED_CHAT_ID=123456789,987654321`.
@@ -175,7 +175,7 @@ VOICE_WEB_TOKEN=paste-your-generated-token-here
 
 3. Restart:
 ```bash
-docker compose restart luna
+docker compose restart Luna
 ```
 
 4. Open `http://localhost:3030/` in your browser. You'll need the token to connect.
@@ -256,7 +256,7 @@ docker compose logs -f synapse      # Matrix logs (if enabled)
 
 ## AI Providers
 
-luna supports two AI backends that can be used independently or together.
+Luna supports two AI backends that can be used independently or together.
 
 ### Claude (via CLI)
 
@@ -285,7 +285,7 @@ luna supports two AI backends that can be used independently or together.
 
 ### Auto-Routing
 
-When `/auto` is enabled, luna analyzes each message and routes to the best provider:
+When `/auto` is enabled, Luna analyzes each message and routes to the best provider:
 
 - **Claude**: Complex reasoning, creative writing, nuanced conversation
 - **Ollama**: Tool usage (search, files, memory), system tasks, manufacturing analysis
@@ -324,7 +324,7 @@ Browser-based voice interface at `http://localhost:3030/`:
 
 ### Multi-User Support
 
-A single luna instance supports multiple concurrent users. Each user has a private, isolated experience:
+A single Luna instance supports multiple concurrent users. Each user has a private, isolated experience:
 
 **How to add users:** Set comma-separated Telegram chat IDs in `.env`:
 ```bash
@@ -351,7 +351,7 @@ Each user sends `/chatid` to get their ID. Restart after updating `.env`.
 
 ## Voice Features
 
-luna processes voice locally — no cloud transcription services.
+Luna processes voice locally — no cloud transcription services.
 
 ### How It Works
 
@@ -378,7 +378,7 @@ luna processes voice locally — no cloud transcription services.
 
 ## Memory System
 
-luna has a dual-layer memory system that persists across conversations.
+Luna has a dual-layer memory system that persists across conversations.
 
 ### Semantic Memory
 
@@ -412,7 +412,7 @@ When episodic memories fade below a salience threshold (0.7), they're grouped by
 
 ### How Memory Search Works
 
-When you send a message, luna searches:
+When you send a message, Luna searches:
 1. FTS5 keyword match (top 3 memories + 2 episodes)
 2. Vector similarity via embeddings (top 3 memories + 2 episodes)
 3. Recently accessed memories (top 5)
@@ -543,7 +543,7 @@ The AI uses the `create_reminder` tool to set this up automatically.
 
 ### Event-Driven Triggers
 
-luna supports reactive automation via the `event_triggers` table. Events emitted by the system (e.g., order status changes, tool completions, threshold breaches) can trigger automatic actions through `emitEvent()`.
+Luna supports reactive automation via the `event_triggers` table. Events emitted by the system (e.g., order status changes, tool completions, threshold breaches) can trigger automatic actions through `emitEvent()`.
 
 ### Background Task Queue
 
@@ -577,7 +577,7 @@ A built-in task board for personal project tracking.
 ### Assignees
 
 - `me` — Assigned to you
-- `bot` — Assigned to luna (AI will act on it)
+- `bot` — Assigned to Luna (AI will act on it)
 - `noted` — Visible but unassigned
 
 ### Web Board
@@ -589,7 +589,7 @@ Access the visual kanban board at `http://localhost:3030/board`.
 The AI detects task-like statements and offers to create cards:
 
 > "I need to fix the login bug by Friday"
-> → luna creates a card: "Fix login bug" | priority: medium | due: 2026-04-04
+> → Luna creates a card: "Fix login bug" | priority: medium | due: 2026-04-04
 
 ---
 
@@ -665,11 +665,11 @@ Citations are tracked automatically when the AI references papers or sources.
 
 ## Proactive Messaging
 
-luna sends messages on its own when relevant.
+Luna sends messages on its own when relevant.
 
 ### Follow-Ups
 
-24 hours after a conversation with unresolved topics (captured in episode `open_threads`), luna sends a follow-up:
+24 hours after a conversation with unresolved topics (captured in episode `open_threads`), Luna sends a follow-up:
 
 > "Follow-up from previous conversation: You mentioned wanting to investigate the memory leak in the worker process. Any progress on that?"
 
@@ -712,7 +712,7 @@ The AI generates documents when appropriate — request them conversationally.
 
 ### File Processing
 
-Send files to luna for analysis:
+Send files to Luna for analysis:
 
 | Format | Supported |
 |--------|-----------|
@@ -724,7 +724,7 @@ Send files to luna for analysis:
 
 ## Manufacturing Engineering
 
-luna includes a comprehensive suite of manufacturing engineering tools, usable through chat or interactive web dashboards.
+Luna includes a comprehensive suite of manufacturing engineering tools, usable through chat or interactive web dashboards.
 
 ### Production Simulation (`/sim`)
 
@@ -914,7 +914,7 @@ VOICE_WEB_TLS_KEY=/path/to/key.pem
 
 ## Domain Packs — Customizing for Your Department
 
-luna can be extended with domain-specific capabilities for any department using Domain Packs.
+Luna can be extended with domain-specific capabilities for any department using Domain Packs.
 
 ### What is a Domain Pack?
 
@@ -929,7 +929,7 @@ A pack bundles tools, skills, data templates, and AI context for a specific doma
 /pack templates finance                 → Get example data files
 ```
 
-A complete Finance example pack ships with luna — try it with:
+A complete Finance example pack ships with Luna — try it with:
 
 > "Calculate the NPV with 10% discount rate, $200,000 investment, and cash flows of 50000, 60000, 70000, 80000, 90000"
 
@@ -945,17 +945,17 @@ See `docs/customization-guide.md` for complete step-by-step procedures at each l
 
 ### Persistent Data
 
-Pack files live in `packs/` on the host and are mounted into the Docker container. You can edit packs directly on the host and restart luna to pick up changes:
+Pack files live in `packs/` on the host and are mounted into the Docker container. You can edit packs directly on the host and restart Luna to pick up changes:
 
 ```bash
-docker compose restart luna
+docker compose restart Luna
 ```
 
 ---
 
 ## Configuration Scope — What You Can Change and How
 
-Not all settings work the same way. Some you change by talking to luna, some require editing files on the server, and some luna can advise you on even though it can't change them directly.
+Not all settings work the same way. Some you change by talking to Luna, some require editing files on the server, and some Luna can advise you on even though it can't change them directly.
 
 ### Conversational — Change from inside a chat session
 
@@ -979,7 +979,7 @@ These settings take effect immediately. No restart needed.
 
 ### Manual — Requires editing `.env` and restarting
 
-These settings are read once at startup. After changing them in `.env`, restart with `docker compose restart luna`.
+These settings are read once at startup. After changing them in `.env`, restart with `docker compose restart Luna`.
 
 | Setting | Variable | Why It Can't Be Conversational |
 |---------|----------|-------------------------------|
@@ -999,11 +999,11 @@ These settings are read once at startup. After changing them in `.env`, restart 
 | Matrix config | `MATRIX_HOMESERVER`, etc. | Connection established at startup |
 | Log level | `LOG_LEVEL` | Logging framework initialized at startup |
 
-### Guided — luna can help you decide, even though it can't change the setting
+### Guided — Luna can help you decide, even though it can't change the setting
 
-For any manual configuration, you can ask luna for guidance. Examples:
+For any manual configuration, you can ask Luna for guidance. Examples:
 
-| Question you can ask luna | What it can help with |
+| Question you can ask Luna | What it can help with |
 |------------------------------|----------------------|
 | "Should I use Claude or Ollama as my default?" | Explains trade-offs: Claude for reasoning, Ollama for tools and privacy |
 | "How do I get a GitHub token?" | Walks you through github.com/settings/tokens step by step |
@@ -1015,9 +1015,9 @@ For any manual configuration, you can ask luna for guidance. Examples:
 | "What's a good VOICE_WEB_TOKEN?" | Suggests `openssl rand -hex 32` and explains why |
 | "How do I set up a domain pack for my department?" | Full guided walkthrough of Level 2 customization |
 
-luna knows its own configuration because its capabilities prompt includes this information. It cannot edit `.env` or restart itself, but it can explain every setting, recommend values, and troubleshoot issues.
+Luna knows its own configuration because its capabilities prompt includes this information. It cannot edit `.env` or restart itself, but it can explain every setting, recommend values, and troubleshoot issues.
 
-**To ask for setup help**, just message luna naturally:
+**To ask for setup help**, just message Luna naturally:
 
 > "Help me configure the web UI"
 > "I want to enable GitHub integration"
@@ -1032,13 +1032,13 @@ luna knows its own configuration because its capabilities prompt includes this i
 1. Start without `ALLOWED_CHAT_ID` set — the bot accepts any chat
 2. Send `/chatid` to get your Telegram chat ID
 3. Add it to `.env` as `ALLOWED_CHAT_ID`
-4. Restart: `docker compose restart luna`
+4. Restart: `docker compose restart Luna`
 
 ### Provider Selection
 
 - Use **Claude** for complex reasoning, creative writing, nuanced conversations
 - Use **Ollama** for tool-heavy tasks, quick lookups, manufacturing analysis
-- Use **Auto** mode to let luna decide per-message
+- Use **Auto** mode to let Luna decide per-message
 
 ### Voice Tips
 
@@ -1048,7 +1048,7 @@ luna knows its own configuration because its capabilities prompt includes this i
 
 ### Memory Tips
 
-- luna automatically remembers facts you share ("I work at...", "I prefer...")
+- Luna automatically remembers facts you share ("I work at...", "I prefer...")
 - Ask "What do you remember about me?" to see your memory profile
 - Memory influences all responses — the AI adapts to your preferences over time
 
@@ -1070,7 +1070,7 @@ luna knows its own configuration because its capabilities prompt includes this i
 docker compose up -d                    # Start all services
 docker compose up -d --build            # Rebuild and start
 docker compose logs -f luna          # Follow bot logs
-docker compose restart luna          # Restart bot (picks up pack changes)
+docker compose restart Luna          # Restart bot (picks up pack changes)
 docker compose --profile matrix up -d   # Start with Matrix
 docker compose down                     # Stop all services
 ```
@@ -1081,7 +1081,7 @@ Every variable is documented in detail in `.env.example` with purpose, format, h
 
 | Variable | Required? | What Happens If Missing |
 |----------|-----------|------------------------|
-| `TELEGRAM_BOT_TOKEN` | Yes* | Telegram bot doesn't start. If Matrix also missing, luna refuses to start. |
+| `TELEGRAM_BOT_TOKEN` | Yes* | Telegram bot doesn't start. If Matrix also missing, Luna refuses to start. |
 | `ALLOWED_CHAT_ID` | **Strongly recommended** | Bot accepts messages from ANY Telegram user (first-run mode). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Only if using Claude | Claude provider unavailable. Set `AI_PROVIDER=ollama` to use Ollama only. |
 | `AI_PROVIDER` | No | Defaults to `claude`. Set to `ollama` if no Claude subscription. |

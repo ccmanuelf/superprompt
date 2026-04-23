@@ -1,4 +1,4 @@
-# luna — Architecture Decision Records (ADRs)
+# Luna — Architecture Decision Records (ADRs)
 
 **Version:** v1.0.0-rc.62 | April 2026
 
@@ -11,7 +11,7 @@ Each ADR documents a significant architectural decision, the alternatives consid
 **Date:** 2026-02-25
 **Status:** Accepted
 **Context:** The team needed an AI assistant platform for manufacturing operations. OpenClaw existed as an open-source option but had fundamental security concerns (unrestricted system access, no process isolation, no domain specialization).
-**Decision:** Build luna from scratch in TypeScript/Node.js as an independent project.
+**Decision:** Build Luna from scratch in TypeScript/Node.js as an independent project.
 **Alternatives considered:**
 - Fork OpenClaw and harden it → Rejected: OpenClaw's architecture (single-process, no sandbox) would require rewriting core components. Starting fresh was faster and cleaner.
 - Use a commercial agent platform → Rejected: No data sovereignty. Manufacturing domain tools don't exist in any commercial platform.

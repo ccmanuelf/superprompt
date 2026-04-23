@@ -1,4 +1,4 @@
-# luna — E2E Test Checklist
+# Luna — E2E Test Checklist
 
 **Version:** v1.0.0-rc.60 | April 2026
 **Coverage:** All features including WS1 (Security), WS2 (Multi-Agent), WS4 (Database Abstraction)

@@ -1,4 +1,4 @@
-# luna — Resource Allocation Guide
+# Luna — Resource Allocation Guide
 
 **For:** IT Team / CTO
 **Version:** v1.0.0-rc.60 | April 2026

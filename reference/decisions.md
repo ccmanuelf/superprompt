@@ -8,8 +8,10 @@ All decisions below were researched and confirmed during planning. They should N
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Project name | **luna** | Daemon naming convention (like `sshd`, `httpd`). "ClaudeClaw" was the prototype name. |
+| Product display brand | **Luna** (English) / **Inge Luna** (Spanish) | Current user-facing name (rc.85 rebrand from the former "clauded"). "Inge" is the Spanish short for "Ingeniera" (female engineer). |
+| Internal slug | **luna** | Used in hostnames, container names, env vars, DB filename. Lowercase and hostname-safe. Daemon naming convention (like `sshd`, `httpd`). |
 | Repo | `superprompt/` | Retains existing repo, REBUILD_PROMPT.md kept as reference |
+| Prior names | `clauded` (prior product brand, renamed rc.85), `ClaudeClaw` (pre-repo prototype) | Historical only — both fully removed from the active codebase. |
 
 ---
 

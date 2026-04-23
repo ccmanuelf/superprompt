@@ -1,4 +1,4 @@
-# luna v1.0.0-rc.60 — Deployment Checklist
+# Luna v1.0.0-rc.60 — Deployment Checklist
 
 Pre-deployment criteria, considerations, and decision factors for production deployment.
 
@@ -146,7 +146,7 @@ Run the full E2E test guide: `docs/e2e-test-guide.md` (17 sections, 65+ tests)
 | Company-wide (80-150 users) | 2,000-5,000 | No — multiple instances |
 
 ### Multi-Instance Architecture
-Each department (or group) gets its own luna instance:
+Each department (or group) gets its own Luna instance:
 - Own Docker container
 - Own Anthropic Max subscription ($200/month)
 - **Shared database** (MariaDB/PostgreSQL) — single source of truth
@@ -207,7 +207,7 @@ Each department (or group) gets its own luna instance:
 - **Auth:** `CLAUDE_CODE_OAUTH_TOKEN` env var (generated via `claude setup-token`)
 - **Cost:** Fixed monthly fee (Anthropic Max ~$200/month) — **no per-token API consumption**
 - **The deployed version runs on the same subscription model as the demo**
-- **Scaling:** One subscription per luna instance. Company-wide = N instances × $200/month
+- **Scaling:** One subscription per Luna instance. Company-wide = N instances × $200/month
 
 ---
 

@@ -1,4 +1,4 @@
-# luna — Security Model
+# Luna — Security Model
 
 Comprehensive security documentation for luna, validated against the 10 known OpenClaw deployment vulnerabilities.
 
@@ -121,7 +121,7 @@ Assessed against the 10 known OpenClaw deployment vulnerabilities:
 
 ### 1. Unauthorized Command Execution
 
-| Aspect | OpenClaw | luna |
+| Aspect | OpenClaw | Luna |
 |--------|----------|---------|
 | Command scope | Broad system access | 13-command whitelist (ls, cat, head, etc.) |
 | Shell injection | Possible via prompts | Metacharacter blocking: `; & | \` $ ( )` rejected |
@@ -157,7 +157,7 @@ Assessed against the 10 known OpenClaw deployment vulnerabilities:
 
 ### 4. Shadow IT
 
-**Status**: NOT APPLICABLE. luna requires Docker Compose deployment — visible in container registries, process lists, and port bindings. Not installable without admin/Docker access.
+**Status**: NOT APPLICABLE. Luna requires Docker Compose deployment — visible in container registries, process lists, and port bindings. Not installable without admin/Docker access.
 
 ### 5. Persistent Memory Risks
 
@@ -243,7 +243,7 @@ npm outdated                # Check for available updates
 
 ### How It Works
 
-luna uses **protective framing** — labeling untrusted content with clear origin markers so the AI can distinguish between instructions and data.
+Luna uses **protective framing** — labeling untrusted content with clear origin markers so the AI can distinguish between instructions and data.
 
 ### Framing Applied
 
@@ -272,7 +272,7 @@ Content filtering (blocking specific patterns) is brittle and leads to false pos
 
 ## Configuration Security Checklist
 
-Use this checklist before deploying luna for any team:
+Use this checklist before deploying Luna for any team:
 
 ### Required
 
@@ -298,7 +298,7 @@ Use this checklist before deploying luna for any team:
 
 - [ ] Docker ports bound to `127.0.0.1` (default in docker-compose.yml — don't change)
 - [ ] SearXNG runs as internal Docker service (not exposed to host by default)
-- [ ] No port forwarding rules expose luna to the internet
+- [ ] No port forwarding rules expose Luna to the internet
 - [ ] If using Caddy: `CADDY_DOMAIN` set, automatic HTTPS active
 - [ ] If using webhook: `TELEGRAM_WEBHOOK_SECRET` set (prevents unauthorized POSTs)
 
@@ -379,14 +379,14 @@ Assessed against 10 additional OpenClaw deployment vulnerabilities:
 
 ### 15. Unvalidated Output Routing
 
-**Status**: PROTECTED. luna has no email, webhook, or external messaging tools. All output goes through authorized channels only:
+**Status**: PROTECTED. Luna has no email, webhook, or external messaging tools. All output goes through authorized channels only:
 - Telegram: `isAuthorised(chatId)` whitelist enforced
 - Matrix: `MATRIX_ALLOWED_USERS` whitelist enforced
 - Proactive messages: Routed via `notifyFn(chat_id)` — same chat scope
 
 ### 16. Model Supply Chain Risk
 
-**Status**: INHERITED RISK. Ollama models are pulled from the Ollama registry. luna does not verify model integrity — it trusts the local Ollama instance. Operators should verify model hashes against the official Ollama model library. The Claude provider uses Anthropic's API via the official CLI — supply chain managed by Anthropic.
+**Status**: INHERITED RISK. Ollama models are pulled from the Ollama registry. Luna does not verify model integrity — it trusts the local Ollama instance. Operators should verify model hashes against the official Ollama model library. The Claude provider uses Anthropic's API via the official CLI — supply chain managed by Anthropic.
 
 ### 17. Replay Attacks
 

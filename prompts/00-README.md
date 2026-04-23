@@ -1,8 +1,8 @@
-# luna — Build Prompt System
+# Luna — Build Prompt System
 
 ## What This Is
 
-This directory contains modular build prompts for constructing **luna**, a personal AI assistant daemon. Each prompt is a self-contained specification that, when pasted into a Claude Code session in the target project directory, creates all files for that phase.
+This directory contains modular build prompts for constructing **Luna** (Inge Luna in Spanish), a personal AI assistant daemon. Each prompt is a self-contained specification that, when pasted into a Claude Code session in the target project directory, creates all files for that phase.
 
 ## How To Use
 

@@ -1,10 +1,10 @@
-# luna v1.0.0-rc.29 — End-to-End Test Guide & Checklist
+# Luna v1.0.0-rc.29 — End-to-End Test Guide & Checklist
 
 Complete E2E validation for the architecture-hardened version (SA1-SA5).
 Run all sections to certify a deployment is production-ready.
 
 **Estimated time:** 60-75 minutes
-**Prerequisites:** luna running, Telegram bot connected, Ollama responding
+**Prerequisites:** Luna running, Telegram bot connected, Ollama responding
 
 ---
 
@@ -190,12 +190,12 @@ After passing the E2E checklist, the **Production Planning team** should complet
 - How to validate real data vs sample data (step-by-step)
 - Current assumptions and how to correct them
 
-**This guide is for the Planning team, not IT.** Most configuration is done by talking to luna.
+**This guide is for the Planning team, not IT.** Most configuration is done by talking to Luna.
 
 ---
 
 ## Claude Subscription Note
 
-luna uses the Claude CLI (`claude -p`) which runs on an **Anthropic subscription** (fixed monthly fee). This is the same subscription used for the demo. **No per-token API consumption** — the deployed version costs the same as the development environment.
+Luna uses the Claude CLI (`claude -p`) which runs on an **Anthropic subscription** (fixed monthly fee). This is the same subscription used for the demo. **No per-token API consumption** — the deployed version costs the same as the development environment.
 
 Authentication: `CLAUDE_CODE_OAUTH_TOKEN` env var, generated via `claude setup-token`.

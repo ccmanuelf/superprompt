@@ -1,6 +1,6 @@
 # Luna
 
-A personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department. **v1.0.0-rc.60**
+Luna (Inge Luna in Spanish) is a personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department. **v1.0.0-rc.86**
 
 **New here?** Start with the [Department Onboarding Runbook](docs/deployment-runbook.md) — a 30-minute step-by-step guide to get your own instance running.
 
@@ -30,7 +30,7 @@ A personal AI assistant daemon that bridges messaging platforms to AI backends r
 
 **Skills & Tools**
 - 5 builtin skills with auto-triggering (debugger, careful, brainstormer, analyst, coder)
-- Auto-skills: luna learns from complex tasks and proposes reusable skills (adapts from Hermes Agent concepts)
+- Auto-skills: Luna learns from complex tasks and proposes reusable skills (adapts from Hermes Agent concepts)
 - Tool Forge: create, upload, auto-generate, and manage custom tools
 - Safety scanning for user-created tools
 
@@ -79,9 +79,9 @@ A personal AI assistant daemon that bridges messaging platforms to AI backends r
 ## Security Architecture
 
 - **4-layer defense-in-depth**: Policy gate --> Process boundary --> Worker V8 isolate --> SSRF-safe fetch
-- **Per-user trust memory**: works like "remember passwords" — once a user is trusted for a tool category, luna never asks again
+- **Per-user trust memory**: works like "remember passwords" — once a user is trusted for a tool category, Luna never asks again
 - **43 tools classified by risk level**: 3 critical, 16 high, 19 medium, 5 low — each risk level gates differently through the policy engine
-- **Auto-generated skills with self-healing**: adapts from Hermes Agent concepts — luna learns from failures and proposes corrected skill definitions
+- **Auto-generated skills with self-healing**: adapts from Hermes Agent concepts — Luna learns from failures and proposes corrected skill definitions
 - **Circuit breaker for agentic loops** (stagnation, repetition, error detection)
 - **Per-user rate limiting** (100 Claude / 200 Ollama calls per hour)
 - **Guardrails memory sector** (permanent learned constraints)
@@ -118,7 +118,7 @@ Send `/start` to your Telegram bot. Send `/help` for all commands.
 # VOICE_WEB_PORT=3030
 # VOICE_WEB_TOKEN=$(openssl rand -hex 32)
 # Then restart:
-docker compose restart luna
+docker compose restart Luna
 ```
 
 Access at `http://localhost:3030/`. Documentation at `http://localhost:3030/docs`.
@@ -178,7 +178,7 @@ graph LR
 | [Department Runbook](docs/deployment-runbook.md) | **Start here** — 30-minute onboarding checklist |
 | [User Guide](docs/user-guide.md) | Complete feature guide, configuration scope, env var reference |
 | [Command Reference](docs/commands.md) | All 39+ Telegram/Matrix commands, web UIs, Ollama tools |
-| [Customization Guide](docs/customization-guide.md) | 3-level guide for extending luna per department |
+| [Customization Guide](docs/customization-guide.md) | 3-level guide for extending Luna per department |
 | [Deployment Guide](docs/deployment-guide.md) | Workstation, local server, VPS, InMotion, Oracle Cloud |
 | [Architecture](docs/architecture.md) | Internal design with Mermaid diagrams |
 | [Security Model](docs/security.md) | 20 threat vectors assessed, mitigations, config checklist |

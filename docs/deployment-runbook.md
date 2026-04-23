@@ -1,6 +1,6 @@
-# luna v1.0.0-rc.60 — Department Onboarding Runbook
+# Luna v1.0.0-rc.60 — Department Onboarding Runbook
 
-Get your own luna instance running in 45-60 minutes. This guide is for team members receiving the repository who need to set up their own independent instance.
+Get your own Luna instance running in 45-60 minutes. This guide is for team members receiving the repository who need to set up their own independent instance.
 
 **What you'll have when done:** Your own autonomous AI assistant on Telegram with:
 - Voice processing (EN/ES), 10 department packs (manufacturing, finance, HR, engineering, etc.)
@@ -20,7 +20,7 @@ Get your own luna instance running in 45-60 minutes. This guide is for team memb
 
 ## Hardware Requirements
 
-**Check your machine BEFORE starting setup.** luna runs AI models locally — this requires significant RAM and a modern processor. Running on under-spec hardware will cause the machine to hang or responses to take minutes instead of seconds.
+**Check your machine BEFORE starting setup.** Luna runs AI models locally — this requires significant RAM and a modern processor. Running on under-spec hardware will cause the machine to hang or responses to take minutes instead of seconds.
 
 ### Minimum (functional but slow)
 
@@ -46,7 +46,7 @@ Get your own luna instance running in 45-60 minutes. This guide is for team memb
 | Ollama (qwen3.5 model loaded) | 6-8 GB | Largest consumer — loads the AI model into memory |
 | Ollama (nomic-embed-text) | 0.5 GB | Memory search embeddings |
 | Speaches (voice STT + TTS) | 1.0-1.5 GB | Loads on first voice message |
-| Docker + luna Node.js | 0.5-1.0 GB | Application + container overhead |
+| Docker + Luna Node.js | 0.5-1.0 GB | Application + container overhead |
 | macOS + other apps | 4-6 GB | Operating system baseline |
 | **Total active** | **12-17 GB** | |
 
@@ -77,7 +77,7 @@ Yes, but close memory-heavy applications before starting luna:
 - Close VS Code/IDEs (500 MB-1 GB)
 - Don't run multiple Docker projects simultaneously
 
-With 16 GB and other apps closed, response times should be 5-15 seconds. With 32 GB, you can keep your normal apps open and luna responds in 3-8 seconds.
+With 16 GB and other apps closed, response times should be 5-15 seconds. With 32 GB, you can keep your normal apps open and Luna responds in 3-8 seconds.
 
 ### "My machine only has 8GB — can I use it?"
 
@@ -192,7 +192,7 @@ After starting luna, each user generates their own web token:
 /webtoken create my-laptop 30d
 ```
 
-## Step 4: Start luna (5 minutes)
+## Step 4: Start Luna (5 minutes)
 
 ```bash
 docker compose up -d
@@ -262,7 +262,7 @@ Try:
 
 ## Step 6: Add Your Team (5 minutes)
 
-luna supports multiple users on one instance. Each user gets their own private conversation — they cannot see each other's messages, memories, or learning progress.
+Luna supports multiple users on one instance. Each user gets their own private conversation — they cannot see each other's messages, memories, or learning progress.
 
 ### Single user
 
@@ -273,7 +273,7 @@ ALLOWED_CHAT_ID=123456789
 ```
 3. Restart:
 ```bash
-docker compose restart luna
+docker compose restart Luna
 ```
 
 ### Multiple users (recommended for E2E testing)
@@ -286,7 +286,7 @@ ALLOWED_CHAT_ID=123456789,987654321,555555555
 
 Restart once:
 ```bash
-docker compose restart luna
+docker compose restart Luna
 ```
 
 All users can now message the bot independently.
@@ -351,7 +351,7 @@ The pre-installed Finance pack demonstrates the pattern:
 docker compose up -d                      # Start (runs in background)
 docker compose --profile production up -d  # Start with Caddy HTTPS (production)
 docker compose down                        # Stop
-docker compose restart luna             # Restart after .env changes
+docker compose restart Luna             # Restart after .env changes
 docker compose logs -f luna             # View live logs
 ```
 
@@ -379,7 +379,7 @@ Your `.env`, database (`store/`), workspace, and domain packs are preserved acro
 
 ### Getting Help
 
-Ask luna itself: "How do I configure [feature]?" — it knows its own setup and can walk you through any configuration.
+Ask Luna itself: "How do I configure [feature]?" — it knows its own setup and can walk you through any configuration.
 
 For setup questions the bot can't answer (because they require file edits), see:
 - `.env.example` — every variable documented with step-by-step instructions
@@ -442,7 +442,7 @@ After restart, all team members can use the bot independently.
 
 **You generate it yourself** — it's not provided by anyone else.
 
-luna uses two AI providers. You only need one:
+Luna uses two AI providers. You only need one:
 
 | Provider | What It Is | Cost | How to Get |
 |----------|-----------|------|-----------|
@@ -471,15 +471,15 @@ This is different from platforms that use API keys. Claude uses a subscription +
 
 After any `.env` change, you must restart:
 ```bash
-docker compose restart luna
+docker compose restart Luna
 ```
 If `ALLOWED_CHAT_ID` was changed to only include some IDs, users whose IDs were removed will no longer get responses.
 
 ### "What's the difference between this and ChatGPT / other AI chatbots?"
 
-luna runs **on your own machine** — your conversations, data, and files never leave your workstation. It also has specialized capabilities that general-purpose chatbots don't:
+Luna runs **on your own machine** — your conversations, data, and files never leave your workstation. It also has specialized capabilities that general-purpose chatbots don't:
 
-| Feature | General Chatbots | luna |
+| Feature | General Chatbots | Luna |
 |---------|:---:|:---:|
 | Manufacturing engineering tools | No | 15 modules with web dashboards |
 | Persistent memory across conversations | Limited | Full dual-layer with AI compression |

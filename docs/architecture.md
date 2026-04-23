@@ -1,4 +1,4 @@
-# luna — Architecture Guide
+# Luna — Architecture Guide
 
 Internal architecture reference for developers and contributors.
 
@@ -860,7 +860,7 @@ FTS5 virtual tables require manual synchronization — INSERT/UPDATE/DELETE trig
 
 **Source**: `src/packs.ts`
 
-Domain Packs allow non-engineering departments to extend luna with custom tools, skills, and AI context.
+Domain Packs allow non-engineering departments to extend Luna with custom tools, skills, and AI context.
 
 ### Pack Loading Flow
 
@@ -954,7 +954,7 @@ See `docs/customization-guide.md` for complete procedures at each level.
 
 ## 3-Process Architecture
 
-luna uses OS-level process separation (SA3) to limit the blast radius of any single component compromise.
+Luna uses OS-level process separation (SA3) to limit the blast radius of any single component compromise.
 
 ```mermaid
 graph LR
@@ -1081,7 +1081,7 @@ If an auto-generated skill causes errors or poor responses, the self-healing mec
 
 ## Pack System Architecture
 
-Domain Packs extend luna with department-specific capabilities without modifying core code.
+Domain Packs extend Luna with department-specific capabilities without modifying core code.
 
 ### Pack Format Levels
 

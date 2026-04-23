@@ -1,4 +1,4 @@
-# luna — Risk Register
+# Luna — Risk Register
 
 **Version:** v1.0.0-rc.62 | April 2026
 **Owner:** CTO

@@ -1,8 +1,8 @@
-# luna — Master Implementation Plan
+# Luna — Master Implementation Plan
 
 ## Context
 
-We are transforming `REBUILD_PROMPT.md` (a 906-line mega-prompt for "ClaudeClaw") into a modular, deterministic build system for **luna** — a personal AI assistant daemon that bridges messaging platforms to AI backends running on the user's machine.
+We are transforming `REBUILD_PROMPT.md` (a 906-line mega-prompt for "ClaudeClaw") into a modular, deterministic build system for **Luna** (Inge Luna in Spanish) — a personal AI assistant daemon that bridges messaging platforms to AI backends running on the user's machine. Internal slug is `luna`.
 
 ### Why This Change
 The original prompt has architectural issues discovered through research:
@@ -28,7 +28,7 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
 - Automatic switching: when tools are needed, router uses qwen3:latest; for chat-only, uses qwen3:4b
 
 ### Key Decisions (Confirmed)
-- Rename: ClaudeClaw → **luna**
+- Brand: **Luna** (Inge Luna in Spanish). Internal slug `luna`. Earlier names (`ClaudeClaw`, `clauded`) are historical only.
 - Auth: Claude subscription via `claude -p` subprocess (NOT the Agent SDK)
 - Auth in Docker: `CLAUDE_CODE_OAUTH_TOKEN` env var (generated via `claude setup-token`, valid 1 year)
 - Docker: Required for sandboxing `--dangerously-skip-permissions`

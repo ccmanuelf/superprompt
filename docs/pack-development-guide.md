@@ -2,7 +2,7 @@
 
 ## What are Packs?
 
-Packs are capability modules that extend luna with department-specific tools, skills, and templates. They're the building blocks of the platform — each department enables the packs they need, and any pack can be shared across departments.
+Packs are capability modules that extend Luna with department-specific tools, skills, and templates. They're the building blocks of the platform — each department enables the packs they need, and any pack can be shared across departments.
 
 ## Pack Levels
 
@@ -42,7 +42,7 @@ Use for: complex modules with databases, web dashboards, API routes. Example: ma
 ## Creating a Pack
 
 ### Method 1: Conversational (Recommended)
-Just tell luna what you need:
+Just tell Luna what you need:
 ```
 "I need a pack for quality engineering with audit checklists and inspection planning"
 ```
@@ -147,8 +147,8 @@ See existing packs in the `packs/` directory:
 ### You (any department user) CAN build:
 - **Level 1 packs:** Data templates, reference files
 - **Level 2 packs:** Tools with calculation logic, API integrations, skills, intent patterns
-- **Auto-skills:** Just use luna — it learns automatically from complex workflows
-- All of the above can be created **conversationally** with luna's help
+- **Auto-skills:** Just use Luna — it learns automatically from complex workflows
+- All of the above can be created **conversationally** with Luna's help
 
 ### The SOFTWARE TEAM must build:
 - **Level 3 features:** Web dashboards (HTML/TypeScript), database schemas, custom Telegram commands
@@ -157,6 +157,6 @@ See existing packs in the `packs/` directory:
 
 ### How to get a dashboard built:
 1. Build your tools conversationally (Level 2) — these work immediately via chat
-2. Ask luna to draft requirements for the dashboard you want
+2. Ask Luna to draft requirements for the dashboard you want
 3. Submit the requirements to the software team — they build the Level 3 web interface
 4. Your Level 2 tools become the backend for the Level 3 dashboard

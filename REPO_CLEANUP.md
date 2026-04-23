@@ -1,4 +1,4 @@
-# luna — Repository Cleanup Audit
+# Luna — Repository Cleanup Audit
 
 **Version:** v1.0.0-rc.61
 **Date:** April 11, 2026
@@ -15,7 +15,7 @@
 |------|-------|--------|-------------|--------|
 | `src/db.ts` | 1,117 | Replaced by `db-core.ts` + `db-knex.ts`. Zero production imports. One test (`exporter.test.ts`) has type-only import that must be switched to `db-core.js` first. | Import scan: 0 static, 0 dynamic importers in production code | **REMOVE** (Phase B) |
 | `REBUILD_PROMPT.md` | 906 | Historical mega-prompt. CLAUDE.md explicitly states "kept as historical reference, not used." Never referenced in code or docs. | CLAUDE.md declaration | **REMOVE** |
-| `LUNA.md` | ~50 | Superseded by `src/capabilities.ts` (CAPABILITIES_PROMPT). Not imported or referenced. Appears to be an early system prompt draft. | No imports, no references | **REMOVE** |
+| `CLAUDED.md` (historical) | ~50 | Superseded by `src/capabilities.ts` (CAPABILITIES_PROMPT). Was an early system prompt draft. Removed at rc.61 and not recreated under the new brand. | No imports, no references | **REMOVED** (rc.61) |
 | `reference/competitive-positioning.md` | — | Superseded by `docs/competitive-assessment.md` (rc.48). Zero references. | grep: 0 references | **REMOVE** |
 | `reference/cto-architecture-response.md` | — | Historical CTO review response. Content absorbed into architecture docs. Zero references. | grep: 0 references | **REMOVE** |
 | `reference/cto-evaluation-hermes-holyclaude.md` | — | Historical evaluation. Content absorbed into competitive assessment. Zero references. | grep: 0 references | **REMOVE** |
@@ -79,7 +79,7 @@
 
 1. Remove `src/db.ts` (1,117 lines)
 2. Remove `REBUILD_PROMPT.md` (906 lines)
-3. Remove `LUNA.md` (~50 lines)
+3. Remove `CLAUDED.md` (~50 lines) — historical filename; removed at rc.61
 4. Remove 6 obsolete reference files
 5. Update CLAUDE.md (remove db.ts and REBUILD_PROMPT.md references)
 6. Run full test suite

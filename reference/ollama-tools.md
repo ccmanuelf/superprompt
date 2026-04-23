@@ -2,7 +2,7 @@
 
 ## Dual-Model Strategy
 
-luna uses two Ollama models with automatic switching:
+Luna uses two Ollama models with automatic switching:
 
 - **Chat model** (`OLLAMA_CHAT_MODEL`): `qwen3:4b`
   - Used for general conversation, reasoning, analysis

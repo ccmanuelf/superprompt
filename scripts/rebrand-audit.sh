@@ -69,6 +69,13 @@ EXCLUDES=(
   # startup so an in-place upgrade from the old brand can't trip the
   # PID-lock guard (observed in rc.85 rollout).
   --exclude=entrypoint.sh
+  # Historical-lineage documents — the single authorized location for
+  # recording the old product names (ClaudeClaw → clauded → Luna). Any
+  # future rebrand would touch THESE files deliberately to record the
+  # new transition. Excluded so the audit doesn't block their mentions.
+  --exclude=PROJECT_PLAN.md
+  --exclude=REPO_CLEANUP.md
+  --exclude=decisions.md
   --exclude=package-lock.json
 )
 

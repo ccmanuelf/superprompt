@@ -1,6 +1,6 @@
-# luna -- InMotion Dedicated Server Deployment Guide
+# Luna -- InMotion Dedicated Server Deployment Guide
 
-Complete deployment guide for luna on an InMotion Hosting dedicated server running AlmaLinux 8. Covers MariaDB and PostgreSQL with equal detail -- the CTO chooses which database at deploy time.
+Complete deployment guide for Luna on an InMotion Hosting dedicated server running AlmaLinux 8. Covers MariaDB and PostgreSQL with equal detail -- the CTO chooses which database at deploy time.
 
 ---
 
@@ -42,7 +42,7 @@ Complete deployment guide for luna on an InMotion Hosting dedicated server runni
 2. **Domain name** pointed to the server IP via an A record (e.g., `luna.yourcompany.com`). DNS propagation takes up to 24 hours -- set this first.
 3. **Telegram bot tokens** -- one per deployment. Create bots via [@BotFather](https://t.me/BotFather) on Telegram. Each bot must have a unique token.
 4. **Claude OAuth token** -- generated on a machine with Claude CLI installed via `claude setup-token`. This is a subscription token (no per-token API cost).
-5. **Git repository access** -- clone URL for the luna repo.
+5. **Git repository access** -- clone URL for the Luna repo.
 
 ---
 
@@ -60,9 +60,9 @@ dnf install -y epel-release
 dnf install -y git curl wget openssl tar jq htop tmux
 ```
 
-### 2.2 Create the luna System User
+### 2.2 Create the Luna System User
 
-Never run luna as root. Create a dedicated system user:
+Never run Luna as root. Create a dedicated system user:
 
 ```bash
 useradd -r -m -s /bin/bash -d /opt/luna luna
@@ -150,7 +150,7 @@ docker compose version    # Docker Compose version v2.x
 usermod -aG docker luna
 
 # Verify (as luna user)
-su - luna -c "docker ps"
+su - Luna -c "docker ps"
 ```
 
 ### 2.7 Configure Docker Daemon
@@ -184,7 +184,7 @@ systemctl restart docker
 
 ## 3. Database Setup
 
-luna supports both MariaDB and PostgreSQL via the `StorageProvider` abstraction. Choose ONE. Both run inside Docker (defined in `docker-compose.production.yml`) and are never exposed outside the internal Docker network.
+Luna supports both MariaDB and PostgreSQL via the `StorageProvider` abstraction. Choose ONE. Both run inside Docker (defined in `docker-compose.production.yml`) and are never exposed outside the internal Docker network.
 
 ---
 
@@ -253,7 +253,7 @@ docker exec -it luna-mariadb mariadb -u root -p"${DB_ROOT_PASSWORD}" -e "
 
 #### 3a.6 Connection Pooling
 
-Connection pooling is handled application-side by the luna `StorageProvider`. The `DB_POOL_MIN` and `DB_POOL_MAX` settings in `.env.production` control pool size:
+Connection pooling is handled application-side by the Luna `StorageProvider`. The `DB_POOL_MIN` and `DB_POOL_MAX` settings in `.env.production` control pool size:
 
 | Setting | Default | Recommended (10 deployments) |
 |---------|---------|------------------------------|
@@ -743,7 +743,7 @@ Replace `TELEGRAM_BOT_TOKEN` with your actual token from @BotFather. Replace `AL
 ### 5.3 Build and Start Deployment 1
 
 ```bash
-# Build the luna image (first time takes 3-5 minutes)
+# Build the Luna image (first time takes 3-5 minutes)
 docker compose -f docker-compose.production.yml build luna-1
 
 # Start deployment 1
@@ -846,7 +846,7 @@ Caddy handles renewal automatically. Certificates are stored in the `caddy-data`
 
 ## 7. Enable Telegram Webhook
 
-By default, luna uses Telegram long-polling (the bot connects outbound to Telegram). For production, webhooks are more reliable and reduce latency.
+By default, Luna uses Telegram long-polling (the bot connects outbound to Telegram). For production, webhooks are more reliable and reduce latency.
 
 ### 7.1 Prerequisites
 
@@ -1097,7 +1097,7 @@ docker exec -it luna-ollama ollama pull qwen3.5:latest
 docker exec -it luna-ollama ollama list
 ```
 
-### 9.5 Update luna Application
+### 9.5 Update Luna Application
 
 ```bash
 cd /opt/luna
@@ -1105,7 +1105,7 @@ cd /opt/luna
 # Pull latest code
 git pull origin main
 
-# Rebuild the luna image
+# Rebuild the Luna image
 docker compose -f docker-compose.production.yml build
 
 # Restart all deployments (one at a time to avoid downtime)
@@ -1196,7 +1196,7 @@ firewall-cmd --list-all
 
 ### 10.3 Database Connection Errors
 
-**Symptom:** luna logs show "ECONNREFUSED" or "connection refused" to database.
+**Symptom:** Luna logs show "ECONNREFUSED" or "connection refused" to database.
 
 ```bash
 # Verify database container is running
@@ -1419,7 +1419,7 @@ fail2ban-client status
 # Disable root login and password authentication
 cat >> /etc/ssh/sshd_config << 'EOF'
 
-# luna hardening
+# Luna hardening
 PermitRootLogin no
 PasswordAuthentication no
 PubkeyAuthentication yes

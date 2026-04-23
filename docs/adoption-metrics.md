@@ -1,4 +1,4 @@
-# luna — Adoption & ROI Metrics Guide
+# Luna — Adoption & ROI Metrics Guide
 
 **For:** CTO, Department Champions, Board of Directors
 
@@ -15,7 +15,7 @@
 | **Provider split** (Claude vs Ollama) | Rate limiter records | Cost distribution across providers |
 | **Pack usage** (by pack name) | Pack tuner weights | Which department packs are succeeding |
 | **Skill activations** (auto-triggered) | Skill activation logs | How often specialized personas engage |
-| **Auto-skills created** | `skill_proposals` table (status=approved) | How much luna is learning from users |
+| **Auto-skills created** | `skill_proposals` table (status=approved) | How much Luna is learning from users |
 | **Voice vs text** | Voice transcription logs | Production floor adoption (voice = floor workers) |
 | **Dashboard visits** | Web server access logs | Which visual tools get used |
 | **Learning sessions** | `learning_sessions` table | Training engagement |
@@ -43,7 +43,7 @@
 | 50+ messages/day from one department | Department engaged | Expand to second department |
 | <10 messages/day company-wide | Low adoption | Check onboarding, assign champions |
 | Voice messages >30% | Production floor using it | Voice is working — good sign |
-| 5+ auto-skills created | luna learning from real workflows | Platform is adapting — showcase |
+| 5+ auto-skills created | Luna learning from real workflows | Platform is adapting — showcase |
 
 ### Growth (Month 1-2)
 
@@ -109,7 +109,7 @@ db.close();
 ### Monthly Report Template
 
 ```
-luna Adoption Report — [Month Year]
+Luna Adoption Report — [Month Year]
 
 USAGE
 - Total messages: ___

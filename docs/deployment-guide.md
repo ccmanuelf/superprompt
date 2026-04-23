@@ -1,6 +1,6 @@
-# luna — Deployment Guide
+# Luna — Deployment Guide
 
-How to deploy luna on any platform: office workstations, local servers, VPS providers, or dedicated hosting.
+How to deploy Luna on any platform: office workstations, local servers, VPS providers, or dedicated hosting.
 
 ---
 
@@ -73,7 +73,7 @@ Follow the [User Guide — Getting Started](user-guide.md#getting-started) steps
 
 ### Accessing from Another Machine on the LAN
 
-If you need to access one workstation's luna from another machine (e.g., for testing the web UI from a phone):
+If you need to access one workstation's Luna from another machine (e.g., for testing the web UI from a phone):
 
 1. Change the port binding in `docker-compose.yml`:
 ```yaml
@@ -386,7 +386,7 @@ Apache reverse proxy config (`/etc/httpd/conf.d/luna.conf`):
 
 | Component | Fits? | Notes |
 |-----------|:---:|-------|
-| luna bot | Yes | Node.js works on ARM |
+| Luna bot | Yes | Node.js works on ARM |
 | Ollama | Yes | ARM-native, 24GB fits qwen3.5 |
 | Speaches (voice) | Tight | ~1.5GB RAM; leaves ~22GB for Ollama |
 | Docker | Yes | Oracle Linux supports Docker |
@@ -427,7 +427,7 @@ Apache reverse proxy config (`/etc/httpd/conf.d/luna.conf`):
 | Ollama (qwen3.5:latest loaded) | 6-8 GB |
 | Ollama (nomic-embed-text loaded) | 0.5 GB |
 | Speaches (STT + TTS models) | 1.0-1.5 GB |
-| luna Node.js process | 200-500 MB |
+| Luna Node.js process | 200-500 MB |
 | Chromium (screenshots, if used) | 200-500 MB |
 | OS + Docker overhead | 1-2 GB |
 | **Total** | **10-13 GB active** |
@@ -438,7 +438,7 @@ On a 32GB machine, this leaves ~20GB headroom — comfortable. On 16GB, it's tig
 
 ## Multi-Instance Considerations
 
-When multiple departments each run their own luna instance:
+When multiple departments each run their own Luna instance:
 
 ### What's Isolated (Per Instance)
 
@@ -452,7 +452,7 @@ When multiple departments each run their own luna instance:
 ### What Could Be Shared (Optional)
 
 - **Git repository**: All instances clone the same repo. Department-specific packs are added locally.
-- **Ollama server**: Multiple luna instances could point to a single Ollama server on the network by changing `OLLAMA_HOST`. This saves RAM but creates a single point of failure.
+- **Ollama server**: Multiple Luna instances could point to a single Ollama server on the network by changing `OLLAMA_HOST`. This saves RAM but creates a single point of failure.
 - **Telegram bot**: NOT recommended to share. Each department should have their own bot for clear ownership and `ALLOWED_CHAT_ID` separation.
 
 ### Updating All Instances

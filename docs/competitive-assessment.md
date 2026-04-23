@@ -1,4 +1,4 @@
-# luna — Competitive Assessment
+# Luna — Competitive Assessment
 
 **Prepared for:** CTO Review
 **Version:** v1.0.0-rc.48 | April 2026
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-luna occupies a unique position: it is a **domain-specific, self-hosted AI assistant platform** built for manufacturing and multi-department operations. Most alternatives are **general-purpose AI agent frameworks** designed for developers and personal productivity. The comparison below reflects this fundamental difference — luna trades generality for depth in its target domain.
+Luna occupies a unique position: it is a **domain-specific, self-hosted AI assistant platform** built for manufacturing and multi-department operations. Most alternatives are **general-purpose AI agent frameworks** designed for developers and personal productivity. The comparison below reflects this fundamental difference — Luna trades generality for depth in its target domain.
 
 ---
 
@@ -18,7 +18,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | Setup Complexity | Self-Hosted | Cloud Option | Container Isolation | Startup Time |
 |---------|-----------------|-------------|-------------|-------------------|-------------|
-| **luna** | Docker Compose (3 services). `.env` config, Telegram bot token, Claude subscription. 45-60 min first deploy. | Yes (required) | No | 3-process separation (SA3) + Worker V8 sandbox | ~15s (3 containers) |
+| **Luna** | Docker Compose (3 services). `.env` config, Telegram bot token, Claude subscription. 45-60 min first deploy. | Yes (required) | No | 3-process separation (SA3) + Worker V8 sandbox | ~15s (3 containers) |
 | **OpenClaw** | Docker or native install. Requires Claude/OpenAI API key. Plugin system for channels. 15-30 min. | Yes | No (community cloud wrappers exist) | Gateway + Agent + Tool Server processes | ~10s |
 | **NanoClaw** | Docker or Apple Containers (macOS). Fork of OpenClaw with hardened security. 20-40 min. | Yes | No | Docker sandboxes or Apple Container (micro-VM on macOS) | ~10-15s |
 | **NullClaw** | Single binary or Docker. Minimal config. ~10 min. | Yes | No | Optional Docker isolation | ~3s |
@@ -39,7 +39,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | Data Location | Process Isolation | Tool Permissions | Auth Model | Threat Model Documented |
 |---------|--------------|-------------------|-----------------|-----------|----------------------|
-| **luna** | On-premises only | 3-process (core/tools/parsers) + Worker V8 sandbox | 43 tools classified by risk (3 critical, 16 high, 19 medium, 5 low). Per-user trust memory. | Per-user tokens + Telegram ID gating | Yes (20 vectors assessed) |
+| **Luna** | On-premises only | 3-process (core/tools/parsers) + Worker V8 sandbox | 43 tools classified by risk (3 critical, 16 high, 19 medium, 5 low). Per-user trust memory. | Per-user tokens + Telegram ID gating | Yes (20 vectors assessed) |
 | **OpenClaw** | On-premises | Gateway + Agent + Tool Server | Permission system with user approval | API key auth | Partial (security docs exist) |
 | **NanoClaw** | On-premises | Docker/Apple Container micro-VMs | Credential proxy — agents never hold raw keys | Container-level isolation | Yes (security-first design) |
 | **NullClaw** | On-premises | Optional Docker | Minimal — autonomous execution by design | Basic token auth | No formal threat model found |
@@ -58,7 +58,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | Multi-User | Per-User Data Isolation | Team Management | Concurrent Users |
 |---------|-----------|----------------------|-----------------|-----------------|
-| **luna** | Yes — per-user web tokens, ALLOWED_CHAT_ID gating | Yes — board, learning, memory, schedules, manufacturing scenarios all scoped by chat_id | Self-service token management (/webtoken), department packs | Concurrent via Telegram + web UIs |
+| **Luna** | Yes — per-user web tokens, ALLOWED_CHAT_ID gating | Yes — board, learning, memory, schedules, manufacturing scenarios all scoped by chat_id | Self-service token management (/webtoken), department packs | Concurrent via Telegram + web UIs |
 | **OpenClaw** | Limited — single-user by default, multi-user via plugins | Partial — conversation history per channel | Community plugins for team features | Multiple channels, single agent |
 | **NanoClaw** | Limited — designed as personal assistant | Per-container isolation (one container per user possible) | Not built-in | Single user per instance |
 | **NullClaw** | No — single user | N/A | None | Single user |
@@ -77,7 +77,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | Models Supported | Default | Local Model Support | Model Switching |
 |---------|-----------------|---------|-------------------|----------------|
-| **luna** | Claude (via CLI subscription) + Ollama (any local model) | Claude for reasoning, Ollama (Qwen 3.5) for tools | Yes — full Ollama integration with agentic loop | /claude, /ollama, /auto (automatic routing) |
+| **Luna** | Claude (via CLI subscription) + Ollama (any local model) | Claude for reasoning, Ollama (Qwen 3.5) for tools | Yes — full Ollama integration with agentic loop | /claude, /ollama, /auto (automatic routing) |
 | **OpenClaw** | Claude, GPT-4, Gemini, Ollama, 20+ providers | Claude (recommended) | Yes via Ollama | Config file or runtime switch |
 | **NanoClaw** | Claude, GPT-4, local models via API | Claude | Yes via API | Config-based |
 | **NullClaw** | Any OpenAI-compatible API | Varies | Yes | Config-based |
@@ -96,7 +96,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | License | AI Model Cost | Infrastructure | Total Estimate |
 |---------|---------|--------------|---------------|---------------|
-| **luna** | Open source (private repo) | Claude subscription ~$20-100/mo + Ollama free | Own hardware or VM | **$20-100/mo** |
+| **Luna** | Open source (private repo) | Claude subscription ~$20-100/mo + Ollama free | Own hardware or VM | **$20-100/mo** |
 | **OpenClaw** | Open source (MIT) | Claude/GPT API usage varies | Own hardware | **$20-200/mo** (API-dependent) |
 | **NanoClaw** | Open source | Same as OpenClaw | Own hardware | **$20-200/mo** |
 | **NullClaw** | Open source | API usage varies | Minimal hardware | **$5-50/mo** |
@@ -109,7 +109,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 | **Taskade** | SaaS: Free / $8 / $16 per user/mo | Included in subscription | Vendor-managed | **$8-16/user/mo** |
 | **Pi** | Free (ad-supported) / $20/mo Pro | Included | Vendor-managed | **$0-20/mo** |
 
-**Note:** API-based pricing (OpenClaw, NanoClaw, etc.) varies dramatically with usage. luna uses a fixed Claude subscription (no per-token billing), making costs predictable.
+**Note:** API-based pricing (OpenClaw, NanoClaw, etc.) varies dramatically with usage. Luna uses a fixed Claude subscription (no per-token billing), making costs predictable.
 
 ---
 
@@ -117,7 +117,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | Language | Binary/Install Size | RAM Usage (Idle) | RAM Usage (Active) |
 |---------|----------|-------------------|-----------------|-------------------|
-| **luna** | TypeScript/Node.js | ~50MB (node_modules) + 3 Docker images | ~200MB (bot) + 512MB (SearXNG) + 2GB (Speaches) | ~500MB-1GB (bot under load) |
+| **Luna** | TypeScript/Node.js | ~50MB (node_modules) + 3 Docker images | ~200MB (bot) + 512MB (SearXNG) + 2GB (Speaches) | ~500MB-1GB (bot under load) |
 | **OpenClaw** | TypeScript/Python | ~100MB+ | ~300-500MB | ~500MB-2GB |
 | **NanoClaw** | TypeScript | ~80MB | ~200-400MB | ~400MB-1GB |
 | **NullClaw** | Rust | ~15MB binary | ~30-50MB | ~100-200MB |
@@ -130,7 +130,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 | **Taskade** | N/A (SaaS) | N/A | N/A | N/A |
 | **Pi** | N/A (SaaS) | N/A | N/A | N/A |
 
-**Note:** luna's higher RAM includes voice processing (Speaches) and web search (SearXNG) sidecars. Without these optional services, idle RAM is ~200MB.
+**Note:** Luna's higher RAM includes voice processing (Speaches) and web search (SearXNG) sidecars. Without these optional services, idle RAM is ~200MB.
 
 ---
 
@@ -138,7 +138,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | Telegram | WhatsApp | Slack | Discord | Matrix | Web UI | Voice | Email |
 |---------|----------|----------|-------|---------|--------|--------|-------|-------|
-| **luna** | Yes | No | No | No | Yes | Yes (14 dashboards) | Yes (STT+TTS) | No |
+| **Luna** | Yes | No | No | No | Yes | Yes (14 dashboards) | Yes (STT+TTS) | No |
 | **OpenClaw** | Yes | Yes | Yes | Yes | No | Yes (basic) | Partial | Yes |
 | **NanoClaw** | Yes | Yes | Yes | Yes | No | No | No | Yes |
 | **NullClaw** | Yes | Yes | Yes | Yes | No | No | No | No |
@@ -151,7 +151,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 | **Taskade** | No | No | Yes | No | No | Yes (full app) | No | Yes |
 | **Pi** | No | No | No | No | No | Yes (app + web) | Yes | No |
 
-**Trade-off:** luna supports fewer channels (2 messaging + web + voice) but each is deeply integrated with tools, memory, and domain packs. OpenClaw/ZeroClaw support 20+ channels but with thinner integration per channel.
+**Trade-off:** Luna supports fewer channels (2 messaging + web + voice) but each is deeply integrated with tools, memory, and domain packs. OpenClaw/ZeroClaw support 20+ channels but with thinner integration per channel.
 
 ---
 
@@ -159,7 +159,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | Multi-Agent | Autonomous Execution | Agentic Loop | Self-Learning |
 |---------|------------|--------------------|--------------|----|
-| **luna** | No (single agent, multi-department via packs) | Scheduled tasks, proactive alerts, nightly bot execution | Yes (Ollama, max 10 iterations + circuit breaker) | Auto-skills (detects patterns, drafts skills), self-tuning packs, guardrails memory |
+| **Luna** | No (single agent, multi-department via packs) | Scheduled tasks, proactive alerts, nightly bot execution | Yes (Ollama, max 10 iterations + circuit breaker) | Auto-skills (detects patterns, drafts skills), self-tuning packs, guardrails memory |
 | **OpenClaw** | No (single agent) | Scheduled tasks, autonomous tool use | Yes | Skills/memory accumulation |
 | **NanoClaw** | No | Limited scheduled tasks | Yes | Memory persistence |
 | **NullClaw** | No | Fully autonomous by design | Yes | Minimal |
@@ -178,7 +178,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | Key Functionalities |
 |---------|-------------------|
-| **luna** | 43 domain tools (15 manufacturing), 10 department packs, 14 web dashboards (DES simulation, capacity planning, sequencing, VSM, TOC, CONWIP, DOE, FSM), learning coach (12 personas, spaced repetition), kanban board, document generation (XLSX/DOCX/PDF/PPTX), dual-sector memory (semantic + episodic), voice processing (EN/ES), web search (SearXNG), policy engine with per-user trust |
+| **Luna** | 43 domain tools (15 manufacturing), 10 department packs, 14 web dashboards (DES simulation, capacity planning, sequencing, VSM, TOC, CONWIP, DOE, FSM), learning coach (12 personas, spaced repetition), kanban board, document generation (XLSX/DOCX/PDF/PPTX), dual-sector memory (semantic + episodic), voice processing (EN/ES), web search (SearXNG), policy engine with per-user trust |
 | **OpenClaw** | General-purpose AI assistant, 30+ channel integrations, plugin ecosystem, file management, code execution, web browsing, memory system, skill accumulation |
 | **NanoClaw** | Security-hardened OpenClaw alternative, container isolation, credential proxy, WhatsApp/Telegram/Slack/Discord, memory, scheduled jobs |
 | **NullClaw** | Minimal autonomous agent, fast execution, multi-channel messaging, lightweight |
@@ -197,7 +197,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | Best Use Case | Not Suited For |
 |---------|-------------|---------------|
-| **luna** | Manufacturing/operations teams needing domain tools + AI assistant on company infrastructure. Multi-department deployment with data isolation. | Consumer/personal use. Teams needing 20+ channel integrations. Organizations without IT to run Docker. |
+| **Luna** | Manufacturing/operations teams needing domain tools + AI assistant on company infrastructure. Multi-department deployment with data isolation. | Consumer/personal use. Teams needing 20+ channel integrations. Organizations without IT to run Docker. |
 | **OpenClaw** | Developers and power users who want a personal AI on every platform with broad channel coverage. | Domain-specific workflows. Teams needing per-user isolation. Non-technical users. |
 | **NanoClaw** | Security-conscious users who want OpenClaw-like features with stronger isolation guarantees. | Same as OpenClaw — personal, not team-oriented. |
 | **NullClaw** | Developers who want the smallest autonomous agent with multi-channel reach. | Production team deployments. Complex domain workflows. |
@@ -216,7 +216,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
 
 | Product | Strengths | Trade-offs |
 |---------|-----------|-----------|
-| **luna** | Deepest domain tooling (manufacturing, quality, capacity). Dual AI provider (Claude + Ollama). Full data isolation per user. 14 interactive web dashboards. Voice (EN/ES). Learning coach. 1845 automated tests. Fixed-cost AI (subscription, not per-token). | Fewer messaging channels (2 vs 20+). Requires Docker + IT support. No multi-agent. Heavier resource footprint with sidecars. |
+| **Luna** | Deepest domain tooling (manufacturing, quality, capacity). Dual AI provider (Claude + Ollama). Full data isolation per user. 14 interactive web dashboards. Voice (EN/ES). Learning coach. 1845 automated tests. Fixed-cost AI (subscription, not per-token). | Fewer messaging channels (2 vs 20+). Requires Docker + IT support. No multi-agent. Heavier resource footprint with sidecars. |
 | **OpenClaw** | Broadest channel support (30+). Active community. Plugin ecosystem. Broad model support. | No domain-specific tools. Limited team support. Security concerns led to NanoClaw fork. Per-token API costs. |
 | **NanoClaw** | Strongest container security model. Credential proxy. Apple Container support on macOS. | Smaller community than OpenClaw. Still personal-focused. Limited domain tools. |
 | **NullClaw** | Fastest startup. Smallest Rust binary. Fully autonomous. | No team features. Minimal security model. No domain tools. Limited documentation. |
@@ -237,7 +237,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
                     Domain Depth
                         ^
                         |
-              luna   |
+              Luna   |
                 ██████  |
                 ██████  |
                         |
@@ -256,7 +256,7 @@ luna occupies a unique position: it is a **domain-specific, self-hosted AI assis
         Self-Hosted               Cloud/SaaS
 ```
 
-luna is the only product in this comparison that combines **self-hosted deployment**, **domain-specific tooling**, **multi-user team support**, and **interactive web dashboards**. The trade-off is clear: fewer messaging channels and higher infrastructure requirements in exchange for unmatched depth in manufacturing and operations workflows.
+Luna is the only product in this comparison that combines **self-hosted deployment**, **domain-specific tooling**, **multi-user team support**, and **interactive web dashboards**. The trade-off is clear: fewer messaging channels and higher infrastructure requirements in exchange for unmatched depth in manufacturing and operations workflows.
 
 ---
 

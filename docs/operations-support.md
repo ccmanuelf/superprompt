@@ -1,4 +1,4 @@
-# luna — Operations & Support Model
+# Luna — Operations & Support Model
 
 **For:** IT Operations, CTO, Department Champions
 
@@ -52,9 +52,9 @@
 
 | Type | Owner | Process |
 |------|-------|---------|
-| New Level 2 tool | Department Champion + luna | Conversational creation |
+| New Level 2 tool | Department Champion + Luna | Conversational creation |
 | New Level 3 dashboard | Software Development Team | Requirements → development → deployment |
-| Pack configuration change | Department Champion | `/pack enable/disable` or tell luna |
+| Pack configuration change | Department Champion | `/pack enable/disable` or tell Luna |
 | API connection | IT Operations | Add credentials to `.env`, restart container |
 
 **SLO Target:** Acknowledge within 24 hours, prioritize in next sprint.
@@ -94,7 +94,7 @@ User → Department Champion → IT Operations → Software Development Team
          (Level 2 fix)        (infra/config)    (Level 3 / core fix)
 ```
 
-1. **User tries self-service first:** Ask luna for help
+1. **User tries self-service first:** Ask Luna for help
 2. **Department Champion:** pack config, tool tuning, user training
 3. **IT Operations:** container restarts, credential rotation, backups
 4. **Software Development:** architecture changes, new dashboards, core bugs

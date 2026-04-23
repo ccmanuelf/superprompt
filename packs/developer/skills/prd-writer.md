@@ -49,7 +49,7 @@ Generate a DOCX or PDF with these sections:
 - Input data sources
 - Output data format
 - Storage requirements
-- Integration points with existing luna modules
+- Integration points with existing Luna modules
 
 ### 7. UI/UX Requirements
 - Dashboard layout description
