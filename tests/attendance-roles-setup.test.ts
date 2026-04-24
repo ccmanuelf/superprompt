@@ -159,6 +159,42 @@ describe('attendance setup: sites', () => {
     });
     await expect(deleteSite(id)).rejects.toThrow(/employees exist/);
   });
+
+  it('refuses to delete a site while modules reference it (rc.92)', async () => {
+    const { createSite, deleteSite } = await import('../src/attendance/setup.js');
+    const id = await createSite({ name: 'Plant B', clientName: 'C' });
+    const now = Date.now();
+    await db('shifts').insert({
+      id: 'sh-b', site_id: id, name: 'First', clock_start: '07:00', clock_end: '17:00',
+      billing_hours_mon_thu: 9.5, billing_hours_fri: 10, created_at: now, updated_at: now,
+    });
+    await db('attendance_modules').insert({
+      id: 'mod-b', site_id: id, name: 'CELL B', supervisor_name: 'X',
+      shift_id: 'sh-b', created_at: now, updated_at: now,
+    });
+    await expect(deleteSite(id)).rejects.toThrow(/modules exist/);
+  });
+
+  it('refuses to delete a site while shifts reference it (rc.92)', async () => {
+    const { createSite, deleteSite } = await import('../src/attendance/setup.js');
+    const id = await createSite({ name: 'Plant C', clientName: 'C' });
+    const now = Date.now();
+    await db('shifts').insert({
+      id: 'sh-c', site_id: id, name: 'First', clock_start: '07:00', clock_end: '17:00',
+      billing_hours_mon_thu: 9.5, billing_hours_fri: 10, created_at: now, updated_at: now,
+    });
+    await expect(deleteSite(id)).rejects.toThrow(/shifts exist/);
+  });
+
+  it('deletes a site along with its absence codes when nothing else references it (rc.92)', async () => {
+    const { createSite, deleteSite, seedDefaultAbsenceCodes, listAbsenceCodes, listSites } = await import('../src/attendance/setup.js');
+    const id = await createSite({ name: 'Plant D', clientName: 'C' });
+    await seedDefaultAbsenceCodes(id);
+    expect((await listAbsenceCodes(id)).length).toBeGreaterThan(0);
+    await deleteSite(id);
+    expect((await listAbsenceCodes(id)).length).toBe(0);
+    expect((await listSites()).find((s) => s.id === id)).toBeUndefined();
+  });
 });
 
 describe('attendance setup: shifts + breaks', () => {

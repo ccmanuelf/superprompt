@@ -58,11 +58,29 @@ export async function listSites(): Promise<Array<{
 
 export async function deleteSite(id: string): Promise<void> {
   const db = getKnex();
-  // Only allow delete when cascade-affected tables are empty, so we
-  // don't leave orphan employees pointing at a vanished site.
-  const employees = await db('attendance_employees').where({ site_id: id }).count('* as c').first();
-  if (Number((employees as { c?: number })?.c ?? 0) > 0) {
+  // Multiple tables reference sites.id without ON DELETE CASCADE, so a
+  // bare delete against a referenced site surfaces an opaque DB error.
+  // Check every referencing table explicitly and raise a clear message.
+  const countIn = async (table: string): Promise<number> => {
+    const row = await db(table).where({ site_id: id }).count('* as c').first();
+    return Number((row as { c?: number })?.c ?? 0);
+  };
+  const employees = await countIn('attendance_employees');
+  if (employees > 0) {
     throw new Error('cannot delete site — employees exist; delete them first');
+  }
+  const modules = await countIn('attendance_modules');
+  if (modules > 0) {
+    throw new Error('cannot delete site — modules exist; delete them first');
+  }
+  const shifts = await countIn('shifts');
+  if (shifts > 0) {
+    throw new Error('cannot delete site — shifts exist; delete them first');
+  }
+  const codes = await countIn('absence_codes');
+  if (codes > 0) {
+    // Absence codes are site-scoped seed data — delete them inline.
+    await db('absence_codes').where({ site_id: id }).del();
   }
   await db('sites').where({ id }).del();
 }
