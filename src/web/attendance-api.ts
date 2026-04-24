@@ -15,6 +15,7 @@
  *   GET    /api/attendance/whoami        (authed)      — role info for UI
  *   GET    /api/attendance/sites         (admin)       — list
  *   POST   /api/attendance/sites         (admin)       — create
+ *   DELETE /api/attendance/sites/:id     (admin)       — delete (rc.92, blocked if employees exist)
  *   GET    /api/attendance/shifts        (admin)       — list (?siteId=)
  *   POST   /api/attendance/shifts        (admin)       — create w/ breaks
  *   POST   /api/attendance/modules       (admin)       — create
@@ -55,7 +56,7 @@ import {
   type AttendanceRole,
 } from '../attendance/roles.js';
 import {
-  createSite, listSites,
+  createSite, listSites, deleteSite,
   createShift, listShifts, deleteShift,
   createModule, deleteModule,
   upsertAbsenceCode, listAbsenceCodes, seedDefaultAbsenceCodes, deleteAbsenceCode,
@@ -197,7 +198,13 @@ export async function handleAttendanceApi(
       return json(res, 200, { seeded: count });
     }
 
-    // ── DELETE endpoints for setup entities (rc.90) ───────
+    // ── DELETE endpoints for setup entities (rc.90 / rc.92) ───────
+    if (req.method === 'DELETE' && route.startsWith('/sites/')) {
+      await requireAdmin(chatId);
+      const id = route.replace('/sites/', '');
+      await deleteSite(id);
+      return json(res, 200, { deleted: true });
+    }
     if (req.method === 'DELETE' && route.startsWith('/shifts/')) {
       await requireAdmin(chatId);
       const id = route.replace('/shifts/', '');
@@ -590,10 +597,11 @@ function json(res: ServerResponse, status: number, body: unknown): boolean {
 
 /**
  * Opportunistic cleanup of preview uploads older than the retention
- * window. Called on every successful upload. Best-effort — errors are
- * swallowed so a failing sweep never takes down the upload itself.
+ * window. Called on every successful upload and once at server start.
+ * Best-effort — errors are swallowed so a failing sweep never takes
+ * down the upload itself.
  */
-function cleanupStaleUploads(): void {
+export function cleanupStaleUploads(): void {
   try {
     if (!existsSync(ATTENDANCE_UPLOADS)) return;
     const now = Date.now();

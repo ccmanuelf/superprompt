@@ -416,6 +416,17 @@ async function sendNotice(
 
 // ── Command Handlers ────────────────────────────────────────
 
+/**
+ * Render feature-contributed help blocks from the feature-awareness
+ * registry (rc.92). Lazy-imported here to keep matrix.ts agnostic
+ * about which features are loaded.
+ */
+async function renderMatrixFeatureBlocks(): Promise<string> {
+  const { renderMatrixHelpSections } = await import('../core/feature-awareness.js');
+  const blocks = renderMatrixHelpSections();
+  return blocks ? blocks + '\n\n' : '';
+}
+
 async function handleCommand(
   client: MatrixClient,
   roomId: string,
@@ -482,8 +493,7 @@ async function handleCommand(
           '!pack info <name> — Pack details\n' +
           '!pack create <name> "desc" — Scaffold new pack\n\n' +
 
-          '👥 Attendance (pilot — note: Telegram handles the live command suite and CSV uploads; Matrix parity is pending)\n' +
-          'Admin UI: open /attendance/admin in your browser\n\n' +
+          (await renderMatrixFeatureBlocks()) +
 
           '🔧 System\n' +
           '!chatid — Show chat ID\n' +

@@ -331,47 +331,8 @@ export const WEB_UI_GUIDES: WebUIGuide[] = [
     tips: ['Start with a template (CNC Machine is a great starting point), then customize'],
     tipsEs: ['Comienza con una plantilla (Maquina CNC es un buen punto de partida), luego personaliza'],
   },
-  {
-    url: '/attendance/admin',
-    name: 'Attendance Admin',
-    nameEs: 'Administracion de Asistencia',
-    description: 'HR/admin console for the attendance reconciliation pilot. Upload roster and daily check-in CSVs with runtime column mapping (no hardcoded HR schema), configure sites/shifts/modules/absence codes, issue supervisor Telegram invitations, file pre-approved future absences.',
-    descriptionEs: 'Consola para RH/admin del piloto de reconciliacion de asistencia. Subir CSV de roster y checadas con mapeo de columnas en tiempo real (sin esquema de RH codificado), configurar sitios/turnos/modulos/codigos de ausencia, emitir invitaciones de supervisor por Telegram, registrar ausencias futuras pre-aprobadas.',
-    features: [
-      'Drag-and-drop CSV upload with 10-row preview + per-field column mapping',
-      'Auto-detection of common EN/ES header names (badge, gafete, nombre, fecha, entrada, etc.)',
-      'Per-row skip reasons and warnings in ingestion report',
-      'Supervisor invitation tokens (one-shot, 24h expiry by default)',
-      'VP default absence codes (U/V/DI/PP/P/PT/SI) seedable per site',
-      'Role-based access: admin / hr / supervisor / manager',
-    ],
-    featuresEs: [
-      'Carga CSV con arrastrar-y-soltar, vista previa de 10 filas y mapeo por campo',
-      'Deteccion automatica de encabezados comunes EN/ES (badge, gafete, nombre, fecha, entrada, etc.)',
-      'Razones de omision por fila y advertencias en el reporte de ingesta',
-      'Tokens de invitacion de supervisor (un solo uso, expiran en 24h por defecto)',
-      'Codigos de ausencia predeterminados (U/V/DI/PP/P/PT/SI) sembrables por sitio',
-      'Acceso por rol: admin / hr / supervisor / manager',
-    ],
-    whenToSuggest: [
-      'User asks how to upload roster or check-in data',
-      'User asks to configure shifts, modules, or supervisors for attendance',
-      'User asks about pre-approved absences, vacations, or permits',
-      'User mentions attendance reconciliation, HR data, or badge records',
-    ],
-    tips: [
-      'First-time setup: create site → shift (with breaks) → module → seed absence codes',
-      'Upload once via the admin UI to configure the column mapping; Telegram attachments then reuse it',
-      'Telegram caption format: "Roster Data <moduleId>" or "Check-in Data <moduleId> <YYYY-MM-DD>"',
-      'Supervisors register via /attendance claim <token> after an admin issues the invite',
-    ],
-    tipsEs: [
-      'Configuracion inicial: crear sitio → turno (con descansos) → modulo → sembrar codigos de ausencia',
-      'Sube una vez por el admin UI para configurar el mapeo de columnas; los adjuntos de Telegram lo reutilizan',
-      'Formato de caption en Telegram: "Roster Data <moduleId>" o "Check-in Data <moduleId> <YYYY-MM-DD>"',
-      'Los supervisores se registran con /attendance claim <token> despues de que un admin emite la invitacion',
-    ],
-  },
+  // Attendance admin entry is contributed via the feature-awareness
+  // registry (src/attendance/awareness.ts). See getAllWebUIGuides() below.
   {
     url: '/docs',
     name: 'Documentation Viewer',
@@ -389,18 +350,48 @@ export const WEB_UI_GUIDES: WebUIGuide[] = [
 // ── Prompt Generation ────────────────────────────────────────
 
 /**
+ * Merge the hardcoded WEB_UI_GUIDES with any entries contributed by
+ * features via the feature-awareness registry (rc.92). Registry entries
+ * win on URL conflicts — a feature owns its own guide content.
+ *
+ * This is what all public consumers should use; WEB_UI_GUIDES is kept
+ * as the hand-maintained baseline for the pre-registry dashboards.
+ */
+export function getAllWebUIGuides(): WebUIGuide[] {
+  // Lazy import to avoid a potential circular module-load cycle
+  // (feature-awareness.ts imports this file's types).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { collectWebUIGuides } = require('./core/feature-awareness.js') as typeof import('./core/feature-awareness.js');
+  const fromRegistry = collectWebUIGuides();
+  const seen = new Set<string>();
+  const merged: WebUIGuide[] = [];
+  for (const g of fromRegistry) {
+    if (seen.has(g.url)) continue;
+    seen.add(g.url);
+    merged.push(g);
+  }
+  for (const g of WEB_UI_GUIDES) {
+    if (seen.has(g.url)) continue;
+    seen.add(g.url);
+    merged.push(g);
+  }
+  return merged;
+}
+
+/**
  * Build the web UI awareness prompt for injection into the system prompt.
  * This teaches Luna to proactively suggest web UIs in the right context.
  */
 export function buildWebUIAwarenessPrompt(): string {
-  const lines = WEB_UI_GUIDES.map((g) => {
+  const guides = getAllWebUIGuides();
+  const lines = guides.map((g) => {
     const triggers = g.whenToSuggest.join('; ');
     return `- **${g.url}** (${g.name}): ${g.description} → Suggest when: ${triggers}`;
   });
 
   return `## Web Dashboard Awareness — Proactive Suggestions
 
-You have ${WEB_UI_GUIDES.length} web dashboards available. PROACTIVELY suggest the relevant dashboard when the conversation matches. Don't just list capabilities — guide the user to the visual tool.
+You have ${guides.length} web dashboards available. PROACTIVELY suggest the relevant dashboard when the conversation matches. Don't just list capabilities — guide the user to the visual tool.
 
 Instead of: "I can help you with task management."
 Say: "You can manage tasks visually at \`/board.html\` — it has drag-and-drop columns and priority colors. Want me to show you how it works?"
@@ -419,7 +410,7 @@ When a user asks "how do I use [dashboard]?" or "what can I do with [feature]?",
  * Called when user asks "how do I use /sim?" or "explain the board".
  */
 export function getWebUIOnboarding(url: string, lang: 'en' | 'es' = 'en'): string | null {
-  const guide = WEB_UI_GUIDES.find((g) => url.includes(g.url) || url.toLowerCase().includes(g.name.toLowerCase()));
+  const guide = getAllWebUIGuides().find((g) => url.includes(g.url) || url.toLowerCase().includes(g.name.toLowerCase()));
   if (!guide) return null;
 
   const name = lang === 'es' ? guide.nameEs : guide.name;

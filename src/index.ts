@@ -129,6 +129,14 @@ async function main(): Promise<void> {
   const { attendanceTableInit } = await import('./attendance/schema.js');
   storage.registerTables(attendanceTableInit);
 
+  // rc.92 — feature-awareness registrations. Side-effect imports only.
+  // Each feature module self-registers with the feature-awareness
+  // registry on load; capabilities.ts / web-ui-guide.ts / telegram-help
+  // all read from that registry. Missing an import here means the
+  // feature ships without Luna knowing — the test in
+  // tests/feature-awareness-registry.test.ts catches that case at CI.
+  await import('./attendance/awareness.js');
+
   // Guardrails tables (permanent learned constraints)
   const { guardrailsTableInit } = await import('./guardrails.js');
   storage.registerTables(guardrailsTableInit);

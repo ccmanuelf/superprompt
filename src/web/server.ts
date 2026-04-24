@@ -21,7 +21,7 @@ import {
 import type { ProviderRouter } from '../providers/router.js';
 import { handleSimApi } from './sim-api.js';
 import { handleCapacityApi } from './capacity-api.js';
-import { handleAttendanceApi } from './attendance-api.js';
+import { handleAttendanceApi, cleanupStaleUploads as cleanupAttendanceUploads } from './attendance-api.js';
 import { handleSequencerApi } from './sequencer-api.js';
 import { handleVsmApi } from './vsm-api.js';
 import { handleTocApi } from './toc-api.js';
@@ -878,6 +878,13 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     ws.on('error', (err) => {
       logger.error({ err, chatId: sessionChatId }, 'Voice web: WebSocket error');
     });
+  }
+
+  // rc.92 — sweep stale attendance preview uploads once at boot. The
+  // on-upload sweep only fires when HR uploads something; if nobody
+  // uploads for days the 24h retention still matters, so run once now.
+  try { cleanupAttendanceUploads(); } catch (err) {
+    logger.warn({ err }, 'Attendance startup upload cleanup failed (non-fatal)');
   }
 
   server.listen(port, () => {

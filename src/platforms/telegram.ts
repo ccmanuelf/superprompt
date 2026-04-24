@@ -618,6 +618,17 @@ async function handleAttendanceCsvUpload(ctx: Context, caption: string): Promise
   const doc = ctx.message?.document;
   if (!doc) { await ctx.reply('Attach a CSV file with the caption.'); return; }
 
+  // rc.92 — reject oversize files before Telegram download. 10MB is the
+  // attendance-specific ceiling (generic /document handler allows 50MB).
+  const ATTENDANCE_MAX_BYTES = 10 * 1024 * 1024;
+  if (doc.file_size && doc.file_size > ATTENDANCE_MAX_BYTES) {
+    await ctx.reply(
+      `File is too large for attendance ingestion (${Math.round(doc.file_size / 1024 / 1024)}MB). ` +
+      'Split the CSV into files ≤ 10MB and re-upload.',
+    );
+    return;
+  }
+
   const chatId = String(ctx.chat?.id ?? '');
   const { hasRole } = await import('../attendance/roles.js');
   const authorized = (await hasRole(chatId, 'admin')) || (await hasRole(chatId, 'hr'));
@@ -626,13 +637,10 @@ async function handleAttendanceCsvUpload(ctx: Context, caption: string): Promise
     return;
   }
 
-  // Parse caption. Two shapes:
-  //   Roster Data <moduleId>
-  //   Check-in Data <moduleId> <date>
-  const rosterMatch = caption.match(/^roster\s+data\s+(\S+)\s*$/i);
-  const checkinMatch = caption.match(/^check[-\s]?in\s+data\s+(\S+)\s+(\d{4}-\d{2}-\d{2})\s*$/i);
-
-  if (!rosterMatch && !checkinMatch) {
+  // Parse caption via the extracted helper (rc.92 — see src/attendance/caption.ts).
+  const { parseAttendanceCaption } = await import('../attendance/caption.js');
+  const parsed = parseAttendanceCaption(caption);
+  if (!parsed || parsed.kind === 'help') {
     await ctx.reply(
       'Caption format for attendance uploads:\n\n' +
       '• <b>Roster Data</b> &lt;moduleId&gt;\n' +
@@ -643,9 +651,9 @@ async function handleAttendanceCsvUpload(ctx: Context, caption: string): Promise
     return;
   }
 
-  const dataType: 'roster' | 'badge' = rosterMatch ? 'roster' : 'badge';
-  const moduleId = (rosterMatch ?? checkinMatch!)[1];
-  const expectedDate = checkinMatch ? checkinMatch[2] : null;
+  const dataType: 'roster' | 'badge' = parsed.kind;
+  const moduleId = parsed.moduleId;
+  const expectedDate = parsed.kind === 'badge' ? parsed.date : null;
 
   // Make sure the module exists and a mapping is saved; nothing else to do server-side.
   const db = (await import('../db-knex.js')).getKnex();
@@ -1233,6 +1241,11 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
   bot.command('help', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
+    // rc.92 — pull feature-contributed help blocks from the registry so
+    // any new feature registered via registerFeature() appears in /help
+    // without editing this function.
+    const { renderTelegramHelpSections } = await import('../core/feature-awareness.js');
+    const featureHelp = renderTelegramHelpSections();
     await ctx.reply(
       '<b>Luna — Command Reference</b>\n\n' +
 
@@ -1283,13 +1296,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         '/fmea — FMEA analysis\n' +
         '/rca — Root Cause Analysis\n\n' +
 
-        '<b>👥 Attendance</b> (pilot)\n' +
-        '/attendance — help\n' +
-        '/attendance whoami — show your roles\n' +
-        '/attendance claim &lt;token&gt; — redeem supervisor invitation\n' +
-        '/attendance absence &lt;badge&gt; &lt;code&gt; &lt;YYYY-MM-DD&gt; [end] [notes]\n' +
-        'CSV upload: attach file with caption <code>Roster Data &lt;moduleId&gt;</code> or <code>Check-in Data &lt;moduleId&gt; &lt;YYYY-MM-DD&gt;</code>\n' +
-        'Admin UI: /attendance/admin\n\n' +
+        (featureHelp ? featureHelp + '\n\n' : '') +
 
         '<b>🌐 Web Interfaces</b> (port 3030)\n' +
         '/ — Voice chat  •  /board — Kanban  •  /learn — Coach\n' +
@@ -1459,7 +1466,11 @@ export function createTelegramBot(pc: PlatformContext): Bot {
   // so Telegram's command list stays manageable. Subcommand dispatch
   // happens inside the handler based on the first argument.
   bot.command('attendance', async (ctx) => {
-    if (!isAuthorised(ctx.chat.id)) return;
+    // rc.92 — do NOT gate /attendance on ALLOWED_CHAT_ID. The whole point
+    // of the supervisor-invite flow is to admit new chat_ids via token
+    // redemption, and pre-registered HR peers may live outside the
+    // legacy allow-list too. Authorization is enforced per-subcommand
+    // against the user_roles table instead.
     const chatId = String(ctx.chat.id);
     const text = (ctx.message?.text ?? '').replace(/^\/attendance(@\w+)?\s*/, '').trim();
     const [sub, ...rest] = text.split(/\s+/);
@@ -4241,10 +4252,21 @@ export function createTelegramBot(pc: PlatformContext): Bot {
   // ── Document Handler ──────────────────────────────────────
 
   bot.on('message:document', async (ctx) => {
-    if (!isAuthorised(ctx.chat.id)) return;
     const doc = ctx.message.document;
     const caption = (ctx.message.caption || '').trim();
     const fileName = doc.file_name || 'unknown';
+
+    // rc.92 — attendance CSV captions bypass ALLOWED_CHAT_ID gating
+    // because HR peers may live outside the legacy allow-list. The
+    // attendance handler enforces its own role check against user_roles.
+    const { isAttendanceCaption } = await import('../attendance/caption.js');
+    if (isAttendanceCaption(caption)) {
+      await handleAttendanceCsvUpload(ctx, caption);
+      return;
+    }
+
+    // All other document flows remain gated on the legacy allow-list.
+    if (!isAuthorised(ctx.chat.id)) return;
 
     // Intercept /skill upload and /tool upload captions
     if (caption.startsWith('/skill upload')) {
@@ -4277,15 +4299,6 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     // Intercept /fmea CSV uploads
     if (caption.startsWith('/fmea')) {
       await handleFmeaCsv(ctx, caption);
-      return;
-    }
-
-    // Attendance ingestion (rc.90). Caption formats:
-    //   "Roster Data <moduleId>"
-    //   "Check-in Data <moduleId> <YYYY-MM-DD>"
-    // Any other attendance-looking caption triggers a help reply.
-    if (/^(roster|check[-\s]?in)\s+data/i.test(caption)) {
-      await handleAttendanceCsvUpload(ctx, caption);
       return;
     }
 

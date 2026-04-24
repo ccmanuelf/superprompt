@@ -114,7 +114,7 @@ function chatLogToClaudeRecap(entries: ChatLogEntry[]): string {
   ].join('\n');
 }
 import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAutoTrigger } from '../skills.js';
-import { CAPABILITIES_PROMPT, generateMfgContextHint } from '../capabilities.js';
+import { getCapabilitiesPrompt, generateMfgContextHint } from '../capabilities.js';
 import { getAggregatedCapabilities, buildWebAppsPrompt } from '../packs.js';
 import { buildWebUIAwarenessPrompt } from '../web-ui-guide.js';
 import { getRecentUploads, formatUploadManifest } from '../upload-manifest.js';
@@ -919,7 +919,7 @@ export class ProviderRouter {
     const packCaps = getAggregatedCapabilities();
     const webAppsPrompt = buildWebAppsPrompt();
     const webUIAwareness = buildWebUIAwarenessPrompt();
-    const fullCapabilities = [CAPABILITIES_PROMPT, packCaps, webAppsPrompt, webUIAwareness].filter(Boolean).join('\n\n');
+    const fullCapabilities = [getCapabilitiesPrompt(), packCaps, webAppsPrompt, webUIAwareness].filter(Boolean).join('\n\n');
 
     // rc.71: upload manifest — short list of recently uploaded files
     // with their exact absolute paths, so small models don't invent

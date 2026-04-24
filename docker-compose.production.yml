@@ -216,6 +216,10 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - SPEACHES_URL=http://speaches:8000/v1
       - SEARXNG_URL=http://searxng:8080
+      # rc.92 — force SQLite to DELETE journal mode if this deployment
+      # falls back to SQLite (bind-mount volumes cross virtiofs on Docker
+      # Desktop hosts → WAL sidecar orphaning). MariaDB/Postgres ignore.
+      - SQLITE_JOURNAL_MODE=${SQLITE_JOURNAL_MODE:-DELETE}
     volumes:
       - ./store/deploy-1:/app/store
       - ./workspace/deploy-1:/app/workspace
@@ -252,6 +256,7 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - SPEACHES_URL=http://speaches:8000/v1
       - SEARXNG_URL=http://searxng:8080
+      - SQLITE_JOURNAL_MODE=${SQLITE_JOURNAL_MODE:-DELETE}
     volumes:
       - ./store/deploy-2:/app/store
       - ./workspace/deploy-2:/app/workspace

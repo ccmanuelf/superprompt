@@ -487,12 +487,33 @@ async function refreshSites() {
 function renderSitesTable() {
   const wrap = $('sites-table');
   if (state.sites.length === 0) { wrap.innerHTML = '<p class="hint" style="margin-top:0.75rem;">No sites yet.</p>'; return; }
-  let html = '<table><thead><tr><th>Name</th><th>Client</th><th>Timezone</th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>Name</th><th>Client</th><th>Timezone</th><th></th></tr></thead><tbody>';
   for (const s of state.sites) {
-    html += '<tr><td>' + escapeHtml(s.name) + '</td><td>' + escapeHtml(s.clientName) + '</td><td>' + escapeHtml(s.timezone) + '</td></tr>';
+    html += '<tr>' +
+      '<td>' + escapeHtml(s.name) + '</td>' +
+      '<td>' + escapeHtml(s.clientName) + '</td>' +
+      '<td>' + escapeHtml(s.timezone) + '</td>' +
+      '<td><button class="secondary" data-delete-site="' + escapeHtml(s.id) + '" data-site-name="' + escapeHtml(s.name) + '">Delete</button></td>' +
+      '</tr>';
   }
   html += '</tbody></table>';
   wrap.innerHTML = html;
+  wrap.querySelectorAll('button[data-delete-site]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.target.dataset.deleteSite;
+      const name = e.target.dataset.siteName;
+      if (!confirm('Delete site "' + name + '"? This fails if any employees are still linked to it.')) return;
+      try {
+        await api('/api/attendance/sites/' + encodeURIComponent(id), 'DELETE');
+        await refreshSites();
+        renderSitesTable();
+        populateShiftSiteDropdown();
+        populateModuleSiteDropdown();
+        populateAbsenceSiteDropdown();
+        flash('site-log', 'Site deleted.', 'success');
+      } catch (err) { flash('site-log', err.message, 'danger'); }
+    });
+  });
 }
 
 // Shifts + breaks
