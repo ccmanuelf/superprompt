@@ -13,6 +13,8 @@
  * - Tips for getting the most value
  */
 
+import { collectWebUIGuides } from './core/feature-awareness.js';
+
 export interface WebUIGuide {
   url: string;
   name: string;
@@ -358,10 +360,8 @@ export const WEB_UI_GUIDES: WebUIGuide[] = [
  * as the hand-maintained baseline for the pre-registry dashboards.
  */
 export function getAllWebUIGuides(): WebUIGuide[] {
-  // Lazy import to avoid a potential circular module-load cycle
-  // (feature-awareness.ts imports this file's types).
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { collectWebUIGuides } = require('./core/feature-awareness.js') as typeof import('./core/feature-awareness.js');
+  // feature-awareness.ts only imports our WebUIGuide *type* (erased at
+  // compile time), so a static ESM import is safe — no runtime cycle.
   const fromRegistry = collectWebUIGuides();
   const seen = new Set<string>();
   const merged: WebUIGuide[] = [];
