@@ -13,6 +13,7 @@
  * - Results are delivered via the app.notify() channel
  */
 
+import { randomBytes } from 'node:crypto';
 import { logger } from './logger.js';
 
 // ── Types ──────────────────────────────────────────────────
@@ -54,7 +55,6 @@ export function submitBackgroundTask(
   description: string,
   executeFn: () => Promise<string>,
 ): { taskId: string; message: string } {
-  const { randomBytes } = require('node:crypto') as typeof import('node:crypto');
   const id = randomBytes(8).toString('hex');
 
   const task: BackgroundTask = {

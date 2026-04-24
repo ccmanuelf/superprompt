@@ -12,7 +12,8 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke": "node scripts/dist-smoke.mjs"
   },
   "dependencies": {
     "@vector-im/matrix-bot-sdk": "0.8.0-element.3",
