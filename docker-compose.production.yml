@@ -222,6 +222,8 @@ services:
       - SQLITE_JOURNAL_MODE=${SQLITE_JOURNAL_MODE:-DELETE}
     volumes:
       - ./store/deploy-1:/app/store
+      # Claude CLI session state — must survive container recreate.
+      - ./store/deploy-1/claude-home:/home/node/.claude
       - ./workspace/deploy-1:/app/workspace
       - ./packs:/app/packs:ro
       - ./forge/deploy-1:/app/forge
@@ -259,6 +261,7 @@ services:
       - SQLITE_JOURNAL_MODE=${SQLITE_JOURNAL_MODE:-DELETE}
     volumes:
       - ./store/deploy-2:/app/store
+      - ./store/deploy-2/claude-home:/home/node/.claude
       - ./workspace/deploy-2:/app/workspace
       - ./packs:/app/packs:ro
       - ./forge/deploy-2:/app/forge

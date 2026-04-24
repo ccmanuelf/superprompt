@@ -31,6 +31,13 @@ services:
       - ./docker/.env.docker:/app/.env.docker:ro
       # Persistent data
       - ./store:/app/store
+      # Claude CLI session state. Without this mount, /home/node/.claude is
+      # ephemeral to the container layer and every `docker compose build`
+      # or recreate wipes every user's --resume history. The symptom is
+      # "Sorry, something went wrong…" on the first message after a
+      # rebuild, because the session ID stored in SQLite no longer maps
+      # to any file inside the container.
+      - ./store/claude-home:/home/node/.claude
       # Temp media uploads
       - ./workspace:/app/workspace
       # Domain packs (customizable per department)
