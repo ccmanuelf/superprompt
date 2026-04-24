@@ -259,6 +259,24 @@ async function initAttendanceTables(): Promise<void> {
     });
   }
 
+  // ── Supervisor invitations (rc.90) ────────────────────────
+  if (!(await db.schema.hasTable('attendance_supervisor_invites'))) {
+    // Admin issues a one-shot token for a module. Supervisor claims it
+    // via Telegram; bot validates, sets module.supervisor_chat_id, and
+    // grants the 'supervisor' role scoped to the module. Tokens expire.
+    await db.schema.createTable('attendance_supervisor_invites', (t) => {
+      t.string('token').primary();     // 24-char hex; short because users type it in Telegram
+      t.string('module_id').notNullable().references('id').inTable('attendance_modules');
+      t.string('created_by').notNullable();  // admin chat_id that issued the invite
+      t.bigInteger('created_at').notNullable();
+      t.bigInteger('expires_at').notNullable();
+      t.bigInteger('redeemed_at');
+      t.string('redeemed_by_chat_id');
+      t.bigInteger('revoked_at');
+      t.index(['module_id']);
+    });
+  }
+
   // ── Ingestion reports ─────────────────────────────────────
   if (!(await db.schema.hasTable('attendance_ingestion_reports'))) {
     await db.schema.createTable('attendance_ingestion_reports', (t) => {

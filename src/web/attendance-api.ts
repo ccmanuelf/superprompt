@@ -50,13 +50,22 @@ import {
   listRoles,
   isBootstrapAdmin,
   RoleRequiredError,
+  grantRole,
+  revokeRole,
+  type AttendanceRole,
 } from '../attendance/roles.js';
 import {
   createSite, listSites,
-  createShift, listShifts,
-  createModule, listModules as listModulesSetup,
-  upsertAbsenceCode, listAbsenceCodes, seedDefaultAbsenceCodes,
+  createShift, listShifts, deleteShift,
+  createModule, deleteModule,
+  upsertAbsenceCode, listAbsenceCodes, seedDefaultAbsenceCodes, deleteAbsenceCode,
 } from '../attendance/setup.js';
+import {
+  createSupervisorInvite, listSupervisorInvites, revokeSupervisorInvite,
+} from '../attendance/invites.js';
+import {
+  createFutureAbsence, listFutureAbsences, cancelFutureAbsence,
+} from '../attendance/future-absences.js';
 
 const ATTENDANCE_UPLOADS = resolve(UPLOADS_DIR, 'attendance');
 
@@ -186,6 +195,126 @@ export async function handleAttendanceApi(
       const body = await readJsonBody(req);
       const count = await seedDefaultAbsenceCodes(String(body.siteId ?? ''));
       return json(res, 200, { seeded: count });
+    }
+
+    // ── DELETE endpoints for setup entities (rc.90) ───────
+    if (req.method === 'DELETE' && route.startsWith('/shifts/')) {
+      await requireAdmin(chatId);
+      const id = route.replace('/shifts/', '');
+      await deleteShift(id);
+      return json(res, 200, { deleted: true });
+    }
+    if (req.method === 'DELETE' && route.startsWith('/modules/')) {
+      await requireAdmin(chatId);
+      const id = route.replace('/modules/', '');
+      await deleteModule(id);
+      return json(res, 200, { deleted: true });
+    }
+    if (req.method === 'DELETE' && route === '/absence-codes') {
+      await requireAdmin(chatId);
+      const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+      const siteId = url.searchParams.get('siteId') ?? '';
+      const code = url.searchParams.get('code') ?? '';
+      if (!siteId || !code) return json(res, 400, { error: 'siteId and code query params required' });
+      await deleteAbsenceCode(siteId, code);
+      return json(res, 200, { deleted: true });
+    }
+
+    // ── Supervisor invitations (rc.90) ────────────────────
+    if (req.method === 'POST' && route === '/supervisor-invite') {
+      await requireAdmin(chatId);
+      const body = await readJsonBody(req);
+      const ttlHours = Number(body.ttlHours ?? 24);
+      const invite = await createSupervisorInvite({
+        moduleId: String(body.moduleId ?? ''),
+        createdBy: chatId,
+        ttlMs: ttlHours * 60 * 60 * 1000,
+      });
+      return json(res, 200, { invite });
+    }
+    if (req.method === 'GET' && route === '/supervisor-invites') {
+      await requireAdmin(chatId);
+      const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+      const moduleId = url.searchParams.get('moduleId') ?? undefined;
+      return json(res, 200, { invites: await listSupervisorInvites(moduleId) });
+    }
+    if (req.method === 'POST' && route === '/supervisor-invite/revoke') {
+      await requireAdmin(chatId);
+      const body = await readJsonBody(req);
+      const ok = await revokeSupervisorInvite(String(body.token ?? ''));
+      return json(res, 200, { revoked: ok });
+    }
+
+    // ── Future absences (rc.90) ───────────────────────────
+    if (req.method === 'POST' && route === '/future-absences') {
+      await requireAdminOrHr(chatId);
+      const body = await readJsonBody(req);
+      const fa = await createFutureAbsence({
+        moduleId: String(body.moduleId ?? ''),
+        badgeId: String(body.badgeId ?? ''),
+        absenceCode: String(body.absenceCode ?? ''),
+        dateStart: String(body.dateStart ?? ''),
+        dateEnd: body.dateEnd ? String(body.dateEnd) : undefined,
+        filedByChatId: chatId,
+        notes: body.notes ? String(body.notes) : undefined,
+      });
+      return json(res, 200, { futureAbsence: fa });
+    }
+    if (req.method === 'GET' && route === '/future-absences') {
+      await requireAny(chatId);
+      const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+      const list = await listFutureAbsences({
+        moduleId: url.searchParams.get('moduleId') ?? undefined,
+        badgeId: url.searchParams.get('badgeId') ?? undefined,
+        activeOnDate: url.searchParams.get('activeOnDate') ?? undefined,
+        includeCancelled: url.searchParams.get('includeCancelled') === 'true',
+      });
+      return json(res, 200, { futureAbsences: list });
+    }
+    if (req.method === 'POST' && route === '/future-absences/cancel') {
+      await requireAdminOrHr(chatId);
+      const body = await readJsonBody(req);
+      const ok = await cancelFutureAbsence(String(body.id ?? ''));
+      return json(res, 200, { cancelled: ok });
+    }
+
+    // ── Role management (rc.90) ───────────────────────────
+    if (req.method === 'GET' && route === '/role-assignments') {
+      await requireAdmin(chatId);
+      const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+      const targetChatId = url.searchParams.get('chatId');
+      if (targetChatId) {
+        return json(res, 200, { roles: await listRoles(targetChatId) });
+      }
+      // List all active assignments (no cap because expected to be small)
+      const db = getKnex();
+      const rows = await db('user_roles').whereNull('revoked_at').orderBy('granted_at', 'desc');
+      return json(res, 200, { assignments: rows });
+    }
+    if (req.method === 'POST' && route === '/role') {
+      await requireAdmin(chatId);
+      const body = await readJsonBody(req);
+      const targetChatId = String(body.chatId ?? '');
+      const role = String(body.role ?? '') as AttendanceRole;
+      const moduleId = body.moduleId ? String(body.moduleId) : null;
+      if (!targetChatId || !['admin','hr','supervisor','manager'].includes(role)) {
+        return json(res, 400, { error: 'chatId and a valid role (admin|hr|supervisor|manager) required' });
+      }
+      if (role === 'supervisor' && !moduleId) {
+        return json(res, 400, { error: 'supervisor role requires a moduleId (scoped)' });
+      }
+      await grantRole({ chatId: targetChatId, role, moduleId, grantedBy: chatId });
+      return json(res, 200, { granted: true });
+    }
+    if (req.method === 'DELETE' && route === '/role') {
+      await requireAdmin(chatId);
+      const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+      const targetChatId = url.searchParams.get('chatId') ?? '';
+      const role = (url.searchParams.get('role') ?? '') as AttendanceRole;
+      const moduleId = url.searchParams.get('moduleId');
+      if (!targetChatId || !role) return json(res, 400, { error: 'chatId and role required' });
+      await revokeRole({ chatId: targetChatId, role, moduleId });
+      return json(res, 200, { revoked: true });
     }
 
     res.writeHead(404, { 'Content-Type': 'application/json' });

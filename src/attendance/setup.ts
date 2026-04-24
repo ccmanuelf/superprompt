@@ -67,6 +67,53 @@ export async function deleteSite(id: string): Promise<void> {
   await db('sites').where({ id }).del();
 }
 
+export async function deleteShift(id: string): Promise<void> {
+  const db = getKnex();
+  const moduleCount = await db('attendance_modules').where({ shift_id: id }).count('* as c').first();
+  if (Number((moduleCount as { c?: number })?.c ?? 0) > 0) {
+    throw new Error('cannot delete shift — modules reference it; reassign or delete the modules first');
+  }
+  await db.transaction(async (trx) => {
+    await trx('breaks').where({ shift_id: id }).del();
+    await trx('shifts').where({ id }).del();
+  });
+}
+
+export async function deleteModule(id: string): Promise<void> {
+  const db = getKnex();
+  const empCount = await db('attendance_employees').where({ module_id: id }).count('* as c').first();
+  if (Number((empCount as { c?: number })?.c ?? 0) > 0) {
+    throw new Error('cannot delete module — employees exist; reassign or clear the roster first');
+  }
+  const recordCount = await db('attendance_records').where({ module_id: id }).count('* as c').first();
+  if (Number((recordCount as { c?: number })?.c ?? 0) > 0) {
+    throw new Error('cannot delete module — attendance records exist for it (audit trail)');
+  }
+  await db.transaction(async (trx) => {
+    // Clean up module-local config + caches that have no audit value.
+    await trx('attendance_column_mappings').where({ module_id: id }).del();
+    await trx('attendance_data_sources').where({ module_id: id }).del();
+    await trx('attendance_badge_records').where({ module_id: id }).del();
+    await trx('attendance_future_absences').where({ module_id: id }).del();
+    await trx('attendance_supervisor_invites').where({ module_id: id }).del();
+    await trx('attendance_modules').where({ id }).del();
+  });
+}
+
+export async function deleteAbsenceCode(siteId: string, code: string): Promise<void> {
+  const db = getKnex();
+  const inUse = await db('attendance_future_absences')
+    .where({ absence_code: code })
+    .join('attendance_modules', 'attendance_future_absences.module_id', 'attendance_modules.id')
+    .where('attendance_modules.site_id', siteId)
+    .count('* as c')
+    .first();
+  if (Number((inUse as { c?: number })?.c ?? 0) > 0) {
+    throw new Error(`cannot delete code "${code}" — it is used by one or more future-absence entries`);
+  }
+  await db('absence_codes').where({ site_id: siteId, code }).del();
+}
+
 // ── Shifts ────────────────────────────────────────────────────
 
 export interface ShiftInput {

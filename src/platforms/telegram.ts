@@ -605,6 +605,135 @@ async function handleMessageInner(
   }
 }
 
+// ── Attendance CSV upload (rc.90) ─────────────────────────
+//
+// HR peers drop a CSV as a Telegram attachment with caption:
+//   "Roster Data <moduleId>"
+//   "Check-in Data <moduleId> <YYYY-MM-DD>"
+// Requires the sender to hold `hr` or `admin` role. Uses the same
+// parser + mapping pipeline as the admin UI upload flow; the caller
+// must have already saved a column mapping for (module, dataType) via
+// the admin UI.
+async function handleAttendanceCsvUpload(ctx: Context, caption: string): Promise<void> {
+  const doc = ctx.message?.document;
+  if (!doc) { await ctx.reply('Attach a CSV file with the caption.'); return; }
+
+  const chatId = String(ctx.chat?.id ?? '');
+  const { hasRole } = await import('../attendance/roles.js');
+  const authorized = (await hasRole(chatId, 'admin')) || (await hasRole(chatId, 'hr'));
+  if (!authorized) {
+    await ctx.reply('Only HR (or admin) roles can upload attendance CSVs. Ask an admin to grant you the <code>hr</code> role.', { parse_mode: 'HTML' });
+    return;
+  }
+
+  // Parse caption. Two shapes:
+  //   Roster Data <moduleId>
+  //   Check-in Data <moduleId> <date>
+  const rosterMatch = caption.match(/^roster\s+data\s+(\S+)\s*$/i);
+  const checkinMatch = caption.match(/^check[-\s]?in\s+data\s+(\S+)\s+(\d{4}-\d{2}-\d{2})\s*$/i);
+
+  if (!rosterMatch && !checkinMatch) {
+    await ctx.reply(
+      'Caption format for attendance uploads:\n\n' +
+      '• <b>Roster Data</b> &lt;moduleId&gt;\n' +
+      '• <b>Check-in Data</b> &lt;moduleId&gt; &lt;YYYY-MM-DD&gt;\n\n' +
+      'Find your moduleId in the admin UI under Setup → Modules.',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  const dataType: 'roster' | 'badge' = rosterMatch ? 'roster' : 'badge';
+  const moduleId = (rosterMatch ?? checkinMatch!)[1];
+  const expectedDate = checkinMatch ? checkinMatch[2] : null;
+
+  // Make sure the module exists and a mapping is saved; nothing else to do server-side.
+  const db = (await import('../db-knex.js')).getKnex();
+  const mod = await db('attendance_modules').where({ id: moduleId }).first() as
+    { id: string; site_id: string; name: string } | undefined;
+  if (!mod) {
+    await ctx.reply(`Module <code>${moduleId}</code> does not exist. Check Setup → Modules.`, { parse_mode: 'HTML' });
+    return;
+  }
+  const mapping = await db('attendance_column_mappings')
+    .where({ module_id: moduleId, data_type: dataType })
+    .first() as { fields: string; sample_preview: string } | undefined;
+  if (!mapping) {
+    await ctx.reply(
+      `No column mapping saved for module <code>${moduleId}</code> / ${dataType}. ` +
+      'Upload once via the admin UI first to configure the mapping; Telegram uploads then reuse it.',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  // Download the file via Telegram API.
+  await ctx.reply(`Downloading ${doc.file_name || 'attachment'}…`);
+  let file;
+  try { file = await ctx.getFile(); } catch (err) {
+    await ctx.reply(`Failed to fetch file: ${(err as Error).message}`);
+    return;
+  }
+  const filePath = file.file_path;
+  if (!filePath) { await ctx.reply('Telegram did not return a file path; try re-uploading.'); return; }
+
+  const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${filePath}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    await ctx.reply(`Download failed: HTTP ${res.status}`);
+    return;
+  }
+
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+  mkdirSync(UPLOADS_DIR, { recursive: true });
+  const localPath = resolve(UPLOADS_DIR, `attendance_${Date.now()}_${(doc.file_name || 'upload.csv').replace(/[^a-zA-Z0-9._-]/g, '_')}`);
+  writeFileSync(localPath, Buffer.from(await res.arrayBuffer()));
+
+  // Kick off ingestion.
+  const { ingestRoster, ingestBadgeRecords } = await import('../attendance/ingestion.js');
+  const loadedMapping = {
+    id: 'telegram-upload',
+    moduleId,
+    dataType,
+    fields: JSON.parse(mapping.fields),
+    samplePreview: JSON.parse(mapping.sample_preview),
+    createdAt: 0, updatedAt: 0,
+  };
+
+  await ctx.reply('Ingesting…');
+  try {
+    const report = dataType === 'roster'
+      ? await ingestRoster({ moduleId, siteId: mod.site_id, filePath: localPath, mapping: loadedMapping })
+      : await ingestBadgeRecords({ moduleId, siteId: mod.site_id, filePath: localPath, mapping: loadedMapping, expectedDate: expectedDate! });
+
+    const statusEmoji = report.succeeded && report.rowsSkipped === 0 ? '✅' : (report.succeeded ? '⚠️' : '❌');
+    const lines = [
+      `${statusEmoji} <b>${mod.name}</b> — ${dataType}${expectedDate ? ' · ' + expectedDate : ''}`,
+      `${report.rowsAccepted}/${report.rowsRead} accepted · ${report.rowsSkipped} skipped · ${report.warnings.length} warnings`,
+    ];
+    if (report.warnings.length > 0) {
+      lines.push('');
+      lines.push('<b>Warnings:</b>');
+      for (const w of report.warnings.slice(0, 5)) {
+        lines.push(`• [${w.kind}] ${escapeHtml(w.detail)}`);
+      }
+      if (report.warnings.length > 5) lines.push(`…and ${report.warnings.length - 5} more`);
+    }
+    if (report.skippedReasons.length > 0) {
+      lines.push('');
+      lines.push('<b>Skipped rows:</b>');
+      for (const s of report.skippedReasons.slice(0, 5)) {
+        lines.push(`• row ${s.rowNumber}: ${escapeHtml(s.reason)}`);
+      }
+      if (report.skippedReasons.length > 5) lines.push(`…and ${report.skippedReasons.length - 5} more`);
+    }
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+  } catch (err) {
+    await ctx.reply(`Ingestion failed: ${escapeHtml((err as Error).message)}`, { parse_mode: 'HTML' });
+  }
+}
+
 // ── FMEA CSV Upload Helper ───────────────────────────────
 
 async function handleFmeaCsv(ctx: Context, caption: string): Promise<void> {
@@ -1308,6 +1437,134 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     if (!isAuthorised(ctx.chat.id)) return;
     await router.newChat(String(ctx.chat.id));
     await ctx.reply('Session cleared. Starting fresh.');
+  });
+
+  // ── Attendance command suite (rc.90) ──────────────────────────
+  // All attendance commands live under a single /attendance namespace
+  // so Telegram's command list stays manageable. Subcommand dispatch
+  // happens inside the handler based on the first argument.
+  bot.command('attendance', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const text = (ctx.message?.text ?? '').replace(/^\/attendance(@\w+)?\s*/, '').trim();
+    const [sub, ...rest] = text.split(/\s+/);
+
+    const { hasRole, listRoles } = await import('../attendance/roles.js');
+    const { claimSupervisorInvite } = await import('../attendance/invites.js');
+    const { createFutureAbsence } = await import('../attendance/future-absences.js');
+    const db = (await import('../db-knex.js')).getKnex();
+
+    // /attendance whoami — always available
+    if (!sub || sub === 'whoami') {
+      const roles = await listRoles(chatId);
+      if (roles.length === 0) {
+        await ctx.reply(
+          `chat_id <code>${chatId}</code> has no attendance roles yet. ` +
+          'Ask an admin to grant one, or redeem a supervisor invite with <code>/attendance claim &lt;token&gt;</code>.',
+          { parse_mode: 'HTML' },
+        );
+        return;
+      }
+      const lines = roles.map((r) => `• ${r.role}${r.moduleId ? ' · ' + r.moduleId : ''} (by ${r.grantedBy})`);
+      await ctx.reply(
+        `<b>Attendance roles for chat_id <code>${chatId}</code></b>\n\n${lines.join('\n')}`,
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
+    // /attendance claim <token> — supervisor redeems an invitation
+    if (sub === 'claim') {
+      const token = (rest[0] ?? '').trim();
+      if (!token) {
+        await ctx.reply('Usage: <code>/attendance claim &lt;token&gt;</code>', { parse_mode: 'HTML' });
+        return;
+      }
+      const result = await claimSupervisorInvite(token, chatId);
+      if (!result.ok) {
+        await ctx.reply(`Claim failed: ${result.error}`);
+        return;
+      }
+      await ctx.reply(
+        `Registered as supervisor for <b>${escapeHtml(result.moduleName ?? result.moduleId!)}</b>.\n\n` +
+        'You will receive exception lists for your module each morning (Phase B).',
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
+    // /attendance absence <badge> <code> <date-start> [<date-end>] [notes...]
+    // Supervisor (or HR) files a pre-approved absence so it doesn't
+    // surface as an exception on the day.
+    if (sub === 'absence') {
+      if (!(await hasRole(chatId, 'admin')) && !(await hasRole(chatId, 'hr')) && !(await hasRole(chatId, 'supervisor'))) {
+        await ctx.reply('You need the supervisor, hr, or admin role to file an absence.');
+        return;
+      }
+      const badgeId = rest[0];
+      const code = rest[1];
+      const dateStart = rest[2];
+      const maybeDateEnd = rest[3] && /^\d{4}-\d{2}-\d{2}$/.test(rest[3]) ? rest[3] : null;
+      const notesStart = maybeDateEnd ? 4 : 3;
+      const notes = rest.slice(notesStart).join(' ') || undefined;
+      if (!badgeId || !code || !dateStart) {
+        await ctx.reply(
+          'Usage: <code>/attendance absence &lt;badge&gt; &lt;code&gt; &lt;YYYY-MM-DD&gt; [YYYY-MM-DD] [notes...]</code>\n\n' +
+          'Example: <code>/attendance absence 13513 V 2026-04-28 2026-05-02 family trip</code>',
+          { parse_mode: 'HTML' },
+        );
+        return;
+      }
+
+      // Find which module this employee belongs to. Employees live in
+      // exactly one module (site, badge) pair.
+      const emp = await db('attendance_employees').where({ badge_id: badgeId }).first() as
+        { module_id: string; full_name: string; site_id: string } | undefined;
+      if (!emp) {
+        await ctx.reply(`No employee with badge ${badgeId} in the roster. Ingest the roster first.`);
+        return;
+      }
+
+      // If the caller is a module-scoped supervisor, verify scope.
+      const supScoped = await hasRole(chatId, 'supervisor', emp.module_id);
+      const isPrivileged = (await hasRole(chatId, 'admin')) || (await hasRole(chatId, 'hr'));
+      if (!isPrivileged && !supScoped) {
+        await ctx.reply(`You can only file absences for your own module. This employee is in a different module.`);
+        return;
+      }
+
+      try {
+        const fa = await createFutureAbsence({
+          moduleId: emp.module_id,
+          badgeId,
+          absenceCode: code,
+          dateStart,
+          dateEnd: maybeDateEnd ?? undefined,
+          filedByChatId: chatId,
+          notes,
+        });
+        const span = fa.dateStart === fa.dateEnd ? fa.dateStart : `${fa.dateStart} → ${fa.dateEnd}`;
+        await ctx.reply(
+          `Filed absence: <b>${escapeHtml(emp.full_name)}</b> (${badgeId}), code <b>${code}</b>, ${span}.`,
+          { parse_mode: 'HTML' },
+        );
+      } catch (err) {
+        await ctx.reply(`Could not file absence: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    // Help / unknown
+    await ctx.reply(
+      '<b>Attendance commands</b>\n\n' +
+      '<code>/attendance whoami</code> — show your attendance roles\n' +
+      '<code>/attendance claim &lt;token&gt;</code> — redeem a supervisor invitation\n' +
+      '<code>/attendance absence &lt;badge&gt; &lt;code&gt; &lt;YYYY-MM-DD&gt; [end] [notes]</code> — file pre-approved absence\n\n' +
+      'HR peers also upload CSVs by attaching a file with caption:\n' +
+      '<code>Roster Data &lt;moduleId&gt;</code>\n' +
+      '<code>Check-in Data &lt;moduleId&gt; &lt;YYYY-MM-DD&gt;</code>',
+      { parse_mode: 'HTML' },
+    );
   });
 
   bot.command('memory', async (ctx) => {
@@ -4005,6 +4262,15 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     // Intercept /fmea CSV uploads
     if (caption.startsWith('/fmea')) {
       await handleFmeaCsv(ctx, caption);
+      return;
+    }
+
+    // Attendance ingestion (rc.90). Caption formats:
+    //   "Roster Data <moduleId>"
+    //   "Check-in Data <moduleId> <YYYY-MM-DD>"
+    // Any other attendance-looking caption triggers a help reply.
+    if (/^(roster|check[-\s]?in)\s+data/i.test(caption)) {
+      await handleAttendanceCsvUpload(ctx, caption);
       return;
     }
 

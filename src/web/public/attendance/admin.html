@@ -157,6 +157,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="ingest">Ingest CSV</button>
       <button class="tab" data-tab="setup">Setup</button>
+      <button class="tab" data-tab="ops">Operations</button>
       <button class="tab" data-tab="reports">Reports</button>
     </div>
     <p class="log" id="whoami-log"></p>
@@ -289,6 +290,63 @@
       </div>
     </div>
 
+    <!-- ── OPERATIONS TAB (rc.90) ──────────── -->
+    <div class="tab-panel hidden" data-tab="ops">
+      <div class="panel">
+        <h2>Supervisor invitations</h2>
+        <p class="hint">Issue a one-shot token for a module. Share it out-of-band; the supervisor redeems it in Telegram via <code>/attendance claim &lt;token&gt;</code>. Tokens expire after 24 hours by default.</p>
+        <div class="row">
+          <div><label>Module</label><select id="inv-module"></select></div>
+          <div><label>Expires in (hours)</label><input type="number" id="inv-ttl" value="24" min="1" max="168"></div>
+          <div style="flex:0"><button id="inv-btn">Create invite</button></div>
+        </div>
+        <div class="log" id="inv-log"></div>
+        <div id="inv-table"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Future absences (pre-approved)</h2>
+        <p class="hint">File known-in-advance absences (scheduled vacation, medical leave, permit) so they don't surface as morning exceptions. An HR or admin role can file for anyone; supervisors can file for their own module.</p>
+        <div class="row">
+          <div><label>Module</label><select id="fa-module"></select></div>
+          <div><label>Badge</label><input type="text" id="fa-badge" placeholder="13513"></div>
+          <div>
+            <label>Absence code</label>
+            <select id="fa-code"></select>
+          </div>
+        </div>
+        <div class="row">
+          <div><label>Start date</label><input type="date" id="fa-start"></div>
+          <div><label>End date (blank = single day)</label><input type="date" id="fa-end"></div>
+          <div><label>Notes</label><input type="text" id="fa-notes" placeholder="family trip"></div>
+          <div style="flex:0"><button id="fa-btn">File absence</button></div>
+        </div>
+        <div class="log" id="fa-log"></div>
+        <div id="fa-table"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Role assignments</h2>
+        <p class="hint">Grant HR peers the ability to upload CSVs; grant managers escalation access; supervisors are usually self-registered via the invitation flow above but can also be granted here.</p>
+        <div class="row">
+          <div><label>Telegram chat_id</label><input type="text" id="role-chatid" placeholder="e.g. 8370718511"></div>
+          <div>
+            <label>Role</label>
+            <select id="role-role">
+              <option value="hr">hr</option>
+              <option value="manager">manager</option>
+              <option value="supervisor">supervisor</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div><label>Module (supervisor only)</label><select id="role-module"><option value="">—</option></select></div>
+          <div style="flex:0"><button id="role-grant-btn">Grant</button></div>
+        </div>
+        <div class="log" id="role-log"></div>
+        <div id="role-table"></div>
+      </div>
+    </div>
+
     <!-- ── REPORTS TAB ──────────────────────── -->
     <div class="tab-panel hidden" data-tab="reports">
       <div class="panel">
@@ -380,6 +438,7 @@ function setActiveTab(tab) {
   if (tab === 'setup') renderSetupTab();
   if (tab === 'reports') loadReports();
   if (tab === 'ingest') refreshIngestEmptyState();
+  if (tab === 'ops') renderOpsTab();
 }
 
 // ── Setup tab ────────────────────────────────────────────────
@@ -929,6 +988,234 @@ function flash(elId, msg, kind) {
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+
+// ── Operations tab ────────────────────────────────────────────
+async function renderOpsTab() {
+  if (!state.whoami?.can.setup) {
+    // Same gate as setup — ops is admin-only.
+    return;
+  }
+  // Populate module + absence-code selects
+  populateOpsModuleDropdowns();
+  populateOpsAbsenceDropdown();
+  populateOpsRoleModuleDropdown();
+  await refreshInvites();
+  renderInvitesTable();
+  await refreshFutureAbsences();
+  renderFutureAbsencesTable();
+  await refreshRoleAssignments();
+  renderRoleAssignmentsTable();
+}
+
+function populateOpsModuleDropdowns() {
+  const invSel = $('inv-module');
+  const faSel = $('fa-module');
+  const roleSel = $('role-module');
+  [invSel, faSel].forEach((sel) => {
+    sel.innerHTML = '';
+    for (const m of state.modules) {
+      const opt = document.createElement('option');
+      opt.value = m.id; opt.textContent = m.name;
+      sel.appendChild(opt);
+    }
+  });
+  roleSel.innerHTML = '<option value="">— (required for supervisor role) —</option>';
+  for (const m of state.modules) {
+    const opt = document.createElement('option');
+    opt.value = m.id; opt.textContent = m.name;
+    roleSel.appendChild(opt);
+  }
+}
+
+async function populateOpsAbsenceDropdown() {
+  const sel = $('fa-code');
+  sel.innerHTML = '<option value="">— pick a site with absence codes first —</option>';
+  if (state.sites.length === 0) return;
+  // Use the first site's codes; in pilot there's almost always one site.
+  try {
+    const res = await api('/api/attendance/absence-codes?siteId=' + encodeURIComponent(state.sites[0].id));
+    sel.innerHTML = '';
+    for (const c of res.codes) {
+      const opt = document.createElement('option');
+      opt.value = c.code;
+      opt.textContent = c.code + ' — ' + c.descriptionEn;
+      sel.appendChild(opt);
+    }
+  } catch { /* no codes yet */ }
+}
+
+function populateOpsRoleModuleDropdown() {
+  // Mirrors populateOpsModuleDropdowns but keeps the blank option.
+  const sel = $('role-module');
+  sel.innerHTML = '<option value="">— (required for supervisor role) —</option>';
+  for (const m of state.modules) {
+    const opt = document.createElement('option');
+    opt.value = m.id; opt.textContent = m.name;
+    sel.appendChild(opt);
+  }
+}
+
+// Invites
+let opsInvites = [];
+async function refreshInvites() {
+  try {
+    const r = await api('/api/attendance/supervisor-invites');
+    opsInvites = r.invites || [];
+  } catch { opsInvites = []; }
+}
+function renderInvitesTable() {
+  const wrap = $('inv-table');
+  if (opsInvites.length === 0) { wrap.innerHTML = '<p class="hint">No invites yet.</p>'; return; }
+  let html = '<table><thead><tr><th>Module</th><th>Token</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>';
+  for (const i of opsInvites) {
+    const mod = state.modules.find((m) => m.id === i.moduleId);
+    const exp = new Date(i.expiresAt).toISOString().replace('T',' ').slice(0,16);
+    let status;
+    if (i.revokedAt) status = '<span class="pill err">revoked</span>';
+    else if (i.redeemedAt) status = '<span class="pill ok">redeemed by ' + escapeHtml(i.redeemedByChatId || '') + '</span>';
+    else if (Date.now() > i.expiresAt) status = '<span class="pill warn">expired</span>';
+    else status = '<span class="pill ok">active</span>';
+    const btn = (!i.revokedAt && !i.redeemedAt && Date.now() <= i.expiresAt)
+      ? '<button class="secondary" data-tok="' + i.token + '">Revoke</button>'
+      : '';
+    html += '<tr><td>' + escapeHtml(mod?.name || i.moduleId) + '</td>'
+         + '<td><code>' + i.token + '</code></td>'
+         + '<td>' + exp + '</td>'
+         + '<td>' + status + '</td>'
+         + '<td>' + btn + '</td></tr>';
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('button[data-tok]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      try {
+        await api('/api/attendance/supervisor-invite/revoke', 'POST', { token: b.dataset.tok });
+        await refreshInvites();
+        renderInvitesTable();
+      } catch (err) { flash('inv-log', err.message, 'danger'); }
+    });
+  });
+}
+$('inv-btn').addEventListener('click', async () => {
+  const moduleId = $('inv-module').value;
+  const ttl = Number($('inv-ttl').value) || 24;
+  if (!moduleId) { flash('inv-log', 'Pick a module', 'danger'); return; }
+  try {
+    const r = await api('/api/attendance/supervisor-invite', 'POST', { moduleId, ttlHours: ttl });
+    flash('inv-log', 'Token: ' + r.invite.token + ' (share with supervisor; they run /attendance claim ' + r.invite.token + ')', 'success');
+    await refreshInvites();
+    renderInvitesTable();
+  } catch (err) { flash('inv-log', err.message, 'danger'); }
+});
+
+// Future absences
+let opsFutureAbsences = [];
+async function refreshFutureAbsences() {
+  try {
+    const r = await api('/api/attendance/future-absences');
+    opsFutureAbsences = r.futureAbsences || [];
+  } catch { opsFutureAbsences = []; }
+}
+function renderFutureAbsencesTable() {
+  const wrap = $('fa-table');
+  if (opsFutureAbsences.length === 0) { wrap.innerHTML = '<p class="hint">No pre-approved absences on file.</p>'; return; }
+  let html = '<table><thead><tr><th>Badge</th><th>Module</th><th>Code</th><th>Dates</th><th>Filed by</th><th>Notes</th><th></th></tr></thead><tbody>';
+  for (const fa of opsFutureAbsences) {
+    const mod = state.modules.find((m) => m.id === fa.moduleId);
+    const span = fa.dateStart === fa.dateEnd ? fa.dateStart : (fa.dateStart + ' → ' + fa.dateEnd);
+    html += '<tr><td>' + escapeHtml(fa.badgeId) + '</td>'
+         + '<td>' + escapeHtml(mod?.name || fa.moduleId) + '</td>'
+         + '<td><strong>' + escapeHtml(fa.absenceCode) + '</strong></td>'
+         + '<td>' + span + '</td>'
+         + '<td>' + escapeHtml(fa.filedByChatId) + '</td>'
+         + '<td>' + escapeHtml(fa.notes || '') + '</td>'
+         + '<td><button class="secondary" data-fa="' + fa.id + '">Cancel</button></td></tr>';
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('button[data-fa]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      if (!confirm('Cancel this absence?')) return;
+      try {
+        await api('/api/attendance/future-absences/cancel', 'POST', { id: b.dataset.fa });
+        await refreshFutureAbsences();
+        renderFutureAbsencesTable();
+      } catch (err) { flash('fa-log', err.message, 'danger'); }
+    });
+  });
+}
+$('fa-btn').addEventListener('click', async () => {
+  const payload = {
+    moduleId: $('fa-module').value,
+    badgeId: $('fa-badge').value.trim(),
+    absenceCode: $('fa-code').value,
+    dateStart: $('fa-start').value,
+    dateEnd: $('fa-end').value || undefined,
+    notes: $('fa-notes').value.trim() || undefined,
+  };
+  if (!payload.moduleId || !payload.badgeId || !payload.absenceCode || !payload.dateStart) {
+    flash('fa-log', 'Module, badge, code, and start date are required.', 'danger');
+    return;
+  }
+  try {
+    await api('/api/attendance/future-absences', 'POST', payload);
+    $('fa-badge').value = ''; $('fa-notes').value = ''; $('fa-end').value = '';
+    await refreshFutureAbsences();
+    renderFutureAbsencesTable();
+    flash('fa-log', 'Absence filed.', 'success');
+  } catch (err) { flash('fa-log', err.message, 'danger'); }
+});
+
+// Role assignments
+let opsRoleAssignments = [];
+async function refreshRoleAssignments() {
+  try {
+    const r = await api('/api/attendance/role-assignments');
+    opsRoleAssignments = r.assignments || [];
+  } catch { opsRoleAssignments = []; }
+}
+function renderRoleAssignmentsTable() {
+  const wrap = $('role-table');
+  if (opsRoleAssignments.length === 0) { wrap.innerHTML = '<p class="hint">No explicit role assignments yet. (Bootstrap admins from ALLOWED_CHAT_ID are not stored here.)</p>'; return; }
+  let html = '<table><thead><tr><th>chat_id</th><th>Role</th><th>Module</th><th>Granted by</th><th>Granted at</th><th></th></tr></thead><tbody>';
+  for (const a of opsRoleAssignments) {
+    const mod = a.module_id ? (state.modules.find((m) => m.id === a.module_id)?.name || a.module_id) : '—';
+    const when = new Date(a.granted_at).toISOString().replace('T',' ').slice(0,16);
+    html += '<tr><td><code>' + escapeHtml(a.chat_id) + '</code></td>'
+         + '<td>' + escapeHtml(a.role) + '</td>'
+         + '<td>' + escapeHtml(mod) + '</td>'
+         + '<td>' + escapeHtml(a.granted_by) + '</td>'
+         + '<td>' + when + '</td>'
+         + '<td><button class="secondary" data-chat="' + escapeHtml(a.chat_id) + '" data-role="' + a.role + '" data-mod="' + (a.module_id || '') + '">Revoke</button></td></tr>';
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('button[data-chat]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      if (!confirm('Revoke ' + b.dataset.role + ' from ' + b.dataset.chat + '?')) return;
+      try {
+        const qs = 'chatId=' + encodeURIComponent(b.dataset.chat) + '&role=' + encodeURIComponent(b.dataset.role) + (b.dataset.mod ? '&moduleId=' + encodeURIComponent(b.dataset.mod) : '');
+        await api('/api/attendance/role?' + qs, 'DELETE');
+        await refreshRoleAssignments();
+        renderRoleAssignmentsTable();
+      } catch (err) { flash('role-log', err.message, 'danger'); }
+    });
+  });
+}
+$('role-grant-btn').addEventListener('click', async () => {
+  const chatId = $('role-chatid').value.trim();
+  const role = $('role-role').value;
+  const moduleId = $('role-module').value || undefined;
+  if (!chatId) { flash('role-log', 'chat_id required', 'danger'); return; }
+  if (role === 'supervisor' && !moduleId) { flash('role-log', 'supervisor role requires picking a module', 'danger'); return; }
+  try {
+    await api('/api/attendance/role', 'POST', { chatId, role, moduleId });
+    $('role-chatid').value = '';
+    await refreshRoleAssignments();
+    renderRoleAssignmentsTable();
+    flash('role-log', 'Role granted.', 'success');
+  } catch (err) { flash('role-log', err.message, 'danger'); }
+});
 
 async function api(path, method = 'GET', body) {
   const opts = { method, headers: { 'Authorization': 'Bearer ' + state.token } };
