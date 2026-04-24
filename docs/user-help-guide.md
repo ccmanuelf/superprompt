@@ -60,6 +60,26 @@ Luna creates real files — not just descriptions:
 - Luna teaches with Socratic questions, not lectures
 - Tracks your progress with spaced repetition
 
+### Attendance reconciliation (pilot)
+The attendance feature ingests your daily roster and check-in data so supervisors can confirm the morning exception list from Telegram. The foundation is live today; the morning supervisor workflow + 8:31am management report arrive in a later release.
+
+**Admin-side setup** (open `/attendance/admin` in a browser with a web token):
+- Create a site, then a shift with its breaks, then modules (one per supervisor)
+- Seed the default absence codes (U, V, DI, PP, P, PT, SI) for the site
+- Invite supervisors: generates a one-shot token to share with each supervisor
+
+**Supervisor-side setup** (Telegram):
+- `/attendance claim <token>` — register as the supervisor for a module
+- `/attendance whoami` — show your current roles
+- `/attendance absence <badge> <code> <start-date> [end-date] [notes]` — file a pre-approved absence so it doesn't flag as an exception
+
+**HR-side daily upload** (Telegram):
+- Send a CSV as an attachment with caption `Roster Data <moduleId>` (for the employee roster) or `Check-in Data <moduleId> <YYYY-MM-DD>` (for the daily T&A export)
+- The column mapping is configured once in the admin UI; Telegram uploads reuse it
+- Luna replies with rows accepted / skipped / warnings
+
+Not yet shipped (Phase B+): per-supervisor exception messages, 15-min polling for confirmations, 8:31am management report, 5:00pm end-of-shift close, weekly VP-template Excel export.
+
 ---
 
 ## Commands Quick Reference

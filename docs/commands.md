@@ -229,6 +229,22 @@ All web UIs are served from port `3030` (configurable via `VOICE_WEB_PORT`). Aut
 | `http://localhost:3030/doe` | Design of Experiments analyzer |
 | `http://localhost:3030/fsm` | State Machine simulator |
 | `http://localhost:3030/docs` | Documentation viewer (all guides with Mermaid diagrams) |
+| `http://localhost:3030/attendance/admin` | Attendance reconciliation admin (setup, CSV upload + mapping, supervisor invites, future absences, role management) |
+
+## Attendance Commands (Pilot)
+
+The attendance foundation is live in Phase A; morning exception notifications + 8:31am management report arrive in Phase B.
+
+| Command | Description |
+|---------|-------------|
+| `/attendance` or `/attendance whoami` | Show your attendance roles (admin / hr / supervisor / manager) |
+| `/attendance claim <token>` | Supervisor redeems an admin-issued invitation token — links their Telegram chat_id to their module |
+| `/attendance absence <badge> <code> <YYYY-MM-DD> [end-date] [notes]` | File a pre-approved future absence so it doesn't surface as a morning exception |
+
+**Telegram attachment uploads** (requires `hr` or `admin` role):
+- Attach a CSV with caption `Roster Data <moduleId>` — upserts the employee roster
+- Attach a CSV with caption `Check-in Data <moduleId> <YYYY-MM-DD>` — imports one day of check-in records
+- The column mapping must be configured once via `/attendance/admin` before Telegram uploads work
 
 ## Document Generation
 

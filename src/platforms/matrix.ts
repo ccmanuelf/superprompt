@@ -482,6 +482,9 @@ async function handleCommand(
           '!pack info <name> — Pack details\n' +
           '!pack create <name> "desc" — Scaffold new pack\n\n' +
 
+          '👥 Attendance (pilot — note: Telegram handles the live command suite and CSV uploads; Matrix parity is pending)\n' +
+          'Admin UI: open /attendance/admin in your browser\n\n' +
+
           '🔧 System\n' +
           '!chatid — Show chat ID\n' +
           '!start — Welcome message',

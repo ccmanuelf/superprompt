@@ -1211,13 +1211,20 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         '/schedule — Scheduled tasks  •  /digest — Activity digests\n' +
         '/research — Academic papers  •  /cite — Citations\n\n' +
 
+        '<b>👥 Attendance</b> (pilot)\n' +
+        '/attendance whoami — show your attendance roles\n' +
+        '/attendance claim &lt;token&gt; — redeem a supervisor invitation\n' +
+        '/attendance absence &lt;badge&gt; &lt;code&gt; &lt;date&gt; [end] — file pre-approved absence\n' +
+        'HR uploads: attach CSV with caption <code>Roster Data &lt;moduleId&gt;</code> or <code>Check-in Data &lt;moduleId&gt; &lt;YYYY-MM-DD&gt;</code>\n' +
+        'Admin UI: /attendance/admin in your browser\n\n' +
+
         '<b>🔧 System</b>\n' +
         '/tool — Manage tools  •  /voice — Toggle voice replies\n' +
         '/provider — Current AI info  •  /reload — Reload tools\n\n' +
 
         '<b>🌐 Web Dashboards</b> (open in browser):\n' +
         '/ (voice chat) • /sim • /capacity • /sequence • /vsm\n' +
-        '/toc • /conwip • /doe • /fsm • /board • /learn\n\n' +
+        '/toc • /conwip • /doe • /fsm • /board • /learn • /attendance/admin\n\n' +
 
         '<i>Ask me anything — or say "what can you do?" for the full guide.</i>',
       { parse_mode: 'HTML' },
@@ -1276,10 +1283,18 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         '/fmea — FMEA analysis\n' +
         '/rca — Root Cause Analysis\n\n' +
 
+        '<b>👥 Attendance</b> (pilot)\n' +
+        '/attendance — help\n' +
+        '/attendance whoami — show your roles\n' +
+        '/attendance claim &lt;token&gt; — redeem supervisor invitation\n' +
+        '/attendance absence &lt;badge&gt; &lt;code&gt; &lt;YYYY-MM-DD&gt; [end] [notes]\n' +
+        'CSV upload: attach file with caption <code>Roster Data &lt;moduleId&gt;</code> or <code>Check-in Data &lt;moduleId&gt; &lt;YYYY-MM-DD&gt;</code>\n' +
+        'Admin UI: /attendance/admin\n\n' +
+
         '<b>🌐 Web Interfaces</b> (port 3030)\n' +
         '/ — Voice chat  •  /board — Kanban  •  /learn — Coach\n' +
         '/sim • /capacity • /sequence • /vsm • /toc\n' +
-        '/conwip • /doe • /fsm\n\n' +
+        '/conwip • /doe • /fsm • /attendance/admin\n\n' +
 
         '<b>📦 Domain Packs</b>\n' +
         '/pack list — Installed packs\n' +

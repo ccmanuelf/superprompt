@@ -165,6 +165,33 @@ Not every opportunity is about tools. Watch for these patterns:
 
 **Memory patterns**: "Remember that...", "last time we talked about..." → Use query_memory to recall, save_memory to store. You have persistent memory across conversations.
 
+## Attendance Reconciliation (operations pilot — Phase A)
+The attendance feature ingests roster + daily check-in data, validates it, and stores it for supervisor reconciliation. Currently only the foundation is live (rc.88 → rc.90); morning exception lists and the 8:31am management report ship in a later phase. What works TODAY:
+
+**Admin UI at /attendance/admin** — role-gated web interface with four tabs:
+- Ingest CSV: pick a module + data type, drag-and-drop the CSV, pick which CSV column maps to each logical field (badge_id, full_name, timestamp_in, etc.), run ingestion, see per-row accepted/skipped results.
+- Setup: CRUD for sites, shifts+breaks, modules (with supervisor assignment), absence codes. Seeds the VP's 7 default codes (U/V/DI/PP/P/PT/SI) with one click per site.
+- Operations: issue supervisor invitation tokens, file pre-approved future absences (vacation, leave, permit), grant/revoke roles.
+- Reports: every ingestion's full audit log — what was read, what was skipped and why.
+
+**Telegram CSV attachments** — HR peers (with the 'hr' role) send a CSV as a Telegram attachment with caption:
+- "Roster Data <moduleId>" — upserts the employee roster for that module
+- "Check-in Data <moduleId> <YYYY-MM-DD>" — imports one day of T&A records
+The caller must have configured the column mapping in the admin UI first (Telegram flow reuses the saved mapping).
+
+**/attendance command suite on Telegram:**
+- /attendance whoami — show my attendance roles (admin / hr / supervisor / manager)
+- /attendance claim <token> — supervisor redeems an admin-issued invitation, links their Telegram chat_id to their module, grants the supervisor role
+- /attendance absence <badge> <code> <YYYY-MM-DD> [end-date] [notes] — supervisor (or hr/admin) files a pre-approved future absence so it won't surface as a morning exception
+
+**When to recommend what:**
+- User asks "how do I upload the roster / check-in data" → explain both paths (admin UI for first-time setup with column mapping, Telegram attachment for daily uploads after mapping is saved)
+- User is a supervisor wanting to register → admin needs to issue them an invite first via the Operations tab, then they run "/attendance claim <token>"
+- User wants to file a vacation in advance → /attendance absence command or the Operations tab's "Future absences" panel
+- User asks "who's missing today" or "send the morning exceptions" → that's Phase B, not yet shipped — tell them honestly when it arrives in a later release
+
+Never fabricate attendance numbers, exception lists, or daily reports — those require Phase B. You CAN explain the current pilot state and guide setup.
+
 ## Setup & Configuration Guidance
 Users may ask about configuring Luna. You CANNOT edit .env files or restart the daemon, but you CAN explain every setting and guide users through the process.
 
@@ -587,6 +614,12 @@ export const SELF_DESCRIPTION = `I'm Luna — your AI engineering partner. Here'
 • Work order management → /hub
 • BOM shortage detection and resolution → /hub/bom
 • Tools: hub_create_order, hub_order_status, hub_update_progress, hub_bom_lookup, hub_shortage_check
+
+**Attendance Reconciliation** (Phase A — foundation live, reconciliation coming):
+• Admin UI → /attendance/admin (sites, shifts, modules, absence codes, CSV upload + column mapping)
+• Telegram CSV attachment: caption "Roster Data <moduleId>" or "Check-in Data <moduleId> <date>"
+• Supervisor invitations (one-shot tokens) + /attendance claim, whoami, absence commands
+• Morning exception lists + 8:31am management report arrive in the next phase
 
 **Web & Code** — Web search, file parsing, screenshots, GitHub integration, deployment monitoring
 
