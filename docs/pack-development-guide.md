@@ -1,8 +1,12 @@
 # Pack Development Guide
 
+**Version:** v1.0.0-rc.95 — last refreshed 2026-04-27. Pack format stable from rc.20 onward; no breaking changes in rc.95.
+
 ## What are Packs?
 
 Packs are capability modules that extend Luna with department-specific tools, skills, and templates. They're the building blocks of the platform — each department enables the packs they need, and any pack can be shared across departments.
+
+> **Packs vs. built-in features:** if you're adding a department-shareable capability, build a pack (this guide). If you're adding a built-in feature that ships with Luna for *all* deployments (like the attendance reconciliation pilot under `src/attendance/`), that's a different code path — it lives directly under `src/`, registers a `TableInitializer` via `storage.registerTables()` in `src/index.ts`, and uses the feature-awareness registry (`src/core/feature-awareness.ts` + per-feature `awareness.ts`). See [`ONBOARDING.md`](./ONBOARDING.md) §6 for that path. Most external work is packs, not built-in features.
 
 ## Pack Levels
 

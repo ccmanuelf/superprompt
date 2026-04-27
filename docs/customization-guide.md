@@ -2,6 +2,10 @@
 
 How to extend Luna with domain-specific capabilities for your department. Three levels of customization, from simple (5 minutes, no code) to full TypeScript modules (1-2 days, developer-level).
 
+**Version:** v1.0.0-rc.95 — last refreshed 2026-04-27. The pack and tool authoring patterns documented below are stable from rc.20 onward and have not changed in rc.95.
+
+> **Note for readers consulting `src/attendance/` as a reference implementation:** the attendance reconciliation feature lives directly under `src/`, not under `packs/`, because it ships as a built-in part of Luna rather than a department-customizable capability. As a result it uses the rc.92 *feature-awareness registry* (`src/core/feature-awareness.ts` + per-feature `awareness.ts`) rather than `pack.yaml`. **Pack authors do not need to use the feature-awareness registry** — packs are surfaced through `pack.yaml`'s `capabilities` and `intent_patterns`, which the pack loader injects into the system prompt and intent scoring automatically. The registry is the parallel mechanism for src/-level features only. If your work is a pack (the topic of this guide), keep reading and ignore the registry; if you're adding a built-in feature under `src/`, see [`ONBOARDING.md`](./ONBOARDING.md) §6 instead.
+
 ---
 
 ## Table of Contents
