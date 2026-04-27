@@ -39,6 +39,15 @@ refactor on the same branch does not). Match existing style. Don't reformat
 adjacent code. Bumping `package.json` + `package-lock.json` and ticking the
 `PROJECT_PLAN.md` checkbox alongside a feature is part of the ship, not unrelated.
 
+**Self-audit findings stay in scope.** When a sanity sweep, pressure test, or
+pre-ship review surfaces an issue — even pre-existing, even outside the immediate
+change, even in code I didn't write — it becomes part of the scope and must be
+fixed before the work is presented. No technical debt rides alongside the ship.
+This refines "Surgical changes": unrelated refactors stay out, but findings
+produced *by* the audit in flight are no longer "unrelated." If a finding is
+genuinely too large for the current ship, name it explicitly with a remediation
+plan and get a call before deferring — never quietly leave it.
+
 **Define success criteria before editing.** Translate the task into something
 verifiable: a failing test that should pass, a smoke check that should stop
 erroring, a `tsc --noEmit` that should stay clean. Vague goals ("make it work")
