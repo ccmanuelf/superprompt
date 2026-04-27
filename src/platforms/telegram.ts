@@ -1256,6 +1256,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         '/ollama — Switch to Ollama provider\n' +
         '/auto — Toggle auto-routing\n' +
         '/provider — Show current provider\n' +
+        '/usage — Provider call counts (this month)\n' +
         '/models — List Ollama models\n' +
         '/model &lt;name&gt; — Switch Ollama model\n\n' +
 
@@ -1671,6 +1672,19 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       msg += `\nModel: <code>${escapeHtml(status.model)}</code>`;
     }
     await ctx.reply(msg, { parse_mode: 'HTML' });
+  });
+
+  // rc.95 — /usage: per-provider call counts for the current month.
+  // Honest observability — no fictional "savings" math (Claude
+  // subscription is flat-rate). The IT team uses this to verify that
+  // local-first routing is actually keeping subscription headroom free.
+  bot.command('usage', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const { getMonthlyUsage, formatUsageReport } = await import('../usage.js');
+    const usage = await getMonthlyUsage();
+    await ctx.reply(`<pre>${escapeHtml(formatUsageReport(usage))}</pre>`, {
+      parse_mode: 'HTML',
+    });
   });
 
   bot.command(['careful', 'safe'], async (ctx) => {

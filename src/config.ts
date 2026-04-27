@@ -32,8 +32,13 @@ export const config = {
   LOG_LEVEL: env.LOG_LEVEL || 'info',
 
   // AI Provider
-  AI_PROVIDER: (env.AI_PROVIDER || 'claude') as 'claude' | 'ollama',
-  AUTO_ROUTE: env.AUTO_ROUTE === 'true',
+  // rc.95 — local-first defaults. Ollama is the default provider so fresh
+  // installs run on the local model unless explicitly opted into Claude;
+  // AUTO_ROUTE defaults ON so the existing classifier escalates only the
+  // long/complex/document-gen turns to Claude. Set AUTO_ROUTE=false in
+  // .env to lock to the default provider unconditionally.
+  AI_PROVIDER: (env.AI_PROVIDER || 'ollama') as 'claude' | 'ollama',
+  AUTO_ROUTE: env.AUTO_ROUTE !== 'false',
 
   // Ollama
   OLLAMA_HOST: env.OLLAMA_HOST || 'http://localhost:11434',

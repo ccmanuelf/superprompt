@@ -153,6 +153,11 @@ async function main(): Promise<void> {
   const { eventTriggerTableInit } = await import('./event-triggers.js');
   storage.registerTables(eventTriggerTableInit);
 
+  // rc.95 — provider usage observability (api_usage). Counts user turns
+  // per provider per month so /usage can show local-handled percentage.
+  const { apiUsageTableInit } = await import('./usage.js');
+  storage.registerTables(apiUsageTableInit);
+
   // Wire pack tuner into pack intent scoring
   const { setPackTunerModule } = await import('./packs.js');
   setPackTunerModule({ applyTunedWeight: packTunerMod.applyTunedWeight });

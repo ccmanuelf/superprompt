@@ -450,6 +450,7 @@ async function handleCommand(
           '!memory — Show stored memories\n' +
           '!claude / !ollama / !auto — Switch provider\n' +
           '!provider — Show current provider\n' +
+          '!usage — Provider call counts (this month)\n' +
           '!models — List Ollama models\n' +
           '!model <name> — Switch Ollama model\n\n' +
 
@@ -578,6 +579,14 @@ async function handleCommand(
         msg += `\nModel: ${status.model}`;
       }
       await sendNotice(client, roomId, msg);
+      return true;
+    }
+
+    // rc.95 — !usage: per-provider call counts for the current month.
+    case '!usage': {
+      const { getMonthlyUsage, formatUsageReport } = await import('../usage.js');
+      const usage = await getMonthlyUsage();
+      await sendNotice(client, roomId, formatUsageReport(usage));
       return true;
     }
 

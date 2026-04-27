@@ -17,6 +17,7 @@ import {
   getRecentChatLog,
   type ChatLogEntry,
 } from '../db-core.js';
+import { recordProviderCall } from '../usage.js';
 
 // rc.69 — cross-provider conversation continuity bridge.
 // rc.72 — seed now uses PER-TURN truncation instead of aggregate byte
@@ -188,6 +189,7 @@ The user can type these commands in the chat:
 - /ollama — Switch to Ollama provider
 - /auto — Toggle automatic provider routing
 - /provider — Show current provider and routing mode
+- /usage — Show provider call counts for the current month (Ollama vs Claude)
 - /models — List available Ollama models
 - /model <name> — Switch Ollama model
 - /schedule — Manage scheduled tasks (add, list, pause, resume, delete)
@@ -860,6 +862,13 @@ export class ProviderRouter {
         provider: provider.name,
       };
     }
+
+    // rc.95 — usage observability. One increment per user turn (not per
+    // internal retry — those reuse the same provider). Fire-and-forget;
+    // a counter failure must never break the turn.
+    recordProviderCall(provider.name).catch((err) =>
+      logger.debug({ err, chatId, provider: provider.name }, 'api_usage increment failed (non-fatal)'),
+    );
 
     // Load existing session ID for Claude
     const session = await getSession(chatId);

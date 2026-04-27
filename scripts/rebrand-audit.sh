@@ -74,6 +74,7 @@ EXCLUDES=(
   # future rebrand would touch THESE files deliberately to record the
   # new transition. Excluded so the audit doesn't block their mentions.
   --exclude=PROJECT_PLAN.md
+  --exclude=ROADMAP.md
   --exclude=REPO_CLEANUP.md
   --exclude=decisions.md
   --exclude=package-lock.json
