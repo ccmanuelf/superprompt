@@ -18,6 +18,48 @@ The repo contains:
 
 Check `PROJECT_PLAN.md` for which phases are complete. Each phase has a checkbox.
 
+## Agent Behavior Defaults
+
+Behavior rules for working in this repo. Project specifics in the rest of this file
+override these whenever they conflict; otherwise these are the defaults.
+
+**Think before coding.** State assumptions explicitly. If multiple interpretations
+exist, present them — don't pick silently. If something is unclear, ask before
+implementing. Surface tradeoffs, especially when the simpler path is being skipped.
+
+**Simplicity first.** Write the minimum code that satisfies the requirement.
+No abstractions for single-use code, no "flexibility" knobs that weren't asked
+for, no error handling for impossible scenarios. Code Convention #6 (graceful
+degradation at service boundaries) is the exception — that's project policy,
+not speculative defense.
+
+**Surgical changes.** Every changed line should trace to the user's request or
+the agreed-upon scope (a bundled rc sweep counts as "agreed scope"; an unrelated
+refactor on the same branch does not). Match existing style. Don't reformat
+adjacent code. Bumping `package.json` + `package-lock.json` and ticking the
+`PROJECT_PLAN.md` checkbox alongside a feature is part of the ship, not unrelated.
+
+**Define success criteria before editing.** Translate the task into something
+verifiable: a failing test that should pass, a smoke check that should stop
+erroring, a `tsc --noEmit` that should stay clean. Vague goals ("make it work")
+make the loop dependent on the user; concrete criteria let the agent self-verify.
+
+**Verify with the existing workflow.** This repo has real commands — use them
+before claiming done:
+- `npx tsc --noEmit` — type check
+- `npx vitest run` — full test suite (currently 2353 tests / 106 files)
+- `npm run smoke` — dist-level ESM smoke (catches `require()`-in-ESM and similar
+  runtime mismatches that vitest/tsx hide)
+- `docker compose build luna && docker compose up -d luna` — container rebuild
+  when the change touches anything Dockerized
+- pre-commit hook (`.githooks/pre-commit`) — secret-leak scan; never bypass
+  with `--no-verify` unless you can name why the match is a false positive
+
+If a feature is user-facing, the test suite proves correctness, not feature
+correctness. Confirm by exercising the feature end-to-end (live message, API
+call, UI click) before reporting the task done — `feedback_quality_standard.md`
+in memory pins this.
+
 ## Key Architecture Decisions
 
 All decisions are documented in `reference/decisions.md`. Do NOT re-discuss them. Summary:
