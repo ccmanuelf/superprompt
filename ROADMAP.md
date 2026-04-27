@@ -1,27 +1,31 @@
 # Luna — Enhancement Roadmap
 
-> Last updated: 2026-04-06
-> Previous roadmap versions: `memory/roadmap.md` (2026-03-13), ROADMAP.md (2026-03-18, 2026-03-21, 2026-03-29)
+> Last updated: 2026-04-27
+> Previous roadmap versions: `memory/roadmap.md` (2026-03-13), ROADMAP.md (2026-03-18, 2026-03-21, 2026-03-29, 2026-04-06)
 
 ## Summary
 
-Luna is evolving from personal AI assistant into a **company-wide AI operations platform** serving 9 departments. Core sprints S1-S16 + S9 complete plus architecture hardening (SA1-SA5) and workstation sprints (WS1-WS4). 2003 tests, 80+ files. Currently v1.0.0-rc.60.
+Luna is evolving from personal AI assistant into a **company-wide AI operations platform** serving 9 departments. Core sprints S1-S16 + S9 complete plus architecture hardening (SA1-SA5), workstation sprints (WS1-WS4), reliability sprint (rc.66-76), and rebrand (rc.85). **2353 tests, 106 test files, 181 src .ts files. Currently v1.0.0-rc.94.**
 
 **Completed:** S1-S8 ✅ → S10-S14 ✅ → S16 ✅ → S15 ✅ → S9 ✅ → SA1-SA5 ✅ → WS1-WS4 ✅ → S4 ✅ → S3 ✅
 
-**All core sprints complete.** S17/S18 in preview mode. v1.0.0-rc.61.
+**All core sprints complete.** S17/S18 in preview mode. Active workstream is the **attendance reconciliation pilot** (Phase A almost complete, Phase B engine landed, both gated on external T&A + HR DB infrastructure).
 
-**Recent additions (rc.35 → rc.61):**
-- WS4 (rc.49-57): Knex database abstraction — DB_DRIVER=sqlite|mariadb|postgres, migration script
-- WS1 (rc.58): Caddy reverse proxy, tightened rate limits (3/min, hourly ban), tool audit logging, Telegram webhook mode
-- WS2 (rc.59): Parallel orchestration (Promise.all), event-driven triggers, background task queue, pack-scoped delegation
-- rc.38: Per-user web tokens (/webtoken create/list/revoke)
-- rc.47: SearXNG as Docker service (auto-configured)
-- rc.45: Manufacturing data isolation (chat_id scoping on all 10 tables)
-- rc.60: 2003 tests, S4 E2E complete (86 integration tests)
-- rc.61: S3 production deployment (WS1-WS4, InMotion guide)
+**Recent additions (rc.62 → rc.94):**
+- rc.62-63: repository cleanup (9 files deleted), formal verification audit, ADR docs
+- rc.64-65: developer pack + Karpathy guidelines, sanity fixes
+- **Reliability sprint rc.66-76 (single-day, 2026-04-17):** Ollama hard request timeout with bilingual error, vec0 integer-PK binding fix, Ollama model-switch eviction + Claude model discovery (`/cmodels` / `/cmodel`), cross-provider conversation continuity bridge (`chat_log` table), small-model anti-hallucination scaffolding (upload manifest, path validator), continuity-seed asymmetric truncation, deliverable discipline (narrow tool allowlist + auto-retry), per-turn language override, multi-cell simulation scaffolding
+- rc.77: per-request trace IDs across core/tools/parsers processes
+- rc.78-84: web voice pipeline hardening (STT 415 resilience, TTS cold-start retry, CSP audio playback fix, language stickiness, Ollama RAM residency, Speaches OOM headroom), voice commands + warmup greeting, voice-to-kanban CRUD
+- **rc.85: rebrand `clauded → Luna / Inge Luna`** (rc.86-87 follow-up fixes, doc QA sweep)
+- rc.88-92: **Attendance Phase A foundation** — schema (13 tables), CSV/API/sensor source abstraction, admin UI at `/attendance/admin`, role system (admin/hr/supervisor/manager), supervisor invitation tokens, future-absence filing, Telegram caption flow, `/attendance` command suite
+- rc.92: **Feature-awareness self-enforcing registry** — `src/core/feature-awareness.ts` + per-feature `src/<feature>/awareness.ts` + Vitest contract test that fails CI if a shipping feature isn't registered for prompts / help / web-UI awareness
+- rc.93: container Claude CLI session persistence, ESM-runtime gap test
+- **rc.94: Attendance Phase B reconciliation engine** — pure-function `reconcile()` with classification surface (`present | late | early_leave | no_show | approved_absence | missing_punch_in | missing_punch_out`) and small policy surface. Engine unwired pending Phase B delivery work.
 
 **Forward roadmap:**
+- **Attendance Phase A completion** — pending T&A system integration + HR DB read access (external infrastructure dependencies)
+- **Attendance Phase B wiring** — morning digest scheduler, supervisor delivery, snapshot persistence, supervisor confirmation flow, EOD rollup. Gated on the same external dependencies; engine will stay unwired until those are available.
 - S17-S18 (Production Hub + BOM Intelligence) — preview deployed, full implementation pending
 - Phase 4: Client Integration Platform (SaaS) — Board of Directors revenue vision
 - Core subsystems: Auto-Skills (absorbed S19) + Quality Techniques (rc.9/rc.10)
@@ -777,9 +781,14 @@ Both providers get GitHub/Render access, each using their native mechanism:
 
 ---
 
-## Forward Roadmap (2026-04-06)
+## Forward Roadmap (2026-04-27)
 
-> Updated based on CTO architecture review, department E2E feedback, and strategic direction.
+> Updated 2026-04-27 to reflect rc.94 reality (post-rebrand, post-attendance Phase A).
+> The strategic framing (target departments, deployment approach, DB migration plan) is
+> preserved inline below — only the dated opener and the execution-order block were
+> rewritten. The original 2026-04-06 execution order is preserved verbatim under
+> "Historical execution order (2026-04-06)" further down for traceability.
+>
 > Luna is evolving from an engineering tool into a **company-wide AI operations platform**.
 >
 > **Target departments (9):** Manufacturing, Engineering, Customer Service, Supply Chain/Procurement,
@@ -791,6 +800,52 @@ Both providers get GitHub/Render access, each using their native mechanism:
 > `scripts/migrate-database.ts`).
 
 ### Execution Order
+
+```
+Completed:
+  Phase 1 — Architecture Hardening: SA1-SA5 ✅
+  Workstation Sprints: WS1-WS4 ✅ (rc.49-61)
+  S4 (E2E) ✅ rc.60
+  S3 (Production Deployment) ✅ rc.61
+  Reliability sprint ✅ rc.66-76
+  Rebrand clauded → Luna / Inge Luna ✅ rc.85
+
+Current:  Attendance Reconciliation Pilot
+            Phase A (foundation) — ALMOST COMPLETE rc.88-92
+              admin UI, CSV/API/sensor sources, role system, supervisor
+              invites, future-absence filing, Telegram caption flow,
+              feature-awareness self-enforcing registry (rc.92)
+              ↳ Pending: T&A system integration, HR DB read access
+            Phase B (reconciliation + delivery) — ENGINE LANDED rc.94, WIRING IN QUEUE
+              Pure-function reconcile() with policy-driven classification.
+              ↳ Pending: morning digest cron, supervisor Telegram delivery,
+                snapshot persistence, supervisor confirmation flow, EOD rollup
+              ↳ Gated on the same T&A + HR DB dependencies as Phase A;
+                engine will stay unwired until those are available.
+
+Next:
+  S17 (Production Hub — Order Management)
+  S18 (BOM & Shortage Intelligence)
+  Phase 4 (Client Integration Platform — Board SaaS vision)
+```
+
+### External dependencies on the critical path
+
+The attendance pilot is currently blocked on infrastructure that is **outside
+engineering's control**:
+
+1. **Time-and-Attendance system access** (badge punches via API or SFTP drop)
+2. **HR database access** (employee roster of record)
+
+Until those are unblocked, the pilot runs on hand-uploaded CSVs through the
+admin UI / Telegram caption flow and the Phase B delivery layer cannot be
+built productively (wiring against CSV-only inputs would be throwaway).
+
+### Historical execution order (2026-04-06)
+
+Preserved verbatim from the prior revision of this section (when rc.61 was
+the head and the attendance pilot did not yet exist). The current execution
+order above supersedes this block; it remains here for traceability.
 
 ```
 Completed:

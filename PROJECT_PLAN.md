@@ -472,3 +472,100 @@ feat(phase-12): integration — index.ts, e2e validation
 - [x] **Phase D**: Matrix Parity — schedule commands, photo/file handlers, notifications
 - [x] **Phase E**: Skills Infrastructure — registration, routing, per-skill prompts and tools
 - [x] **Phase F**: Integration Testing, Validation, Documentation updates
+
+> **Naming clash note:** the "Phase A / Phase B" labels reused below for the
+> Attendance pilot are scoped to that pilot only — they are not the same as
+> the post-MVP enhancement phases above, which are unrelated and complete.
+
+---
+
+## Active Workstream: Attendance Reconciliation Pilot
+
+The latest active feature, picked up after the production deployment hardening
+sprints. Goal: ingest roster + daily badge data, reconcile against shift +
+absence policy, and publish exception reports to module supervisors and HR.
+
+Tracked separately from the original Phase 0–12 / SA / S* sprints because the
+domain (operations / HR) and the deployment shape (per-customer pilot) don't
+fit the earlier phase-replay model.
+
+### External dependencies (gating both phases)
+
+Both phases depend on infrastructure that is **not yet in place** and is
+external to engineering:
+
+1. **Time-and-Attendance system access** — a way to read badge punches
+   programmatically (API or SFTP drop), so the daily check-in flow doesn't
+   require manual CSV uploads forever.
+2. **HR database access** — read access to the system of record for the
+   employee roster, so it doesn't drift from manual CSVs.
+
+Until those exist, the pilot runs on hand-uploaded CSVs through the admin UI
+or Telegram caption flow.
+
+### Phase A — Foundation (in progress, almost complete)
+
+What works today:
+
+- Admin UI at `/attendance/admin` with four tabs:
+  - **Ingest CSV** — drag-and-drop CSV upload, runtime column mapping (no
+    hardcoded HR schema), per-row accepted/skipped report
+  - **Setup** — CRUD for sites, shifts (with breaks), modules, absence codes;
+    seeds VP default codes (U/V/DI/PP/P/PT/SI) per site
+  - **Operations** — supervisor invitation tokens (one-shot, 24h expiry by
+    default), pre-approved future absence filing, role grant/revoke
+  - **Reports** — every ingestion's full audit log
+- Telegram caption flow: HR peers attach a CSV with caption
+  `Roster Data <moduleId>` or `Check-in Data <moduleId> <YYYY-MM-DD>`; reuses
+  the column mapping saved in the admin UI.
+- `/attendance` Telegram command suite:
+  `whoami`, `claim <token>`, `absence <badge> <code> <date> [end] [notes]`.
+- Role-based access: `admin / hr / supervisor / manager`, with supervisor
+  scoped per module.
+- 13-table schema (sites, shifts, breaks, attendance_modules, absence_codes,
+  user_roles, attendance_data_sources, attendance_column_mappings,
+  attendance_employees, attendance_badge_records, attendance_records,
+  attendance_future_absences, attendance_adjustments,
+  attendance_report_snapshots, attendance_supervisor_invites,
+  attendance_ingestion_reports). Knex dialect-agnostic, FK declared but not
+  cascading — lifecycle still being settled.
+- Feature-awareness self-enforcing registry (rc.92,
+  `src/core/feature-awareness.ts` + `src/<feature>/awareness.ts` +
+  `tests/feature-awareness-registry.test.ts`) so Luna can answer questions
+  about attendance accurately and CI fails if a future feature ships without
+  registering.
+
+Pending in Phase A:
+- T&A system integration (replaces CSV uploads)
+- HR DB integration (replaces manual roster CSVs)
+
+### Phase B — Reconciliation + Delivery (mostly pending)
+
+What landed (rc.94):
+
+- `src/attendance/reconciliation.ts` — pure-function `reconcile()` that takes
+  roster + badge records + filed future absences + absence codes + shift +
+  timezone + policy, and returns one classified `ExceptionRow` per roster
+  entry. Classification surface: `present | late | early_leave | no_show |
+  approved_absence | missing_punch_in | missing_punch_out`. Small policy
+  surface (`lateGraceMinutes`, `earlyLeaveGraceMinutes`).
+- Convenience helpers: `filterExceptions()`, `tally()`, `codeCountsAsPresent()`.
+
+Pending in Phase B:
+- **Wiring**: nothing today calls `reconcile()` from the running system. The
+  engine is unit-tested in isolation but not invoked by any scheduler or
+  handler.
+- **Morning digest** — cron at site-local 8:31am that reconciles the previous
+  shift and publishes the exception list to module supervisors via Telegram.
+- **Snapshot persistence** — write the published report to
+  `attendance_report_snapshots` so the exact content delivered to HR /
+  management is always recoverable.
+- **Supervisor confirmation flow** — supervisor responds to the exception
+  message to resolve each row; writes flow into `attendance_records` /
+  `attendance_adjustments`.
+- **End-of-shift snapshot** and **HR rollup** for billing-hours
+  reconciliation.
+
+Status: **in queue**. Engine will stay unwired until the T&A and HR
+dependencies are unblocked, since wiring against CSV-only inputs would be
+throwaway work.

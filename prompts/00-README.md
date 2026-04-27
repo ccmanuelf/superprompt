@@ -1,5 +1,25 @@
 # Luna — Build Prompt System
 
+## Current Status (2026-04-27)
+
+**This directory is historical scaffolding, not an active build system.** The
+per-phase prompt files (`01-foundation.md` … `12-integration.md`) referenced
+below were the planned modular structure, but they were **never authored as
+standalone files** — the original mega-prompt (`REBUILD_PROMPT.md`) was used
+directly to bootstrap the project, and subsequent work happened as normal
+incremental commits in `src/`, not via prompt-driven phase replays.
+
+The directory is preserved because it documents the original modular plan and
+the dependency graph between subsystems, which is still useful as reference
+when reading `src/` for the first time. **Do not expect to find the phase
+prompts on disk** — the rest of this README describes the plan as it was
+intended, not the workflow as it exists today.
+
+For the current source of truth on what is built and what remains, see
+`/PROJECT_PLAN.md` and `/ROADMAP.md` at the repo root.
+
+---
+
 ## What This Is
 
 This directory contains modular build prompts for constructing **Luna** (Inge Luna in Spanish), a personal AI assistant daemon. Each prompt is a self-contained specification that, when pasted into a Claude Code session in the target project directory, creates all files for that phase.
@@ -82,7 +102,10 @@ Each prompt contains:
 
 ## Important: Prompts Are Historical
 
-All 12 phases have been executed. The prompt files reflect the **original build spec** at design time. Several details changed during deployment testing:
+All 12 phases have been executed. The per-phase prompt files (01-foundation.md
+… 12-integration.md) **were never written as standalone artifacts** — only this
+README ever existed in this directory. The plan below reflects the **original
+build spec** at design time. Several details changed during deployment testing:
 
 - **TTS**: Piper → Kokoro-82M (much more natural voice quality)
 - **STT/TTS model IDs**: Now fully-qualified HuggingFace IDs
