@@ -2,6 +2,10 @@
 
 Internal architecture reference for developers and contributors.
 
+**Version:** v1.0.0-rc.95 — last refreshed 2026-04-27.
+**Test coverage at this revision:** 2,367 tests across 107 files. 181 .ts files in `src/`.
+**Active workstreams:** attendance reconciliation pilot (Phase A almost complete, Phase B engine landed in rc.94 awaiting wiring) and NovaLink bridge integration (PLANNED — see [`NOVALINK_BRIDGE_INTEGRATION.md`](./NOVALINK_BRIDGE_INTEGRATION.md)).
+
 ---
 
 ## Table of Contents
@@ -74,9 +78,11 @@ graph LR
 ### Key Design Principles
 
 - **Graceful degradation**: If a service is down, log and continue — never crash
-- **Local-first**: Voice, memory, and tools run locally. No cloud dependencies except Claude API
+- **Local-first by default (rc.95)**: `AI_PROVIDER=ollama` and `AUTO_ROUTE=true` are the shipped defaults. Routine turns run on the host's Ollama; Claude is the escalation path for long-form / document-generation turns. Claude itself uses a flat-rate Anthropic subscription via the `claude` CLI subprocess — **no per-call cost**, but rate-limit headroom is finite, which is why local-first is the posture even though it isn't a billing concern.
+- **Voice, memory, search, and tools run locally**: Speaches sidecar (STT/TTS), SQLite + sqlite-vec (memory), SearXNG (web search). The only outbound network calls in default operation are to Anthropic (Claude path) and to Brave Search if configured as a web-search fallback.
 - **Docker-sandboxed**: Claude CLI runs with `--dangerously-skip-permissions` safely inside container isolation
-- **Secrets via environment**: All credentials in `.env`, never hardcoded
+- **Secrets via environment**: All credentials in `.env` (gitignored), never hardcoded. Rotation procedures in [`security.md`](./security.md).
+- **Usage observability (rc.95)**: `/usage` slash command exposes per-provider call counts for the current month. `api_usage` table populated fire-and-forget at the user-turn level. Honest framing — counts only, no synthetic "savings" math, since the subscription is flat-rate.
 
 ---
 
@@ -84,13 +90,17 @@ graph LR
 
 ### Container Architecture
 
-| Container | Image | Purpose | Network Access |
-|-----------|-------|---------|---------------|
-| `luna-bot` | `node:22-slim` (custom) | Main application | Internal + port 3030 (localhost) |
-| `luna-speaches` | `ghcr.io/speaches-ai/speaches:latest-cpu` | Voice STT/TTS | Internal only |
-| `luna-searxng` | `searxng/searxng:latest` | Web search (Ollama) | Internal only |
-| `luna-caddy` | `caddy:2-alpine` | Reverse proxy + HTTPS (production profile) | Ports 80, 443 |
-| `luna-synapse` | `matrixdotorg/synapse:latest` | Matrix homeserver (optional) | Internal + port 8008 (localhost) |
+| Container | Image | Purpose | Network Access | Status |
+|-----------|-------|---------|---------------|--------|
+| `luna-bot` | `node:22-slim` (custom) | Main application | Internal + port 3030 (localhost) | shipped |
+| `luna-speaches` | `ghcr.io/speaches-ai/speaches:latest-cpu` | Voice STT/TTS | Internal only | shipped |
+| `luna-searxng` | `searxng/searxng:latest` | Web search (Ollama) | Internal only | shipped |
+| `luna-caddy` | `caddy:2-alpine` | Reverse proxy + HTTPS (production profile) | Ports 80, 443 | shipped |
+| `luna-synapse` | `matrixdotorg/synapse:latest` | Matrix homeserver (optional) | Internal + port 8008 (localhost) | shipped |
+| `novalink-bridge` | `ccmanuelf/novalink-bridge` (TBD) | Data access for NovaLink BOM/parts/inventory; SQL-over-HTTP + typed REST | Internal only (no host port publish) | **PLANNED** — runs as Replit prototype today |
+| `novalink-postgres` | `postgres:16-alpine` | Bridge metadata DB (replaces Neon serverless) | Internal only | **PLANNED** |
+
+**Note on PLANNED containers:** the NovaLink bridge and its metadata DB are not yet part of `docker-compose.yml`. They are documented here because they are the immediate next deployment increment — see [`NOVALINK_BRIDGE_INTEGRATION.md`](./NOVALINK_BRIDGE_INTEGRATION.md) for the full target architecture, migration plan, and Luna-side adapter spec. Other deployments (non-NovaLink) will not include these services.
 
 ### Build Stages (luna.dockerfile)
 
@@ -118,8 +128,47 @@ graph LR
 
 All containers share `luna-net` (bridge network). The bot reaches:
 - Speaches at `http://speaches:8000`
+- SearXNG at `http://searxng:8080`
 - Synapse at `http://synapse:8008`
-- Ollama at `http://host.docker.internal:11434` (host machine)
+- Ollama at `http://host.docker.internal:11434` (host machine, NOT in Docker)
+- NovaLink bridge at `http://novalink-bridge:5000` *(PLANNED — once the bridge sidecar lands)*
+
+### Port map
+
+| Port | Where exposed | Service | Purpose |
+|------|---------------|---------|---------|
+| 3030 | `127.0.0.1:3030` (host) | `luna-bot` | Web UI (voice chat, kanban, learning, manufacturing dashboards, attendance admin) |
+| 80, 443 | host (production profile) | `luna-caddy` | Reverse proxy with automatic Let's Encrypt TLS |
+| 8000 | internal only | `luna-speaches` | OpenAI-compatible STT + TTS |
+| 8008 | `127.0.0.1:8008` (host) | `luna-synapse` | Matrix homeserver (optional) |
+| 8080 | internal only | `luna-searxng` | Self-hosted metasearch |
+| 11434 | host (NOT containerized) | Ollama | Reached via `host.docker.internal:11434` |
+| 5000 | internal only (PLANNED) | `novalink-bridge` | Data access for NovaLink |
+| 5432 | internal only (PLANNED) | `novalink-postgres` | Bridge metadata DB |
+
+### Environment variables (rc.95 reference)
+
+The complete authoritative inventory lives in [`.env.example`](../.env.example). Most-touched at deploy time:
+
+| Variable | Required? | Default | Purpose |
+|----------|-----------|---------|---------|
+| `AI_PROVIDER` | yes | `ollama` (rc.95) | Default provider when auto-routing is off or sticky |
+| `AUTO_ROUTE` | yes | `true` (rc.95) | Engages `classifyMessage()` to pick provider per turn |
+| `TELEGRAM_BOT_TOKEN` | yes | — | From [@BotFather](https://t.me/BotFather) |
+| `ALLOWED_CHAT_ID` | recommended | empty | Comma-separated chat IDs allowed to message the bot. Empty = open. **Note:** `/attendance` commands bypass this gate (per-subcommand role checks are authoritative since rc.92) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | optional | — | Generated via `claude setup-token`. If empty, the Claude path is unavailable; Ollama still works |
+| `OLLAMA_HOST` | yes | `http://localhost:11434` | Inside Docker, set to `http://host.docker.internal:11434` |
+| `OLLAMA_CHAT_MODEL` | yes | `qwen3.5:latest` | Used for chat-only turns |
+| `OLLAMA_TOOL_MODEL` | yes | `qwen3.5:latest` | Used for tool-calling turns |
+| `OLLAMA_EMBED_MODEL` | yes | `nomic-embed-text` | Used for memory vector search |
+| `SPEACHES_URL` | yes | `http://localhost:8000/v1` | Inside Docker, `http://speaches:8000/v1` |
+| `VOICE_WEB_PORT` | optional | 0 | Set to 3030 to enable the web UI |
+| `BRAVE_API_KEY` | optional | — | Web search fallback for Ollama if SearXNG isn't enough |
+| `GH_TOKEN` | optional | — | GitHub-integration tools |
+| `LOG_LEVEL` | optional | `info` | pino log level |
+| `NOVALINK_BRIDGE_URL` | **PLANNED** | `http://novalink-bridge:5000` | Set when the `packs/novalink/` pack lands |
+| `NOVALINK_BRIDGE_API_KEY` | **PLANNED** | — | Generated by bridge admin |
+| `NOVALINK_SQL_ALLOWED_ROLES` | **PLANNED** | `admin` | Comma-separated roles allowed to call `/novalink-sql` |
 
 ### Volumes
 
@@ -1204,3 +1253,42 @@ Recommended deployment for InfoSec sign-off:
 - Configuration (.env): version controlled separately, NOT in git
 - Packs: version controlled in git repository
 - Recovery: restore DB + restart container (<30 minutes)
+
+---
+
+## Attendance Reconciliation Pilot (rc.88–rc.94)
+
+The active first-class workstream as of rc.95. Lives entirely under `src/attendance/` (12 modules, 13 DB tables, 10 test files).
+
+**What ships today:**
+
+- Admin UI at `/attendance/admin` — four tabs: Ingest CSV (drag-and-drop with runtime column mapping), Setup (sites/shifts/breaks/modules/absence codes), Operations (supervisor invitations + future-absence filing), Reports (audit log per ingestion).
+- Telegram CSV upload flow — HR users attach a CSV with caption `Roster Data <moduleId>` or `Check-in Data <moduleId> <YYYY-MM-DD>` to ingest.
+- `/attendance` command suite — `whoami`, `claim <token>`, `absence <badge> <code> <date> [end] [notes]`. Bypasses `ALLOWED_CHAT_ID` because per-subcommand role checks are authoritative (rc.92).
+- Role-based access: `admin / hr / supervisor / manager`, with supervisor scoped per module.
+- `reconcile()` pure function (rc.94, `src/attendance/reconciliation.ts`) — takes roster + badge records + filed absences + policy, returns one classified `ExceptionRow` per roster entry. Classification surface: `present | late | early_leave | no_show | approved_absence | missing_punch_in | missing_punch_out`.
+- Feature-awareness self-enforcing registry (rc.92, `src/core/feature-awareness.ts`) — every shipping feature must register a descriptor or CI fails. The attendance feature uses this to splice its content into capabilities prompt, `/help`, web-UI guides automatically.
+
+**What's still in flight:**
+
+- `reconcile()` is unwired. No scheduler calls it; no morning digest publishes results. The engine is unit-tested in isolation but no production code path invokes it yet.
+- T&A system integration and HR DB integration are external dependencies — both required before the pilot can run on real data instead of hand-uploaded CSVs.
+
+See [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) "Active Workstream: Attendance Reconciliation Pilot" for the full Phase A / Phase B status, dependencies, and pending wiring tasks.
+
+---
+
+## NovaLink Bridge Integration (PLANNED)
+
+The NovaLink bridge is a **separate product** that sits in front of the customer's MariaDB systems (BOM data in `IM_DB`, AppSynergy operational data in `AS_DB`) and exposes them over HTTP with API-key auth, rate limiting, SQL safety scanning, and multi-tier caching. It runs today as a Replit-hosted prototype; the integration plan is to deploy it as a sidecar container in the same `docker-compose.yml` as Luna once the deployment VM is provisioned.
+
+**Status:** PLANNED — no `src/` code yet, no docker-compose entry yet. Documented here so the architecture intent is captured before implementation.
+
+**Integration shape (chosen design):**
+
+- **Hybrid: typed REST primary + SQL-over-HTTP escape hatch.** Five typed Luna tools (`get_bom`, `get_bom_revisions`, `get_part_info`, `search_parts`, `get_inventory_status`) call typed bridge endpoints. SQL-over-HTTP retained behind an admin-only `/novalink-sql` slash command for ad-hoc analyst queries.
+- **Pack-scoped Luna adapter.** Lives under `packs/novalink/` (deployment-scoped, NovaLink only). Other deployments don't include it.
+- **Same-VM deployment.** Bridge container reachable from Luna at `http://novalink-bridge:5000` (internal docker network, no host-port publish). Bridge metadata DB is a local Postgres container, not Neon serverless.
+- **Read-only by default.** Bridge SQL scanner blocks DROP/DELETE/ALTER/INSERT/UPDATE. BOM write methods exist on the bridge's `BomService` but Luna does not invoke them — that's a future increment with a separate human-in-the-loop approval flow.
+
+**Why this is captured here and not in `src/`:** the bridge's typed services already exist (`BomService`, 1,506 LOC, 11 typed methods). The integration work is largely route wiring on the bridge side and a small adapter pack on Luna's side, not a from-scratch build. The full integration spec — current state, target architecture, migration plan, sprint outline, open discovery items — is in [`NOVALINK_BRIDGE_INTEGRATION.md`](./NOVALINK_BRIDGE_INTEGRATION.md).

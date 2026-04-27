@@ -1,6 +1,12 @@
 # Luna — Security Model
 
-Comprehensive security documentation for luna, validated against the 10 known OpenClaw deployment vulnerabilities.
+Comprehensive security documentation for Luna, validated against the 10 known OpenClaw deployment vulnerabilities.
+
+**Version:** v1.0.0-rc.95 — last refreshed 2026-04-27.
+
+## Executive summary (one paragraph for IT/management)
+
+Luna is a Docker-deployed AI assistant that runs the local-first LLM (Ollama) by default and only escalates to Anthropic Claude (a **flat-rate subscription, not pay-per-call**) for complex reasoning or document generation. Default routing keeps subscription rate-limit headroom free for the turns that genuinely need it. All persistent state (conversation history, memory, scheduled tasks, attendance data) lives inside the deployment in SQLite/MariaDB/PostgreSQL — nothing is stored externally. The AI's tool-execution surface is layered four deep: SA1 Worker-thread V8 isolation, SA3 process separation (DB-touching code is in a separate process from network/parser code), SA4 policy engine with per-tool risk classification (43 builtin tools tagged), and per-user trust memory. The only outbound traffic in default operation is to Anthropic (Claude CLI subprocess) and optionally to Brave Search. The NovaLink bridge integration (PLANNED) places an internal-only sidecar container in the same Docker network — no NovaLink data crosses any external boundary in the target deployment. Secrets live in `.env` (gitignored, never committed; verified by a `pre-commit` scanner against 10 secret patterns plus an explicit `.env*` block). Rotation procedures are in §8.
 
 ---
 
@@ -12,7 +18,9 @@ Comprehensive security documentation for luna, validated against the 10 known Op
 4. [Configuration Security Checklist](#configuration-security-checklist)
 5. [Dependency Management](#dependency-management)
 6. [Auto-Skills Security](#auto-skills-security)
-7. [Known Limitations and Accepted Risks](#known-limitations-and-accepted-risks)
+7. [Data Boundaries](#data-boundaries)
+8. [Secret Rotation Procedures](#secret-rotation-procedures)
+9. [Known Limitations and Accepted Risks](#known-limitations-and-accepted-risks)
 
 ---
 
@@ -430,9 +438,98 @@ Auto-skills (SA2) allow the AI to detect repetitive tool patterns and propose re
 
 ---
 
-## Known Limitations and Accepted Risks
+## Data Boundaries
 
-### 1. Claude CLI Has Full Container Access
+This section answers the IT-audit question: "what data crosses what boundary?" Read together with the architecture diagram in [`architecture.md`](./architecture.md).
+
+### What stays inside the deployment
+
+- **Conversation history** — `sessions` and `chat_log` tables (SQLite by default; MariaDB or PostgreSQL via `DB_DRIVER`). Per-chat scoped.
+- **Memory** — `memories` and `memories_fts` (FTS5) and `memories_vec` (sqlite-vec embeddings). Salience-decayed; entries below threshold auto-deleted.
+- **Episodic memory** — `episodes`, `episodes_fts`, `episodes_vec`. Compressed summaries of older conversation slices.
+- **Scheduled tasks** — `scheduled_tasks` table.
+- **Kanban boards** — `kanban_cards` table.
+- **Learning state** — `learning_plans`, `learning_topics`, `learning_sessions`, `topic_history`.
+- **Manufacturing data** — all 10 ClawMFG tables. Per-chat-id scoped (rc.45).
+- **Attendance data (rc.88+)** — 13 tables under the `attendance_*` and related prefix. Per-site scoped.
+- **Voice audio** — uploaded voice notes are written to `workspace/uploads/`, transcribed by Speaches sidecar (in-Docker), then auto-cleaned after 24h.
+- **API key hashes for the NovaLink bridge (PLANNED)** — bridge metadata in a local PostgreSQL container. Not on Luna's side.
+
+### What crosses an external boundary
+
+- **Telegram messages** → Telegram BotAPI (HTTPS). Required for the Telegram platform; this is how messaging works. Telegram retains its own audit log per its policies.
+- **Claude requests** (only when the Claude path is used for a turn) → Anthropic API endpoints via the `claude` CLI subprocess. The CLI authenticates with `CLAUDE_CODE_OAUTH_TOKEN`. Anthropic's data-handling policies apply. **Subscription is flat-rate; no per-call cost** — but turn content is processed externally.
+- **Voice synthesis & transcription** → fully local (Speaches container). Nothing crosses a boundary unless `BRAVE_API_KEY` web-search is used.
+- **Web search (Ollama path)** → SearXNG (in-Docker, no auth required) by default. If `BRAVE_API_KEY` is set, falls back to Brave Search API for results SearXNG can't satisfy. Brave's policies apply when used.
+- **GitHub tools (if configured)** → `gh` CLI calls to `api.github.com` using `GH_TOKEN`. Only when a GitHub-related tool is invoked.
+- **Render tools (Claude MCP, if configured)** → Render API. Same pattern — only when invoked.
+- **NovaLink bridge (PLANNED in target architecture)** → **stays inside the same VM**. Bridge container reachable only from inside the docker network. Bridge outbound-connects to NovaLink-internal MariaDB instances (`IM_DB`, `AS_DB`) over the VM's internal network. **No NovaLink data leaves NovaLink infrastructure** in the target deployment. (The current Replit-hosted prototype does cross to Replit; this is one of the reasons for the migration. See [`NOVALINK_BRIDGE_INTEGRATION.md`](./NOVALINK_BRIDGE_INTEGRATION.md).)
+
+### Provider call observability (rc.95)
+
+The `/usage` slash command surfaces per-provider call counts for the current month. The `api_usage` table is populated fire-and-forget at the user-turn level. This is observability for "how often is Claude being invoked" — useful for IT audits and for verifying the local-first posture is actually engaged. There is no synthetic "savings" math because the Claude subscription is flat-rate.
+
+---
+
+## Secret Rotation Procedures
+
+Critical operational guidance for the maintainer and for an inheriting engineer. **Rule of thumb: rotate any secret that has appeared in a conversation transcript with an AI agent**, even if it never reached git, because transcripts may be archived for review and the secret should be considered compromised.
+
+### General principles
+
+- **Edit `.env` in place via `sed`, never via Read.** Reading `.env` puts secrets into AI tool-output context. Use `sed -i '' 's/^FOO=.*/FOO=new-value/' .env` (macOS) or `sed -i 's/^FOO=.*/FOO=new-value/' .env` (Linux). This is documented in `docs/ONBOARDING.md` §11.
+- **Container restart is required** for `.env` changes to take effect: `docker compose up -d --force-recreate luna`. The bot reads `.env` at startup, not on every message.
+- **Rotation does not require downtime beyond the ~10s container recreate window.** Telegram messages buffer and deliver after polling resumes.
+
+### Per-secret procedures
+
+| Secret | Source of truth | Rotation steps |
+|--------|-----------------|----------------|
+| `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/BotFather) | `/revoke` in BotFather → `/token` → copy new token → `sed -i '' 's/^TELEGRAM_BOT_TOKEN=.*/TELEGRAM_BOT_TOKEN=NEW_TOKEN/' .env` → `docker compose up -d --force-recreate luna` → verify in Telegram by sending `/start`. The old token is invalidated immediately; in-flight messages on the old token are lost. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `claude setup-token` on a machine with the Claude subscription logged in | Run `claude setup-token` from a host where you can complete the browser auth flow → copy the resulting token → `sed -i ''` it into `.env` → recreate container → in any chat, `/claude` and ask a small question to verify. The old token can stay valid (overlap acceptable) but consider revoking via the Anthropic Console if the rotation was triggered by a leak. |
+| `GH_TOKEN` | GitHub Settings → Developer settings → Personal access tokens | Create a new fine-grained PAT with the same scopes → `sed -i ''` → recreate container → in a chat, exercise a GitHub tool (e.g. "list my repos") to verify. Revoke the old PAT in GitHub Settings. |
+| `BRAVE_API_KEY` | Brave Search [API console](https://api.search.brave.com/) | Generate new key → `sed -i ''` → recreate → exercise a search-needing query if you suspect Ollama-path SearXNG isn't covering it. |
+| `VOICE_WEB_TOKEN` | Local — server generates a per-user token via `/webtoken create` | Per-user tokens supersede this shared fallback. To rotate the shared one: pick a fresh random hex string → `sed -i ''` → recreate. Existing per-user tokens issued via `/webtoken` are unaffected. |
+| `ALLOWED_CHAT_ID` | Configuration | Not a secret per se; controls who can message the bot. Edit the comma-separated list in `.env`, recreate container. **Note:** rc.92+ `/attendance` commands bypass this gate (per-subcommand role checks are authoritative); all other commands respect it. |
+| `NOVALINK_BRIDGE_API_KEY` (PLANNED) | NovaLink bridge admin UI | Generate new key on the bridge → `sed -i ''` Luna's `.env` → recreate Luna container → revoke old key on the bridge. |
+
+### Pre-commit scanner
+
+`.githooks/pre-commit` runs on every commit and refuses to push staged content matching any of these patterns:
+
+- `sk-ant-` Anthropic keys
+- `ghp_`, `gho_`, `github_pat_` GitHub tokens
+- `xoxb-` Slack bot tokens
+- `AKIA` AWS keys
+- Telegram bot-token shape (`[0-9]{8,10}:[a-zA-Z0-9_-]{35}`)
+- BEGIN PRIVATE KEY blocks (RSA / EC / DSA / OPENSSH / PGP)
+- High-entropy strings assigned to variables named `password`, `secret`, `token`, `api_key`, etc.
+- Any file named `.env`, `.env.local`, `.env.production`, `.env.development` directly
+
+Bypass with `--no-verify` is **not** allowed for genuine secret matches. Per the project's CLAUDE.md guidance: investigate the underlying flag, don't suppress it.
+
+### Audit posture for an IT review
+
+To convince an auditor that the deployment is clean:
+
+```bash
+# 1. .env is gitignored
+grep -n "^\.env" .gitignore
+
+# 2. .env has never been committed
+git log --all --full-history -- .env  # should be empty
+
+# 3. No secrets in tracked files
+bash scripts/rebrand-audit.sh         # repurposes the same scanner pattern; or use the pre-commit hook directly
+git ls-files | grep -iE '\.env$|\.env\.local|credential|\.pem$|\.key$'
+
+# 4. /usage shows the current Claude vs Ollama call distribution
+#    (in any chat: /usage)
+```
+
+---
+
+
 
 **Risk**: Claude CLI with `--dangerously-skip-permissions` can read/write any file and execute any command inside the Docker container.
 
@@ -471,3 +568,11 @@ Auto-skills (SA2) allow the AI to detect repetitive tool patterns and propose re
 **Why accepted**: These are well-maintained npm packages used by millions. The risk is no different from any web application that processes file uploads.
 
 **Mitigation**: File size limits (50MB), output truncation (50K chars), Docker isolation. Monitor `npm audit` for CVEs.
+
+### 6. NovaLink SQL Escape Hatch (PLANNED)
+
+**Risk**: The `/novalink-sql` slash command in the future NovaLink pack lets an admin run arbitrary SQL against `IM_DB` or `AS_DB`. Even with the bridge's read-only scanner, this is a free-form SQL surface.
+
+**Why accepted**: Necessary for analyst-style ad-hoc queries that can't be expressed via the typed endpoints. Without it, the model would have to compose SQL itself, which is the higher-risk pattern we're explicitly avoiding.
+
+**Mitigation (when shipped)**: (a) gated to `NOVALINK_SQL_ALLOWED_ROLES` (default `admin`), enforced at the slash-command boundary; (b) bridge SQL safety scanner blocks DROP/DELETE/ALTER/INSERT/UPDATE/etc. before execution; (c) policy-engine classification = `high`, requires confirmation; (d) full request/response logged via the bridge's `api_logs` table; (e) `/novalink-sql` is **never** in the LLM's auto-invoke tool list — only the human user can issue it.
