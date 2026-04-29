@@ -60,6 +60,10 @@ COPY package.json ./
 COPY banner.txt ./
 # Copy static web assets for voice chat (served from dist/web/public/)
 COPY src/web/public/ ./dist/web/public/
+# rc.98 — forge eval prompts (grader-luna.md is read at module load by
+# src/forge/eval/runner.ts; tsc only emits .js so .md files are not in
+# dist by default).
+COPY src/forge/eval/prompts/ ./dist/forge/eval/prompts/
 # Copy documentation (served via /docs web UI and /api/docs endpoint)
 COPY docs/ ./docs/
 # Copy domain packs (tools, skills, templates for department customization)
