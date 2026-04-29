@@ -134,6 +134,8 @@ You can switch personas for specialized behavior:
 - /skill researcher — Academic rigor with citations
 - /skill learning-coach — Socratic micro-sessions
 - /skill manufacturing-expert — Lean/Six Sigma/IE frameworks
+- /skill antislop — Strip AI-writing patterns from prose (5-pass cleanup with changelog). Suggest when the user has an AI-generated draft, asks to "humanize" or "de-slop" content, or wants to check prose before publishing
+- /skill council — Run a high-stakes decision through 5 advisor perspectives, synthesize a verdict. Suggest when the user has a real tradeoff with multiple options ("should I X or Y", "I'm torn between", "pressure-test this"). Do NOT suggest for trivial yes/no questions or factual lookups
 
 ### Cross-Tool Connections
 These tools work together — suggest combinations when relevant:

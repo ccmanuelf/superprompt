@@ -56,7 +56,7 @@ make the loop dependent on the user; concrete criteria let the agent self-verify
 **Verify with the existing workflow.** This repo has real commands — use them
 before claiming done:
 - `npx tsc --noEmit` — type check
-- `npx vitest run` — full test suite (currently 2367 tests / 107 files)
+- `npx vitest run` — full test suite (currently 2412 tests / 108 files)
 - `npm run smoke` — dist-level ESM smoke (catches `require()`-in-ESM and similar
   runtime mismatches that vitest/tsx hide)
 - `docker compose build luna && docker compose up -d luna` — container rebuild
