@@ -5,9 +5,11 @@
 | Phase | Status | rc | Brief |
 |-------|--------|----|----|
 | 1 — Eval runner + grader + viewer | ✅ shipped | rc.98 | `src/forge/eval/` runner+grader+db+schemas+prompts; `/skill eval` Telegram cmd; `/forge/evals` web viewer; 3 DB tables; 25 new tests |
-| 2 — Benchmark aggregation | ⏳ pending | rc.99+ | Mean ± stddev across N runs, sample-size-aware variance, viewer aggregate-stats panel |
-| 3 — Description optimizer + blind comparator | ⏳ pending | rc.100+ | Auto-mutate trigger descriptions; blind A/B comparator with anonymized outputs |
-| 4 — Docs polish | ⏳ pending | rc.101+ | customization-guide + pack-development-guide refreshes; optional SKILL_AUTHORING_PLAYBOOK.md |
+| 2 — Benchmark aggregation | ⏳ pending | **rc.100+** | Mean ± stddev across N runs, sample-size-aware variance, viewer aggregate-stats panel |
+| 3 — Description optimizer + blind comparator | ⏳ pending | **rc.101+** | Auto-mutate trigger descriptions; blind A/B comparator with anonymized outputs |
+| 4 — Docs polish | ⏳ pending | **rc.102+** | customization-guide + pack-development-guide refreshes; optional SKILL_AUTHORING_PLAYBOOK.md |
+
+**rc.99 update (2026-04-29):** rc.99 was used for the standalone `interviewer` built-in skill (clean-room adaptation of Lehmann's `the-interviewer` pattern, scoped to maquiladora + shelter operations). Skill-creator-v2 Phases 2-4 shift one slot down. The integration doc's rc labels above reflect this shift; further shifts may occur if NovaLink bridge / attendance Phase B / other priority work lands before Phase 2 starts.
 
 **Trigger condition for Phase 2:** wait until antislop + council (shipped rc.97 on 2026-04-28) have ≥2 weeks of real production usage. Earliest viable Phase 2 start: **2026-05-13**. A reminder agent fires 2026-05-09 to surface the readiness check (`trig_01QTwcxnJgkxjUqdajsgaLrG`).
 

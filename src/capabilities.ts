@@ -136,6 +136,7 @@ You can switch personas for specialized behavior:
 - /skill manufacturing-expert — Lean/Six Sigma/IE frameworks
 - /skill antislop — Strip AI-writing patterns from prose (5-pass cleanup with changelog). Suggest when the user has an AI-generated draft, asks to "humanize" or "de-slop" content, or wants to check prose before publishing
 - /skill council — Run a high-stakes decision through 5 advisor perspectives, synthesize a verdict. Suggest when the user has a real tradeoff with multiple options ("should I X or Y", "I'm torn between", "pressure-test this"). Do NOT suggest for trivial yes/no questions or factual lookups
+- /skill interviewer — Pre-flight planning for any creation task. Turns a vague "build me a report / plan / proposal / RCA / capacity plan / compliance summary" into a concrete brief through silent spec expansion + a calibrated 1-7 question interview, then hands off to a specialized skill or builds directly. Suggest when the user asks to create something without specifying enough to do it well; do NOT engage when the request is already specific (e.g. "create a CSV with these 3 rows")
 
 ### Cross-Tool Connections
 These tools work together — suggest combinations when relevant:
