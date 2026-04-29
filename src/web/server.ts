@@ -363,6 +363,14 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
 
       if (urlPath.startsWith('/api/attendance')) {
         handleAttendanceApi(req, res, urlPath, apiChatId).catch(apiError('Attendance'));
+      } else if (urlPath.startsWith('/api/forge/evals')) {
+        // rc.98 — Phase 1 of skill-creator-v2 integration (Apache-2.0).
+        // Eval viewer backend; per-chat scoping enforced inside the handler.
+        import('./forge-evals-api.js')
+          .then(({ handleForgeEvalsApi }) =>
+            handleForgeEvalsApi(req, res, urlPath, apiChatId).catch(apiError('ForgeEvals')),
+          )
+          .catch(apiError('ForgeEvals'));
       } else if (urlPath.startsWith('/api/capacity')) {
         handleCapacityApi(req, res, urlPath, apiChatId).catch(apiError('Capacity'));
       } else if (urlPath.startsWith('/api/sequence')) {
@@ -417,6 +425,9 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       filePath = resolve(PUBLIC_DIR, 'learn.html');
     } else if (urlPath === '/attendance' || urlPath === '/attendance/' || urlPath === '/attendance/admin' || urlPath === '/attendance/admin/') {
       filePath = resolve(PUBLIC_DIR, 'attendance', 'admin.html');
+    } else if (urlPath === '/forge/evals' || urlPath === '/forge/evals/') {
+      // rc.98 — Phase 1 of skill-creator-v2 integration. Eval viewer.
+      filePath = resolve(PUBLIC_DIR, 'forge', 'evals.html');
     } else if (urlPath === '/favicon.ico') {
       // No favicon; answer 204 so the browser stops logging a 404 every load.
       res.writeHead(204, SECURITY_HEADERS);

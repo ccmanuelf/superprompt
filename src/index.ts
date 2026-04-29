@@ -158,6 +158,12 @@ async function main(): Promise<void> {
   const { apiUsageTableInit } = await import('./usage.js');
   storage.registerTables(apiUsageTableInit);
 
+  // rc.98 — forge eval pipeline (Phase 1). Tables: forge_evals,
+  // forge_eval_runs, forge_eval_assertions. See
+  // docs/SKILL_CREATOR_V2_INTEGRATION.md for the 4-phase plan.
+  const { evalTableInit } = await import('./forge/eval/index.js');
+  storage.registerTables(evalTableInit);
+
   // Wire pack tuner into pack intent scoring
   const { setPackTunerModule } = await import('./packs.js');
   setPackTunerModule({ applyTunedWeight: packTunerMod.applyTunedWeight });

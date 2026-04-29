@@ -2225,6 +2225,80 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         return;
       }
 
+      // rc.98 — Phase 1 of skill-creator-v2 integration. See
+      // docs/SKILL_CREATOR_V2_INTEGRATION.md for the 4-phase plan.
+      // Syntax: /skill eval <skill-name>
+      //         <user prompt 1>
+      //         <user prompt 2>
+      //         ---
+      //         <expectation 1>
+      //         <expectation 2>
+      // Prompts and expectations are split by lines; "---" on its own line
+      // separates them. Phase 1 supports inline only; file uploads come later.
+      case 'eval': {
+        const skillName = parts[1];
+        if (!skillName) {
+          await ctx.reply(
+            'Usage:\n<code>/skill eval &lt;skill-name&gt;\n&lt;prompt 1&gt;\n&lt;prompt 2&gt;\n---\n&lt;expectation 1&gt;\n&lt;expectation 2&gt;</code>\n\n'
+            + 'Each prompt and each expectation goes on its own line. The "---" line separates the two lists.',
+            { parse_mode: 'HTML' },
+          );
+          return;
+        }
+        const fullText = ctx.message?.text ?? '';
+        // strip the "/skill eval <name>" header — anything after the first newline is the body
+        const newlineIdx = fullText.indexOf('\n');
+        if (newlineIdx === -1) {
+          await ctx.reply(
+            'No prompts or expectations provided. Add them on subsequent lines, separated by "---".',
+            { parse_mode: 'HTML' },
+          );
+          return;
+        }
+        const body = fullText.slice(newlineIdx + 1).trim();
+        const sepIdx = body.split('\n').findIndex((l) => l.trim() === '---');
+        if (sepIdx === -1) {
+          await ctx.reply(
+            'Missing "---" separator between prompts and expectations.',
+            { parse_mode: 'HTML' },
+          );
+          return;
+        }
+        const lines = body.split('\n');
+        const prompts = lines.slice(0, sepIdx).map((l) => l.trim()).filter((l) => l.length > 0);
+        const expectations = lines.slice(sepIdx + 1).map((l) => l.trim()).filter((l) => l.length > 0);
+        if (prompts.length === 0) {
+          await ctx.reply('No prompts found before "---".');
+          return;
+        }
+        if (expectations.length === 0) {
+          await ctx.reply('No expectations found after "---".');
+          return;
+        }
+
+        const { startEvalSession } = await import('../forge/eval/index.js');
+        const result = await startEvalSession({
+          chat_id: String(ctx.chat.id),
+          skill_name: skillName.toLowerCase(),
+          prompts,
+          expectations,
+        });
+
+        if (!result.ok) {
+          await ctx.reply(`Eval rejected: ${escapeHtml(result.reason)}`, { parse_mode: 'HTML' });
+          return;
+        }
+
+        await ctx.reply(
+          `🧪 Eval session <b>#${result.session_id}</b> queued for <code>${escapeHtml(skillName)}</code>.\n\n`
+          + `Prompts: ${prompts.length}  •  Expectations: ${expectations.length}  •  Total Claude calls: ${result.total_calls_planned}\n\n`
+          + `Status updates land in <code>/forge/evals/${result.session_id}</code> on the web UI. `
+          + `Check back in a minute or two — runs execute under a concurrency cap so longer eval sessions take time.`,
+          { parse_mode: 'HTML' },
+        );
+        return;
+      }
+
       default:
         await ctx.reply(
           '<b>Skill commands:</b>\n\n' +
@@ -2239,7 +2313,8 @@ export function createTelegramBot(pc: PlatformContext): Bot {
             '/skill lock &lt;name&gt; — Lock skill (prevent edits)\n' +
             '/skill unlock &lt;name&gt; — Unlock skill\n' +
             '/skill fix &lt;name&gt; &lt;feedback&gt; — AI-rewrite skill prompt\n' +
-            '/skill delete &lt;name&gt; — Delete custom skill',
+            '/skill delete &lt;name&gt; — Delete custom skill\n' +
+            '/skill eval &lt;name&gt; — Run with-skill vs without-skill A/B (rc.98 Phase 1)',
           { parse_mode: 'HTML' },
         );
     }
