@@ -58,7 +58,27 @@ export function calculateRoiMetrics(
   assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<ROIResult> {
-  const value = calculateROI(inputs);
+  // Active hooks: when caller omits discount_rate / analysis_months and the
+  // assumption bag carries resolved roi_default_* values, use them. Caller-
+  // provided values still win. Standard mode passes empty assumptions so
+  // calculateROI falls back to its own DEFAULT_DISCOUNT_RATE / DEFAULT_ANALYSIS_MONTHS.
+  const assumedDiscountRate = assumptions['roi_default_discount_rate']?.value;
+  const assumedHorizon = assumptions['roi_default_horizon_months']?.value;
+  const effectiveInputs: ROIInput = {
+    ...inputs,
+    discount_rate:
+      inputs.discount_rate ??
+      (typeof assumedDiscountRate === 'number' && Number.isFinite(assumedDiscountRate)
+        ? assumedDiscountRate
+        : undefined),
+    analysis_months:
+      inputs.analysis_months ??
+      (typeof assumedHorizon === 'number' && Number.isFinite(assumedHorizon)
+        ? assumedHorizon
+        : undefined),
+  };
+
+  const value = calculateROI(effectiveInputs);
 
   return {
     value,
@@ -69,8 +89,8 @@ export function calculateRoiMetrics(
       capacityGainHours: inputs.capacity_gain_hours,
       monthlyOperatingCost: inputs.monthly_operating_cost ?? null,
       revenuePerUnit: inputs.revenue_per_unit ?? null,
-      analysisMonths: inputs.analysis_months ?? null,
-      discountRate: inputs.discount_rate ?? null,
+      analysisMonths: effectiveInputs.analysis_months ?? null,
+      discountRate: effectiveInputs.discount_rate ?? null,
     },
     assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),

@@ -124,6 +124,14 @@ export const ASSUMPTION_DEFAULTS: Record<string, { value: unknown; rationale: st
     value: 1000,
     rationale: 'Default Monte Carlo replication count balances statistical convergence with response time. Increase for tighter confidence intervals.',
   },
+  roi_default_discount_rate: {
+    value: 0.10,
+    rationale: 'Annual discount rate for NPV computation when ROI input omits discount_rate. 10% is the typical industry hurdle rate; override per pack to match your CFO\'s WACC.',
+  },
+  roi_default_horizon_months: {
+    value: 24,
+    rationale: 'NPV / payback analysis horizon in months when ROI input omits analysis_months. 24 months balances short-payback bias against optimistic long-tail revenue.',
+  },
 };
 
 /**
@@ -140,6 +148,8 @@ export const METRIC_DEPENDENCIES: MetricAssumptionDependency[] = [
   { metric_name: 'sigma_yield', assumption_name: 'yield_baseline_source', usage_notes: 'Which yield definition feeds RTY' },
   { metric_name: 'simulation', assumption_name: 'monte_carlo_default_iterations', usage_notes: 'Default replication count when caller omits' },
   { metric_name: 'inventory', assumption_name: 'scrap_classification_rule', usage_notes: 'How rejected stock affects safety stock' },
+  { metric_name: 'capacity_roi', assumption_name: 'roi_default_discount_rate', usage_notes: 'NPV discount rate when input.discount_rate is undefined' },
+  { metric_name: 'capacity_roi', assumption_name: 'roi_default_horizon_months', usage_notes: 'Analysis horizon when input.analysis_months is undefined' },
 ];
 
 // ── Schema ───────────────────────────────────────────────────

@@ -27,9 +27,9 @@ import {
   buildAssumptionSnapshot,
 } from '../src/assumptions.js';
 import { calculateBalanceMetrics } from '../src/calculations/balance.js';
-import { calculateCapacityMetrics } from '../src/calculations/capacity.js';
+import { calculateCapacityMetrics, calculateRoiMetrics } from '../src/calculations/capacity.js';
 import { calculateMonteCarloMetrics } from '../src/calculations/simulation.js';
-import type { CapacityPlanConfig } from '../src/capacity/models.js';
+import type { CapacityPlanConfig, ROIInput } from '../src/capacity/models.js';
 import type { SimulationConfig } from '../src/simulation/models.js';
 
 async function freshDb(): Promise<void> {
@@ -209,6 +209,99 @@ describe('Phase 3: simulation Monte Carlo — active hook (monte_carlo_default_i
 });
 
 // ── boundary helper unit checks ──────────────────────────────
+
+// ── /capacity ROI — active hooks ─────────────────────────────
+
+describe('Phase 3: capacity ROI — active hooks (roi_default_discount_rate, roi_default_horizon_months)', () => {
+  const baseInput: ROIInput = {
+    scenario_name: 'Test',
+    investment_cost: 100000,
+    capacity_gain_hours: 200,
+    revenue_per_unit: 10,
+    units_per_hour: 50,
+    monthly_operating_cost: 1000,
+    // discount_rate + analysis_months omitted on purpose
+  };
+
+  it('caller specifies discount_rate → caller wins, assumption ignored', async () => {
+    await setAssumption({
+      scope_type: 'global', scope_id: null,
+      assumption_name: 'roi_default_discount_rate', value: 0.25,
+      rationale: 'high hurdle test', created_by: 'test',
+    });
+    const snapshot = await buildAssumptionSnapshot('capacity_roi', 'site_adjusted');
+    const result = calculateRoiMetrics(
+      { ...baseInput, discount_rate: 0.05 },
+      snapshot,
+      'site_adjusted',
+    );
+    // Caller's 0.05 should be in inputsUsed, not the assumption's 0.25
+    expect(result.inputsUsed.discountRate).toBe(0.05);
+  });
+
+  it('caller omits discount_rate + assumption set → wrapper uses assumption value', async () => {
+    await setAssumption({
+      scope_type: 'global', scope_id: null,
+      assumption_name: 'roi_default_discount_rate', value: 0.25,
+      rationale: 'pack hurdle override', created_by: 'test',
+    });
+    const snapshot = await buildAssumptionSnapshot('capacity_roi', 'site_adjusted');
+    const result = calculateRoiMetrics(baseInput, snapshot, 'site_adjusted');
+    expect(result.inputsUsed.discountRate).toBe(0.25);
+  });
+
+  it('caller omits horizon + assumption set → wrapper uses assumption value', async () => {
+    await setAssumption({
+      scope_type: 'pack', scope_id: 'manufacturing',
+      assumption_name: 'roi_default_horizon_months', value: 36,
+      rationale: 'longer horizon for capex', created_by: 'test',
+    });
+    const snapshot = await buildAssumptionSnapshot('capacity_roi', 'site_adjusted', {
+      activePacks: ['manufacturing'],
+    });
+    const result = calculateRoiMetrics(baseInput, snapshot, 'site_adjusted');
+    expect(result.inputsUsed.analysisMonths).toBe(36);
+  });
+
+  it('site_adjusted with overrides produces a different NPV than standard', async () => {
+    // Standard: uses calculateROI's DEFAULT_DISCOUNT_RATE = 0.10, DEFAULT_ANALYSIS_MONTHS = 24
+    const standard = calculateRoiMetrics(baseInput, {}, 'standard');
+
+    // Site-adjusted with overridden hurdle + horizon
+    await setAssumption({
+      scope_type: 'global', scope_id: null,
+      assumption_name: 'roi_default_discount_rate', value: 0.25,
+      rationale: '', created_by: 'test',
+    });
+    await setAssumption({
+      scope_type: 'global', scope_id: null,
+      assumption_name: 'roi_default_horizon_months', value: 12,
+      rationale: '', created_by: 'test',
+    });
+    const snapshot = await buildAssumptionSnapshot('capacity_roi', 'site_adjusted');
+    const adjusted = calculateRoiMetrics(baseInput, snapshot, 'site_adjusted');
+
+    // Different discount rate + horizon must yield different NPV
+    expect(adjusted.value.npv).not.toBe(standard.value.npv);
+  });
+
+  it('records both ROI assumptions in assumptionsApplied when both are set', async () => {
+    await setAssumption({
+      scope_type: 'global', scope_id: null,
+      assumption_name: 'roi_default_discount_rate', value: 0.15,
+      rationale: '', created_by: 'test',
+    });
+    await setAssumption({
+      scope_type: 'global', scope_id: null,
+      assumption_name: 'roi_default_horizon_months', value: 18,
+      rationale: '', created_by: 'test',
+    });
+    const snapshot = await buildAssumptionSnapshot('capacity_roi', 'site_adjusted');
+    const result = calculateRoiMetrics(baseInput, snapshot, 'site_adjusted');
+    const names = result.assumptionsApplied.map((a) => a.name).sort();
+    expect(names).toEqual(['roi_default_discount_rate', 'roi_default_horizon_months']);
+  });
+});
 
 describe('buildAssumptionSnapshot boundary helper', () => {
   it('returns {} in standard mode regardless of registered deps', async () => {

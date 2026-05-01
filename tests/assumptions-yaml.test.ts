@@ -216,11 +216,11 @@ assumptions:
 // ── Real manufacturing pack file ────────────────────────────
 
 describe('shipped manufacturing pack assumptions.yaml', () => {
-  it('parses cleanly and yields the expected 6 entries', async () => {
+  it('parses cleanly and yields the expected 8 entries', async () => {
     const realDir = resolve(__dirname, '..', 'packs', 'manufacturing');
     const result = await loadPackAssumptions(realDir, 'manufacturing');
-    expect(result.loaded).toBe(6);
-    expect(result.applied).toBe(6);
+    expect(result.loaded).toBe(8);
+    expect(result.applied).toBe(8);
     expect(result.skipped).toBe(0);
 
     const records = await listAssumptions({ scope_type: 'pack', scope_id: 'manufacturing' });
@@ -229,6 +229,8 @@ describe('shipped manufacturing pack assumptions.yaml', () => {
       'availability_calculation_basis',
       'ideal_cycle_time_source',
       'monte_carlo_default_iterations',
+      'roi_default_discount_rate',
+      'roi_default_horizon_months',
       'scrap_classification_rule',
       'setup_treatment',
       'yield_baseline_source',

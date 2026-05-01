@@ -63,3 +63,17 @@ assumptions:
       response time for the line simulation. Increase to 5000+ for tail
       analysis (P95/P99) on demand-met probability; decrease to 200 for
       smoke tests during config tuning.
+
+  - name: roi_default_discount_rate
+    value: 0.10
+    rationale: |
+      Annual discount rate for capacity-investment NPV when caller omits
+      discount_rate. 10% is a typical industry hurdle rate; override per
+      site to match your CFO's WACC.
+
+  - name: roi_default_horizon_months
+    value: 24
+    rationale: |
+      NPV / payback horizon (months) when caller omits analysis_months.
+      24 months balances short-payback bias against optimistic long-tail
+      revenue assumptions.
