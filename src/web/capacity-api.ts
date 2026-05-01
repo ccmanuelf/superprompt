@@ -8,12 +8,15 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
 import {
+  calculateCapacityMetrics,
+  calculateRoiMetrics,
+} from '../calculations/capacity.js';
+import {
   analyzeCapacity,
   runScenario,
   compareScenarios,
   getScenarioDefaults,
   runCapacityMonteCarlo,
-  calculateROI,
   compareROIs,
   savePlan,
   getPlan,
@@ -162,7 +165,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         return true;
       }
 
-      const result = analyzeCapacity(config);
+      const result = calculateCapacityMetrics(config, {}, 'standard').value;
       const heatmap = generateUtilizationHeatmap(config);
 
       // Generate chart
@@ -298,7 +301,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         jsonResponse(res, 400, { error: 'investment_cost and capacity_gain_hours required' });
         return true;
       }
-      const result = calculateROI(input);
+      const result = calculateRoiMetrics(input, {}, 'standard').value;
       jsonResponse(res, 200, { success: true, result });
       return true;
     }
@@ -337,7 +340,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
       }
 
       // Step 1: Run capacity analysis
-      const capacityResult = analyzeCapacity(config);
+      const capacityResult = calculateCapacityMetrics(config, {}, 'standard').value;
 
       // Step 2: Build SimulationConfig from capacity data for S16 bridge
       const simConfig = buildSimConfigFromCapacity(config, capacityResult);

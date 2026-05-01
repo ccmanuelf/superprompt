@@ -1,10 +1,12 @@
 import type { Tool } from 'ollama';
 import { logger } from '../../logger.js';
 import {
-  analyzeCapacity,
+  calculateCapacityMetrics,
+  calculateRoiMetrics,
+} from '../../calculations/capacity.js';
+import {
   runScenario,
   runCapacityMonteCarlo,
-  calculateROI,
   savePlan,
   listPlans,
   getPlan,
@@ -58,7 +60,7 @@ export async function capacityPlanning(
       case 'analyze': {
         if (!args.config_json) return { error: 'config_json is required.' };
         const config = JSON.parse(args.config_json as string) as CapacityPlanConfig;
-        const result = analyzeCapacity(config);
+        const result = calculateCapacityMetrics(config, {}, 'standard').value;
 
         // Auto-save
         if (config.name) {
@@ -136,7 +138,7 @@ export async function capacityPlanning(
       case 'roi': {
         if (!args.roi_json) return { error: 'roi_json is required.' };
         const input = JSON.parse(args.roi_json as string) as ROIInput;
-        const result = calculateROI(input);
+        const result = calculateRoiMetrics(input, {}, 'standard').value;
 
         return {
           success: true,
