@@ -24,7 +24,7 @@ export interface FmeaMetrics {
 
 export function calculateFmeaMetrics(
   inputs: FmeaMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<FmeaMetrics> {
   const rpn = inputs.severity * inputs.occurrence * inputs.detection;
@@ -42,7 +42,7 @@ export function calculateFmeaMetrics(
       occurrence: inputs.occurrence,
       detection: inputs.detection,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }

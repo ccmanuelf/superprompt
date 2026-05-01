@@ -24,7 +24,7 @@ export type ConwipMetricInputs = CONWIPConfig;
 
 export function calculateConwipMetrics(
   inputs: ConwipMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<CONWIPAnalysis> {
   const value = analyzeCONWIP(inputs);
@@ -40,7 +40,7 @@ export function calculateConwipMetrics(
       demandPerDay: inputs.demand_per_day,
       availableMinutesPerDay: inputs.available_minutes_per_day,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }
@@ -49,7 +49,7 @@ export type HeijunkaMetricInputs = HeijunkaConfig;
 
 export function calculateHeijunkaMetrics(
   inputs: HeijunkaMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<HeijunkaAnalysis> {
   const value = analyzeHeijunka(inputs);
@@ -67,7 +67,7 @@ export function calculateHeijunkaMetrics(
       shiftsPerDay: inputs.shifts_per_day,
       demandPerDay: inputs.demand_per_day,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }

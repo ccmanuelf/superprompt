@@ -30,7 +30,7 @@ export interface CapabilityMetricInputs {
 
 export function calculateCapabilityMetrics(
   inputs: CapabilityMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<CapabilityResult> {
   const spec: SpecLimits = {
@@ -52,7 +52,7 @@ export function calculateCapabilityMetrics(
         ? new Set(inputs.subgroups).size
         : 0,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }
@@ -65,7 +65,7 @@ export interface DpmoMetricInputs {
 
 export function calculateDpmoMetrics(
   inputs: DpmoMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<DpmoResult> {
   const value = calculateDpmo(inputs.defects, inputs.units, inputs.opportunities);
@@ -78,7 +78,7 @@ export function calculateDpmoMetrics(
       units: inputs.units,
       opportunities: inputs.opportunities,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }
@@ -94,7 +94,7 @@ export interface YieldMetrics {
 
 export function calculateYieldMetrics(
   inputs: YieldMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<YieldMetrics> {
   const rty = rolledThroughputYield(inputs.stepYields);
@@ -103,7 +103,7 @@ export function calculateYieldMetrics(
     value: { rty, stepCount: inputs.stepYields.length },
     mode,
     inputsUsed: { stepCount: inputs.stepYields.length },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }

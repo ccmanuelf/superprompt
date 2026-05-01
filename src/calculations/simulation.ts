@@ -39,7 +39,7 @@ export interface SimulationMetricInputs {
 
 export async function calculateSimulationMetrics(
   inputs: SimulationMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): Promise<CalculationResult<SimulationResults>> {
   const seed = inputs.seed ?? 42;
@@ -62,7 +62,7 @@ export async function calculateSimulationMetrics(
       demandMode: inputs.config.mode ?? 'demand-driven',
       seed,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }
@@ -75,12 +75,23 @@ export interface MonteCarloMetricInputs {
 
 export async function calculateMonteCarloMetrics(
   inputs: MonteCarloMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): Promise<CalculationResult<MonteCarloResults>> {
+  // Active hook: when caller omits replications and the assumption bag
+  // carries a resolved monte_carlo_default_iterations, use it. This is
+  // the canonical Phase 3 demonstration that site_adjusted with overrides
+  // produces a different result than standard mode without bag entries.
+  const assumedReplications = assumptions['monte_carlo_default_iterations']?.value;
+  const replicationsFromAssumption =
+    typeof assumedReplications === 'number' && Number.isFinite(assumedReplications)
+      ? assumedReplications
+      : undefined;
+  const replications = inputs.replications ?? replicationsFromAssumption;
+
   const value = await runMonteCarlo(
     inputs.config,
-    inputs.replications,
+    replications,
     inputs.baseSeed,
   );
 
@@ -94,7 +105,7 @@ export async function calculateMonteCarloMetrics(
       replications: value.replications,
       baseSeed: inputs.baseSeed ?? 42,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }

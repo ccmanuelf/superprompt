@@ -511,3 +511,24 @@ export async function resolveAssumptionsForMetric(
   }
   return out;
 }
+
+/**
+ * Build the AssumptionSet bag a calculation wrapper expects, based on the
+ * calculation mode. In standard mode returns `{}`; in site_adjusted mode
+ * resolves every assumption the metric depends on and shapes the result
+ * for direct passing to the wrapper as its second argument.
+ *
+ * Phase 3 boundary helper. Handler code should call this between
+ * receiving a request and invoking the wrapper:
+ *
+ *   const snapshot = await buildAssumptionSnapshot('simulation', mode, ctx);
+ *   const result = await calculateMonteCarloMetrics(inputs, snapshot, mode);
+ */
+export async function buildAssumptionSnapshot(
+  metricName: string,
+  mode: 'standard' | 'site_adjusted',
+  ctx: ResolveContext = {},
+): Promise<Record<string, ResolvedAssumption>> {
+  if (mode === 'standard') return {};
+  return resolveAssumptionsForMetric(metricName, ctx);
+}

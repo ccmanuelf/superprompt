@@ -22,11 +22,19 @@ export interface AppliedAssumption {
 }
 
 /**
- * Caller-supplied bag of resolved assumption values, keyed by assumption name.
- * In Phase 1 this is always `{}`. In Phase 3 the registry resolver populates
- * it at the handler boundary before invoking the calc function.
+ * Caller-supplied bag of resolved assumptions, keyed by assumption name.
+ * Each entry is a fully-resolved AppliedAssumption (value + sourceScope +
+ * rationale + scopeId), built at the handler boundary by
+ * buildAssumptionSnapshot() in src/assumptions.ts.
+ *
+ * In Phase 1 callers always passed `{}` — the empty object is still valid.
+ * In Phase 3 callers populate this bag in `site_adjusted` mode; wrappers
+ * surface every entry via CalculationResult.assumptionsApplied. Wrappers
+ * that have a calculation-relevant hook for a particular assumption may
+ * also read `assumptions[name].value` to influence the computation
+ * (e.g., Sim Monte Carlo reads monte_carlo_default_iterations).
  */
-export type AssumptionSet = Record<string, unknown>;
+export type AssumptionSet = Record<string, AppliedAssumption>;
 
 export interface CalculationResult<T> {
   value: T;

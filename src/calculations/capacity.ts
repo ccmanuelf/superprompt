@@ -30,7 +30,7 @@ export type CapacityMetricInputs = CapacityPlanConfig;
 
 export function calculateCapacityMetrics(
   inputs: CapacityMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<CapacityAnalysisResult> {
   const value = analyzeCapacity(inputs);
@@ -46,7 +46,7 @@ export function calculateCapacityMetrics(
       workingDays: inputs.calendar.working_days,
       shiftsPerDay: inputs.calendar.shifts_per_day,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }
@@ -55,7 +55,7 @@ export type RoiMetricInputs = ROIInput;
 
 export function calculateRoiMetrics(
   inputs: RoiMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<ROIResult> {
   const value = calculateROI(inputs);
@@ -72,7 +72,7 @@ export function calculateRoiMetrics(
       analysisMonths: inputs.analysis_months ?? null,
       discountRate: inputs.discount_rate ?? null,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }

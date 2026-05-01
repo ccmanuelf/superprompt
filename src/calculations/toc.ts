@@ -19,7 +19,7 @@ export type TocMetricInputs = TOCConfig;
 
 export function calculateTocMetrics(
   inputs: TocMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<TOCAnalysis> {
   const value = analyzeTOC(inputs);
@@ -36,7 +36,7 @@ export function calculateTocMetrics(
       operatingExpense: inputs.operating_expense_per_period,
       investment: inputs.investment,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }

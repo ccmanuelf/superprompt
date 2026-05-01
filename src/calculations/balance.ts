@@ -24,7 +24,7 @@ export interface BalanceMetrics {
 
 export function calculateBalanceMetrics(
   inputs: BalanceMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<BalanceMetrics> {
   const efficiency = calculateEfficiency(
@@ -43,7 +43,7 @@ export function calculateBalanceMetrics(
       taktTime: inputs.taktTime,
       stationCount: inputs.stationTimes.length,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }

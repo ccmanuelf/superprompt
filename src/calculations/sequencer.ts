@@ -35,7 +35,7 @@ export interface DispatchScheduleInputs {
 
 export function calculateDispatchSchedule(
   inputs: DispatchScheduleInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<ScheduleResult> {
   const value = dispatch(inputs.config, inputs.rule);
@@ -50,7 +50,7 @@ export function calculateDispatchSchedule(
       machineCount: inputs.config.machines.length,
       hasSetupMatrix: Boolean(inputs.config.setup_matrix?.length),
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }
@@ -59,7 +59,7 @@ export type RuleComparisonInputs = SequencerConfig;
 
 export function calculateRuleComparison(
   inputs: RuleComparisonInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<RuleComparison> {
   const value = compareAllRules(inputs);
@@ -73,7 +73,7 @@ export function calculateRuleComparison(
       machineCount: inputs.machines.length,
       hasSetupMatrix: Boolean(inputs.setup_matrix?.length),
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }
@@ -85,7 +85,7 @@ export interface GeneticScheduleInputs {
 
 export function calculateGeneticSchedule(
   inputs: GeneticScheduleInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<GAResult> {
   const value = runGA(inputs.config, inputs.gaConfig);
@@ -101,7 +101,7 @@ export function calculateGeneticSchedule(
       generations: inputs.gaConfig?.generations ?? null,
       objective: inputs.gaConfig?.objective ?? null,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }

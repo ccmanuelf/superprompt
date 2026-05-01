@@ -23,7 +23,7 @@ export type DoeMatrixInputs = DOEConfig;
 
 export function calculateDoeMatrix(
   inputs: DoeMatrixInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<ExperimentMatrix> {
   const value = generateMatrix(inputs);
@@ -39,7 +39,7 @@ export function calculateDoeMatrix(
       replicates: inputs.replicates ?? 1,
       blocks: inputs.blocks ?? 1,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }
@@ -51,7 +51,7 @@ export interface DoeAnalysisInputs {
 
 export function calculateDoeAnalysis(
   inputs: DoeAnalysisInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<DOEAnalysis> {
   const value = analyzeDOE(inputs.config, inputs.matrix);
@@ -66,7 +66,7 @@ export function calculateDoeAnalysis(
       responseCount: inputs.config.responses.length,
       runsAnalyzed: inputs.matrix.total_runs,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }

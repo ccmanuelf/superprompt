@@ -32,7 +32,7 @@ export interface InventoryMetrics {
 
 export function calculateInventoryMetrics(
   inputs: InventoryMetricInputs,
-  _assumptions: AssumptionSet,
+  assumptions: AssumptionSet,
   mode: CalculationMode,
 ): CalculationResult<InventoryMetrics> {
   const eoq = calculateEOQ(
@@ -64,7 +64,7 @@ export function calculateInventoryMetrics(
       serviceLevel: inputs.serviceLevel,
       demandStddev: inputs.demandStddev ?? null,
     },
-    assumptionsApplied: [],
+    assumptionsApplied: Object.values(assumptions),
     computedAt: new Date().toISOString(),
   };
 }
