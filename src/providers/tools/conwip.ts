@@ -1,6 +1,10 @@
 import type { Tool } from 'ollama';
 import { logger } from '../../logger.js';
-import { analyzeCONWIP, analyzeHeijunka, saveConwip, listConwips, type CONWIPConfig, type HeijunkaConfig } from '../../conwip/index.js';
+import { saveConwip, listConwips, type CONWIPConfig, type HeijunkaConfig } from '../../conwip/index.js';
+import {
+  calculateConwipMetrics,
+  calculateHeijunkaMetrics,
+} from '../../calculations/conwip.js';
 
 export const conwipDefinition: Tool = {
   type: 'function',
@@ -34,7 +38,7 @@ export async function conwipHeijunka(args: Record<string, unknown>): Promise<Rec
       case 'conwip': {
         if (!args.config_json) return { error: 'config_json required.' };
         const config = JSON.parse(args.config_json as string) as CONWIPConfig;
-        const result = analyzeCONWIP(config);
+        const result = calculateConwipMetrics(config, {}, 'standard').value;
         if (config.name) await saveConwip(config.name, config, result);
         return {
           success: true, wip_limit: result.wip_limit,
@@ -47,7 +51,7 @@ export async function conwipHeijunka(args: Record<string, unknown>): Promise<Rec
       case 'heijunka': {
         if (!args.config_json) return { error: 'config_json required.' };
         const config = JSON.parse(args.config_json as string) as HeijunkaConfig;
-        const result = analyzeHeijunka(config);
+        const result = calculateHeijunkaMetrics(config, {}, 'standard').value;
         if (config.name) await saveConwip(config.name, config, result);
         return {
           success: true, leveling_score: result.leveling_score,

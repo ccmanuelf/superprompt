@@ -4,10 +4,14 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
 import {
-  analyzeCONWIP, analyzeHeijunka, saveConwip, getConwip, listConwips, deleteConwip,
+  saveConwip, getConwip, listConwips, deleteConwip,
   generateStageUtilChart, generateMixChart,
   type CONWIPConfig, type HeijunkaConfig,
 } from '../conwip/index.js';
+import {
+  calculateConwipMetrics,
+  calculateHeijunkaMetrics,
+} from '../calculations/conwip.js';
 
 export async function handleConwipApi(req: IncomingMessage, res: ServerResponse, urlPath: string, chatId: string): Promise<boolean> {
   if (!urlPath.startsWith('/api/conwip')) return false;
@@ -54,7 +58,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
     case '/conwip': {
       const config = data.config as CONWIPConfig;
       if (!config?.stages?.length) { json(res, 400, { error: 'config with stages[] required' }); return true; }
-      const result = analyzeCONWIP(config);
+      const result = calculateConwipMetrics(config, {}, 'standard').value;
       let chart: string | undefined;
       try { chart = await generateStageUtilChart(result.stage_utilization, `${config.name} — CONWIP`); } catch { /* */ }
       if (config.name) await saveConwip(config.name + '_conwip', config, result, chatId);
@@ -64,7 +68,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
     case '/heijunka': {
       const config = data.config as HeijunkaConfig;
       if (!config?.products?.length) { json(res, 400, { error: 'config with products[] required' }); return true; }
-      const result = analyzeHeijunka(config);
+      const result = calculateHeijunkaMetrics(config, {}, 'standard').value;
       let chart: string | undefined;
       try { chart = await generateMixChart(result.actual_mix, `${config.name} — Product Mix`); } catch { /* */ }
       if (config.name) await saveConwip(config.name + '_heijunka', config, result, chatId);
