@@ -1,6 +1,7 @@
 import type { Tool } from 'ollama';
 import { logger } from '../../logger.js';
-import { analyzeTOC, saveTOC, listTOCs, getTOC, type TOCConfig } from '../../toc/index.js';
+import { saveTOC, listTOCs, getTOC, type TOCConfig } from '../../toc/index.js';
+import { calculateTocMetrics } from '../../calculations/toc.js';
 
 export const tocDefinition: Tool = {
   type: 'function',
@@ -37,7 +38,7 @@ export async function tocAnalysis(args: Record<string, unknown>): Promise<Record
       case 'analyze': {
         if (!args.config_json) return { error: 'config_json required.' };
         const config = JSON.parse(args.config_json as string) as TOCConfig;
-        const result = analyzeTOC(config);
+        const result = calculateTocMetrics(config, {}, 'standard').value;
         if (config.name) await saveTOC(config.name, config, result);
         return {
           success: true,

@@ -4,8 +4,8 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
+import { calculateTocMetrics } from '../calculations/toc.js';
 import {
-  analyzeTOC,
   saveTOC,
   getTOC,
   listTOCs,
@@ -96,7 +96,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         jsonResponse(res, 400, { error: 'config with work_centers[] required' });
         return true;
       }
-      const result = analyzeTOC(config);
+      const result = calculateTocMetrics(config, {}, 'standard').value;
 
       let utilChart: string | undefined;
       let bufferChart: string | undefined;
