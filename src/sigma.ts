@@ -5,6 +5,7 @@ import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
+import { calculateCapabilityMetrics } from './calculations/sigma.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -1785,9 +1786,18 @@ export async function executeCapabilityAnalysis(
   const rows = parseSigmaCsv(csvContent);
   const values = rows.map((r) => r.value);
   const subgroups = rows.map((r) => r.subgroup).filter((s): s is string => s !== undefined);
-  const spec: SpecLimits = { usl, lsl, target };
 
-  const capability = calculateCapability(values, spec, subgroups.length > 0 ? subgroups : undefined);
+  const capability = calculateCapabilityMetrics(
+    {
+      values,
+      lsl,
+      usl,
+      target,
+      subgroups: subgroups.length > 0 ? subgroups : undefined,
+    },
+    {},
+    'standard',
+  ).value;
 
   // Control chart: auto-select based on subgroup structure
   // No subgroups → I-MR, avg size ≤ 10 → X-bar/R, avg size > 10 → X-bar/S

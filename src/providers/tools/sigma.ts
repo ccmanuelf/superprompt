@@ -4,9 +4,11 @@ import { resolve } from 'node:path';
 import { logger } from '../../logger.js';
 import { STORE_DIR } from '../../config.js';
 import {
+  calculateDpmoMetrics,
+  calculateYieldMetrics,
+} from '../../calculations/sigma.js';
+import {
   executeCapabilityAnalysis,
-  calculateDpmo,
-  rolledThroughputYield,
   paretoAnalysis,
   listSigmaProjects,
   getSigmaProjectByName,
@@ -122,7 +124,15 @@ export async function sigmaAnalysis(
         if (args.defects === undefined || args.units === undefined || args.opportunities === undefined) {
           return { error: 'defects, units, and opportunities are required.' };
         }
-        const result = calculateDpmo(args.defects, args.units, args.opportunities);
+        const result = calculateDpmoMetrics(
+          {
+            defects: args.defects,
+            units: args.units,
+            opportunities: args.opportunities,
+          },
+          {},
+          'standard',
+        ).value;
         return {
           success: true,
           ...result,
@@ -134,7 +144,11 @@ export async function sigmaAnalysis(
         if (!args.step_yields) return { error: 'step_yields is required (comma-separated percentages).' };
         const yields = args.step_yields.split(',').map((s) => parseFloat(s.trim()));
         if (yields.some(isNaN)) return { error: 'All step yields must be numbers.' };
-        const rty = rolledThroughputYield(yields);
+        const { rty } = calculateYieldMetrics(
+          { stepYields: yields },
+          {},
+          'standard',
+        ).value;
         return {
           success: true,
           step_yields: yields,
