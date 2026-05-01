@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luna — Assumption Registry</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7/css/materialdesignicons.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3/dist/vuetify.min.js"></script>
+  <style>
+    .scope-chip-global { background: #1976d2 !important; color: white; }
+    .scope-chip-pack { background: #388e3c !important; color: white; }
+    .scope-chip-user { background: #f57c00 !important; color: white; }
+    .scope-chip-default { background: #757575 !important; color: white; }
+    .value-cell { font-family: monospace; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+    .json-editor { font-family: monospace; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <v-app>
+      <v-app-bar color="primary" density="compact">
+        <v-app-bar-title>
+          <v-icon class="mr-2">mdi-tune-variant</v-icon>
+          Luna — Assumption Registry
+        </v-app-bar-title>
+        <v-btn variant="text" href="/docs" prepend-icon="mdi-arrow-left">Docs</v-btn>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid>
+          <v-tabs v-model="activeTab" color="primary" class="mb-4">
+            <v-tab value="catalog">
+              <v-icon start>mdi-book-open-variant</v-icon>
+              Built-in Catalog
+            </v-tab>
+            <v-tab value="active">
+              <v-icon start>mdi-database</v-icon>
+              Active Records
+            </v-tab>
+            <v-tab value="resolve">
+              <v-icon start>mdi-compass</v-icon>
+              Resolve Preview
+            </v-tab>
+          </v-tabs>
+
+          <!-- ── CATALOG TAB ────────────────────────────────── -->
+          <div v-if="activeTab === 'catalog'">
+            <v-alert type="info" variant="tonal" class="mb-4">
+              The built-in catalog is the fallback when no scoped record exists.
+              Catalog discipline: ≤ 15 names in v1. Currently {{ catalog.length }} names.
+            </v-alert>
+            <v-card>
+              <v-data-table
+                :headers="catalogHeaders"
+                :items="catalog"
+                :items-per-page="-1"
+                density="comfortable"
+                hide-default-footer
+              >
+                <template v-slot:item.default_value="{ item }">
+                  <span class="value-cell">{{ formatValue(item.default_value) }}</span>
+                </template>
+                <template v-slot:item.actions="{ item }">
+                  <v-btn size="small" variant="tonal" @click="openSetDialog(item.name, item.default_value)">
+                    Override
+                  </v-btn>
+                </template>
+              </v-data-table>
+            </v-card>
+          </div>
+
+          <!-- ── ACTIVE RECORDS TAB ─────────────────────────── -->
+          <div v-if="activeTab === 'active'">
+            <v-row class="mb-2">
+              <v-col cols="12" md="3">
+                <v-select
+                  v-model="filterScope"
+                  :items="['(any)', 'global', 'pack', 'user']"
+                  label="Scope"
+                  density="compact"
+                  hide-details
+                  @update:model-value="loadActive"
+                />
+              </v-col>
+              <v-col cols="12" md="3">
+                <v-text-field
+                  v-model="filterScopeId"
+                  label="Scope ID (pack name / user id)"
+                  density="compact"
+                  hide-details
+                  :disabled="filterScope === 'global' || filterScope === '(any)'"
+                  @input="debouncedLoadActive"
+                />
+              </v-col>
+              <v-col cols="12" md="3">
+                <v-select
+                  v-model="filterStatus"
+                  :items="['active', 'retired']"
+                  label="Status"
+                  density="compact"
+                  hide-details
+                  @update:model-value="loadActive"
+                />
+              </v-col>
+              <v-col cols="12" md="3" class="d-flex align-center justify-end">
+                <v-btn color="primary" prepend-icon="mdi-plus" @click="openSetDialog()">
+                  New / Update
+                </v-btn>
+              </v-col>
+            </v-row>
+
+            <v-card>
+              <v-data-table
+                :headers="activeHeaders"
+                :items="activeRecords"
+                :loading="loading"
+                density="comfortable"
+              >
+                <template v-slot:item.scope_type="{ item }">
+                  <v-chip
+                    :class="`scope-chip-${item.scope_type}`"
+                    size="small"
+                    label
+                  >{{ item.scope_type }}</v-chip>
+                </template>
+                <template v-slot:item.value="{ item }">
+                  <span class="value-cell" :title="formatValue(item.value)">{{ formatValue(item.value) }}</span>
+                </template>
+                <template v-slot:item.updated_at="{ item }">
+                  {{ formatDate(item.updated_at) }}
+                </template>
+                <template v-slot:item.actions="{ item }">
+                  <v-btn size="small" variant="text" icon @click="showHistory(item)">
+                    <v-icon>mdi-history</v-icon>
+                  </v-btn>
+                  <v-btn size="small" variant="text" icon @click="openSetDialog(item.assumption_name, item.value, item)">
+                    <v-icon>mdi-pencil</v-icon>
+                  </v-btn>
+                  <v-btn
+                    v-if="item.status === 'active'"
+                    size="small"
+                    variant="text"
+                    icon
+                    color="error"
+                    @click="confirmRetire(item)"
+                  >
+                    <v-icon>mdi-delete</v-icon>
+                  </v-btn>
+                </template>
+              </v-data-table>
+            </v-card>
+          </div>
+
+          <!-- ── RESOLVE PREVIEW TAB ────────────────────────── -->
+          <div v-if="activeTab === 'resolve'">
+            <v-alert type="info" variant="tonal" class="mb-4">
+              Test the resolver: pick a name + context and see which scope wins.
+              First-match-wins precedence: user → pack (in activation order) → global → built-in default.
+            </v-alert>
+            <v-card>
+              <v-card-text>
+                <v-row>
+                  <v-col cols="12" md="4">
+                    <v-select
+                      v-model="resolveName"
+                      :items="catalog.map(c => c.name)"
+                      label="Assumption name"
+                      density="compact"
+                    />
+                  </v-col>
+                  <v-col cols="12" md="4">
+                    <v-text-field
+                      v-model="resolveUserId"
+                      label="User ID (optional)"
+                      density="compact"
+                    />
+                  </v-col>
+                  <v-col cols="12" md="4">
+                    <v-text-field
+                      v-model="resolvePacks"
+                      label="Active packs (csv, in order)"
+                      density="compact"
+                    />
+                  </v-col>
+                </v-row>
+                <v-btn color="primary" :disabled="!resolveName" @click="runResolve">
+                  Resolve
+                </v-btn>
+              </v-card-text>
+
+              <v-divider v-if="resolveResult"></v-divider>
+              <v-card-text v-if="resolveResult">
+                <v-row>
+                  <v-col cols="12" md="3"><strong>Source</strong></v-col>
+                  <v-col cols="12" md="9">
+                    <v-chip :class="`scope-chip-${resolveResult.sourceScope}`" size="small" label>
+                      {{ resolveResult.sourceScope }}
+                    </v-chip>
+                    <span v-if="resolveResult.scopeId" class="ml-2">scope_id={{ resolveResult.scopeId }}</span>
+                  </v-col>
+                </v-row>
+                <v-row>
+                  <v-col cols="12" md="3"><strong>Value</strong></v-col>
+                  <v-col cols="12" md="9"><code>{{ formatValue(resolveResult.value) }}</code></v-col>
+                </v-row>
+                <v-row>
+                  <v-col cols="12" md="3"><strong>Rationale</strong></v-col>
+                  <v-col cols="12" md="9">{{ resolveResult.rationale }}</v-col>
+                </v-row>
+              </v-card-text>
+            </v-card>
+          </div>
+        </v-container>
+      </v-main>
+
+      <!-- ── SET / UPDATE DIALOG ──────────────────────────── -->
+      <v-dialog v-model="setDialog" max-width="640">
+        <v-card>
+          <v-card-title>{{ editingId ? 'Update assumption' : 'Set assumption' }}</v-card-title>
+          <v-card-text>
+            <v-text-field
+              v-model="form.assumption_name"
+              label="Assumption name"
+              :readonly="!!editingId"
+              hint="Must match an entry in the built-in catalog (or be a new pack-introduced name)"
+              persistent-hint
+            />
+            <v-select
+              v-model="form.scope_type"
+              :items="['global', 'pack', 'user']"
+              label="Scope type"
+              :disabled="!!editingId"
+            />
+            <v-text-field
+              v-if="form.scope_type !== 'global'"
+              v-model="form.scope_id"
+              :label="form.scope_type === 'pack' ? 'Pack name' : 'User ID'"
+              :disabled="!!editingId"
+            />
+            <v-textarea
+              v-model="form.valueRaw"
+              label="Value (JSON)"
+              hint='Strings need quotes: "engineered_standard". Numbers / booleans / objects are fine raw.'
+              persistent-hint
+              class="json-editor"
+              rows="3"
+            />
+            <v-textarea
+              v-model="form.rationale"
+              label="Rationale"
+              hint="Why this value? Future readers (and Phase 4 /explain) cite this string."
+              persistent-hint
+              rows="2"
+            />
+            <v-text-field
+              v-model="form.change_reason"
+              label="Change reason (optional)"
+              hint="Audit-log line for this set. Defaults to 'created' or 'updated'."
+              persistent-hint
+            />
+            <v-text-field
+              v-model="form.created_by"
+              label="Created by (optional)"
+              hint="Defaults to your web session ID."
+              persistent-hint
+            />
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn variant="text" @click="setDialog = false">Cancel</v-btn>
+            <v-btn color="primary" :loading="saving" @click="submitSet">Save</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <!-- ── HISTORY DIALOG ───────────────────────────────── -->
+      <v-dialog v-model="historyDialog" max-width="800">
+        <v-card>
+          <v-card-title>Change history</v-card-title>
+          <v-card-text>
+            <v-data-table
+              :headers="historyHeaders"
+              :items="history"
+              density="compact"
+              hide-default-footer
+              :items-per-page="-1"
+            >
+              <template v-slot:item.changed_at="{ item }">
+                {{ formatDate(item.changed_at) }}
+              </template>
+              <template v-slot:item.previous_value="{ item }">
+                <code>{{ formatValue(item.previous_value) }}</code>
+              </template>
+              <template v-slot:item.new_value="{ item }">
+                <code>{{ formatValue(item.new_value) }}</code>
+              </template>
+            </v-data-table>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn variant="text" @click="historyDialog = false">Close</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <!-- ── RETIRE CONFIRM ───────────────────────────────── -->
+      <v-dialog v-model="retireDialog" max-width="480">
+        <v-card>
+          <v-card-title>Retire assumption?</v-card-title>
+          <v-card-text>
+            <p class="mb-3">{{ retireTarget?.assumption_name }} ({{ retireTarget?.scope_type }})</p>
+            <v-text-field v-model="retireReason" label="Reason" />
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn variant="text" @click="retireDialog = false">Cancel</v-btn>
+            <v-btn color="error" @click="submitRetire">Retire</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <v-snackbar v-model="snackbar" :timeout="3000" :color="snackbarColor">
+        {{ snackbarText }}
+      </v-snackbar>
+    </v-app>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted } = Vue;
+    const { createVuetify } = Vuetify;
+
+    const app = createApp({
+      setup() {
+        const activeTab = ref('catalog');
+        const catalog = ref([]);
+        const activeRecords = ref([]);
+        const loading = ref(false);
+        const filterScope = ref('(any)');
+        const filterScopeId = ref('');
+        const filterStatus = ref('active');
+
+        const setDialog = ref(false);
+        const editingId = ref(null);
+        const saving = ref(false);
+        const form = ref({
+          assumption_name: '',
+          scope_type: 'global',
+          scope_id: '',
+          valueRaw: '',
+          rationale: '',
+          change_reason: '',
+          created_by: '',
+        });
+
+        const historyDialog = ref(false);
+        const history = ref([]);
+
+        const retireDialog = ref(false);
+        const retireTarget = ref(null);
+        const retireReason = ref('');
+
+        const resolveName = ref('');
+        const resolveUserId = ref('');
+        const resolvePacks = ref('');
+        const resolveResult = ref(null);
+
+        const snackbar = ref(false);
+        const snackbarText = ref('');
+        const snackbarColor = ref('success');
+
+        const catalogHeaders = [
+          { title: 'Name', key: 'name' },
+          { title: 'Default value', key: 'default_value' },
+          { title: 'Rationale', key: 'default_rationale' },
+          { title: '', key: 'actions', sortable: false, width: '120px' },
+        ];
+
+        const activeHeaders = [
+          { title: 'Name', key: 'assumption_name' },
+          { title: 'Scope', key: 'scope_type' },
+          { title: 'Scope ID', key: 'scope_id' },
+          { title: 'Value', key: 'value' },
+          { title: 'Updated', key: 'updated_at' },
+          { title: 'Status', key: 'status' },
+          { title: '', key: 'actions', sortable: false, width: '160px' },
+        ];
+
+        const historyHeaders = [
+          { title: 'When', key: 'changed_at' },
+          { title: 'By', key: 'changed_by' },
+          { title: 'Previous', key: 'previous_value' },
+          { title: 'New', key: 'new_value' },
+          { title: 'Reason', key: 'change_reason' },
+        ];
+
+        function notify(text, color = 'success') {
+          snackbarText.value = text;
+          snackbarColor.value = color;
+          snackbar.value = true;
+        }
+
+        function formatValue(v) {
+          if (v === null || v === undefined) return '∅';
+          if (typeof v === 'string') return v;
+          try { return JSON.stringify(v); } catch { return String(v); }
+        }
+
+        function formatDate(ts) {
+          if (!ts) return '';
+          return new Date(ts).toLocaleString();
+        }
+
+        async function loadCatalog() {
+          const r = await fetch('/api/assumptions/catalog');
+          const data = await r.json();
+          catalog.value = data.catalog ?? [];
+        }
+
+        async function loadActive() {
+          loading.value = true;
+          try {
+            const params = new URLSearchParams();
+            if (filterScope.value !== '(any)') params.set('scope_type', filterScope.value);
+            if (filterScopeId.value && filterScope.value !== 'global') params.set('scope_id', filterScopeId.value);
+            params.set('status', filterStatus.value);
+            const r = await fetch('/api/assumptions?' + params.toString());
+            const data = await r.json();
+            activeRecords.value = data.assumptions ?? [];
+          } catch (err) {
+            notify('Failed to load: ' + err.message, 'error');
+          } finally {
+            loading.value = false;
+          }
+        }
+
+        let debounceTimer = null;
+        function debouncedLoadActive() {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(loadActive, 300);
+        }
+
+        function openSetDialog(name = '', value = undefined, existing = null) {
+          editingId.value = existing?.id ?? null;
+          form.value = {
+            assumption_name: existing?.assumption_name ?? name ?? '',
+            scope_type: existing?.scope_type ?? 'global',
+            scope_id: existing?.scope_id ?? '',
+            valueRaw: value !== undefined ? JSON.stringify(value) : (existing ? JSON.stringify(existing.value) : ''),
+            rationale: existing?.rationale ?? '',
+            change_reason: '',
+            created_by: '',
+          };
+          setDialog.value = true;
+        }
+
+        async function submitSet() {
+          let parsedValue;
+          try {
+            parsedValue = JSON.parse(form.value.valueRaw);
+          } catch {
+            // Allow plain strings without quotes for convenience
+            parsedValue = form.value.valueRaw;
+          }
+          const payload = {
+            assumption_name: form.value.assumption_name,
+            scope_type: form.value.scope_type,
+            scope_id: form.value.scope_type === 'global' ? null : form.value.scope_id,
+            value: parsedValue,
+            rationale: form.value.rationale,
+            change_reason: form.value.change_reason || undefined,
+            created_by: form.value.created_by || undefined,
+          };
+          saving.value = true;
+          try {
+            const r = await fetch('/api/assumptions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+            notify(editingId.value ? 'Updated' : 'Created');
+            setDialog.value = false;
+            await loadActive();
+          } catch (err) {
+            notify('Save failed: ' + err.message, 'error');
+          } finally {
+            saving.value = false;
+          }
+        }
+
+        async function showHistory(item) {
+          const r = await fetch(`/api/assumptions/${item.id}/changes`);
+          const data = await r.json();
+          history.value = data.changes ?? [];
+          historyDialog.value = true;
+        }
+
+        function confirmRetire(item) {
+          retireTarget.value = item;
+          retireReason.value = '';
+          retireDialog.value = true;
+        }
+
+        async function submitRetire() {
+          try {
+            const r = await fetch('/api/assumptions/retire', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: retireTarget.value.id, reason: retireReason.value || 'retired via web UI' }),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+            notify('Retired');
+            retireDialog.value = false;
+            await loadActive();
+          } catch (err) {
+            notify('Retire failed: ' + err.message, 'error');
+          }
+        }
+
+        async function runResolve() {
+          const params = new URLSearchParams({ name: resolveName.value });
+          if (resolveUserId.value) params.set('userId', resolveUserId.value);
+          if (resolvePacks.value) params.set('packs', resolvePacks.value);
+          const r = await fetch('/api/assumptions/resolve?' + params.toString());
+          const data = await r.json();
+          resolveResult.value = data.resolved ?? null;
+        }
+
+        onMounted(() => {
+          loadCatalog();
+          loadActive();
+        });
+
+        return {
+          activeTab, catalog, activeRecords, loading,
+          filterScope, filterScopeId, filterStatus,
+          setDialog, editingId, saving, form,
+          historyDialog, history,
+          retireDialog, retireTarget, retireReason,
+          resolveName, resolveUserId, resolvePacks, resolveResult,
+          snackbar, snackbarText, snackbarColor,
+          catalogHeaders, activeHeaders, historyHeaders,
+          formatValue, formatDate,
+          loadActive, debouncedLoadActive,
+          openSetDialog, submitSet,
+          showHistory, confirmRetire, submitRetire, runResolve,
+        };
+      },
+    });
+
+    const vuetify = createVuetify();
+    app.use(vuetify);
+    app.mount('#app');
+  </script>
+</body>
+</html>
