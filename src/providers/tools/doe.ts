@@ -1,6 +1,10 @@
 import type { Tool } from 'ollama';
 import { logger } from '../../logger.js';
-import { generateMatrix, analyzeDOE, saveDOE, listDOEs, getDOE, type DOEConfig, DESIGN_LABELS } from '../../doe/index.js';
+import { saveDOE, listDOEs, getDOE, type DOEConfig, DESIGN_LABELS } from '../../doe/index.js';
+import {
+  calculateDoeMatrix,
+  calculateDoeAnalysis,
+} from '../../calculations/doe.js';
 
 export const doeDefinition: Tool = {
   type: 'function',
@@ -38,7 +42,7 @@ export async function designOfExperiments(args: Record<string, unknown>): Promis
       case 'generate': {
         if (!args.config_json) return { error: 'config_json required.' };
         const config = JSON.parse(args.config_json as string) as DOEConfig;
-        const matrix = generateMatrix(config);
+        const matrix = calculateDoeMatrix(config, {}, 'standard').value;
         if (config.name) await saveDOE(config.name, { config, matrix });
         return {
           success: true,
@@ -53,7 +57,7 @@ export async function designOfExperiments(args: Record<string, unknown>): Promis
         if (!args.config_json || !args.matrix_json) return { error: 'config_json and matrix_json required.' };
         const config = JSON.parse(args.config_json as string) as DOEConfig;
         const matrix = JSON.parse(args.matrix_json as string);
-        const analysis = analyzeDOE(config, matrix);
+        const analysis = calculateDoeAnalysis({ config, matrix }, {}, 'standard').value;
         if (config.name) await saveDOE(config.name, { config, matrix }, analysis);
         return {
           success: true,

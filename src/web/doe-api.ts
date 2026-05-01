@@ -5,10 +5,14 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
 import {
-  generateMatrix, analyzeDOE, saveDOE, getDOE, listDOEs, deleteDOE,
+  saveDOE, getDOE, listDOEs, deleteDOE,
   generateMainEffectsChart, generateANOVAChart,
   type DOEConfig, type ExperimentMatrix,
 } from '../doe/index.js';
+import {
+  calculateDoeMatrix,
+  calculateDoeAnalysis,
+} from '../calculations/doe.js';
 
 export async function handleDoeApi(
   req: IncomingMessage,
@@ -88,7 +92,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         json(res, 400, { error: 'config with factors[] and responses[] required' });
         return true;
       }
-      const matrix = generateMatrix(config);
+      const matrix = calculateDoeMatrix(config, {}, 'standard').value;
       if (config.name) await saveDOE(config.name, { config, matrix }, undefined, chatId);
       json(res, 200, { success: true, matrix });
       return true;
@@ -103,7 +107,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         return true;
       }
 
-      const analysis = analyzeDOE(config, matrix);
+      const analysis = calculateDoeAnalysis({ config, matrix }, {}, 'standard').value;
 
       let effectsChart: string | undefined;
       let anovaChart: string | undefined;
