@@ -5,6 +5,7 @@ import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
+import { calculateFmeaMetrics } from './calculations/fmea.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -177,8 +178,11 @@ export async function addFailureMode(
   const severity = clamp(fm.severity ?? 5, 1, 10);
   const occurrence = clamp(fm.occurrence ?? 5, 1, 10);
   const detection = clamp(fm.detection ?? 5, 1, 10);
-  const rpn = severity * occurrence * detection;
-  const ap = calculateActionPriority(severity, occurrence, detection);
+  const { rpn, actionPriority: ap } = calculateFmeaMetrics(
+    { severity, occurrence, detection },
+    {},
+    'standard',
+  ).value;
 
   await db('fmea_failure_modes').insert({
     id, doc_id: docId, process_step: fm.process_step, failure_mode: fm.failure_mode,
@@ -243,7 +247,11 @@ export async function completeAction(
   const s = clamp(severityAfter, 1, 10);
   const o = clamp(occurrenceAfter, 1, 10);
   const d = clamp(detectionAfter, 1, 10);
-  const rpnAfter = s * o * d;
+  const { rpn: rpnAfter, actionPriority: apAfter } = calculateFmeaMetrics(
+    { severity: s, occurrence: o, detection: d },
+    {},
+    'standard',
+  ).value;
   const now = Date.now();
 
   await db('fmea_action_items').where({ id: actionId }).update({
@@ -254,7 +262,7 @@ export async function completeAction(
   // Update the failure mode's RPN to the new values
   await db('fmea_failure_modes').where({ id: action.failure_mode_id }).update({
     severity: s, occurrence: o, detection: d, rpn: rpnAfter,
-    action_priority: calculateActionPriority(s, o, d),
+    action_priority: apAfter,
   });
 
   return {

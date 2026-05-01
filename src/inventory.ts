@@ -6,6 +6,7 @@ import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import { inverseNormal } from './sigma.js';
 import type { TableInitializer } from './core/interfaces.js';
+import { calculateInventoryMetrics } from './calculations/inventory.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -315,15 +316,29 @@ export function generateReplenishmentPlan(items: InventoryItem[]): Replenishment
     const holdingCostPerUnit = item.unit_cost * (item.holding_cost_pct / 100);
     const dailyDemand = item.annual_demand / 365;
 
+    const metrics = calculateInventoryMetrics(
+      {
+        annualDemand: item.annual_demand,
+        orderCost: item.order_cost,
+        holdingCostPerUnit,
+        dailyDemand,
+        leadTimeDays: item.lead_time_days,
+        serviceLevel: item.service_level,
+        demandStddev: item.demand_stddev,
+      },
+      {},
+      'standard',
+    ).value;
+
     // When holding cost is zero, order the full annual demand at once (1 order/year)
     // since there's no cost to holding inventory.
-    let eoq = calculateEOQ(item.annual_demand, item.order_cost, holdingCostPerUnit);
+    let eoq = metrics.eoq;
     if (eoq === 0 && item.annual_demand > 0) {
       eoq = item.annual_demand;
     }
 
-    const safetyStock = calculateSafetyStock(dailyDemand, item.lead_time_days, item.service_level, item.demand_stddev);
-    const rop = calculateReorderPoint(dailyDemand, item.lead_time_days, safetyStock);
+    const safetyStock = metrics.safetyStock;
+    const rop = metrics.reorderPoint;
 
     const ordersPerYear = eoq > 0 ? item.annual_demand / eoq : 0;
     const annualOrderCost = ordersPerYear * item.order_cost;

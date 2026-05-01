@@ -5,6 +5,7 @@ import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
+import { calculateBalanceMetrics } from './calculations/balance.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -638,12 +639,15 @@ export function runBalance(tasks: BalanceTask[], taktTime: number, projectName: 
   // Build station details
   const stations = buildStationDetails(assignments, taktTime);
 
-  // Calculate metrics
+  // Calculate metrics via dual-view wrapper
   const totalTaskTime = tasks.reduce((sum, t) => sum + t.time_seconds, 0);
   const numStations = stations.length;
-  const efficiency = calculateEfficiency(totalTaskTime, numStations, taktTime);
   const stationTimes = stations.map((s) => s.total_time);
-  const smoothnessIndex = calculateSmoothness(stationTimes);
+  const { efficiency, smoothness: smoothnessIndex } = calculateBalanceMetrics(
+    { totalTaskTime, numStations, taktTime, stationTimes },
+    {},
+    'standard',
+  ).value;
 
   return {
     project_id: '', // set by caller after DB insert
