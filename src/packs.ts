@@ -572,6 +572,16 @@ async function loadSinglePack(packDir: string, dirName: string): Promise<PackMet
     'Loaded domain pack',
   );
 
+  // rc.100 Phase 5 — pack-scoped assumption defaults via assumptions.yaml.
+  // Idempotent: re-running upserts via setAssumption (change-log appended,
+  // no duplicate rows). Silently skipped when the file is absent.
+  try {
+    const { loadPackAssumptions } = await import('./assumptions.js');
+    await loadPackAssumptions(packDir, name);
+  } catch (err) {
+    logger.warn({ err, pack: name }, 'Failed to load pack assumptions');
+  }
+
   return metadata;
 }
 

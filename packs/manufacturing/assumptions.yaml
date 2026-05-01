@@ -1,0 +1,65 @@
+# Manufacturing pack — assumption defaults.
+#
+# Loaded by Luna at startup as scope_type='pack' records in
+# luna_assumptions, with this pack's name as scope_id. Idempotent:
+# editing a value here and restarting upserts it (the registry's
+# change-log table records the diff). Per-user overrides via Web UI
+# at /docs/assumptions still win at resolution time.
+#
+# In v1 only the manufacturing pack ships an assumptions.yaml — other
+# packs (finance, supply-chain, etc.) inherit global + built-in defaults
+# until their owners decide pack-specific overrides are warranted.
+#
+# These values match the built-in catalog in src/assumptions.ts, so
+# enabling the manufacturing pack does NOT change calculation behavior
+# in v1 — the file ships as a documented surface for site-specific
+# override, not as a behavior change.
+
+assumptions:
+  - name: ideal_cycle_time_source
+    value: engineered_standard
+    rationale: |
+      Manufacturing engineering convention: use the engineered (textbook)
+      cycle time as the OEE performance denominator. Measured drift is
+      already captured in the availability and quality factors, so blending
+      it into ideal cycle time would double-count.
+
+  - name: setup_treatment
+    value: include_in_capacity
+    rationale: |
+      Setup time charges against gross hours by default — typical for
+      shops that account changeover as productive time. Override to
+      "amortize" if your costing distributes setup across batches, or to
+      "separate" if your reports want setup as a standalone bucket.
+
+  - name: scrap_classification_rule
+    value: rework_excluded
+    rationale: |
+      Items that pass after rework do not count as scrap. Only outright
+      rejects appear in scrap totals and DPMO defect counts. Override to
+      "rework_counts_as_good" if your accounting treats rework as a defect
+      against first-pass yield only.
+
+  - name: yield_baseline_source
+    value: first_pass_yield
+    rationale: |
+      Yield baseline is FPY — items that pass without any rework. Used by
+      OEE Q-factor and Six Sigma DPMO. Override to "rolled_throughput_yield"
+      for multi-step yield analysis or "final_yield" for after-rework
+      reporting.
+
+  - name: availability_calculation_basis
+    value: scheduled_uptime
+    rationale: |
+      Availability is uptime divided by *scheduled* production time
+      (planned hours × shifts × days), not calendar time. Planned downtime
+      and changeover do not penalize availability under this rule.
+      Override to "total_uptime" to penalize all non-running time.
+
+  - name: monte_carlo_default_iterations
+    value: 1000
+    rationale: |
+      1000 replications balances confidence-interval tightness with
+      response time for the line simulation. Increase to 5000+ for tail
+      analysis (P95/P99) on demand-met probability; decrease to 200 for
+      smoke tests during config tuning.

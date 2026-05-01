@@ -24,6 +24,8 @@
  */
 
 import { randomBytes } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
 import type { TableInitializer } from './core/interfaces.js';
@@ -531,4 +533,212 @@ export async function buildAssumptionSnapshot(
 ): Promise<Record<string, ResolvedAssumption>> {
   if (mode === 'standard') return {};
   return resolveAssumptionsForMetric(metricName, ctx);
+}
+
+// ── Pack assumptions.yaml loader (Phase 5) ───────────────────
+
+/**
+ * Shape of one assumption entry inside a pack's assumptions.yaml file.
+ * Hand-parsed — the project deliberately avoids a YAML dependency
+ * (matches src/packs.ts's parsePackYaml convention).
+ */
+export interface ParsedPackAssumption {
+  name: string;
+  value: unknown;
+  rationale: string;
+}
+
+/**
+ * Parse a pack's assumptions.yaml into typed entries.
+ *
+ * Supported shape (intentionally narrow — keep pack-author surface tight):
+ *
+ *   assumptions:
+ *     - name: ideal_cycle_time_source
+ *       value: engineered_standard
+ *       rationale: "One-line rationale, quoted"
+ *     - name: monte_carlo_default_iterations
+ *       value: 1000
+ *       rationale: |
+ *         Multi-line block-scalar rationale.
+ *         Indentation must be deeper than the key.
+ *
+ * Value types: bare scalars are auto-detected as number / boolean / string.
+ * Quoted values are always strings. Arrays and nested objects are NOT
+ * supported in v1 — rejected with a warning.
+ *
+ * Exported for testing.
+ */
+export function parseAssumptionsYaml(content: string): ParsedPackAssumption[] {
+  const lines = content.split('\n');
+  const out: ParsedPackAssumption[] = [];
+
+  let i = 0;
+  // Skip header until we hit "assumptions:"
+  while (i < lines.length && !/^\s*assumptions:\s*$/.test(lines[i])) {
+    i++;
+  }
+  if (i >= lines.length) return out;
+  i++;
+
+  let current: Partial<ParsedPackAssumption> | null = null;
+  const flush = () => {
+    if (current && current.name !== undefined && current.value !== undefined) {
+      out.push({
+        name: current.name,
+        value: current.value,
+        rationale: current.rationale ?? '',
+      });
+    }
+    current = null;
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.length === 0 || line.trim() === '') { i++; continue; }
+
+    const newEntryMatch = line.match(/^\s+-\s+name:\s*(.+?)\s*$/);
+    if (newEntryMatch) {
+      flush();
+      current = { name: unquote(newEntryMatch[1]) };
+      i++;
+      continue;
+    }
+
+    if (!current) { i++; continue; }
+
+    const fieldMatch = line.match(/^\s{4,}(\w+):\s*(.*)$/);
+    if (fieldMatch) {
+      const key = fieldMatch[1];
+      const rest = fieldMatch[2].trim();
+
+      // Block scalar — read until a less-indented line
+      if (rest === '|' || rest === '|-' || rest === '|+') {
+        i++;
+        const blockLines: string[] = [];
+        const baseIndent = (lines[i]?.match(/^(\s*)/)?.[1].length) ?? 0;
+        while (i < lines.length) {
+          const bl = lines[i];
+          if (bl.trim() === '') { blockLines.push(''); i++; continue; }
+          const indent = bl.match(/^(\s*)/)?.[1].length ?? 0;
+          if (indent < baseIndent) break;
+          blockLines.push(bl.slice(baseIndent));
+          i++;
+        }
+        if (key === 'rationale') current.rationale = blockLines.join('\n').trimEnd();
+        // value as block scalar is allowed but treated as a string
+        else if (key === 'value') current.value = blockLines.join('\n').trimEnd();
+        continue;
+      }
+
+      // Inline scalar
+      if (key === 'name') {
+        current.name = unquote(rest);
+      } else if (key === 'value') {
+        current.value = parseScalarValue(rest);
+      } else if (key === 'rationale') {
+        current.rationale = unquote(rest);
+      }
+      // Unknown keys silently ignored — keeps forward-compat space.
+      i++;
+      continue;
+    }
+
+    // Anything else ends parsing of the current section
+    if (line.match(/^\w/)) break;
+    i++;
+  }
+  flush();
+  return out;
+}
+
+function unquote(raw: string): string {
+  const trimmed = raw.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function parseScalarValue(raw: string): unknown {
+  const t = raw.trim();
+  if (t === '') return '';
+  // Quoted → always string
+  if (t.startsWith('"') || t.startsWith("'")) return unquote(t);
+  // Booleans
+  if (t === 'true') return true;
+  if (t === 'false') return false;
+  // Numbers
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+  // null
+  if (t === 'null' || t === '~') return null;
+  // Reject inline arrays / objects in v1
+  if (t.startsWith('[') || t.startsWith('{')) {
+    logger.warn({ raw: t }, 'parseAssumptionsYaml: inline arrays/objects not supported in v1, treating as string');
+  }
+  return t;
+}
+
+/**
+ * Load the assumptions.yaml for a single pack, idempotently inserting
+ * each entry as a `scope_type='pack'` record. Re-loading is safe — entries
+ * with matching (scope_type, scope_id, assumption_name) update via
+ * setAssumption (which appends a change-log row but doesn't duplicate).
+ *
+ * Returns counts: `loaded` = total entries seen in the YAML,
+ * `applied` = how many resulted in DB writes (creates or updates).
+ */
+export async function loadPackAssumptions(
+  packDir: string,
+  packName: string,
+): Promise<{ loaded: number; applied: number; skipped: number }> {
+  const yamlPath = resolve(packDir, 'assumptions.yaml');
+  if (!existsSync(yamlPath)) {
+    return { loaded: 0, applied: 0, skipped: 0 };
+  }
+
+  let parsed: ParsedPackAssumption[];
+  try {
+    const content = readFileSync(yamlPath, 'utf-8');
+    parsed = parseAssumptionsYaml(content);
+  } catch (err) {
+    logger.warn({ err, pack: packName }, 'Failed to read/parse assumptions.yaml');
+    return { loaded: 0, applied: 0, skipped: 0 };
+  }
+
+  let applied = 0;
+  let skipped = 0;
+  for (const entry of parsed) {
+    if (!entry.name || entry.name.trim() === '') {
+      skipped++;
+      continue;
+    }
+    try {
+      await setAssumption({
+        scope_type: 'pack',
+        scope_id: packName,
+        assumption_name: entry.name,
+        value: entry.value,
+        rationale: entry.rationale,
+        created_by: `pack:${packName}`,
+        change_reason: 'pack assumptions.yaml load',
+      });
+      applied++;
+    } catch (err) {
+      logger.warn({ err, pack: packName, name: entry.name }, 'Failed to apply pack assumption');
+      skipped++;
+    }
+  }
+
+  if (parsed.length > 0) {
+    logger.info(
+      { pack: packName, loaded: parsed.length, applied, skipped },
+      'Loaded pack assumptions',
+    );
+  }
+
+  return { loaded: parsed.length, applied, skipped };
 }
