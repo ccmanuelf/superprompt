@@ -1,9 +1,11 @@
 import type { Tool } from 'ollama';
 import { logger } from '../../logger.js';
 import {
-  dispatch,
-  compareAllRules,
-  runGA,
+  calculateDispatchSchedule,
+  calculateRuleComparison,
+  calculateGeneticSchedule,
+} from '../../calculations/sequencer.js';
+import {
   saveSchedule,
   listSchedules,
   getSchedule,
@@ -53,7 +55,7 @@ export async function jobSequencer(
         if (!args.config_json) return { error: 'config_json is required.' };
         const config = JSON.parse(args.config_json as string) as SequencerConfig;
         const rule = (args.rule as DispatchRule) ?? 'SPT';
-        const result = dispatch(config, rule);
+        const result = calculateDispatchSchedule({ config, rule }, {}, 'standard').value;
         if (config.name) await saveSchedule(config.name + '_' + rule, config, result);
         return {
           success: true,
@@ -69,7 +71,7 @@ export async function jobSequencer(
       case 'compare': {
         if (!args.config_json) return { error: 'config_json is required.' };
         const config = JSON.parse(args.config_json as string) as SequencerConfig;
-        const comp = compareAllRules(config);
+        const comp = calculateRuleComparison(config, {}, 'standard').value;
         if (config.name) await saveSchedule(config.name, config, comp);
         return {
           success: true,
@@ -90,7 +92,7 @@ export async function jobSequencer(
         if (!args.config_json) return { error: 'config_json is required.' };
         const config = JSON.parse(args.config_json as string) as SequencerConfig;
         const gaConfig = args.ga_config_json ? JSON.parse(args.ga_config_json as string) as Partial<GAConfig> : undefined;
-        const result = runGA(config, gaConfig);
+        const result = calculateGeneticSchedule({ config, gaConfig }, {}, 'standard').value;
         if (config.name) await saveSchedule(config.name + '_GA', config, result);
         return {
           success: true,

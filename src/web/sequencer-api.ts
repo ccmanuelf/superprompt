@@ -7,9 +7,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
 import {
-  dispatch,
-  compareAllRules,
-  runGA,
+  calculateDispatchSchedule,
+  calculateRuleComparison,
+  calculateGeneticSchedule,
+} from '../calculations/sequencer.js';
+import {
   buildGanttData,
   buildSetupMatrix,
   computeMetrics,
@@ -130,7 +132,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         return true;
       }
 
-      const result = dispatch(config, rule);
+      const result = calculateDispatchSchedule({ config, rule }, {}, 'standard').value;
       const gantt = buildGanttData(result.entries, config);
 
       let chartBase64: string | undefined;
@@ -159,7 +161,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         return true;
       }
 
-      const comparison = compareAllRules(config);
+      const comparison = calculateRuleComparison(config, {}, 'standard').value;
 
       let chartBase64: string | undefined;
       try {
@@ -198,7 +200,7 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         return true;
       }
 
-      const result = runGA(config, gaConfig);
+      const result = calculateGeneticSchedule({ config, gaConfig }, {}, 'standard').value;
       const gantt = buildGanttData(result.entries, config);
 
       let chartBase64: string | undefined;
