@@ -468,7 +468,11 @@ describe('parseDateHint (real function)', () => {
     expect(result).not.toBeNull();
     const d = new Date(result!);
     expect(d.getHours()).toBe(9);
-    expect(d.getDate()).toBe(new Date().getDate() + 1);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    expect(d.getDate()).toBe(tomorrow.getDate());
+    expect(d.getMonth()).toBe(tomorrow.getMonth());
+    expect(d.getFullYear()).toBe(tomorrow.getFullYear());
   });
 
   it('parses "now" to current time', () => {
