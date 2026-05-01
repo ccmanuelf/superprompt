@@ -8,10 +8,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
 import {
-  runSimulation,
+  calculateSimulationMetrics,
+  calculateMonteCarloMetrics,
+} from '../calculations/simulation.js';
+import {
   validateSimulationConfig,
-  calculateAllBlocks,
-  runMonteCarlo,
   saveScenario,
   getScenarioByName,
   listScenarios,
@@ -161,8 +162,11 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
       }
 
       const seed = typeof body.seed === 'number' ? body.seed : 42;
-      const { metrics, durationSeconds } = await runSimulation(config, seed);
-      const results = calculateAllBlocks(config, metrics, report, durationSeconds);
+      const results = (await calculateSimulationMetrics(
+        { config, validationReport: report, seed },
+        {},
+        'standard',
+      )).value;
 
       // Auto-save if scenario name provided
       const scenarioName = body.scenario_name as string;
@@ -186,7 +190,11 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
       }
 
       const replications = typeof body.replications === 'number' ? body.replications : 30;
-      const mcResults = await runMonteCarlo(config, replications);
+      const mcResults = (await calculateMonteCarloMetrics(
+        { config, replications },
+        {},
+        'standard',
+      )).value;
 
       // Convert Maps to plain objects for JSON serialization
       const utilByStation: Record<string, unknown> = {};
@@ -285,9 +293,12 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
           modConfig.schedule.shift1_hours = Math.max(1, modConfig.schedule.shift1_hours * factor);
         }
 
-        const { metrics, durationSeconds } = await runSimulation(modConfig);
         const modReport = validateSimulationConfig(modConfig);
-        const simResults = calculateAllBlocks(modConfig, metrics, modReport, durationSeconds);
+        const simResults = (await calculateSimulationMetrics(
+          { config: modConfig, validationReport: modReport },
+          {},
+          'standard',
+        )).value;
         const topStation = simResults.station_performance[0];
 
         results.push({

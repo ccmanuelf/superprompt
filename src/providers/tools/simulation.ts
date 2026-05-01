@@ -1,11 +1,15 @@
 import type { Tool } from 'ollama';
 import { logger } from '../../logger.js';
 import {
-  runSimulation, validateSimulationConfig, calculateAllBlocks,
-  runMonteCarlo, saveScenario, getScenarioByName, listScenarios,
+  validateSimulationConfig,
+  saveScenario, getScenarioByName, listScenarios,
   formatSimulationResults, generateUtilizationChart, generateThroughputChart,
   type SimulationConfig,
 } from '../../simulation/index.js';
+import {
+  calculateSimulationMetrics,
+  calculateMonteCarloMetrics,
+} from '../../calculations/simulation.js';
 
 export const simulationDefinition: Tool = {
   type: 'function',
@@ -58,8 +62,11 @@ export async function productionSimulation(
         const report = validateSimulationConfig(config);
         if (!report.is_valid) return { success: false, validation: report, message: 'Validation failed' };
 
-        const { metrics, durationSeconds } = await runSimulation(config);
-        const results = calculateAllBlocks(config, metrics, report, durationSeconds);
+        const results = (await calculateSimulationMetrics(
+          { config, validationReport: report },
+          {},
+          'standard',
+        )).value;
 
         if (args.scenario_name) {
           const scenario = await saveScenario(args.scenario_name as string, config);
@@ -82,7 +89,11 @@ export async function productionSimulation(
         const config = JSON.parse(args.config_json as string) as SimulationConfig;
         const reps = (args.replications as number) || 30;
 
-        const mc = await runMonteCarlo(config, reps);
+        const mc = (await calculateMonteCarloMetrics(
+          { config, replications: reps },
+          {},
+          'standard',
+        )).value;
         return {
           success: true,
           replications: mc.replications,
