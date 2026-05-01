@@ -164,6 +164,13 @@ async function main(): Promise<void> {
   const { evalTableInit } = await import('./forge/eval/index.js');
   storage.registerTables(evalTableInit);
 
+  // rc.100 — dual-view calculation architecture, Phase 2. Tables:
+  // luna_assumptions, luna_assumption_changes,
+  // luna_metric_assumption_dependencies. See
+  // docs/audit/calculation-modules-audit.md.
+  const { assumptionsTableInit } = await import('./assumptions.js');
+  storage.registerTables(assumptionsTableInit);
+
   // Wire pack tuner into pack intent scoring
   const { setPackTunerModule } = await import('./packs.js');
   setPackTunerModule({ applyTunedWeight: packTunerMod.applyTunedWeight });
