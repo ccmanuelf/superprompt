@@ -4,6 +4,8 @@ import {
   calculateCapacityMetrics,
   calculateRoiMetrics,
 } from '../../calculations/capacity.js';
+import { parseCalcMode } from '../../calculations/handler-boundary.js';
+import { buildAssumptionSnapshot } from '../../assumptions.js';
 import {
   runScenario,
   runCapacityMonteCarlo,
@@ -60,7 +62,9 @@ export async function capacityPlanning(
       case 'analyze': {
         if (!args.config_json) return { error: 'config_json is required.' };
         const config = JSON.parse(args.config_json as string) as CapacityPlanConfig;
-        const result = calculateCapacityMetrics(config, {}, 'standard').value;
+        const mode = parseCalcMode(args);
+        const snapshot = await buildAssumptionSnapshot('capacity', mode);
+        const result = calculateCapacityMetrics(config, snapshot, mode).value;
 
         // Auto-save
         if (config.name) {
@@ -138,7 +142,9 @@ export async function capacityPlanning(
       case 'roi': {
         if (!args.roi_json) return { error: 'roi_json is required.' };
         const input = JSON.parse(args.roi_json as string) as ROIInput;
-        const result = calculateRoiMetrics(input, {}, 'standard').value;
+        const roiMode = parseCalcMode(args);
+        const roiSnapshot = await buildAssumptionSnapshot('capacity_roi', roiMode);
+        const result = calculateRoiMetrics(input, roiSnapshot, roiMode).value;
 
         return {
           success: true,

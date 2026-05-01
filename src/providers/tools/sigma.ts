@@ -7,6 +7,8 @@ import {
   calculateDpmoMetrics,
   calculateYieldMetrics,
 } from '../../calculations/sigma.js';
+import { parseCalcMode } from '../../calculations/handler-boundary.js';
+import { buildAssumptionSnapshot } from '../../assumptions.js';
 import {
   executeCapabilityAnalysis,
   paretoAnalysis,
@@ -124,14 +126,16 @@ export async function sigmaAnalysis(
         if (args.defects === undefined || args.units === undefined || args.opportunities === undefined) {
           return { error: 'defects, units, and opportunities are required.' };
         }
+        const dpmoMode = parseCalcMode(args);
+        const dpmoSnapshot = await buildAssumptionSnapshot('sigma_yield', dpmoMode);
         const result = calculateDpmoMetrics(
           {
             defects: args.defects,
             units: args.units,
             opportunities: args.opportunities,
           },
-          {},
-          'standard',
+          dpmoSnapshot,
+          dpmoMode,
         ).value;
         return {
           success: true,
@@ -144,10 +148,12 @@ export async function sigmaAnalysis(
         if (!args.step_yields) return { error: 'step_yields is required (comma-separated percentages).' };
         const yields = args.step_yields.split(',').map((s) => parseFloat(s.trim()));
         if (yields.some(isNaN)) return { error: 'All step yields must be numbers.' };
+        const rtyMode = parseCalcMode(args);
+        const rtySnapshot = await buildAssumptionSnapshot('sigma_yield', rtyMode);
         const { rty } = calculateYieldMetrics(
           { stepYields: yields },
-          {},
-          'standard',
+          rtySnapshot,
+          rtyMode,
         ).value;
         return {
           success: true,

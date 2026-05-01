@@ -11,6 +11,7 @@ import {
   calculateSimulationMetrics,
   calculateMonteCarloMetrics,
 } from '../calculations/simulation.js';
+import { parseCalcMode, buildHandlerSnapshot } from '../calculations/handler-boundary.js';
 import {
   validateSimulationConfig,
   saveScenario,
@@ -162,10 +163,12 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
       }
 
       const seed = typeof body.seed === 'number' ? body.seed : 42;
+      const mode = parseCalcMode(body);
+      const snapshot = await buildHandlerSnapshot('simulation', mode, chatId);
       const results = (await calculateSimulationMetrics(
         { config, validationReport: report, seed },
-        {},
-        'standard',
+        snapshot,
+        mode,
       )).value;
 
       // Auto-save if scenario name provided
@@ -189,11 +192,17 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
         return true;
       }
 
-      const replications = typeof body.replications === 'number' ? body.replications : 30;
+      const replicationsFromBody = typeof body.replications === 'number' ? body.replications : undefined;
+      const mcMode = parseCalcMode(body);
+      const mcSnapshot = await buildHandlerSnapshot('simulation', mcMode, chatId);
+      // Standard mode keeps the historical Web UI default of 30 for speed.
+      // Site-adjusted mode passes undefined so the wrapper's active hook
+      // sources monte_carlo_default_iterations from the snapshot.
+      const replications = replicationsFromBody ?? (mcMode === 'standard' ? 30 : undefined);
       const mcResults = (await calculateMonteCarloMetrics(
         { config, replications },
-        {},
-        'standard',
+        mcSnapshot,
+        mcMode,
       )).value;
 
       // Convert Maps to plain objects for JSON serialization
@@ -294,10 +303,12 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
         }
 
         const modReport = validateSimulationConfig(modConfig);
+        const scenMode = parseCalcMode(body);
+        const scenSnapshot = await buildHandlerSnapshot('simulation', scenMode, chatId);
         const simResults = (await calculateSimulationMetrics(
           { config: modConfig, validationReport: modReport },
-          {},
-          'standard',
+          scenSnapshot,
+          scenMode,
         )).value;
         const topStation = simResults.station_performance[0];
 

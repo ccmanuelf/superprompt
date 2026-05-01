@@ -11,6 +11,7 @@ import {
   calculateCapacityMetrics,
   calculateRoiMetrics,
 } from '../calculations/capacity.js';
+import { parseCalcMode, buildHandlerSnapshot } from '../calculations/handler-boundary.js';
 import {
   analyzeCapacity,
   runScenario,
@@ -165,7 +166,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         return true;
       }
 
-      const result = calculateCapacityMetrics(config, {}, 'standard').value;
+      const mode = parseCalcMode(data);
+      const snapshot = await buildHandlerSnapshot('capacity', mode, chatId);
+      const result = calculateCapacityMetrics(config, snapshot, mode).value;
       const heatmap = generateUtilizationHeatmap(config);
 
       // Generate chart
@@ -301,7 +304,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         jsonResponse(res, 400, { error: 'investment_cost and capacity_gain_hours required' });
         return true;
       }
-      const result = calculateRoiMetrics(input, {}, 'standard').value;
+      const roiMode = parseCalcMode(data);
+      const roiSnapshot = await buildHandlerSnapshot('capacity_roi', roiMode, chatId);
+      const result = calculateRoiMetrics(input, roiSnapshot, roiMode).value;
       jsonResponse(res, 200, { success: true, result });
       return true;
     }
@@ -340,7 +345,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
       }
 
       // Step 1: Run capacity analysis
-      const capacityResult = calculateCapacityMetrics(config, {}, 'standard').value;
+      const capSimMode = parseCalcMode(data);
+      const capSimSnapshot = await buildHandlerSnapshot('capacity', capSimMode, chatId);
+      const capacityResult = calculateCapacityMetrics(config, capSimSnapshot, capSimMode).value;
 
       // Step 2: Build SimulationConfig from capacity data for S16 bridge
       const simConfig = buildSimConfigFromCapacity(config, capacityResult);

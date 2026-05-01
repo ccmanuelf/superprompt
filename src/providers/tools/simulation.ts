@@ -10,6 +10,8 @@ import {
   calculateSimulationMetrics,
   calculateMonteCarloMetrics,
 } from '../../calculations/simulation.js';
+import { parseCalcMode } from '../../calculations/handler-boundary.js';
+import { buildAssumptionSnapshot } from '../../assumptions.js';
 
 export const simulationDefinition: Tool = {
   type: 'function',
@@ -62,10 +64,12 @@ export async function productionSimulation(
         const report = validateSimulationConfig(config);
         if (!report.is_valid) return { success: false, validation: report, message: 'Validation failed' };
 
+        const mode = parseCalcMode(args);
+        const snapshot = await buildAssumptionSnapshot('simulation', mode);
         const results = (await calculateSimulationMetrics(
           { config, validationReport: report },
-          {},
-          'standard',
+          snapshot,
+          mode,
         )).value;
 
         if (args.scenario_name) {
@@ -89,10 +93,12 @@ export async function productionSimulation(
         const config = JSON.parse(args.config_json as string) as SimulationConfig;
         const reps = (args.replications as number) || 30;
 
+        const mcMode = parseCalcMode(args);
+        const mcSnapshot = await buildAssumptionSnapshot('simulation', mcMode);
         const mc = (await calculateMonteCarloMetrics(
           { config, replications: reps },
-          {},
-          'standard',
+          mcSnapshot,
+          mcMode,
         )).value;
         return {
           success: true,

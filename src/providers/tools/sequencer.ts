@@ -5,6 +5,8 @@ import {
   calculateRuleComparison,
   calculateGeneticSchedule,
 } from '../../calculations/sequencer.js';
+import { parseCalcMode } from '../../calculations/handler-boundary.js';
+import { buildAssumptionSnapshot } from '../../assumptions.js';
 import {
   saveSchedule,
   listSchedules,
@@ -55,7 +57,9 @@ export async function jobSequencer(
         if (!args.config_json) return { error: 'config_json is required.' };
         const config = JSON.parse(args.config_json as string) as SequencerConfig;
         const rule = (args.rule as DispatchRule) ?? 'SPT';
-        const result = calculateDispatchSchedule({ config, rule }, {}, 'standard').value;
+        const dispatchMode = parseCalcMode(args);
+        const dispatchSnapshot = await buildAssumptionSnapshot('sequence', dispatchMode);
+        const result = calculateDispatchSchedule({ config, rule }, dispatchSnapshot, dispatchMode).value;
         if (config.name) await saveSchedule(config.name + '_' + rule, config, result);
         return {
           success: true,
@@ -71,7 +75,9 @@ export async function jobSequencer(
       case 'compare': {
         if (!args.config_json) return { error: 'config_json is required.' };
         const config = JSON.parse(args.config_json as string) as SequencerConfig;
-        const comp = calculateRuleComparison(config, {}, 'standard').value;
+        const compareMode = parseCalcMode(args);
+        const compareSnapshot = await buildAssumptionSnapshot('sequence', compareMode);
+        const comp = calculateRuleComparison(config, compareSnapshot, compareMode).value;
         if (config.name) await saveSchedule(config.name, config, comp);
         return {
           success: true,
@@ -92,7 +98,9 @@ export async function jobSequencer(
         if (!args.config_json) return { error: 'config_json is required.' };
         const config = JSON.parse(args.config_json as string) as SequencerConfig;
         const gaConfig = args.ga_config_json ? JSON.parse(args.ga_config_json as string) as Partial<GAConfig> : undefined;
-        const result = calculateGeneticSchedule({ config, gaConfig }, {}, 'standard').value;
+        const gaMode = parseCalcMode(args);
+        const gaSnapshot = await buildAssumptionSnapshot('sequence', gaMode);
+        const result = calculateGeneticSchedule({ config, gaConfig }, gaSnapshot, gaMode).value;
         if (config.name) await saveSchedule(config.name + '_GA', config, result);
         return {
           success: true,

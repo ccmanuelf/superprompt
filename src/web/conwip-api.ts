@@ -12,6 +12,7 @@ import {
   calculateConwipMetrics,
   calculateHeijunkaMetrics,
 } from '../calculations/conwip.js';
+import { parseCalcMode, buildHandlerSnapshot } from '../calculations/handler-boundary.js';
 
 export async function handleConwipApi(req: IncomingMessage, res: ServerResponse, urlPath: string, chatId: string): Promise<boolean> {
   if (!urlPath.startsWith('/api/conwip')) return false;
@@ -58,7 +59,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
     case '/conwip': {
       const config = data.config as CONWIPConfig;
       if (!config?.stages?.length) { json(res, 400, { error: 'config with stages[] required' }); return true; }
-      const result = calculateConwipMetrics(config, {}, 'standard').value;
+      const conwipMode = parseCalcMode(data);
+      const conwipSnapshot = await buildHandlerSnapshot('conwip', conwipMode, chatId);
+      const result = calculateConwipMetrics(config, conwipSnapshot, conwipMode).value;
       let chart: string | undefined;
       try { chart = await generateStageUtilChart(result.stage_utilization, `${config.name} — CONWIP`); } catch { /* */ }
       if (config.name) await saveConwip(config.name + '_conwip', config, result, chatId);
@@ -68,7 +71,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
     case '/heijunka': {
       const config = data.config as HeijunkaConfig;
       if (!config?.products?.length) { json(res, 400, { error: 'config with products[] required' }); return true; }
-      const result = calculateHeijunkaMetrics(config, {}, 'standard').value;
+      const heijunkaMode = parseCalcMode(data);
+      const heijunkaSnapshot = await buildHandlerSnapshot('heijunka', heijunkaMode, chatId);
+      const result = calculateHeijunkaMetrics(config, heijunkaSnapshot, heijunkaMode).value;
       let chart: string | undefined;
       try { chart = await generateMixChart(result.actual_mix, `${config.name} — Product Mix`); } catch { /* */ }
       if (config.name) await saveConwip(config.name + '_heijunka', config, result, chatId);

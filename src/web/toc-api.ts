@@ -5,6 +5,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
 import { calculateTocMetrics } from '../calculations/toc.js';
+import { parseCalcMode, buildHandlerSnapshot } from '../calculations/handler-boundary.js';
 import {
   saveTOC,
   getTOC,
@@ -96,7 +97,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         jsonResponse(res, 400, { error: 'config with work_centers[] required' });
         return true;
       }
-      const result = calculateTocMetrics(config, {}, 'standard').value;
+      const tocMode = parseCalcMode(data);
+      const tocSnapshot = await buildHandlerSnapshot('toc', tocMode, chatId);
+      const result = calculateTocMetrics(config, tocSnapshot, tocMode).value;
 
       let utilChart: string | undefined;
       let bufferChart: string | undefined;

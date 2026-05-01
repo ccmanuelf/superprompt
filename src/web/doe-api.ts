@@ -13,6 +13,7 @@ import {
   calculateDoeMatrix,
   calculateDoeAnalysis,
 } from '../calculations/doe.js';
+import { parseCalcMode, buildHandlerSnapshot } from '../calculations/handler-boundary.js';
 
 export async function handleDoeApi(
   req: IncomingMessage,
@@ -92,7 +93,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         json(res, 400, { error: 'config with factors[] and responses[] required' });
         return true;
       }
-      const matrix = calculateDoeMatrix(config, {}, 'standard').value;
+      const matrixMode = parseCalcMode(data);
+      const matrixSnapshot = await buildHandlerSnapshot('doe', matrixMode, chatId);
+      const matrix = calculateDoeMatrix(config, matrixSnapshot, matrixMode).value;
       if (config.name) await saveDOE(config.name, { config, matrix }, undefined, chatId);
       json(res, 200, { success: true, matrix });
       return true;
@@ -107,7 +110,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
         return true;
       }
 
-      const analysis = calculateDoeAnalysis({ config, matrix }, {}, 'standard').value;
+      const analysisMode = parseCalcMode(data);
+      const analysisSnapshot = await buildHandlerSnapshot('doe', analysisMode, chatId);
+      const analysis = calculateDoeAnalysis({ config, matrix }, analysisSnapshot, analysisMode).value;
 
       let effectsChart: string | undefined;
       let anovaChart: string | undefined;

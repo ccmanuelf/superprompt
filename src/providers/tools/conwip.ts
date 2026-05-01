@@ -5,6 +5,8 @@ import {
   calculateConwipMetrics,
   calculateHeijunkaMetrics,
 } from '../../calculations/conwip.js';
+import { parseCalcMode } from '../../calculations/handler-boundary.js';
+import { buildAssumptionSnapshot } from '../../assumptions.js';
 
 export const conwipDefinition: Tool = {
   type: 'function',
@@ -38,7 +40,9 @@ export async function conwipHeijunka(args: Record<string, unknown>): Promise<Rec
       case 'conwip': {
         if (!args.config_json) return { error: 'config_json required.' };
         const config = JSON.parse(args.config_json as string) as CONWIPConfig;
-        const result = calculateConwipMetrics(config, {}, 'standard').value;
+        const conwipMode = parseCalcMode(args);
+        const conwipSnapshot = await buildAssumptionSnapshot('conwip', conwipMode);
+        const result = calculateConwipMetrics(config, conwipSnapshot, conwipMode).value;
         if (config.name) await saveConwip(config.name, config, result);
         return {
           success: true, wip_limit: result.wip_limit,
@@ -51,7 +55,9 @@ export async function conwipHeijunka(args: Record<string, unknown>): Promise<Rec
       case 'heijunka': {
         if (!args.config_json) return { error: 'config_json required.' };
         const config = JSON.parse(args.config_json as string) as HeijunkaConfig;
-        const result = calculateHeijunkaMetrics(config, {}, 'standard').value;
+        const heijunkaMode = parseCalcMode(args);
+        const heijunkaSnapshot = await buildAssumptionSnapshot('heijunka', heijunkaMode);
+        const result = calculateHeijunkaMetrics(config, heijunkaSnapshot, heijunkaMode).value;
         if (config.name) await saveConwip(config.name, config, result);
         return {
           success: true, leveling_score: result.leveling_score,
