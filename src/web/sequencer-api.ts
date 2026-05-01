@@ -11,7 +11,7 @@ import {
   calculateRuleComparison,
   calculateGeneticSchedule,
 } from '../calculations/sequencer.js';
-import { parseCalcMode, buildHandlerSnapshot } from '../calculations/handler-boundary.js';
+import { parseCalcMode, buildHandlerSnapshot, maybeRecordRecent } from '../calculations/handler-boundary.js';
 import {
   buildGanttData,
   buildSetupMatrix,
@@ -135,7 +135,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
 
       const dispatchMode = parseCalcMode(data);
       const dispatchSnapshot = await buildHandlerSnapshot('sequence', dispatchMode, chatId);
-      const result = calculateDispatchSchedule({ config, rule }, dispatchSnapshot, dispatchMode).value;
+      const dispatchCalcResult = calculateDispatchSchedule({ config, rule }, dispatchSnapshot, dispatchMode);
+      const result = dispatchCalcResult.value;
+      maybeRecordRecent(chatId, 'sequence', `Dispatch ${rule}: ${config.name}`, dispatchCalcResult);
       const gantt = buildGanttData(result.entries, config);
 
       let chartBase64: string | undefined;
@@ -166,7 +168,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
 
       const compareMode = parseCalcMode(data);
       const compareSnapshot = await buildHandlerSnapshot('sequence', compareMode, chatId);
-      const comparison = calculateRuleComparison(config, compareSnapshot, compareMode).value;
+      const compareCalcResult = calculateRuleComparison(config, compareSnapshot, compareMode);
+      const comparison = compareCalcResult.value;
+      maybeRecordRecent(chatId, 'sequence', `Rule comparison: ${config.name}`, compareCalcResult);
 
       let chartBase64: string | undefined;
       try {
@@ -207,7 +211,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
 
       const gaMode = parseCalcMode(data);
       const gaSnapshot = await buildHandlerSnapshot('sequence', gaMode, chatId);
-      const result = calculateGeneticSchedule({ config, gaConfig }, gaSnapshot, gaMode).value;
+      const gaCalcResult = calculateGeneticSchedule({ config, gaConfig }, gaSnapshot, gaMode);
+      const result = gaCalcResult.value;
+      maybeRecordRecent(chatId, 'sequence', `GA schedule: ${config.name}`, gaCalcResult);
       const gantt = buildGanttData(result.entries, config);
 
       let chartBase64: string | undefined;

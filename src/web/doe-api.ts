@@ -13,7 +13,7 @@ import {
   calculateDoeMatrix,
   calculateDoeAnalysis,
 } from '../calculations/doe.js';
-import { parseCalcMode, buildHandlerSnapshot } from '../calculations/handler-boundary.js';
+import { parseCalcMode, buildHandlerSnapshot, maybeRecordRecent } from '../calculations/handler-boundary.js';
 
 export async function handleDoeApi(
   req: IncomingMessage,
@@ -95,7 +95,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
       }
       const matrixMode = parseCalcMode(data);
       const matrixSnapshot = await buildHandlerSnapshot('doe', matrixMode, chatId);
-      const matrix = calculateDoeMatrix(config, matrixSnapshot, matrixMode).value;
+      const matrixCalcResult = calculateDoeMatrix(config, matrixSnapshot, matrixMode);
+      const matrix = matrixCalcResult.value;
+      maybeRecordRecent(chatId, 'doe', `DOE matrix: ${config.name}`, matrixCalcResult);
       if (config.name) await saveDOE(config.name, { config, matrix }, undefined, chatId);
       json(res, 200, { success: true, matrix });
       return true;
@@ -112,7 +114,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
 
       const analysisMode = parseCalcMode(data);
       const analysisSnapshot = await buildHandlerSnapshot('doe', analysisMode, chatId);
-      const analysis = calculateDoeAnalysis({ config, matrix }, analysisSnapshot, analysisMode).value;
+      const doeAnalysisCalcResult = calculateDoeAnalysis({ config, matrix }, analysisSnapshot, analysisMode);
+      const analysis = doeAnalysisCalcResult.value;
+      maybeRecordRecent(chatId, 'doe', `DOE analysis: ${config.name}`, doeAnalysisCalcResult);
 
       let effectsChart: string | undefined;
       let anovaChart: string | undefined;

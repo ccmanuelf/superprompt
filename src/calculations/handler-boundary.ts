@@ -16,7 +16,8 @@
 
 import { buildAssumptionSnapshot } from '../assumptions.js';
 import { getEnabledPackNames } from '../packs.js';
-import type { AssumptionSet, CalculationMode } from './types.js';
+import { recordRecentResult } from './recent-results.js';
+import type { AssumptionSet, CalculationMode, CalculationResult } from './types.js';
 
 /**
  * Read the desired calculation mode from a request-shaped object (Web UI
@@ -54,6 +55,22 @@ export function parseCalcModeFromText(text: string): {
     };
   }
   return { mode: 'standard', cleanText: text };
+}
+
+/**
+ * Stash a calculation result in the ephemeral most-recent-result store
+ * (Phase 4 — /explain). Only stashes site_adjusted results — standard-mode
+ * lineage has no assumption metadata to surface and would crowd out the
+ * actually-interesting calls. No-op for empty chatId.
+ */
+export function maybeRecordRecent(
+  chatId: string,
+  metricName: string,
+  label: string,
+  calcResult: CalculationResult<unknown>,
+): void {
+  if (calcResult.mode !== 'site_adjusted') return;
+  recordRecentResult(chatId, metricName, label, calcResult);
 }
 
 /**

@@ -29,6 +29,7 @@ import { handleConwipApi } from './conwip-api.js';
 import { handleDoeApi } from './doe-api.js';
 import { handleFsmApi } from './fsm-api.js';
 import { handleAssumptionsApi } from './assumptions-api.js';
+import { handleExplainApi } from './explain-api.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 // In dev: src/web/ → src/web/public/
@@ -388,6 +389,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
         handleFsmApi(req, res, urlPath, apiChatId).catch(apiError('FSM'));
       } else if (urlPath.startsWith('/api/assumptions')) {
         handleAssumptionsApi(req, res, urlPath, apiChatId).catch(apiError('Assumptions'));
+      } else if (urlPath.startsWith('/api/explain')) {
+        handleExplainApi(req, res, urlPath, apiChatId).catch(apiError('Explain'));
       } else {
         handleSimApi(req, res, urlPath, apiChatId).catch(apiError('Sim'));
       }
@@ -424,6 +427,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       filePath = resolve(PUBLIC_DIR, 'docs', 'index.html');
     } else if (urlPath === '/docs/assumptions' || urlPath === '/docs/assumptions/') {
       filePath = resolve(PUBLIC_DIR, 'docs', 'assumptions.html');
+    } else if (urlPath === '/explain' || urlPath === '/explain/') {
+      filePath = resolve(PUBLIC_DIR, 'explain', 'index.html');
     } else if (urlPath === '/board' || urlPath === '/board/') {
       filePath = resolve(PUBLIC_DIR, 'board.html');
     } else if (urlPath === '/learn' || urlPath === '/learn/') {

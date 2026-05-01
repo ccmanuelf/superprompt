@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luna — Explain (most recent calculation)</title>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7/css/materialdesignicons.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3/dist/vuetify.min.js"></script>
+  <style>
+    .scope-chip-global { background: #1976d2 !important; color: white; }
+    .scope-chip-pack { background: #388e3c !important; color: white; }
+    .scope-chip-user { background: #f57c00 !important; color: white; }
+    .scope-chip-default { background: #757575 !important; color: white; }
+    .mode-chip-standard { background: #455a64 !important; color: white; }
+    .mode-chip-site_adjusted { background: #6a1b9a !important; color: white; }
+    .json-block {
+      background: #263238; color: #eeffff; padding: 12px 16px;
+      border-radius: 6px; overflow-x: auto; font-size: 0.85em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .kv-table th { white-space: nowrap; padding-right: 16px; vertical-align: top; }
+    .empty-hint {
+      max-width: 720px; margin: 80px auto; padding: 32px;
+      text-align: center; color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <v-app>
+      <v-app-bar color="primary" density="compact">
+        <v-app-bar-title>
+          <v-icon class="mr-2">mdi-magnify-expand</v-icon>
+          Explain — most recent calculation
+        </v-app-bar-title>
+        <v-btn variant="text" @click="reload" prepend-icon="mdi-refresh">Refresh</v-btn>
+        <v-btn variant="text" @click="clear" prepend-icon="mdi-delete-outline" :disabled="!data?.hasResult">Clear</v-btn>
+      </v-app-bar>
+
+      <v-main>
+        <v-container fluid>
+          <!-- Empty state -->
+          <div v-if="!loading && !data?.hasResult" class="empty-hint">
+            <v-icon size="64" color="grey-darken-1">mdi-information-outline</v-icon>
+            <h2 class="text-h5 mt-4">Nothing to explain yet.</h2>
+            <p class="mt-2 text-body-1">
+              Run any manufacturing calculation in <strong>site-adjusted mode</strong>
+              from this browser session — capacity, sim, sequencer, doe, toc, conwip,
+              heijunka — and its full lineage will land here.
+            </p>
+            <p class="mt-2 text-body-2 text-medium-emphasis">
+              Standard-mode results are not stashed (textbook formula has no
+              assumption metadata to surface). Results expire after one hour
+              of inactivity. Server restart clears the store.
+            </p>
+          </div>
+
+          <div v-else-if="loading" class="text-center pa-8">
+            <v-progress-circular indeterminate size="48" color="primary"></v-progress-circular>
+          </div>
+
+          <!-- Result -->
+          <div v-else-if="data?.hasResult">
+            <v-card class="mb-4">
+              <v-card-title>
+                <v-icon class="mr-2" color="primary">mdi-flag-checkered</v-icon>
+                {{ data.label }}
+              </v-card-title>
+              <v-card-subtitle>
+                <v-chip :class="`mode-chip-${data.mode}`" size="small" label class="mr-2">{{ data.mode }}</v-chip>
+                <span>metric: <code>{{ data.metricName }}</code></span>
+                <span class="ml-3">computed: {{ formatDate(data.computedAt) }}</span>
+                <span class="ml-3">recorded: {{ formatDate(data.recordedAt) }}</span>
+              </v-card-subtitle>
+            </v-card>
+
+            <!-- Inputs Used -->
+            <v-card class="mb-4">
+              <v-card-title>
+                <v-icon class="mr-2">mdi-import</v-icon>
+                Inputs used
+              </v-card-title>
+              <v-card-text>
+                <v-table density="compact">
+                  <tbody>
+                    <tr v-for="(val, key) in data.inputsUsed" :key="key">
+                      <th class="text-left text-medium-emphasis">{{ key }}</th>
+                      <td><code>{{ formatValue(val) }}</code></td>
+                    </tr>
+                  </tbody>
+                </v-table>
+              </v-card-text>
+            </v-card>
+
+            <!-- Assumptions Applied -->
+            <v-card class="mb-4">
+              <v-card-title>
+                <v-icon class="mr-2">mdi-tune-variant</v-icon>
+                Assumptions applied
+                <v-chip class="ml-2" size="small">{{ data.assumptionsApplied.length }}</v-chip>
+              </v-card-title>
+              <v-card-text>
+                <p v-if="data.assumptionsApplied.length === 0" class="text-medium-emphasis">
+                  No assumptions were resolved for this metric. Either the
+                  metric has no registered dependencies in
+                  <code>luna_metric_assumption_dependencies</code>, or it ran
+                  in standard mode (this view should not be reachable for
+                  standard mode — file a bug if you see this).
+                </p>
+                <v-data-table
+                  v-else
+                  :headers="assumptionHeaders"
+                  :items="data.assumptionsApplied"
+                  density="compact"
+                  hide-default-footer
+                  :items-per-page="-1"
+                >
+                  <template v-slot:item.sourceScope="{ item }">
+                    <v-chip :class="`scope-chip-${item.sourceScope}`" size="small" label>
+                      {{ item.sourceScope }}
+                    </v-chip>
+                  </template>
+                  <template v-slot:item.value="{ item }">
+                    <code>{{ formatValue(item.value) }}</code>
+                  </template>
+                  <template v-slot:item.scopeId="{ item }">
+                    <span v-if="item.scopeId" class="text-medium-emphasis">{{ item.scopeId }}</span>
+                    <span v-else class="text-disabled">—</span>
+                  </template>
+                </v-data-table>
+              </v-card-text>
+            </v-card>
+
+            <!-- Result value -->
+            <v-card class="mb-4">
+              <v-card-title>
+                <v-icon class="mr-2">mdi-calculator-variant</v-icon>
+                Result
+              </v-card-title>
+              <v-card-text>
+                <pre class="json-block">{{ formatJson(data.value) }}</pre>
+              </v-card-text>
+            </v-card>
+          </div>
+
+          <v-snackbar v-model="snackbar" :timeout="3000" :color="snackColor">
+            {{ snackText }}
+          </v-snackbar>
+        </v-container>
+      </v-main>
+    </v-app>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted } = Vue;
+    const { createVuetify } = Vuetify;
+
+    const app = createApp({
+      setup() {
+        const data = ref(null);
+        const loading = ref(true);
+        const snackbar = ref(false);
+        const snackText = ref('');
+        const snackColor = ref('success');
+
+        const assumptionHeaders = [
+          { title: 'Name', key: 'name' },
+          { title: 'Value', key: 'value' },
+          { title: 'Source', key: 'sourceScope' },
+          { title: 'Scope ID', key: 'scopeId' },
+          { title: 'Rationale', key: 'rationale' },
+        ];
+
+        function formatValue(v) {
+          if (v === null || v === undefined) return '∅';
+          if (typeof v === 'string') return v;
+          if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+          try { return JSON.stringify(v); } catch { return String(v); }
+        }
+
+        function formatJson(v) {
+          if (v === null || v === undefined) return '';
+          try { return JSON.stringify(v, null, 2); } catch { return String(v); }
+        }
+
+        function formatDate(ts) {
+          if (!ts) return '';
+          if (typeof ts === 'string') return new Date(ts).toLocaleString();
+          return new Date(ts).toLocaleString();
+        }
+
+        function notify(text, color = 'success') {
+          snackText.value = text;
+          snackColor.value = color;
+          snackbar.value = true;
+        }
+
+        async function reload() {
+          loading.value = true;
+          try {
+            const r = await fetch('/api/explain');
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            data.value = await r.json();
+          } catch (err) {
+            notify('Failed to load: ' + err.message, 'error');
+          } finally {
+            loading.value = false;
+          }
+        }
+
+        async function clear() {
+          try {
+            const r = await fetch('/api/explain', { method: 'DELETE' });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            notify('Cleared');
+            await reload();
+          } catch (err) {
+            notify('Clear failed: ' + err.message, 'error');
+          }
+        }
+
+        onMounted(() => { reload(); });
+
+        return {
+          data, loading, snackbar, snackText, snackColor, assumptionHeaders,
+          formatValue, formatJson, formatDate,
+          reload, clear,
+        };
+      },
+    });
+
+    const vuetify = createVuetify();
+    app.use(vuetify);
+    app.mount('#app');
+  </script>
+</body>
+</html>

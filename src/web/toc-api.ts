@@ -5,7 +5,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
 import { calculateTocMetrics } from '../calculations/toc.js';
-import { parseCalcMode, buildHandlerSnapshot } from '../calculations/handler-boundary.js';
+import { parseCalcMode, buildHandlerSnapshot, maybeRecordRecent } from '../calculations/handler-boundary.js';
 import {
   saveTOC,
   getTOC,
@@ -99,7 +99,9 @@ async function handlePost(route: string, body: unknown, res: ServerResponse, cha
       }
       const tocMode = parseCalcMode(data);
       const tocSnapshot = await buildHandlerSnapshot('toc', tocMode, chatId);
-      const result = calculateTocMetrics(config, tocSnapshot, tocMode).value;
+      const tocCalcResult = calculateTocMetrics(config, tocSnapshot, tocMode);
+      const result = tocCalcResult.value;
+      maybeRecordRecent(chatId, 'toc', `TOC analysis: ${config.name}`, tocCalcResult);
 
       let utilChart: string | undefined;
       let bufferChart: string | undefined;

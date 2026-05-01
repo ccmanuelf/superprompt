@@ -11,7 +11,7 @@ import {
   calculateSimulationMetrics,
   calculateMonteCarloMetrics,
 } from '../calculations/simulation.js';
-import { parseCalcMode, buildHandlerSnapshot } from '../calculations/handler-boundary.js';
+import { parseCalcMode, buildHandlerSnapshot, maybeRecordRecent } from '../calculations/handler-boundary.js';
 import {
   validateSimulationConfig,
   saveScenario,
@@ -165,11 +165,13 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
       const seed = typeof body.seed === 'number' ? body.seed : 42;
       const mode = parseCalcMode(body);
       const snapshot = await buildHandlerSnapshot('simulation', mode, chatId);
-      const results = (await calculateSimulationMetrics(
+      const simCalcResult = await calculateSimulationMetrics(
         { config, validationReport: report, seed },
         snapshot,
         mode,
-      )).value;
+      );
+      const results = simCalcResult.value;
+      maybeRecordRecent(chatId, 'simulation', `Simulation: ${(body.scenario_name as string) || 'unnamed'}`, simCalcResult);
 
       // Auto-save if scenario name provided
       const scenarioName = body.scenario_name as string;
@@ -199,11 +201,13 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
       // Site-adjusted mode passes undefined so the wrapper's active hook
       // sources monte_carlo_default_iterations from the snapshot.
       const replications = replicationsFromBody ?? (mcMode === 'standard' ? 30 : undefined);
-      const mcResults = (await calculateMonteCarloMetrics(
+      const mcCalcResult = await calculateMonteCarloMetrics(
         { config, replications },
         mcSnapshot,
         mcMode,
-      )).value;
+      );
+      const mcResults = mcCalcResult.value;
+      maybeRecordRecent(chatId, 'simulation', `Monte Carlo: ${(body.scenario_name as string) || 'unnamed'} (${mcResults.replications} reps)`, mcCalcResult);
 
       // Convert Maps to plain objects for JSON serialization
       const utilByStation: Record<string, unknown> = {};
@@ -305,11 +309,13 @@ async function handlePost(route: string, body: Record<string, unknown>, res: Ser
         const modReport = validateSimulationConfig(modConfig);
         const scenMode = parseCalcMode(body);
         const scenSnapshot = await buildHandlerSnapshot('simulation', scenMode, chatId);
-        const simResults = (await calculateSimulationMetrics(
+        const scenCalcResult = await calculateSimulationMetrics(
           { config: modConfig, validationReport: modReport },
           scenSnapshot,
           scenMode,
-        )).value;
+        );
+        const simResults = scenCalcResult.value;
+        maybeRecordRecent(chatId, 'simulation', `Scenario sweep: ${param} factor ${factor}`, scenCalcResult);
         const topStation = simResults.station_performance[0];
 
         results.push({
