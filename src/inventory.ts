@@ -7,6 +7,12 @@ import { STORE_DIR } from './config.js';
 import { inverseNormal } from './sigma.js';
 import type { TableInitializer } from './core/interfaces.js';
 import { calculateInventoryMetrics } from './calculations/inventory.js';
+import {
+  resolveOptionsToSnapshot,
+  maybeRecordRecent,
+  type CalcInvocationOptions,
+} from './calculations/handler-boundary.js';
+import type { AssumptionSet, CalculationMode } from './calculations/types.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -311,12 +317,18 @@ export function calculateReorderPoint(dailyDemand: number, leadTimeDays: number,
  * Generate full replenishment plan for a set of inventory items.
  * Exported for testing.
  */
-export function generateReplenishmentPlan(items: InventoryItem[]): ReplenishmentPlan[] {
+export function generateReplenishmentPlan(
+  items: InventoryItem[],
+  options?: { mode?: CalculationMode; snapshot?: AssumptionSet; chatId?: string },
+): ReplenishmentPlan[] {
+  const mode = options?.mode ?? 'standard';
+  const snapshot: AssumptionSet = options?.snapshot ?? {};
+
   return items.map((item) => {
     const holdingCostPerUnit = item.unit_cost * (item.holding_cost_pct / 100);
     const dailyDemand = item.annual_demand / 365;
 
-    const metrics = calculateInventoryMetrics(
+    const calcResult = calculateInventoryMetrics(
       {
         annualDemand: item.annual_demand,
         orderCost: item.order_cost,
@@ -326,9 +338,13 @@ export function generateReplenishmentPlan(items: InventoryItem[]): Replenishment
         serviceLevel: item.service_level,
         demandStddev: item.demand_stddev,
       },
-      {},
-      'standard',
-    ).value;
+      snapshot,
+      mode,
+    );
+    const metrics = calcResult.value;
+    if (options?.chatId) {
+      maybeRecordRecent(options.chatId, 'inventory', `Inventory: ${item.item_id}`, calcResult);
+    }
 
     // When holding cost is zero, order the full annual demand at once (1 order/year)
     // since there's no cost to holding inventory.
@@ -642,6 +658,7 @@ export async function executeInventoryAnalysis(
   csvContent: string,
   projectName: string,
   demandHistory?: number[],
+  options?: CalcInvocationOptions,
 ): Promise<{
   project: InventoryProject;
   plans: ReplenishmentPlan[];
@@ -651,7 +668,8 @@ export async function executeInventoryAnalysis(
 }> {
   const items = parseInventoryCsv(csvContent);
 
-  const plans = generateReplenishmentPlan(items);
+  const { mode, chatId, snapshot } = await resolveOptionsToSnapshot('inventory', options);
+  const plans = generateReplenishmentPlan(items, { mode, snapshot, chatId });
   const abc = abcClassification(items);
   const forecast = demandHistory && demandHistory.length >= 3
     ? exponentialSmoothing(demandHistory) : null;

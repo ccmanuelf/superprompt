@@ -6,6 +6,11 @@ import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
 import { calculateFmeaMetrics } from './calculations/fmea.js';
+import {
+  resolveOptionsToSnapshot,
+  maybeRecordRecent,
+  type CalcInvocationOptions,
+} from './calculations/handler-boundary.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -170,19 +175,25 @@ export async function addFailureMode(
     detection?: number;
     current_controls?: string;
   },
+  options?: CalcInvocationOptions,
 ): Promise<FailureMode> {
   const db = getKnex();
   const id = genId();
   const now = Date.now();
 
+  const { mode, chatId, snapshot } = await resolveOptionsToSnapshot('fmea', options);
   const severity = clamp(fm.severity ?? 5, 1, 10);
   const occurrence = clamp(fm.occurrence ?? 5, 1, 10);
   const detection = clamp(fm.detection ?? 5, 1, 10);
-  const { rpn, actionPriority: ap } = calculateFmeaMetrics(
+  const fmeaCalcResult = calculateFmeaMetrics(
     { severity, occurrence, detection },
-    {},
-    'standard',
-  ).value;
+    snapshot,
+    mode,
+  );
+  const { rpn, actionPriority: ap } = fmeaCalcResult.value;
+  if (chatId) {
+    maybeRecordRecent(chatId, 'fmea', `FMEA add: ${fm.failure_mode}`, fmeaCalcResult);
+  }
 
   await db('fmea_failure_modes').insert({
     id, doc_id: docId, process_step: fm.process_step, failure_mode: fm.failure_mode,
@@ -239,19 +250,25 @@ export async function getActionsForFailureMode(fmId: string): Promise<ActionItem
 export async function completeAction(
   actionId: string,
   severityAfter: number, occurrenceAfter: number, detectionAfter: number,
+  options?: CalcInvocationOptions,
 ): Promise<ActionItem | null> {
   const db = getKnex();
   const action = await db('fmea_action_items').where({ id: actionId }).first() as ActionItem | undefined;
   if (!action) return null;
 
+  const { mode, chatId, snapshot } = await resolveOptionsToSnapshot('fmea', options);
   const s = clamp(severityAfter, 1, 10);
   const o = clamp(occurrenceAfter, 1, 10);
   const d = clamp(detectionAfter, 1, 10);
-  const { rpn: rpnAfter, actionPriority: apAfter } = calculateFmeaMetrics(
+  const completeCalcResult = calculateFmeaMetrics(
     { severity: s, occurrence: o, detection: d },
-    {},
-    'standard',
-  ).value;
+    snapshot,
+    mode,
+  );
+  const { rpn: rpnAfter, actionPriority: apAfter } = completeCalcResult.value;
+  if (chatId) {
+    maybeRecordRecent(chatId, 'fmea', `FMEA complete: ${actionId}`, completeCalcResult);
+  }
   const now = Date.now();
 
   await db('fmea_action_items').where({ id: actionId }).update({
@@ -655,8 +672,14 @@ export function exportFmeaCsv(doc: FmeaDocument, failureModes: FailureMode[], ac
 export async function executeFmeaFromCsv(
   csvContent: string, docName: string,
   fmeaType: FmeaType = 'pfmea', product: string = '', process: string = '',
+  options?: CalcInvocationOptions,
 ): Promise<{ doc: FmeaDocument; failureModes: FailureMode[]; actions: ActionItem[] }> {
   const rows = parseFmeaCsv(csvContent);
+
+  // Resolve once; pass through to per-row addFailureMode so each
+  // invocation reuses the same snapshot rather than re-resolving.
+  const { mode, chatId, snapshot } = await resolveOptionsToSnapshot('fmea', options);
+  const passOptions: CalcInvocationOptions = { mode, chatId, snapshot };
 
   // Reuse or create doc
   let doc = await getFmeaDocByName(docName);
@@ -675,7 +698,7 @@ export async function executeFmeaFromCsv(
   const actions: ActionItem[] = [];
 
   for (const row of rows) {
-    const fm = await addFailureMode(doc.id, row);
+    const fm = await addFailureMode(doc.id, row, passOptions);
     failureModes.push(fm);
 
     // Auto-generate action items for HIGH priority

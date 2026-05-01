@@ -6,6 +6,11 @@ import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
 import { calculateCapabilityMetrics } from './calculations/sigma.js';
+import {
+  resolveOptionsToSnapshot,
+  maybeRecordRecent,
+  type CalcInvocationOptions,
+} from './calculations/handler-boundary.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -1780,6 +1785,7 @@ export async function executeCapabilityAnalysis(
   lsl: number,
   projectName: string,
   target?: number,
+  options?: CalcInvocationOptions,
 ): Promise<{ project: SigmaProject; capability: CapabilityResult; controlChart: ControlChartData }> {
   if (usl <= lsl) throw new Error('USL must be greater than LSL.');
 
@@ -1787,7 +1793,8 @@ export async function executeCapabilityAnalysis(
   const values = rows.map((r) => r.value);
   const subgroups = rows.map((r) => r.subgroup).filter((s): s is string => s !== undefined);
 
-  const capability = calculateCapabilityMetrics(
+  const { mode, chatId, snapshot } = await resolveOptionsToSnapshot('sigma_capability', options);
+  const capabilityCalcResult = calculateCapabilityMetrics(
     {
       values,
       lsl,
@@ -1795,9 +1802,13 @@ export async function executeCapabilityAnalysis(
       target,
       subgroups: subgroups.length > 0 ? subgroups : undefined,
     },
-    {},
-    'standard',
-  ).value;
+    snapshot,
+    mode,
+  );
+  const capability = capabilityCalcResult.value;
+  if (chatId) {
+    maybeRecordRecent(chatId, 'sigma_capability', `Sigma capability: ${projectName}`, capabilityCalcResult);
+  }
 
   // Control chart: auto-select based on subgroup structure
   // No subgroups → I-MR, avg size ≤ 10 → X-bar/R, avg size > 10 → X-bar/S

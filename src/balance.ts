@@ -6,6 +6,12 @@ import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
 import { calculateBalanceMetrics } from './calculations/balance.js';
+import {
+  resolveOptionsToSnapshot,
+  maybeRecordRecent,
+  type CalcInvocationOptions,
+} from './calculations/handler-boundary.js';
+import type { AssumptionSet, CalculationMode } from './calculations/types.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -606,9 +612,19 @@ export function buildStationDetails(
 /**
  * Run the full RPW line balance algorithm.
  * Validates inputs, computes weights, sorts, assigns, and returns results.
+ *
+ * The third parameter is a CalcInvocationOptions bag — pre-resolved
+ * snapshot + mode + chatId. Backwards-compatible: when omitted, defaults
+ * to standard mode + empty bag (behavior unchanged from pre-rc.101).
+ *
  * Exported for testing.
  */
-export function runBalance(tasks: BalanceTask[], taktTime: number, projectName: string): BalanceResult {
+export function runBalance(
+  tasks: BalanceTask[],
+  taktTime: number,
+  projectName: string,
+  options?: { mode?: CalculationMode; snapshot?: AssumptionSet; chatId?: string },
+): BalanceResult {
   // Validate
   if (tasks.length === 0) throw new Error('No tasks provided.');
   if (taktTime <= 0) throw new Error('Takt time must be positive.');
@@ -639,15 +655,23 @@ export function runBalance(tasks: BalanceTask[], taktTime: number, projectName: 
   // Build station details
   const stations = buildStationDetails(assignments, taktTime);
 
-  // Calculate metrics via dual-view wrapper
+  // Calculate metrics via dual-view wrapper. Snapshot must be pre-built
+  // by the caller (executeBalance handles this asynchronously); runBalance
+  // stays sync to preserve existing telegram.ts:3411 callsite ergonomics.
   const totalTaskTime = tasks.reduce((sum, t) => sum + t.time_seconds, 0);
   const numStations = stations.length;
   const stationTimes = stations.map((s) => s.total_time);
-  const { efficiency, smoothness: smoothnessIndex } = calculateBalanceMetrics(
+  const mode = options?.mode ?? 'standard';
+  const snapshot: AssumptionSet = options?.snapshot ?? {};
+  const balanceCalcResult = calculateBalanceMetrics(
     { totalTaskTime, numStations, taktTime, stationTimes },
-    {},
-    'standard',
-  ).value;
+    snapshot,
+    mode,
+  );
+  const { efficiency, smoothness: smoothnessIndex } = balanceCalcResult.value;
+  if (options?.chatId) {
+    maybeRecordRecent(options.chatId, 'balance', `Balance: ${projectName}`, balanceCalcResult);
+  }
 
   return {
     project_id: '', // set by caller after DB insert
@@ -671,9 +695,11 @@ export async function executeBalance(
   taktTime: number,
   projectName: string,
   description: string = '',
+  options?: CalcInvocationOptions,
 ): Promise<BalanceResult> {
+  const { mode, chatId, snapshot } = await resolveOptionsToSnapshot('balance', options);
   const tasks = parseBalanceCsv(csvContent);
-  const result = runBalance(tasks, taktTime, projectName);
+  const result = runBalance(tasks, taktTime, projectName, { mode, snapshot, chatId });
 
   // Reuse existing project or create new one
   let project = await getProjectByName(projectName);

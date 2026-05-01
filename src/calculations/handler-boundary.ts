@@ -15,7 +15,6 @@
  */
 
 import { buildAssumptionSnapshot } from '../assumptions.js';
-import { getEnabledPackNames } from '../packs.js';
 import { recordRecentResult } from './recent-results.js';
 import type { AssumptionSet, CalculationMode, CalculationResult } from './types.js';
 
@@ -74,6 +73,41 @@ export function maybeRecordRecent(
 }
 
 /**
+ * Options passed to orchestrator-level entry points (executeBalance,
+ * executeFmeaFromCsv, executeInventoryAnalysis, executeCapabilityAnalysis,
+ * etc.) to opt into site-adjusted calculation. Backwards-compatible:
+ * existing callers that omit the options keep getting standard mode and
+ * an empty assumption bag.
+ *
+ * When `snapshot` is provided, orchestrators use it directly (handler
+ * built it once at the boundary). When absent, orchestrators build their
+ * own via buildHandlerSnapshot.
+ */
+export interface CalcInvocationOptions {
+  mode?: CalculationMode;
+  chatId?: string;
+  snapshot?: AssumptionSet;
+}
+
+/**
+ * Resolve an optional CalcInvocationOptions into the concrete
+ * (mode, chatId, snapshot) triple that orchestrators need. Builds the
+ * snapshot if the caller didn't provide one. Standard-mode default.
+ */
+export async function resolveOptionsToSnapshot(
+  metricName: string,
+  options: CalcInvocationOptions | undefined,
+): Promise<{ mode: CalculationMode; chatId: string; snapshot: AssumptionSet }> {
+  const mode = options?.mode ?? 'standard';
+  const chatId = options?.chatId ?? '';
+  if (options?.snapshot) {
+    return { mode, chatId, snapshot: options.snapshot };
+  }
+  const snapshot = await buildHandlerSnapshot(metricName, mode, chatId);
+  return { mode, chatId, snapshot };
+}
+
+/**
  * Build the AssumptionSet bag for a handler call. Wraps
  * buildAssumptionSnapshot with handler-specific context:
  *   - userId: chatId / web session ID
@@ -88,6 +122,11 @@ export async function buildHandlerSnapshot(
   chatId: string,
 ): Promise<AssumptionSet> {
   if (mode === 'standard') return {};
+  // Dynamic import to keep the module graph from pulling pack-subscription
+  // code (and its transitive config/db deps) into every test that touches
+  // a calculation orchestrator. Standard-mode short-circuit above means
+  // this import only fires when site_adjusted is requested.
+  const { getEnabledPackNames } = await import('../packs.js');
   const activePacks = await getEnabledPackNames(chatId);
   return buildAssumptionSnapshot(metricName, mode, {
     userId: chatId || undefined,

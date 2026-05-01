@@ -9,6 +9,7 @@ import type { PlatformContext } from '../core/context.js';
 import type { CardStatus, CardAssignee } from '../kanban.js';
 import type { DigestFrequency } from '../proactive.js';
 import type { CitationFormat } from '../citations.js';
+import { parseCalcModeFromText } from '../calculations/handler-boundary.js';
 
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -748,7 +749,9 @@ async function handleFmeaCsv(ctx: Context, caption: string): Promise<void> {
   const doc = ctx.message?.document;
   if (!doc) { await ctx.reply('Please attach a CSV file.'); return; }
 
-  const docName = caption.replace(/^\/fmea(@\w+)?/, '').trim();
+  const { mode, cleanText } = parseCalcModeFromText(caption);
+  const chatId = String(ctx.chat?.id ?? '');
+  const docName = cleanText.replace(/^\/fmea(@\w+)?/, '').trim();
   if (!docName) {
     await ctx.reply('Usage: attach CSV with caption:\n<code>/fmea &lt;document_name&gt;</code>', { parse_mode: 'HTML' });
     return;
@@ -766,7 +769,7 @@ async function handleFmeaCsv(ctx: Context, caption: string): Promise<void> {
     await ctx.reply(`Running FMEA analysis for "${docName}"...`);
 
     const { executeFmeaFromCsv, formatFmeaWorksheet, generateRiskHeatmap, generateRpnPareto } = await import('../fmea.js');
-    const { doc: fmeaDoc, failureModes, actions } = await executeFmeaFromCsv(csvContent, docName);
+    const { doc: fmeaDoc, failureModes, actions } = await executeFmeaFromCsv(csvContent, docName, 'pfmea', '', '', { mode, chatId });
 
     // Send formatted worksheet
     const formatted = formatFmeaWorksheet(fmeaDoc, failureModes, actions, true);
@@ -798,7 +801,9 @@ async function handleInventoryCsv(ctx: Context, caption: string): Promise<void> 
     return;
   }
 
-  const projectName = caption.replace(/^\/inventory(@\w+)?/, '').trim();
+  const { mode, cleanText } = parseCalcModeFromText(caption);
+  const chatId = String(ctx.chat?.id ?? '');
+  const projectName = cleanText.replace(/^\/inventory(@\w+)?/, '').trim();
   if (!projectName) {
     await ctx.reply(
       'Usage: attach CSV with caption:\n<code>/inventory &lt;project_name&gt;</code>\n\nExample: <code>/inventory Warehouse Q3</code>',
@@ -819,7 +824,7 @@ async function handleInventoryCsv(ctx: Context, caption: string): Promise<void> 
     await ctx.reply(`Running inventory analysis for "${projectName}"...`);
 
     const { executeInventoryAnalysis, formatReplenishmentPlan, generateAbcChart } = await import('../inventory.js');
-    const { plans, abc, stockoutRisks } = await executeInventoryAnalysis(csvContent, projectName);
+    const { plans, abc, stockoutRisks } = await executeInventoryAnalysis(csvContent, projectName, undefined, { mode, chatId });
 
     // Send text result
     const formatted = formatReplenishmentPlan(plans, abc, true);
@@ -853,8 +858,10 @@ async function handleSigmaCsv(ctx: Context, caption: string): Promise<void> {
     return;
   }
 
-  // Parse caption: /sigma <usl> <lsl> <project_name> [target=<value>]
-  const sigmaArgs = caption.replace(/^\/sigma(@\w+)?/, '').trim();
+  // Parse caption: /sigma <usl> <lsl> <project_name> [target=<value>] [--site-adjusted]
+  const { mode, cleanText: capForSigma } = parseCalcModeFromText(caption);
+  const chatId = String(ctx.chat?.id ?? '');
+  const sigmaArgs = capForSigma.replace(/^\/sigma(@\w+)?/, '').trim();
   const targetMatch = sigmaArgs.match(/\btarget=(\d+(?:\.\d+)?)\b/i);
   const target = targetMatch ? parseFloat(targetMatch[1]) : undefined;
   const cleanArgs = sigmaArgs.replace(/\btarget=\d+(?:\.\d+)?\b/i, '').trim();
@@ -895,7 +902,7 @@ async function handleSigmaCsv(ctx: Context, caption: string): Promise<void> {
       paretoAnalysis, getMeasurements,
     } = await import('../sigma.js');
 
-    const { project, capability, controlChart } = await executeCapabilityAnalysis(csvContent, usl, lsl, projectName, target);
+    const { project, capability, controlChart } = await executeCapabilityAnalysis(csvContent, usl, lsl, projectName, target, { mode, chatId });
 
     // Send text result
     const formatted = formatCapabilityResult(capability, controlChart, projectName, true);
@@ -942,8 +949,10 @@ async function handleBalanceCsv(ctx: Context, caption: string): Promise<void> {
     return;
   }
 
-  // Parse caption: /balance <takt_time> <project_name>
-  const balanceArgs = caption.replace(/^\/balance(@\w+)?/, '').trim();
+  // Parse caption: /balance <takt_time> <project_name> [--site-adjusted]
+  const { mode, cleanText: capForBalance } = parseCalcModeFromText(caption);
+  const chatId = String(ctx.chat?.id ?? '');
+  const balanceArgs = capForBalance.replace(/^\/balance(@\w+)?/, '').trim();
   const match = balanceArgs.match(/^(\d+(?:\.\d+)?)\s+(.+)$/);
   if (!match) {
     await ctx.reply(
@@ -975,7 +984,7 @@ async function handleBalanceCsv(ctx: Context, caption: string): Promise<void> {
     await ctx.reply(`Running balance for "${projectName}" with takt time ${taktTime}s...`);
 
     const { executeBalance, formatBalanceResult, generateYamazumiChart, generateGanttChart, exportAssignmentsCsv } = await import('../balance.js');
-    const result = await executeBalance(csvContent, taktTime, projectName);
+    const result = await executeBalance(csvContent, taktTime, projectName, '', { mode, chatId });
 
     // Send text result
     const formatted = formatBalanceResult(result, true);
@@ -3370,7 +3379,8 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     if (!isAuthorised(ctx.chat.id)) return;
     const chatId = String(ctx.chat.id);
     const text = ctx.message?.text ?? '';
-    const args = text.replace(/^\/balance(@\w+)?/, '').trim();
+    const { mode: calcMode, cleanText } = parseCalcModeFromText(text);
+    const args = cleanText.replace(/^\/balance(@\w+)?/, '').trim();
     const parts = args.split(/\s+/);
     const subcommand = parts[0]?.toLowerCase() || 'help';
 
@@ -3408,7 +3418,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         }
         const latest = results[0];
         const tasks = await getProjectTasks(project.id);
-        const balanceResult = runBalance(tasks, latest.takt_time, project.name);
+        const balanceResult = runBalance(tasks, latest.takt_time, project.name, { mode: calcMode, chatId });
         balanceResult.project_id = project.id;
         await ctx.reply(formatBalanceResult(balanceResult, true), { parse_mode: 'HTML' });
         return;
