@@ -61,6 +61,35 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Permissions-Policy': 'microphone=(self)',
 };
 
+/**
+ * Pages that load Vue / Vuetify / AG Grid / charting libs from
+ * cdn.jsdelivr.net or unpkg. Without the relaxed CSP they fail with
+ * "Vue is not defined" plus CSP-violation console errors and the page
+ * is non-functional. Maintained as a list (not a `||` chain) so adding
+ * a new dashboard or doc UI is a single append — `/explain` and `/hub`
+ * shipped broken from rc.100 because they were missed in the previous
+ * inline-conditional form (rc.110 regression fix).
+ *
+ * The matcher tests both `urlPath` (the request path) and `filePath`
+ * (the on-disk path) because static-file resolution sometimes maps a
+ * shorter URL like `/sequence` to `src/web/public/sequencer/...`.
+ */
+const RELAXED_CSP_URL_PREFIXES: readonly string[] = [
+  '/sim', '/capacity', '/sequence', '/vsm', '/toc', '/conwip',
+  '/doe', '/fsm', '/docs', '/explain', '/hub',
+];
+const RELAXED_CSP_FILEPATH_NEEDLES: readonly string[] = [
+  'simulation', 'capacity', 'sequencer', 'vsm', '/toc/', 'conwip',
+  '/doe/', '/fsm/', '/docs/', '/explain/', '/hub/',
+];
+
+const RELAXED_CSP_HEADER = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com; font-src https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:;";
+
+export function pageNeedsRelaxedCsp(urlPath: string, filePath: string): boolean {
+  return RELAXED_CSP_URL_PREFIXES.some((p) => urlPath.startsWith(p))
+    || RELAXED_CSP_FILEPATH_NEEDLES.some((n) => filePath.includes(n));
+}
+
 // Rate limiter for failed auth attempts (per IP)
 // Two tiers: short window (3 failures/min) + hourly ban (15 failures/hour)
 const AUTH_FAIL_WINDOW_MS = 60_000;      // 1 minute window
@@ -471,9 +500,10 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     const ext = extname(filePath);
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
-    // Relax CSP for simulation page (needs CDN scripts for Vue, Vuetify, AG Grid)
-    const headers = urlPath.startsWith('/sim') || filePath.includes('simulation') || urlPath.startsWith('/capacity') || filePath.includes('capacity') || urlPath.startsWith('/sequence') || filePath.includes('sequencer') || urlPath.startsWith('/vsm') || filePath.includes('vsm') || urlPath.startsWith('/toc') || filePath.includes('/toc/') || urlPath.startsWith('/conwip') || filePath.includes('conwip') || urlPath.startsWith('/doe') || filePath.includes('/doe/') || urlPath.startsWith('/fsm') || filePath.includes('/fsm/') || urlPath.startsWith('/docs') || filePath.includes('/docs/')
-      ? { ...SECURITY_HEADERS, 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com; font-src https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:;" }
+    // Relax CSP for pages that load Vue / Vuetify / AG Grid from CDN.
+    // See pageNeedsRelaxedCsp() / RELAXED_CSP_URL_PREFIXES above.
+    const headers = pageNeedsRelaxedCsp(urlPath, filePath)
+      ? { ...SECURITY_HEADERS, 'Content-Security-Policy': RELAXED_CSP_HEADER }
       : SECURITY_HEADERS;
 
     try {
