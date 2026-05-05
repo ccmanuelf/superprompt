@@ -154,6 +154,26 @@
     </v-app>
   </div>
 
+  <!-- rc.112 — auth bootstrap (see /docs/assumptions.html for rationale). -->
+  <script>
+    (function () {
+      const TOKEN_KEY = 'luna_voice_web_token';
+      const params = new URLSearchParams(window.location.search);
+      let token = params.get('token') || localStorage.getItem(TOKEN_KEY) || '';
+      if (params.get('token')) localStorage.setItem(TOKEN_KEY, token);
+      if (!token) return;
+      const _fetch = window.fetch;
+      window.fetch = function (input, init) {
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (url.startsWith('/api/')) {
+          init = init || {};
+          init.headers = Object.assign({}, init.headers || {}, { Authorization: 'Bearer ' + token });
+        }
+        return _fetch.call(this, input, init);
+      };
+    })();
+  </script>
+
   <script>
     const { createApp, ref, onMounted } = Vue;
     const { createVuetify } = Vuetify;

@@ -928,13 +928,20 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       }
     })();
 
-    ws.on('message', async (data: Buffer | string) => {
+    ws.on('message', async (data: Buffer | string, isBinary: boolean) => {
       // Any inbound traffic (including pings) resets the idle timer.
       armIdleTimer();
-      // Binary = audio data, string = JSON control message
-      if (typeof data === 'string') {
+      // rc.112: distinguish text-frame control messages from binary audio.
+      // The `ws` library delivers all frames as Buffer by default, so the
+      // previous `typeof data === 'string'` check never fired — pings
+      // arrived as Buffer and got routed into the audio path. The
+      // isBinary parameter is the canonical signal for the frame type;
+      // we still defensively support direct string delivery in case the
+      // server is reconfigured to it. Mirrors the board/learn handlers.
+      if (!isBinary) {
+        const text = typeof data === 'string' ? data : Buffer.isBuffer(data) ? data.toString('utf-8') : '';
         try {
-          const msg = JSON.parse(data);
+          const msg = JSON.parse(text);
           if (msg.type === 'ping') {
             ws.send(JSON.stringify({ type: 'pong' }));
           }
@@ -947,7 +954,7 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
       try {
         ws.send(JSON.stringify({ type: 'status', status: 'processing' }));
 
-        const result = await session.processAudio(Buffer.from(data));
+        const result = await session.processAudio(Buffer.from(data as Buffer));
 
         ws.send(JSON.stringify({
           type: 'response',
