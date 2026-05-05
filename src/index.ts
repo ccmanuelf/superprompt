@@ -392,6 +392,32 @@ async function main(): Promise<void> {
     const { createTelegramBot, formatForTelegram, splitMessage } = await import('./platforms/telegram.js');
     const bot = createTelegramBot(ctx);
 
+    /**
+     * Send a Telegram message with 429 (TooManyRequests) handling. Telegram's
+     * global rate limit is ~30msg/sec; bursts of proactive notifications,
+     * digests, or task-completion broadcasts can hit it. grammy v1.42 raises
+     * a `GrammyError` with `error_code === 429` and a `parameters.retry_after`
+     * (seconds) value — we honor that, capped at 3 attempts so we never block
+     * the notify pipeline forever.
+     */
+    const sendWithRetry = async (chatId: string, text: string): Promise<void> => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await bot.api.sendMessage(chatId, text, { parse_mode: 'HTML' });
+          return;
+        } catch (err) {
+          const e = err as { error_code?: number; parameters?: { retry_after?: number } };
+          if (e?.error_code === 429 && attempt < 2) {
+            const retryAfterSec = Math.max(1, Math.min(e.parameters?.retry_after ?? 1, 30));
+            logger.warn({ chatId, attempt: attempt + 1, retryAfterSec }, 'Telegram 429 — backing off before retry');
+            await new Promise((r) => setTimeout(r, retryAfterSec * 1000));
+            continue;
+          }
+          throw err;
+        }
+      }
+    };
+
     app.registerPlatform({
       name: 'telegram',
       canHandle: (chatId: string) => !chatId.startsWith('!'),
@@ -399,7 +425,7 @@ async function main(): Promise<void> {
         const formatted = formatForTelegram(text);
         const chunks = splitMessage(formatted);
         for (const chunk of chunks) {
-          await bot.api.sendMessage(chatId, chunk, { parse_mode: 'HTML' });
+          await sendWithRetry(chatId, chunk);
         }
       },
       start: async () => {

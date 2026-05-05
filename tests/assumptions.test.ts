@@ -20,12 +20,16 @@ import {
   listMetricDependencies,
   resolveAssumption,
   resolveAssumptionsForMetric,
+  resetMetricDependencyCache,
   ASSUMPTION_DEFAULTS,
 } from '../src/assumptions.js';
 
 async function freshDb(): Promise<void> {
   if (testKnex) await testKnex.destroy();
   testKnex = createTestKnex();
+  // Each fresh DB gets a fresh cache so the module-level dependency cache
+  // doesn't carry rows from the previous test's destroyed knex instance.
+  resetMetricDependencyCache();
   await initAssumptionTables();
 }
 
@@ -277,5 +281,47 @@ describe('resolveAssumptionsForMetric', () => {
     const map = await resolveAssumptionsForMetric('oee', { activePacks: ['manufacturing'] });
     expect(map.availability_calculation_basis.sourceScope).toBe('pack');
     expect(map.availability_calculation_basis.value).toBe('total_uptime');
+  });
+
+  it('batches the assumption fetch (one whereIn instead of N round-trips)', async () => {
+    // Spy on knex query timing — count calls to luna_assumptions during one
+    // resolve. A non-batched implementation issued 1 SELECT per dependency.
+    const ev = { count: 0 };
+    const onQuery = (q: { sql?: string }) => {
+      if ((q.sql ?? '').includes('luna_assumptions') && !(q.sql ?? '').includes('luna_metric_assumption_dependencies')) {
+        ev.count += 1;
+      }
+    };
+    testKnex.on('query', onQuery);
+    try {
+      const map = await resolveAssumptionsForMetric('oee');
+      // OEE depends on availability_calculation_basis, ideal_cycle_time_source,
+      // yield_baseline_source — at minimum 3 dependencies.
+      expect(Object.keys(map).length).toBeGreaterThanOrEqual(3);
+      // Single batched fetch — the count must be 1 regardless of dependency
+      // count. The previous N-query implementation would have produced ≥3.
+      expect(ev.count).toBe(1);
+    } finally {
+      testKnex.removeListener('query', onQuery);
+    }
+  });
+
+  it('caches metric dependencies after first read', async () => {
+    const ev = { count: 0 };
+    const onQuery = (q: { sql?: string }) => {
+      if ((q.sql ?? '').includes('luna_metric_assumption_dependencies')) {
+        ev.count += 1;
+      }
+    };
+    testKnex.on('query', onQuery);
+    try {
+      await resolveAssumptionsForMetric('oee');
+      await resolveAssumptionsForMetric('oee');
+      await resolveAssumptionsForMetric('oee');
+      // Three calls — one DB hit. After the first, the cache returns immediately.
+      expect(ev.count).toBe(1);
+    } finally {
+      testKnex.removeListener('query', onQuery);
+    }
   });
 });

@@ -394,18 +394,40 @@ export async function listAssumptions(filter: {
   return rows.map(rowToAssumption);
 }
 
+/**
+ * Cache for listMetricDependencies. The dependency table is seeded once at
+ * boot from METRIC_DEPENDENCIES and is otherwise static at runtime, so the
+ * read-after-boot DB hit on every `/sim`, `/capacity`, `/sigma` etc. is pure
+ * overhead. Cache by metric name (or `__all__` for the parameter-less call).
+ *
+ * Invalidated only when seedMetricDependencies runs at boot — caller
+ * responsibility — and the optional resetMetricDependencyCache() seam
+ * keeps tests from carrying stale entries between in-memory DBs.
+ */
+const metricDependencyCache = new Map<string, MetricAssumptionDependency[]>();
+
+export function resetMetricDependencyCache(): void {
+  metricDependencyCache.clear();
+}
+
 export async function listMetricDependencies(metricName?: string): Promise<MetricAssumptionDependency[]> {
+  const cacheKey = metricName ?? '__all__';
+  const cached = metricDependencyCache.get(cacheKey);
+  if (cached) return cached;
+
   const q = getKnex()('luna_metric_assumption_dependencies').orderBy([
     { column: 'metric_name', order: 'asc' },
     { column: 'assumption_name', order: 'asc' },
   ]);
   if (metricName) q.where('metric_name', metricName);
   const rows = await q as Array<Record<string, unknown>>;
-  return rows.map((r) => ({
+  const deps = rows.map((r) => ({
     metric_name: r.metric_name as string,
     assumption_name: r.assumption_name as string,
     usage_notes: (r.usage_notes as string) ?? '',
   }));
+  metricDependencyCache.set(cacheKey, deps);
+  return deps;
 }
 
 // ── Resolution ───────────────────────────────────────────────
@@ -513,18 +535,77 @@ export async function resolveAssumption(
 }
 
 /**
+ * Resolve precedence (user → pack → global → built-in default) over a
+ * pre-fetched candidate list. Extracted from resolveAssumption() so the
+ * batched path can reuse the same logic without re-querying.
+ */
+function resolvePrecedence(
+  name: string,
+  candidates: LunaAssumption[],
+  ctx: ResolveContext,
+): ResolvedAssumption {
+  if (ctx.userId) {
+    const userMatch = candidates.find(
+      (r) => r.scope_type === 'user' && r.scope_id === ctx.userId,
+    );
+    if (userMatch) {
+      return { name, value: userMatch.value, sourceScope: 'user', rationale: userMatch.rationale, scopeId: userMatch.scope_id };
+    }
+  }
+  const activePacks = ctx.activePacks ?? [];
+  for (const pack of activePacks) {
+    const packMatch = candidates.find(
+      (r) => r.scope_type === 'pack' && r.scope_id === pack,
+    );
+    if (packMatch) {
+      return { name, value: packMatch.value, sourceScope: 'pack', rationale: packMatch.rationale, scopeId: packMatch.scope_id };
+    }
+  }
+  const globalMatch = candidates.find((r) => r.scope_type === 'global');
+  if (globalMatch) {
+    return { name, value: globalMatch.value, sourceScope: 'global', rationale: globalMatch.rationale, scopeId: null };
+  }
+  const builtin = ASSUMPTION_DEFAULTS[name];
+  if (builtin) {
+    return { name, value: builtin.value, sourceScope: 'default', rationale: builtin.rationale, scopeId: null };
+  }
+  logger.warn({ assumptionName: name }, 'resolveAssumption: unknown name (no DB record and no built-in default)');
+  return {
+    name,
+    value: null,
+    sourceScope: 'default',
+    rationale: 'UNKNOWN ASSUMPTION — no DB record and no built-in default. Caller should treat as missing.',
+    scopeId: null,
+  };
+}
+
+/**
  * Convenience: resolve every assumption a metric is known to depend on,
  * returning a name → ResolvedAssumption map. Driven by
  * luna_metric_assumption_dependencies.
+ *
+ * Batched: a single `WHERE assumption_name IN (...)` query covers every
+ * dependency. Previously this issued N sequential resolveAssumption calls,
+ * meaning a /sim with 5 dependencies cost 5 round-trips on the hot path.
  */
 export async function resolveAssumptionsForMetric(
   metricName: string,
   ctx: ResolveContext = {},
 ): Promise<Record<string, ResolvedAssumption>> {
   const deps = await listMetricDependencies(metricName);
+  if (deps.length === 0) return {};
+
+  const names = deps.map((d) => d.assumption_name);
+  const now = Date.now();
+  const rows = await getKnex()('luna_assumptions')
+    .whereIn('assumption_name', names)
+    .where({ status: 'active' }) as Array<Record<string, unknown>>;
+  const allCandidates = rows.map(rowToAssumption).filter((r) => isWithinEffectiveWindow(r, now));
+
   const out: Record<string, ResolvedAssumption> = {};
   for (const dep of deps) {
-    out[dep.assumption_name] = await resolveAssumption(dep.assumption_name, ctx);
+    const candidates = allCandidates.filter((c) => c.assumption_name === dep.assumption_name);
+    out[dep.assumption_name] = resolvePrecedence(dep.assumption_name, candidates, ctx);
   }
   return out;
 }
