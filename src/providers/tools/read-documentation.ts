@@ -1,5 +1,6 @@
 import type { Tool } from 'ollama';
 import { readDocumentation } from '../../doc-awareness.js';
+import { logger } from '../../logger.js';
 
 export const readDocumentationDefinition: Tool = {
   type: 'function',
@@ -27,5 +28,20 @@ export const readDocumentationDefinition: Tool = {
 };
 
 export function readDocumentationTool(args: { filename: string; offset?: number }): Record<string, unknown> {
-  return readDocumentation(args);
+  const result = readDocumentation(args);
+  // rc.111 telemetry — structured log every doc-aware read so operators
+  // can see which docs Luna actually pulls vs. which sit unused, and
+  // whether reads truncate (signal to chunk the doc or revisit limits).
+  logger.info(
+    {
+      tool: 'read_documentation',
+      filename: args.filename,
+      offset: args.offset ?? 0,
+      totalChars: typeof result.totalChars === 'number' ? result.totalChars : undefined,
+      truncated: typeof result.truncated === 'boolean' ? result.truncated : undefined,
+      error: typeof result.error === 'string' ? result.error : undefined,
+    },
+    'doc-aware tool invoked',
+  );
+  return result;
 }
