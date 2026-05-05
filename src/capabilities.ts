@@ -11,6 +11,7 @@
  */
 
 import { scorePackIntent } from './packs.js';
+import { renderDocumentationManifest } from './doc-awareness.js';
 
 // ── Capability Map (injected into system prompts) ────────────
 
@@ -656,7 +657,12 @@ function spliceAtMarker(source: string, markerPrefix: string, inserted: string):
  * registered appear without code changes here.
  */
 export function getCapabilitiesPrompt(): string {
-  return spliceAtMarker(CAPABILITIES_PROMPT, CAPABILITIES_MARKER, renderCapabilitiesPromptSections());
+  const withFeatures = spliceAtMarker(CAPABILITIES_PROMPT, CAPABILITIES_MARKER, renderCapabilitiesPromptSections());
+  // rc.109 — append the documentation manifest so the AI knows which
+  // docs/* and reference/* files it can read or search at runtime.
+  // Returns '' when no docs are present, so this never produces a stray heading.
+  const manifest = renderDocumentationManifest();
+  return manifest ? `${withFeatures}\n\n${manifest}` : withFeatures;
 }
 
 /** Same pattern for the "what can you do?" self-description. */

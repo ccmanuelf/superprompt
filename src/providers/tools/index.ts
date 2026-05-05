@@ -23,6 +23,8 @@ import { systemInfoDefinition, systemInfo } from './system-info.js';
 import { summarizeUrlDefinition, summarizeUrl } from './summarize-url.js';
 import { parseFileDefinition, parseFileTool } from './parse-file.js';
 import { generateDocumentDefinition, generateDocumentTool } from './generate-document.js';
+import { readDocumentationDefinition, readDocumentationTool } from './read-documentation.js';
+import { searchDocumentationDefinition, searchDocumentationTool } from './search-documentation.js';
 import { readBotLogsDefinition, readBotLogs } from './read-bot-logs.js';
 import { createReminderDefinition, createReminder } from './create-reminder.js';
 import {
@@ -195,6 +197,23 @@ export function registerBuiltinTools(): void {
       source: 'builtin',
       process: 'parsers',
       policy: { riskLevel: 'high', scopes: ['filesystem:write'], requiresConfirmation: false },
+    },
+    // rc.109 — doc-aware Luna: read-only access to the project's own
+    // documentation. Server-side static files; manifest-gated; no PII;
+    // safe to ship at low risk without confirmation.
+    {
+      definition: readDocumentationDefinition,
+      execute: async (args) => readDocumentationTool(args as { filename: string; offset?: number }),
+      source: 'builtin',
+      process: 'parsers',
+      policy: { riskLevel: 'low', scopes: ['filesystem:read'], requiresConfirmation: false },
+    },
+    {
+      definition: searchDocumentationDefinition,
+      execute: async (args) => searchDocumentationTool(args as { query: string; max?: number }),
+      source: 'builtin',
+      process: 'parsers',
+      policy: { riskLevel: 'low', scopes: ['filesystem:read'], requiresConfirmation: false },
     },
     // ── Process 1 (core): DB-dependent tools ──
     {

@@ -83,6 +83,36 @@ check('renderCapabilitiesPromptSections() produces attendance content', async ()
   if (!out.toLowerCase().includes('attendance')) throw new Error('attendance section missing');
 });
 
+check('doc-awareness manifest reaches the system prompt (rc.109)', async () => {
+  const m = await import(resolve(distDir, 'capabilities.js'));
+  const out = m.getCapabilitiesPrompt();
+  if (!out.includes('Available Documentation (read-access)')) {
+    throw new Error('manifest section missing from system prompt');
+  }
+  if (!out.includes('docs/user-guide')) {
+    throw new Error('manifest does not list user-guide');
+  }
+  if (!out.includes('read_documentation') || !out.includes('search_documentation')) {
+    throw new Error('manifest does not advertise the read/search tools');
+  }
+});
+
+check('doc-aware tools execute end-to-end via dist (rc.109)', async () => {
+  const m = await import(resolve(distDir, 'doc-awareness.js'));
+  const docs = m.listAvailableDocs();
+  if (!Array.isArray(docs) || docs.length === 0) throw new Error('no docs in manifest');
+
+  const read = m.readDocumentation({ filename: 'docs/user-guide' });
+  if (!read.content || read.content.length === 0) throw new Error('read_documentation returned empty');
+
+  const search = m.searchDocumentation({ query: 'site-adjusted' });
+  if (typeof search.matchCount !== 'number') throw new Error('search_documentation shape wrong');
+
+  // Path-traversal guard
+  const bad = m.readDocumentation({ filename: '../package' });
+  if (!bad.error) throw new Error('path-traversal guard failed');
+});
+
 let failed = 0;
 for (const { name, fn } of checks) {
   try {
