@@ -6,6 +6,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
+import { readJsonBody } from './http-helpers.js';
 import {
   analyzeVSM,
   compareStates,
@@ -176,15 +177,7 @@ async function handleDelete(route: string, res: ServerResponse, chatId: string):
 }
 
 function readBody(req: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end', () => {
-      try { resolve(Buffer.concat(chunks).toString('utf-8') ? JSON.parse(Buffer.concat(chunks).toString('utf-8')) : {}); }
-      catch { reject(new Error('Invalid JSON body')); }
-    });
-    req.on('error', reject);
-  });
+  return readJsonBody<unknown>(req);
 }
 
 function jsonResponse(res: ServerResponse, status: number, data: unknown): void {

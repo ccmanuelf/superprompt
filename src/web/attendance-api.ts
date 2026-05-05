@@ -36,6 +36,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, existsSync } from 'node:fs';
 import { logger } from '../logger.js';
+import { readJsonBody as readJsonBodyShared } from './http-helpers.js';
 import { UPLOADS_DIR } from '../config.js';
 import { getKnex } from '../db-knex.js';
 import { previewBuffer } from '../attendance/parser.js';
@@ -587,19 +588,7 @@ async function loadSiteIdForModule(moduleId: string): Promise<string | null> {
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  return new Promise((res, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-    req.on('end', () => {
-      try {
-        const text = Buffer.concat(chunks).toString('utf-8');
-        res(text ? JSON.parse(text) : {});
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on('error', reject);
-  });
+  return readJsonBodyShared<Record<string, unknown>>(req);
 }
 
 function json(res: ServerResponse, status: number, body: unknown): boolean {

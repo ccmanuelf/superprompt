@@ -174,8 +174,18 @@ export async function processEvent(
       continue;
     }
 
-    // Check condition
-    const condition = JSON.parse(trigger.condition) as Record<string, unknown>;
+    // Check condition. Stored values come from setup, but a corrupted row
+    // shouldn't kill the entire trigger sweep — skip with a warning.
+    let condition: Record<string, unknown>;
+    try {
+      condition = JSON.parse(trigger.condition) as Record<string, unknown>;
+    } catch (err) {
+      logger.warn(
+        { err, triggerId: trigger.id, condition: trigger.condition },
+        'Skipping event trigger with malformed condition JSON',
+      );
+      continue;
+    }
     if (Object.keys(condition).length > 0 && !matchesCondition(condition, event.data)) {
       continue;
     }

@@ -4,6 +4,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
+import { readJsonBody } from './http-helpers.js';
 import {
   saveDOE, getDOE, listDOEs, deleteDOE,
   generateMainEffectsChart, generateANOVAChart,
@@ -197,12 +198,7 @@ async function handleDelete(route: string, res: ServerResponse, chatId: string):
 }
 
 function readBody(req: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => { try { const t = Buffer.concat(chunks).toString('utf-8'); resolve(t ? JSON.parse(t) : {}); } catch { reject(new Error('Invalid JSON')); } });
-    req.on('error', reject);
-  });
+  return readJsonBody<unknown>(req);
 }
 
 function json(res: ServerResponse, status: number, data: unknown): void {

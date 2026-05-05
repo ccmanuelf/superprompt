@@ -475,7 +475,9 @@ export function assignStations(
     // Check station requirement constraint
     if (task.station_requirement) {
       const requiredStation = parseInt(task.station_requirement, 10);
-      if (!isNaN(requiredStation) && requiredStation > 0) {
+      // Cap at 10000 stations — beyond that is malformed input and would
+      // allocate gigabytes of station bookkeeping arrays before failing.
+      if (!isNaN(requiredStation) && requiredStation > 0 && requiredStation <= 10000) {
         // Ensure station exists
         while (stationTimes.length < requiredStation) {
           stationTimes.push(0);

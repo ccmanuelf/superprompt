@@ -336,6 +336,74 @@ export const WEB_UI_GUIDES: WebUIGuide[] = [
   // Attendance admin entry is contributed via the feature-awareness
   // registry (src/attendance/awareness.ts). See getAllWebUIGuides() below.
   {
+    url: '/docs/assumptions',
+    name: 'Assumption Registry',
+    nameEs: 'Registro de Supuestos',
+    description: 'Manage the named assumptions that drive site-adjusted manufacturing calculations. Per-pack and per-user overrides are supported with first-match-wins precedence.',
+    descriptionEs: 'Administra los supuestos nombrados que alimentan los calculos ajustados al sitio en manufactura. Acepta sobreescrituras por pack y por usuario con precedencia primer-match-gana.',
+    features: [
+      'Edit named assumptions: cycle-time source, setup treatment, scrap rule, yield baseline, availability basis, Monte Carlo iterations, ROI hurdle/horizon, default service level',
+      'Scope an override to global, a pack, or a single user',
+      'Inline rationale field — captures why a value differs from textbook default',
+      'Used by --site-adjusted runs of /sigma, /capacity, /sim, /toc, /conwip, /doe, /sequence, /balance, /fmea, /inventory',
+    ],
+    featuresEs: [
+      'Edita supuestos nombrados: fuente de ciclo, tratamiento de setup, regla de scrap, base de yield, base de disponibilidad, iteraciones Monte Carlo, hurdle/horizonte ROI, nivel de servicio por defecto',
+      'Define el alcance de un override: global, por pack, o por usuario',
+      'Campo de rationale en linea — captura por que un valor difiere del default',
+      'Lo consumen las corridas --site-adjusted de /sigma, /capacity, /sim, /toc, /conwip, /doe, /sequence, /balance, /fmea, /inventory',
+    ],
+    whenToSuggest: [
+      'User asks why a calculation gave a particular result and wants to change the underlying assumption',
+      'User mentions site-specific overrides, pack-specific values, or "our shop does it differently"',
+      'User asks how to change a default cycle time, ROI hurdle, service level, etc.',
+    ],
+    tips: [
+      'Site-adjusted overrides are pure-function: they change inputs, not the math',
+      'Pack precedence is first-match-wins — pack order in your manufacturing config matters',
+      'Use the rationale field to leave a note for whoever audits the calculation later',
+    ],
+    tipsEs: [
+      'Los overrides ajustados al sitio son funciones puras: cambian los inputs, no la matematica',
+      'La precedencia entre packs es primer-match-gana — el orden de packs en tu config de manufactura importa',
+      'Usa el campo de rationale para dejar nota a quien audite el calculo despues',
+    ],
+  },
+  {
+    url: '/explain',
+    name: 'Calculation Lineage',
+    nameEs: 'Trazabilidad de Calculo',
+    description: 'Shows which assumptions were applied to your most recent site-adjusted manufacturing calculation: value, source scope, and rationale. Ephemeral — clears after one hour or on server restart.',
+    descriptionEs: 'Muestra que supuestos se aplicaron al calculo ajustado al sitio mas reciente: valor, alcance del origen y rationale. Efimero — se borra despues de una hora o al reiniciar el servidor.',
+    features: [
+      'Per-chat most-recent result lineage (one stash per chat)',
+      'Lists every assumption resolved during the run, with source scope (default/global/pack/user)',
+      'Shows the textbook default vs the override that was applied',
+      'No persistence — close the tab and the lineage is gone',
+    ],
+    featuresEs: [
+      'Trazabilidad del resultado mas reciente por chat (un solo stash por chat)',
+      'Lista cada supuesto resuelto en la corrida, con su alcance (default/global/pack/user)',
+      'Muestra el default vs el override aplicado',
+      'Sin persistencia — cierras la pestana y la trazabilidad desaparece',
+    ],
+    whenToSuggest: [
+      'User asks "why did Luna give me that result?" or "what assumptions were used?"',
+      'User wants to verify a site-adjusted calculation before sharing it with stakeholders',
+      'User is debugging a result that differs from a textbook calculation',
+    ],
+    tips: [
+      'Only site_adjusted runs stash a result — standard mode skips the registry, so there is nothing to explain',
+      'The page is per-chat-id: open it after running --site-adjusted in the same Telegram chat or web session',
+      'If you need permanent lineage, copy the page contents — there is no history',
+    ],
+    tipsEs: [
+      'Solo las corridas site_adjusted guardan resultado — el modo estandar omite el registro, asi que no hay nada que explicar',
+      'La pagina es por chat-id: abrela tras correr --site-adjusted en el mismo chat de Telegram o sesion web',
+      'Si necesitas trazabilidad permanente, copia el contenido de la pagina — no hay historial',
+    ],
+  },
+  {
     url: '/docs',
     name: 'Documentation Viewer',
     nameEs: 'Visor de Documentacion',

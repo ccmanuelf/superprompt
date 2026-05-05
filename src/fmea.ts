@@ -12,6 +12,22 @@ import {
   type CalcInvocationOptions,
 } from './calculations/handler-boundary.js';
 
+// ── Helpers ──────────────────────────────────────────────────
+
+/**
+ * Clamp severity / occurrence / detection scores into the AIAG-VDA range
+ * (1-10). NaN or out-of-range CSV values fall back to 5 (mid-scale).
+ *
+ * Without this, a CSV with severity=-999 would index into the risk matrix
+ * with a negative position and corrupt the RPN calculation.
+ */
+function clampScore(n: number): number {
+  if (!Number.isFinite(n)) return 5;
+  if (n < 1) return 1;
+  if (n > 10) return 10;
+  return Math.round(n);
+}
+
 // ── Types ────────────────────────────────────────────────────
 
 export type FmeaType = 'pfmea' | 'dfmea';
@@ -383,11 +399,11 @@ export function parseFmeaCsv(csvContent: string): Array<{
       process_step: step,
       failure_mode: mode,
       effect: cols[idx('effect')] || '',
-      severity: sevIdx >= 0 && cols[sevIdx] ? parseInt(cols[sevIdx], 10) || 5 : 5,
+      severity: clampScore(sevIdx >= 0 && cols[sevIdx] ? parseInt(cols[sevIdx], 10) : NaN),
       cause: cols[idx('cause')] || '',
-      occurrence: occIdx >= 0 && cols[occIdx] ? parseInt(cols[occIdx], 10) || 5 : 5,
+      occurrence: clampScore(occIdx >= 0 && cols[occIdx] ? parseInt(cols[occIdx], 10) : NaN),
       detection_method: cols[idx('detection_method')] || '',
-      detection: detIdx >= 0 && cols[detIdx] ? parseInt(cols[detIdx], 10) || 5 : 5,
+      detection: clampScore(detIdx >= 0 && cols[detIdx] ? parseInt(cols[detIdx], 10) : NaN),
       current_controls: cols[idx('current_controls')] || '',
     });
   }

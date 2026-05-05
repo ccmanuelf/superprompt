@@ -1356,7 +1356,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const ttlArg = parts.find(p => /^\d+[dhm]$/i.test(p));
         let ttlSeconds: number | undefined;
         if (ttlArg) {
-          const num = parseInt(ttlArg);
+          const num = parseInt(ttlArg, 10);
           if (isNaN(num) || num <= 0) {
             await ctx.reply('TTL must be a positive number (e.g. `24h`, `7d`, `30d`).');
             return;

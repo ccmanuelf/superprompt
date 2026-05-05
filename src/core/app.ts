@@ -271,5 +271,18 @@ export class Application {
 
     process.on('SIGINT', () => handler('SIGINT'));
     process.on('SIGTERM', () => handler('SIGTERM'));
+
+    // Surface unhandled errors instead of letting Node print them to stderr
+    // and exit silently. Both routes through the structured logger so the
+    // failure shows up in shipped log streams; we keep running because in
+    // production a single rogue rejection should not take the whole bot down.
+    process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
+      const msg = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
+      logger.error({ reason: msg, promise: String(promise) }, 'Unhandled promise rejection');
+    });
+    process.on('uncaughtException', (err: Error) => {
+      logger.fatal({ err: err.stack ?? err.message }, 'Uncaught exception — shutting down');
+      this.shutdown('uncaughtException').finally(() => process.exit(1));
+    });
   }
 }

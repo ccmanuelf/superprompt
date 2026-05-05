@@ -8,6 +8,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../logger.js';
+import { readJsonBody } from './http-helpers.js';
 import {
   ASSUMPTION_DEFAULTS,
   setAssumption,
@@ -249,19 +250,7 @@ function tryParse(raw: unknown): unknown {
 }
 
 function readBody(req: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-    req.on('end', () => {
-      try {
-        const raw = Buffer.concat(chunks).toString('utf-8');
-        resolve(raw ? JSON.parse(raw) : {});
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on('error', reject);
-  });
+  return readJsonBody<unknown>(req);
 }
 
 function jsonResponse(res: ServerResponse, status: number, data: unknown): void {
