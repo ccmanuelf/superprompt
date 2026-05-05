@@ -47,10 +47,17 @@ async function runDueTasks(router: ProviderRouter): Promise<void> {
   }
 }
 
+/**
+ * Threshold for warn-level "slow task" logging. A scheduled task that runs
+ * longer than this delays the next 60s poll cycle, so operators want to see it.
+ */
+const SLOW_TASK_THRESHOLD_MS = 5_000;
+
 async function runTask(
   task: ScheduledTask,
   router: ProviderRouter,
 ): Promise<void> {
+  const startedAt = Date.now();
   logger.info(
     { taskId: task.id, chatId: task.chat_id, prompt: task.prompt.slice(0, 80) },
     'Executing scheduled task',
@@ -78,12 +85,20 @@ async function runTask(
       }
     }
 
-    logger.info(
-      { taskId: task.id, nextRun: new Date(nextRun).toISOString() },
-      'Scheduled task completed',
-    );
+    const durationMs = Date.now() - startedAt;
+    const fields = {
+      taskId: task.id,
+      durationMs,
+      nextRun: new Date(nextRun).toISOString(),
+    };
+    if (durationMs > SLOW_TASK_THRESHOLD_MS) {
+      logger.warn(fields, `Scheduled task completed slowly (>${SLOW_TASK_THRESHOLD_MS}ms — delays the next poll cycle)`);
+    } else {
+      logger.info(fields, 'Scheduled task completed');
+    }
   } catch (err) {
-    logger.error({ err, taskId: task.id }, 'Scheduled task failed');
+    const durationMs = Date.now() - startedAt;
+    logger.error({ err, taskId: task.id, durationMs }, 'Scheduled task failed');
 
     // Still advance next_run so we don't keep retrying a broken task
     try {

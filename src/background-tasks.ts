@@ -34,9 +34,25 @@ type NotifyFn = (chatId: string, text: string) => Promise<void>;
 // ── Queue ──────────────────────────────────────────────────
 
 const MAX_CONCURRENT = 2; // Max simultaneous background tasks
+/**
+ * Hard cap on the queue depth. A single user spamming Monte Carlo runs would
+ * otherwise grow this array without bound. 200 is well above any realistic
+ * burst (humans queue dozens, not hundreds) but bounded enough that the
+ * worst-case heap footprint stays predictable.
+ */
+const MAX_QUEUE_DEPTH = 200;
+/** Per-chat cap so one user can't starve the rest of the queue. */
+const MAX_QUEUE_PER_CHAT = 25;
 const taskQueue: BackgroundTask[] = [];
 const activeTasks = new Map<string, BackgroundTask>();
 let notifyFn: NotifyFn | null = null;
+
+export class BackgroundQueueFullError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BackgroundQueueFullError';
+  }
+}
 
 /**
  * Initialize the background task system.
@@ -55,6 +71,21 @@ export function submitBackgroundTask(
   description: string,
   executeFn: () => Promise<string>,
 ): { taskId: string; message: string } {
+  // Backpressure — refuse new work instead of growing the queue without
+  // bound. Both checks return the same exception type so the platform layer
+  // can render one error message either way.
+  if (taskQueue.length >= MAX_QUEUE_DEPTH) {
+    throw new BackgroundQueueFullError(
+      `Background queue is at capacity (${MAX_QUEUE_DEPTH}). Wait for current tasks to finish before submitting more.`,
+    );
+  }
+  const ownedByChat = taskQueue.reduce((n, t) => n + (t.chatId === chatId ? 1 : 0), 0);
+  if (ownedByChat >= MAX_QUEUE_PER_CHAT) {
+    throw new BackgroundQueueFullError(
+      `You already have ${ownedByChat} tasks queued (cap: ${MAX_QUEUE_PER_CHAT}). Wait for some to finish.`,
+    );
+  }
+
   const id = randomBytes(8).toString('hex');
 
   const task: BackgroundTask = {
@@ -67,7 +98,7 @@ export function submitBackgroundTask(
   };
 
   taskQueue.push(task);
-  logger.info({ taskId: id, chatId, description }, 'Background task queued');
+  logger.info({ taskId: id, chatId, description, queueDepth: taskQueue.length }, 'Background task queued');
 
   // Trigger processing
   processQueue();

@@ -824,11 +824,50 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
   }
 
   // ── Voice Mode Handler ──
+  /**
+   * Idle WebSocket sessions cost RAM (a `VoiceSession` retains a queue, the
+   * Speaches sidecar's warmup state, and the chat-context cursor) and lock
+   * the per-token-id slot in `activeTokenSessions`. Without timeouts an
+   * abandoned tab keeps both forever. Closed at idle (30 min) or absolute
+   * cap (4 h), whichever fires first.
+   */
+  const VOICE_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+  const VOICE_MAX_SESSION_MS = 4 * 60 * 60 * 1000;
+
   function setupVoiceHandler(ws: WebSocket, voiceRouter: ProviderRouter, authChatId?: string | null): void {
     const sessionChatId = authChatId || `voice-web-${randomUUID()}`;
+    const sessionStartedAt = Date.now();
     logger.info({ chatId: sessionChatId }, 'Voice web: client connected');
 
     const session = new VoiceSession(sessionChatId, voiceRouter);
+
+    let idleTimer: NodeJS.Timeout | null = null;
+    let maxTimer: NodeJS.Timeout | null = null;
+
+    const closeForLimit = (reason: 'idle' | 'max-duration'): void => {
+      if (ws.readyState !== ws.OPEN) return;
+      const ageMs = Date.now() - sessionStartedAt;
+      logger.info({ chatId: sessionChatId, reason, ageMs }, 'Voice web: closing session on lifetime cap');
+      try {
+        ws.send(JSON.stringify({
+          type: 'session_closing',
+          reason,
+          message: reason === 'idle'
+            ? 'Session closed after 30 minutes of inactivity. Reconnect to continue.'
+            : 'Session closed after the 4-hour maximum duration. Reconnect to continue.',
+        }));
+      } catch {
+        /* WebSocket already broken — proceed with close */
+      }
+      ws.close(1000, `session-${reason}`);
+    };
+
+    const armIdleTimer = (): void => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => closeForLimit('idle'), VOICE_IDLE_TIMEOUT_MS);
+    };
+    armIdleTimer();
+    maxTimer = setTimeout(() => closeForLimit('max-duration'), VOICE_MAX_SESSION_MS);
 
     // rc.83 — warmup + greeting. Runs in the background so we don't block
     // the 'ready' signal; the client shows "Warming up..." until the
@@ -860,6 +899,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     })();
 
     ws.on('message', async (data: Buffer | string) => {
+      // Any inbound traffic (including pings) resets the idle timer.
+      armIdleTimer();
       // Binary = audio data, string = JSON control message
       if (typeof data === 'string') {
         try {
@@ -901,6 +942,8 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
     });
 
     ws.on('close', () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      if (maxTimer) clearTimeout(maxTimer);
       logger.info({ chatId: sessionChatId }, 'Voice web: client disconnected');
     });
 

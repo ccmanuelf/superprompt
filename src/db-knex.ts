@@ -169,6 +169,29 @@ export function initKnex(config?: DbConfig): KnexType {
 
   knexInstance = Knex.default(knexConfig);
 
+  // Slow-query observability. Pair query+query-response by uid so we can
+  // measure round-trip duration. A 500ms threshold is high enough to skip
+  // routine reads but catches the queries that block event-loop ticks.
+  const queryStartedAt = new Map<string, number>();
+  const SLOW_QUERY_THRESHOLD_MS = 500;
+  knexInstance.on('query', (q: { __knexQueryUid?: string; sql?: string }) => {
+    if (q.__knexQueryUid) queryStartedAt.set(q.__knexQueryUid, Date.now());
+  });
+  const finalize = (q: { __knexQueryUid?: string; sql?: string }, errored: boolean): void => {
+    const uid = q.__knexQueryUid;
+    if (!uid) return;
+    const startedAt = queryStartedAt.get(uid);
+    queryStartedAt.delete(uid);
+    if (startedAt === undefined) return;
+    const durationMs = Date.now() - startedAt;
+    if (durationMs >= SLOW_QUERY_THRESHOLD_MS) {
+      const truncatedSql = (q.sql ?? '').slice(0, 200);
+      logger.warn({ durationMs, sql: truncatedSql, errored }, 'Slow database query');
+    }
+  };
+  knexInstance.on('query-response', (_response: unknown, q: { __knexQueryUid?: string; sql?: string }) => finalize(q, false));
+  knexInstance.on('query-error', (_err: unknown, q: { __knexQueryUid?: string; sql?: string }) => finalize(q, true));
+
   logger.info(
     { driver: dbConfig.driver, host: dbConfig.driver === 'sqlite' ? dbConfig.sqliteFilename : dbConfig.host },
     'Knex database initialized',
@@ -210,12 +233,33 @@ export function createTestKnex(): KnexType {
 
 /**
  * Destroy the Knex instance (for graceful shutdown).
+ *
+ * For SQLite in WAL mode we explicitly checkpoint and truncate the WAL
+ * before tearing down the connection. Without this, a SIGKILL between
+ * shutdown and the next sqlite open could leave the WAL un-applied and
+ * a small window of writes invisible to readers.
  */
 export async function destroyKnex(): Promise<void> {
-  if (knexInstance) {
-    await knexInstance.destroy();
-    knexInstance = null;
+  if (!knexInstance) return;
+
+  try {
+    const driver = (knexInstance.client.config.client as string) ?? '';
+    if (driver === 'better-sqlite3') {
+      // PASSIVE first (non-blocking) then TRUNCATE so the WAL is reset.
+      // Wrapped in try/catch — checkpoint is best-effort during shutdown.
+      try {
+        await knexInstance.raw('PRAGMA wal_checkpoint(TRUNCATE)');
+        logger.info('SQLite WAL checkpointed and truncated on shutdown');
+      } catch (err) {
+        logger.warn({ err }, 'WAL checkpoint failed on shutdown — proceeding with destroy');
+      }
+    }
+  } catch {
+    // Driver detection failed — proceed with plain destroy.
   }
+
+  await knexInstance.destroy();
+  knexInstance = null;
 }
 
 /**

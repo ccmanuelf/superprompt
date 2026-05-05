@@ -354,6 +354,18 @@ export class ProcessClient {
 
     this.restartTimestamps.push(now);
 
+    // Exponential backoff capped at 60s. With a fixed 1s delay, a
+    // crash-on-boot child would loop-restart 60 times per minute, burning
+    // CPU and filling logs. The exponent grows with consecutive restarts
+    // inside the rate-limit window so a flaky child is given more breathing
+    // room each cycle while still recovering quickly from a one-off crash.
+    const attemptIndex = this.restartTimestamps.length - 1;
+    const backoffMs = Math.min(RESTART_DELAY_MS * (2 ** attemptIndex), 60_000);
+    logger.info(
+      { process: this.processName, attempt: this.restartTimestamps.length, backoffMs },
+      'Scheduling child process restart',
+    );
+
     setTimeout(async () => {
       if (this._shuttingDown) return;
 
@@ -369,7 +381,7 @@ export class ProcessClient {
           'Failed to restart child process',
         );
       }
-    }, RESTART_DELAY_MS);
+    }, backoffMs);
   }
 
   private rejectAllPending(reason: string): void {
