@@ -26,6 +26,12 @@ Open your browser to access visual tools:
 
 Manufacturing users also have: `/sim`, `/capacity`, `/sequence`, `/vsm`, `/toc`, `/conwip`, `/doe`, `/fsm`
 
+**Calculation transparency** (rc.100 / rc.101):
+- **Assumption registry:** `http://[server]:3030/docs/assumptions` — edit the named values that drive site-adjusted manufacturing calculations (cycle-time source, ROI hurdle, default service level, etc.). Pack-scoped or user-scoped overrides supported.
+- **Calculation lineage:** `http://[server]:3030/explain` — see which assumptions were applied to your last site-adjusted calculation. Per-chat, expires after one hour.
+
+To compute against registered assumptions instead of textbook defaults, append `--site-adjusted` to any manufacturing slash command or caption (e.g. `/sigma 10.5 9.5 Widget --site-adjusted`).
+
 ---
 
 ## What Luna Can Do For You
@@ -125,7 +131,7 @@ Not yet shipped (Phase B+): per-supervisor exception messages, 15-min polling fo
 
 When a critical tool (like running a system command) is used for the first time, Luna asks for confirmation. You can reply:
 - **"confirm" / "confirmar"** — allow this once
-- **"always" / "siempre"** — always allow (remembered)
+- **"always" / "siempre"** — always allow, remembered for **30 days** (after which Luna will ask again — keeps a one-time moment of trust from persisting forever)
 - **"never" / "nunca"** — block this tool permanently
 
 ---

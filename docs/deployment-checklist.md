@@ -66,7 +66,7 @@ Pre-deployment criteria, considerations, and decision factors for production dep
 
 ### Telegram Webhook (production, optional)
 - [ ] `TELEGRAM_WEBHOOK_URL` set (e.g., `https://luna.example.com/telegram/webhook`)
-- [ ] `TELEGRAM_WEBHOOK_SECRET` generated: `openssl rand -hex 32`
+- [ ] `TELEGRAM_WEBHOOK_SECRET` generated: `openssl rand -hex 32` — **must be non-empty when WEBHOOK_URL is set; the bot refuses to start otherwise (rc.102 hardening — empty string previously degraded to no signature check)**
 - [ ] HTTPS required for webhook (use Caddy or other reverse proxy)
 
 ### Web Search (required for Ollama)
@@ -163,9 +163,16 @@ Each department (or group) gets its own Luna instance:
 ## 5. Monitoring
 
 ### Health Checks
-- Docker health check built-in (PID-based)
-- Process 2/3 auto-restart on crash (5 attempts per 60s)
-- Circuit breaker detects stuck tool loops
+- **`GET http://<host>:3030/api/health` → 204** (rc.102) — public, no auth, drain-safe; point load balancers and monitors at this. The compose-level healthcheck (rc.106) hits the same endpoint via `curl`.
+- Docker health check at the container level: `curl -fsS http://127.0.0.1:3030/api/health`, 30s interval, 5s timeout, 60s start period.
+- Process 2/3 (tools / parsers) auto-restart on crash with **exponential backoff** (rc.106) — was a fixed 1s; now grows to 60s per consecutive failure inside the rate-limit window. Caps at 5 restarts in 60s.
+- Circuit breaker detects stuck tool loops.
+
+### Resource limits & log rotation (rc.106)
+The `luna` service ships with `mem_limit: 4G`, `cpus: 2.0`, `memory: 1G` reservation, `security_opt: no-new-privileges:true`, and `json-file` logging capped at `10m × 3` files. Override per host if you routinely run >10k Monte Carlo iterations.
+
+### Node version (rc.103)
+- [ ] Build host honors `.nvmrc` (`20`) — the Dockerfile is multi-stage on `node:22-slim` but the engine pin in `package.json` is `>=20.0.0`. CI / dev hosts should `nvm use` to match.
 
 ### Log Monitoring
 - `docker logs -f luna-bot` for real-time

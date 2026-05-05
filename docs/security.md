@@ -65,6 +65,22 @@ Layer 4: SSRF-Safe Fetch
   └─ Auto-heartbeat on fetch (keeps Worker alive during multi-request chains)
 ```
 
+### Hardening Layers Added rc.102 → rc.107
+
+| Layer | Where | What it stops |
+|---|---|---|
+| Public `/api/health` ahead of auth gate | `src/web/server.ts` (rc.102) | Monitoring and load-balancer probes that don't carry tokens; was returning 401 |
+| Webhook secret required when URL set | `src/index.ts` (rc.102) | Empty `TELEGRAM_WEBHOOK_SECRET` previously degraded silently to no signature check |
+| Trust decisions expire after 30 days | `src/policy-engine.ts` `TRUST_ALWAYS_TTL_MS` (rc.102) | One-time trust persisting forever; user must re-confirm "always" decisions monthly |
+| Pre-commit secret-leak hook | `.githooks/pre-commit` (rc.102) | Now also catches Render (`rnd_…`) and Synapse (`syt_…`) keys alongside OpenAI / Anthropic / GitHub / Telegram / AWS |
+| Process-level rejection handlers | `src/core/app.ts` (rc.103) | Unhandled promise rejection used to silently exit; now logged-and-continue. Uncaught exception triggers graceful shutdown. |
+| 10MB JSON body cap on every API endpoint | `src/web/http-helpers.ts` (rc.103) | DoS via oversized POST body; enforced once via shared helper across 10 modules |
+| `no-new-privileges:true` in compose | `docker-compose.yml` (rc.106) | Container breakout escalation paths via setuid binaries |
+| Voice WS idle / max session timeouts | `src/web/server.ts` (rc.106) | Abandoned tabs leaking memory + holding token-id slots forever |
+| WAL checkpoint on shutdown | `src/db-knex.ts` (rc.106) | Post-SIGKILL invisible writes after graceful shutdown |
+| Telegram 429 retry with `retry_after` | `src/index.ts` (rc.107) | Notification loss on global rate limit; bot now backs off and retries up to 3 times |
+| npm overrides on form-data / qs / uuid | `package.json` (rc.104) | CRITICAL form-data CVE + 2 moderate transitives via deprecated `request` |
+
 ### Additional Security Layers
 
 ```
@@ -229,13 +245,13 @@ Assessed against the 10 known OpenClaw deployment vulnerabilities:
 
 ### 10. CVEs in Dependencies
 
-**Status**: MEDIUM RISK. Custom codebase has no known CVEs. Dependencies should be audited regularly.
+**Status**: LOW–MEDIUM RISK. Audit baseline current as of rc.107. `npm outdated` is empty; `npm audit` shows 4 moderate vulnerabilities, all transitive via the deprecated `request` library reachable only through `@vector-im/matrix-bot-sdk`.
 
 **Audit procedure**:
 ```bash
 npm audit                    # Check for known vulnerabilities
-npm audit fix               # Auto-fix where possible
-npm outdated                # Check for available updates
+npm audit fix                # Auto-fix where possible
+npm outdated                 # Check for available updates
 ```
 
 **Key dependencies to monitor**:
@@ -244,6 +260,17 @@ npm outdated                # Check for available updates
 - `grammy` — Telegram bot framework
 - `pdf-parse`, `mammoth`, `exceljs`, `adm-zip` — file parsers (potential RCE via crafted files)
 - `puppeteer-core` — browser automation (Chromium vulnerabilities)
+
+**npm overrides for transitive CVE chains** (see ADR-010 in `architecture-decision-records.md`):
+```jsonc
+"overrides": {
+  "tough-cookie": "^4.1.4",
+  "form-data": "^4.0.5",   // resolves CRITICAL CVE in matrix-bot-sdk → request transitive
+  "qs": "^6.15.1",         // resolves moderate arrayLimit DoS
+  "uuid": "^14.0.0"        // resolves moderate buffer bounds-check
+}
+```
+Going from rc.101 baseline (14 vulnerabilities, 3 critical / 11 moderate) to rc.107 (4 moderate). The 4 residuals are CVEs against `request` itself. Reachable only via the operator-controlled Synapse homeserver — not externally exploitable in our threat model.
 
 ---
 

@@ -174,6 +174,15 @@ These work through conversation — send data via messages or files.
 | `/fmea` | FMEA management (PFMEA/DFMEA, AIAG-VDA Action Priority, RPN tracking) |
 | `/rca` | Root Cause Analysis (5 Whys, Ishikawa/Fishbone, PDCA, Fault Tree, A3 Report) |
 
+### Site-Adjusted Calculations & Lineage (rc.100 / rc.101)
+
+Append `--site-adjusted` to any manufacturing slash command **or** caption (e.g. `/sigma 10.5 9.5 Widget --site-adjusted`, caption `Capacity Data plant-A --site-adjusted`) to compute against the registered assumptions instead of textbook defaults. Without the flag, results use the standard textbook formulas.
+
+| Surface | Description |
+|---------|-------------|
+| Web UI: `http://localhost:3030/docs/assumptions` | Assumption registry CRUD. Edit cycle-time source, setup treatment, scrap rule, yield baseline, availability basis, Monte Carlo iterations, ROI hurdle / horizon, default service level. Per-pack and per-user overrides supported with first-match-wins precedence. |
+| Web UI: `http://localhost:3030/explain` | Most-recent calculation lineage: which assumptions were applied, with source scope (default / global / pack / user) and rationale. Per-chat, ephemeral — clears after one hour or on server restart. Only `site_adjusted` runs are stashed; standard mode runs are textbook-pure with no metadata to explain. |
+
 ## Domain Packs
 
 | Command | Description |

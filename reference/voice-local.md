@@ -199,6 +199,15 @@ export async function voiceCapabilities(): Promise<{
 - If user sends text → respond with text only
 - `/voice` command toggles always-voice mode for that chat
 
+### Web Voice Session Lifetime (rc.106)
+WebSocket voice sessions (`/` web UI) are bounded so abandoned tabs don't leak memory or hold the per-token-id slot in `activeTokenSessions` forever:
+
+| Limit | Value | Behavior |
+|---|---|---|
+| Idle timeout | 30 minutes | Reset on any inbound frame (audio chunk, ping, JSON control). When it fires, the server emits `{ type: "session_closing", reason: "idle" }` and closes with WS code 1000. Client should reconnect to continue. |
+| Absolute max session | 4 hours | Independent timer; closes with `reason: "max-duration"` even on an actively-used session. Forces token reuse to take a fresh checkpoint. |
+| Audio chunk size | 25 MB per frame | Pre-existing — abuse / accident guard. |
+
 ---
 
 ## Known Gotchas

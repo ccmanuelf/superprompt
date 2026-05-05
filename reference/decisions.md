@@ -87,3 +87,30 @@ All decisions below were researched and confirmed during planning. They should N
 | Module system | ESM (`type: "module"`) | Modern Node.js standard. `import.meta.url` required for path resolution. |
 | TypeScript target | ES2022 + NodeNext | Matches Node 22 capabilities. |
 | Logging | pino + pino-pretty | Structured JSON logs in production, human-readable in dev. |
+| Test mocks for cached singletons | `vi.hoisted` + class-based mock | vitest-4 idiom; the previous `__mockX` escape-hatch returns a stale reference. See ADR-012. |
+| Major dep bumps | One isolated commit per major | rc.105 pattern: tsc + vitest after each, revertable in isolation. See ADR-013. |
+| Transitive CVE fixes | npm `overrides` rather than wait for upstream | Used for form-data, qs, uuid (matrix-bot-sdk chain) and tough-cookie. See ADR-010. |
+
+---
+
+## Audit Sweep rc.102 → rc.107 (May 2026)
+
+Methodical 4-pass audit + remediation across the codebase. 35+ fixes, six rc bumps, six commits. Highlights:
+
+| Pass | Ship | Surfaces touched |
+|---|---|---|
+| 1 — observed bugs | rc.102 | `/api/health` returning 401, empty webhook secret, never-expiring trust decisions, pre-commit hook missing Render+Synapse patterns, capabilities prompt drift, recent-results memory leak, inventory `default_service_level` active hook, pack-name shadowing, attendance CSV size cap |
+| 2 — error paths + input boundaries + safe deps | rc.103 / rc.104 | event-triggers JSON.parse guard, process-level unhandled-rejection / uncaught-exception, shared `web/http-helpers.readJsonBody` with 10MB cap (10 modules migrated), fmea/balance bounds, parseInt radix, `.nvmrc`, npm safe minor/patch updates, matrix-bot-sdk 0.8 → 0.9 + CVE chain overrides |
+| 3 — major version bumps | rc.105 | TypeScript 6, vitest 4, openai 6, undici 8, ollama 0.6, @types/node 25, pdfkit 0.18 — all verified clean |
+| 3 — production resilience | rc.106 | background queue depth caps, scheduler duration warn, IPC exponential restart backoff, WAL checkpoint on shutdown, Knex slow-query log, voice WS idle / max timeouts, docker-compose hardening |
+| 4 — design-level | rc.107 | assumption resolver batched (one `whereIn` instead of N round-trips) + dependency cache, Telegram 429 retry honoring `retry_after` |
+
+**Documented residual risks:**
+- 4 moderate CVEs in deprecated `request` library (matrix-bot-sdk transitive, upstream-blocked, server-side only — operator-controlled homeserver, not externally reachable).
+- exceljs and pptxgenjs maintenance staleness — no CVEs, no drop-in replacement; tracked.
+
+**Documented deferred-with-reasoning:**
+- Memory salience floor / tunable decay — compression + access-bumping protects important memories; revisit on first reported "lost memory after 60d silence" incident.
+- Long-calc progress + cancellation — realistic Monte Carlo runs <5s; the >30s path is the 10k cap which is a DOS surface, not a feature.
+- Embedding cache + circuit breaker — call volume <100/day per chat; existing FTS5 fallback handles ollama outages.
+- Pack YAML hot-reload — operators deploy via git+restart workflow.

@@ -1,6 +1,6 @@
 # Luna — Architecture Decision Records (ADRs)
 
-**Version:** v1.0.0-rc.62 | April 2026
+**Version:** v1.0.0-rc.108 | May 2026
 
 Each ADR documents a significant architectural decision, the alternatives considered, and why the chosen approach was selected. These demonstrate intentional engineering, not ad-hoc development.
 
@@ -123,4 +123,86 @@ Each ADR documents a significant architectural decision, the alternatives consid
 
 ---
 
-*luna v1.0.0-rc.62 — Architecture Decision Records*
+## ADR-009: Public `/api/health` Endpoint Bypasses Auth Gate
+
+**Date:** 2026-05-05 (rc.102)
+**Status:** Accepted
+**Context:** External monitoring systems (LB, Prometheus blackbox, uptime checks) need a way to verify the bot is running without an auth token. Originally `/api/health` fell through to the catchall auth check and returned 401 — breaking deployment automation.
+**Decision:** Register `/api/health` ahead of the auth gate, returning 204 No Content for `GET` and `HEAD`. Other methods on the path continue to require auth (the catchall returns 401 for `POST` etc.).
+**Alternatives considered:**
+- Token-protected health → Rejected: monitors don't carry chat-scoped tokens; defeats the purpose.
+- TCP-only check → Rejected: doesn't catch app-loop wedge (process alive but unresponsive).
+**Consequences:** Compose-level Docker healthcheck is now `curl -fsS http://127.0.0.1:3030/api/health`. Used by both Docker's HEALTHCHECK and any external monitor. The `204 + no body` shape minimizes log noise.
+
+---
+
+## ADR-010: NPM Overrides for Vulnerable Transitive Deps
+
+**Date:** 2026-05-05 (rc.104)
+**Status:** Accepted
+**Context:** `@vector-im/matrix-bot-sdk` 0.9 still depends on the deprecated `request` library, which transitively pulls vulnerable versions of `form-data`, `qs`, and `uuid`. The vulnerabilities cannot be fixed by upgrading the SDK alone (upstream has not migrated off `request`).
+**Decision:** Pin transitive deps via `package.json` `overrides`:
+- `form-data ^4.0.5` (was <2.5.4 — CRITICAL boundary CVE)
+- `qs ^6.15.1` (was <6.14.1 — moderate `arrayLimit` DoS)
+- `uuid ^14.0.0` (was <14 — moderate buffer bounds-check)
+**Alternatives considered:**
+- Drop matrix-bot-sdk → Rejected: Matrix is a deployed feature; replacement is a separate workstream.
+- Wait for upstream → Rejected: Element's roadmap to drop `request` is not committed.
+- `npm audit fix --force` → Rejected: would downgrade exceljs to 3.4.0 (breaking change).
+**Consequences:** CVE count went from 14 (3 critical, 11 moderate) → 4 moderate. The 4 residuals are CVEs against `request` itself (DoS / SSRF), reachable only via the operator-controlled Synapse homeserver — not externally exploitable in our threat model. `tough-cookie ^4.1.4` was already pinned the same way for the same reason.
+
+---
+
+## ADR-011: Dual-View Calculation Architecture (Pure-Function Inputs Only)
+
+**Date:** 2026-04-30 (rc.100) — see `docs/audit/calculation-modules-audit.md` for the original Phase 0 scope and locked decisions.
+**Status:** Accepted
+**Context:** Manufacturing calculations had ~17 hardcoded constants across 14 modules (cycle-time source, setup treatment, ROI hurdle, default service level, etc.). Operators wanted per-site overrides without touching the math; users wanted explainability of which assumption produced a given result.
+**Decision:** Introduce a calculation-wrapper layer (`src/calculations/`) that:
+1. Takes the same inputs as the underlying pure function plus `(assumptions, mode)`.
+2. In `standard` mode passes the textbook defaults through unchanged.
+3. In `site_adjusted` mode resolves named assumptions from a registry (built-in defaults → global → pack → user, first-match-wins) and applies them as **input overrides** — never modifying the math.
+4. Returns `CalculationResult { value, mode, inputsUsed, assumptionsApplied, computedAt }` so callers can render the lineage.
+The Web UI exposes `/docs/assumptions` for CRUD and `/explain` for ephemeral most-recent-result lineage. The Telegram surface honors `--site-adjusted` on every manufacturing slash command and CSV caption.
+**Alternatives considered:**
+- Mutable math (per-pack code branches) → Rejected: violates the "pure function" contract; gives every pack a footgun.
+- Inline registry lookups inside pure functions → Rejected: makes pure functions impure and breaks unit tests that don't init a registry.
+- Single global override map → Rejected: no per-site / per-user precedence; can't ship multi-tenant.
+**Consequences:** All 14 calc modules ship dual-view. AIAG control-chart constants (d2, D4, Western Electric thresholds) are explicitly NOT folded — they're standards, not assumptions. Inventory's `default_service_level` ships as the latest active hook (rc.102) with the same precedence semantics as ROI's `roi_default_discount_rate` and `roi_default_horizon_months`.
+
+---
+
+## ADR-012: Vitest 4 — `vi.hoisted` + Class-Based Mock for Module-Cached Singletons
+
+**Date:** 2026-05-05 (rc.105)
+**Status:** Accepted
+**Context:** vitest 4 changed module-mock factory semantics. The pre-rc.105 pattern of attaching a `__mockX` escape-hatch to the mocked module returned a stale reference under vitest 4, and `mockResolvedValueOnce` queued values were silently dropped (the test for `tests/embeddings.test.ts` failed in this mode after the upgrade).
+**Decision:** When a module under test caches a constructed instance at module scope (`let client: X = null`), use:
+```ts
+const { mockEmbed } = vi.hoisted(() => ({ mockEmbed: vi.fn() }));
+vi.mock('ollama', () => ({
+  Ollama: class MockOllama { embed = mockEmbed; },
+}));
+```
+Class-based mocks bind the hoisted `vi.fn` reference at every constructor call, so cached singletons see the same mock the test queues against.
+**Alternatives considered:**
+- `vi.resetModules()` in `beforeEach` → Rejected: doesn't fix the underlying reference issue.
+- Refactor source to remove module-level cache → Rejected: cache exists for a reason (connection reuse).
+**Consequences:** Documented as the canonical pattern for tests that mock connection-cached SDKs (Ollama, OpenAI, etc.). Used in `tests/embeddings.test.ts`; future similar mocks should follow.
+
+---
+
+## ADR-013: Major Dep Bumps Land In Isolated Commits
+
+**Date:** 2026-05-05 (rc.105)
+**Status:** Accepted
+**Context:** rc.105 attempted seven concurrent major-version bumps (TypeScript 5→6, vitest 3→4, openai 4→6, @types/node 22→25, undici 7→8, ollama 0.5→0.6, pdfkit 0.17→0.18). If any one had broken the suite, identifying which would have required bisection across all seven.
+**Decision:** Attempt each major bump in a separate `npm install pkg@N` step, run `tsc --noEmit` + full vitest suite after each, and only continue to the next on green. Each is logically isolated and revertable. The final ship commit aggregates them once verified.
+**Alternatives considered:**
+- Single bulk bump → Rejected: bisection cost on failure too high.
+- One commit per major → Rejected: branch noise; no functional benefit because the fixes ship as one rc.
+**Consequences:** rc.105 landed seven majors clean in one commit. Two source-side fixups required (worker-sandbox.ts type narrow under @types/node 25; embeddings.test.ts mock pattern under vitest 4) — both isolated to their respective bumps and traceable in the commit body.
+
+---
+
+*luna v1.0.0-rc.108 — Architecture Decision Records*

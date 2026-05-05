@@ -83,6 +83,7 @@ graph LR
 - **Docker-sandboxed**: Claude CLI runs with `--dangerously-skip-permissions` safely inside container isolation
 - **Secrets via environment**: All credentials in `.env` (gitignored), never hardcoded. Rotation procedures in [`security.md`](./security.md).
 - **Usage observability (rc.95)**: `/usage` slash command exposes per-provider call counts for the current month. `api_usage` table populated fire-and-forget at the user-turn level. Honest framing — counts only, no synthetic "savings" math, since the subscription is flat-rate.
+- **Resilience defaults (rc.102 → rc.107)**: `/api/health` returns 204 ahead of the auth gate (monitor-friendly); process-level `unhandledRejection` / `uncaughtException` handlers log + continue or shutdown gracefully; child-process restarts use exponential backoff (1s → 60s, max 5 in 60s); shared `web/http-helpers.readJsonBody` caps every JSON endpoint at 10MB; voice WS sessions auto-close at 30 min idle / 4 h max; SQLite WAL is checkpointed on shutdown; Knex queries >500ms warn-log; assumption resolution batches across dependencies in one `whereIn`; Telegram 429 honors `retry_after` for up to 3 attempts. See `architecture-decision-records.md` ADR-009 through ADR-013 for the rationale.
 
 ---
 

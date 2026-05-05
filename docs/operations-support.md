@@ -67,22 +67,34 @@
 
 | Metric | Where | Healthy | Warning |
 |--------|-------|---------|---------|
+| HTTP health endpoint | `curl http://<host>:3030/api/health` | `204 No Content` | non-204 / unreachable (rc.102) |
 | Container health | `docker ps` | "healthy" | "unhealthy" or missing |
 | Startup warnings | `docker logs luna-bot \| grep WARN` | 0 | >0 |
 | Processes running | Docker logs "spawned" | 3 (core + tools + parsers) | <3 |
+| Child-process restarts | `docker logs luna-bot \| grep "Scheduling child process restart"` | rare | repeated within 60s — backoff (rc.106) growing exponentially up to 60s |
 | Packs loaded | Docker logs "Loaded domain pack" | 11 | <11 |
+| Slow scheduled tasks | `docker logs luna-bot \| grep "Scheduled task completed slowly"` | 0 | >0 (rc.106 — task >5s blocks the 60s poll cycle) |
+| Slow DB queries | `docker logs luna-bot \| grep "Slow database query"` | 0 | >0 (rc.106 — anything >500ms gets warned with truncated SQL) |
+| Background queue depth | `docker logs luna-bot \| grep "Background task queued"` → `queueDepth` | <50 | approaching 200 cap (rc.106 — global) or 25 per-chat |
+| Voice WS lifetime closes | `docker logs luna-bot \| grep "Voice web: closing session on lifetime cap"` | rare | frequent — clients abandoning (rc.106 30m idle / 4h max) |
 | Response time | User experience | <10s | >30s |
 | Rate limit hits | User reports | Rare | Frequent |
+| Telegram 429 retries | `docker logs luna-bot \| grep "Telegram 429"` | 0 | >0 (rc.107 — 3-attempt backoff honoring `retry_after`) |
 | Tool audit logs | `docker logs luna-bot \| grep "tool_audit"` | Normal activity | Unusual patterns |
 | Event triggers | `docker logs luna-bot \| grep "event_trigger"` | Firing as expected | Missed events |
 | Auth failures | `docker logs luna-bot \| grep "auth_fail"` | 0 | >3/min (IP ban at 15/hr) |
 | Caddy TLS (prod) | `docker logs luna-caddy` | Certificate valid | Renewal errors |
+| Unhandled rejections | `docker logs luna-bot \| grep "Unhandled promise rejection"` | 0 | >0 (rc.103 — Luna keeps running but the cause needs investigation) |
 
 ### Daily Check (2 minutes)
 
 ```bash
+# 1. Public health endpoint must return 204
+curl -fsS -o /dev/null -w "/api/health -> %{http_code}\n" http://127.0.0.1:3030/api/health
+
+# 2. Container state + error count over last 24h
 docker ps --format "table {{.Names}}\t{{.Status}}" --filter name=luna
-docker logs luna-bot --since 24h 2>&1 | grep -c "ERROR"
+docker logs luna-bot --since 24h 2>&1 | grep -cE "ERROR|FATAL|Unhandled promise"
 ```
 
 ---

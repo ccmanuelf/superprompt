@@ -220,6 +220,8 @@ Caddy provides automatic HTTPS via Let's Encrypt, HTTP-to-HTTPS redirect, securi
 ```
 Webhook mode is more efficient than the default long-polling on public servers. Requires Caddy or another HTTPS reverse proxy.
 
+> **rc.102 hardening:** when `TELEGRAM_WEBHOOK_URL` is set, `TELEGRAM_WEBHOOK_SECRET` **must be non-empty**. The Telegram platform throws at startup if the secret is missing or only whitespace — an empty value previously degraded silently to "any caller can forge updates." If you see `TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_WEBHOOK_URL is set`, generate one with `openssl rand -hex 32` and add it to `.env`.
+
 First run takes 3-5 minutes (building the Docker image, downloading voice models). Watch progress:
 
 ```bash

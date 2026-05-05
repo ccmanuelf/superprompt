@@ -137,6 +137,25 @@ Packs are capabilities, not department property. Any department can enable any p
 3. **Practical tools** — each tool should solve a real problem, not be a demo
 4. **Bilingual descriptions** — consider EN/ES users in descriptions
 5. **Start Level 2, upgrade to Level 3** — only add TypeScript source when you need DB tables or web dashboards
+6. **Pack names must be globally unique** (rc.102) — the loader rejects duplicates and logs a clear error rather than silently shadowing by filesystem order. If `pack.yaml.name` collides with an already-loaded pack, the second one is skipped and never registered.
+
+## Site-Adjusted Calculations & Pack Assumptions (rc.100 / rc.101)
+
+If your pack's calculation logic touches any of the registered assumption names (cycle-time source, setup treatment, scrap rule, yield baseline, availability basis, Monte Carlo iterations, ROI hurdle, ROI horizon, default service level), you can ship pack-scoped overrides without writing code. Add an `assumptions.yaml` next to your `pack.yaml`:
+
+```yaml
+# packs/my-pack/assumptions.yaml
+- assumption_name: roi_default_discount_rate
+  value: 0.15
+  rationale: "Our shop's WACC is 15%, not the textbook 10% default."
+- assumption_name: default_service_level
+  value: 0.99
+  rationale: "Critical SKU policy — 99% in-stock probability."
+```
+
+The pack loader registers these at `pack` scope. When a user runs `/sigma --site-adjusted` (or any manufacturing command with the flag) and your pack is in their active pack list, your overrides apply via first-match-wins precedence (`user → pack → global → built-in default`). Users see the source scope in the `/explain` lineage page.
+
+What your pack **cannot** change via this mechanism: the math itself. Calculation wrappers honor assumption overrides as **input substitutions only** — they never modify the underlying pure function. AIAG control-chart constants (d2, D4, Western Electric thresholds) are explicitly NOT registered as assumptions; they're standards, not knobs.
 
 ## Examples
 
