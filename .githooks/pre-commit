@@ -27,6 +27,12 @@ SECRET_PATTERNS=(
   # Telegram bot tokens (numeric:alphanumeric pattern)
   '[0-9]{8,10}:[a-zA-Z0-9_-]{35}'
 
+  # Render API keys (rnd_…) — added rc.102 (env-whitelist surfaces these)
+  'rnd_[a-zA-Z0-9]{20,}'
+
+  # Synapse / Matrix access tokens (syt_…)
+  'syt_[a-zA-Z0-9_-]{20,}'
+
   # Generic high-entropy secrets assigned to variables
   '(password|secret|token|api_key|apikey|access_key|private_key)\s*[:=]\s*['\''"][a-zA-Z0-9+/=]{20,}['\''"]'
 

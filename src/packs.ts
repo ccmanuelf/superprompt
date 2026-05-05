@@ -448,6 +448,9 @@ export async function loadAllPacks(): Promise<PackMetadata[]> {
   }
 
   const entries = readdirSync(PACKS_DIR, { withFileTypes: true });
+  // Pack names must be unique. Filesystem order is platform-dependent; without
+  // dedup, two packs claiming the same name would shadow each other invisibly.
+  const seenPackNames = new Set<string>();
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
@@ -462,9 +465,16 @@ export async function loadAllPacks(): Promise<PackMetadata[]> {
 
     try {
       const pack = await loadSinglePack(packDir, entry.name);
-      if (pack) {
-        loadedPacks.push(pack);
+      if (!pack) continue;
+      if (seenPackNames.has(pack.name)) {
+        logger.error(
+          { pack: pack.name, dir: entry.name },
+          'Duplicate pack name — second occurrence rejected. Rename the pack or its directory.',
+        );
+        continue;
       }
+      seenPackNames.add(pack.name);
+      loadedPacks.push(pack);
     } catch (err) {
       logger.warn({ err, pack: entry.name }, 'Failed to load domain pack');
     }

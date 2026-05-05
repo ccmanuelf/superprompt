@@ -347,6 +347,14 @@ export function startVoiceWebServer(router: ProviderRouter): { close: () => void
 
     // ── API routes (handle before static files) ──
     if (urlPath.startsWith('/api/')) {
+      // Health endpoint — public, unauth, used by monitors and load balancers.
+      // Must precede the auth gate; returns 204 with no body.
+      if (urlPath === '/api/health' && (req.method === 'GET' || req.method === 'HEAD')) {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
       // Docs API is public read-only — no auth
       if (urlPath.startsWith('/api/docs')) {
         handleDocsApi(req, res, urlPath);

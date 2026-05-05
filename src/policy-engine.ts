@@ -38,6 +38,9 @@ export const policyTableInit: TableInitializer = {
 
 // ── Trust Memory ─────────────────────────────────────────────
 
+/** TTL applied when a user accepts an "always" tool confirmation. */
+export const TRUST_ALWAYS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 export type TrustDecision = 'allow' | 'block';
 
 export interface TrustEntry {
@@ -345,8 +348,14 @@ export async function handleToolConfirmation(
   }
 
   if (response === 'always') {
-    await setTrustDecision(chatId, pending.toolName, 'allow');
-    logger.info({ chatId, tool: pending.toolName }, 'User granted permanent trust');
+    // 30-day TTL on "always" decisions. A permanent allow lets a single moment
+    // of trust persist forever; rotating the decision keeps the user in the loop.
+    const expiresAt = Date.now() + TRUST_ALWAYS_TTL_MS;
+    await setTrustDecision(chatId, pending.toolName, 'allow', expiresAt);
+    logger.info(
+      { chatId, tool: pending.toolName, expiresAt },
+      'User granted trust (30-day TTL)',
+    );
   }
 
   // Execute the tool (for 'once' and 'always')

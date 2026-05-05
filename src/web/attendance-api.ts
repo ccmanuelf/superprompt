@@ -407,9 +407,22 @@ async function handlePreview(req: IncomingMessage, res: ServerResponse): Promise
     return json(res, 400, { error: `dataType must be "roster" or "badge", got "${dataType}"` });
   }
 
+  // Cap decoded size before writing to disk. A 10MB CSV holds ~50k rows of
+  // attendance data — well above any realistic single-day upload. Larger
+  // payloads are likely either an accident or a DoS attempt.
+  const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+  // base64 expands raw bytes by 4/3, so the encoded length caps the decoded
+  // length at (encoded * 3 / 4). Reject before allocating the buffer.
+  if (base64.length > Math.ceil((MAX_UPLOAD_BYTES * 4) / 3) + 4) {
+    return json(res, 413, { error: `upload exceeds ${MAX_UPLOAD_BYTES} byte limit` });
+  }
+
   const buf = Buffer.from(base64, 'base64');
   if (buf.length === 0) {
     return json(res, 400, { error: 'decoded upload is empty' });
+  }
+  if (buf.length > MAX_UPLOAD_BYTES) {
+    return json(res, 413, { error: `upload exceeds ${MAX_UPLOAD_BYTES} byte limit` });
   }
 
   mkdirSync(ATTENDANCE_UPLOADS, { recursive: true });

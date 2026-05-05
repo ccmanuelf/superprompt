@@ -247,6 +247,19 @@ async function main(): Promise<void> {
     },
   });
 
+  // Recent calculation results (rc.100 /explain) — periodic sweep so idle
+  // chatIds don't keep stale entries in the in-memory map forever.
+  const { startRecentResultsSweep, stopRecentResultsSweep } = await import('./calculations/recent-results.js');
+  app.registerSubsystem({
+    name: 'recent-results-sweep',
+    init: () => {
+      startRecentResultsSweep();
+    },
+    shutdown: () => {
+      stopRecentResultsSweep();
+    },
+  });
+
   // Media cleanup
   const { cleanupOldUploads } = await import('./media.js');
   app.registerSubsystem({
@@ -393,7 +406,13 @@ async function main(): Promise<void> {
         if (config.TELEGRAM_WEBHOOK_URL) {
           // Webhook mode — production (requires HTTPS via Caddy)
           const webhookUrl = config.TELEGRAM_WEBHOOK_URL;
-          const secret = config.TELEGRAM_WEBHOOK_SECRET || undefined;
+          const secret = (config.TELEGRAM_WEBHOOK_SECRET ?? '').trim();
+          if (!secret) {
+            throw new Error(
+              'TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_WEBHOOK_URL is set. '
+              + 'An empty secret disables Telegram payload verification and lets any caller forge updates.',
+            );
+          }
 
           // Register webhook handler on the web server
           const { webhookCallback } = await import('grammy');

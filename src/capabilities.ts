@@ -117,6 +117,12 @@ IMPORTANT: This list is dynamically extended by loaded packs. Always check the p
 - /doe — Design of Experiments
 - /fsm — State Machine simulator
 
+**Calculation lineage & assumptions (rc.100/101):**
+- /docs/assumptions — Assumption registry CRUD. Manage the named values that drive site-adjusted calculations (cycle-time source, setup treatment, scrap rule, yield baseline, availability basis, Monte Carlo iterations, ROI hurdle / horizon, etc.). Per-pack and per-user overrides supported with first-match-wins precedence.
+- /explain — Most-recent calculation lineage. Shows which assumptions were applied to the last site-adjusted run (value, source scope, rationale). Ephemeral: cleared after one hour or on server restart.
+
+Add \`--site-adjusted\` to any manufacturing slash command or CSV caption (e.g. \`/sigma 10.5 9.5 Widget --site-adjusted\`, \`Capacity Data plant-A --site-adjusted\`) to compute against registered assumptions instead of textbook defaults. Without the flag, results use the standard textbook formulas. Both views are pure functions — adjustments only change inputs, never the math.
+
 **Operations Hub dashboards (S17/S18 — preview with sample data):**
 - /hub — Production Hub: work orders, production progress, bot/AI interface, alerts, activity log
 - /hub/bom — BOM & Shortage Resolution: shortage alerts, component alternatives, split-order tracking, override log

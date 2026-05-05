@@ -132,6 +132,10 @@ export const ASSUMPTION_DEFAULTS: Record<string, { value: unknown; rationale: st
     value: 24,
     rationale: 'NPV / payback analysis horizon in months when ROI input omits analysis_months. 24 months balances short-payback bias against optimistic long-tail revenue.',
   },
+  default_service_level: {
+    value: 0.95,
+    rationale: 'Default in-stock probability when an inventory item omits service_level. 0.95 is the industry standard for non-critical SKUs; raise per pack for critical or safety-stock-sensitive items.',
+  },
 };
 
 /**
@@ -148,6 +152,7 @@ export const METRIC_DEPENDENCIES: MetricAssumptionDependency[] = [
   { metric_name: 'sigma_yield', assumption_name: 'yield_baseline_source', usage_notes: 'Which yield definition feeds RTY' },
   { metric_name: 'simulation', assumption_name: 'monte_carlo_default_iterations', usage_notes: 'Default replication count when caller omits' },
   { metric_name: 'inventory', assumption_name: 'scrap_classification_rule', usage_notes: 'How rejected stock affects safety stock' },
+  { metric_name: 'inventory', assumption_name: 'default_service_level', usage_notes: 'Active hook — overrides per-item service_level in site_adjusted mode when registry has a non-default override' },
   { metric_name: 'capacity_roi', assumption_name: 'roi_default_discount_rate', usage_notes: 'NPV discount rate when input.discount_rate is undefined' },
   { metric_name: 'capacity_roi', assumption_name: 'roi_default_horizon_months', usage_notes: 'Analysis horizon when input.analysis_months is undefined' },
 ];

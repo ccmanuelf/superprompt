@@ -56,4 +56,58 @@ describe('calculateInventoryMetrics', () => {
     expect(result.inputsUsed.demandStddev).toBeNull();
     expect(result.value.safetyStock).toBeGreaterThan(0);
   });
+
+  it('site_adjusted active hook overrides serviceLevel when registry has non-default value', () => {
+    const baseline = calculateInventoryMetrics(inputs, {}, 'standard');
+    const overridden = calculateInventoryMetrics(
+      inputs,
+      {
+        default_service_level: {
+          name: 'default_service_level',
+          value: 0.99,
+          sourceScope: 'pack',
+          rationale: 'Critical SKU policy',
+        },
+      },
+      'site_adjusted',
+    );
+    expect(overridden.inputsUsed.serviceLevel).toBe(0.99);
+    expect(overridden.value.safetyStock).toBeGreaterThan(baseline.value.safetyStock);
+  });
+
+  it('site_adjusted active hook is INERT when assumption has default scope', () => {
+    const baseline = calculateInventoryMetrics(inputs, {}, 'standard');
+    const inert = calculateInventoryMetrics(
+      inputs,
+      {
+        default_service_level: {
+          name: 'default_service_level',
+          value: 0.99,
+          sourceScope: 'default',
+          rationale: 'Built-in default — no override registered',
+        },
+      },
+      'site_adjusted',
+    );
+    expect(inert.inputsUsed.serviceLevel).toBe(0.95);
+    expect(inert.value.safetyStock).toBeCloseTo(baseline.value.safetyStock, 4);
+  });
+
+  it('standard mode never honors the active hook even with a pack override', () => {
+    const baseline = calculateInventoryMetrics(inputs, {}, 'standard');
+    const stdWithOverride = calculateInventoryMetrics(
+      inputs,
+      {
+        default_service_level: {
+          name: 'default_service_level',
+          value: 0.99,
+          sourceScope: 'pack',
+          rationale: 'Override exists but standard mode ignores it',
+        },
+      },
+      'standard',
+    );
+    expect(stdWithOverride.inputsUsed.serviceLevel).toBe(0.95);
+    expect(stdWithOverride.value.safetyStock).toBeCloseTo(baseline.value.safetyStock, 4);
+  });
 });

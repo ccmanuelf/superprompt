@@ -24,6 +24,31 @@ export interface RecentResult {
 
 const recentMap = new Map<string, RecentResult>();
 const MAX_AGE_MS = 60 * 60 * 1000; // 1 hour
+const SWEEP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
+let sweepTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Start the periodic stale sweep. Idempotent — safe to call once at boot.
+ *
+ * Without this timer, sweepStale() runs only on writes. An idle chat that
+ * never records again leaves its entry in memory forever; on a long-running
+ * container with churning user IDs the map grows unbounded.
+ */
+export function startRecentResultsSweep(): NodeJS.Timeout {
+  if (sweepTimer) return sweepTimer;
+  sweepTimer = setInterval(sweepStale, SWEEP_INTERVAL_MS);
+  if (typeof sweepTimer.unref === 'function') sweepTimer.unref();
+  return sweepTimer;
+}
+
+/** Test seam — stop the periodic sweep so vitest exits cleanly. */
+export function stopRecentResultsSweep(): void {
+  if (sweepTimer) {
+    clearInterval(sweepTimer);
+    sweepTimer = null;
+  }
+}
 
 export function recordRecentResult(
   chatId: string,
