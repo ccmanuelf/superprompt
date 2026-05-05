@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the ollama module before importing embeddings
-vi.mock('ollama', () => {
-  const mockEmbed = vi.fn();
-  return {
-    Ollama: vi.fn().mockImplementation(() => ({
-      embed: mockEmbed,
-    })),
-    __mockEmbed: mockEmbed,
-  };
-});
+// Vitest-4 idiom: vi.hoisted shares state between the hoisted vi.mock
+// factory and the test bodies. The mock is exposed as a class so the
+// constructor returns a stable instance whose `embed` is the same
+// vi.fn each test queues against.
+const { mockEmbed } = vi.hoisted(() => ({ mockEmbed: vi.fn() }));
+
+vi.mock('ollama', () => ({
+  Ollama: class MockOllama {
+    embed = mockEmbed;
+  },
+}));
 
 // Mock config
 vi.mock('../src/config.js', () => ({
@@ -31,16 +32,9 @@ vi.mock('../src/logger.js', () => ({
 describe('embeddings', () => {
   let generateEmbedding: typeof import('../src/embeddings.js').generateEmbedding;
   let generateEmbeddings: typeof import('../src/embeddings.js').generateEmbeddings;
-  let mockEmbed: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-
-    // Get mock reference
-    const ollamaMod = await import('ollama');
-    mockEmbed = (ollamaMod as unknown as { __mockEmbed: ReturnType<typeof vi.fn> }).__mockEmbed;
-
-    // Re-import to get fresh module
     const mod = await import('../src/embeddings.js');
     generateEmbedding = mod.generateEmbedding;
     generateEmbeddings = mod.generateEmbeddings;

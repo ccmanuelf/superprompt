@@ -173,7 +173,11 @@ export async function executeInWorker(
       }
     });
 
-    worker.on('error', (err) => {
+    worker.on('error', (rawErr) => {
+      // @types/node 25 widened the worker error parameter to `unknown`;
+      // narrow once at the boundary so the rest of this handler keeps its
+      // typed access to .message and ErrnoException-style .code.
+      const err = rawErr instanceof Error ? rawErr : new Error(String(rawErr));
       const isOOM = (err as NodeJS.ErrnoException).code === 'ERR_WORKER_OUT_OF_MEMORY'
         || err.message.includes('out of memory');
 
