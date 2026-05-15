@@ -100,13 +100,26 @@ useful (or breaks interactive flows). The exclude list lives in
 - `alembic revision`, `weasyprint`, `ollama`, `claude setup-token`,
   `node --inspect`
 
-`docker compose exec <svc> <inner>` is bypassed *structurally* — rtk only
-rewrites commands it has wrappers for and doesn't introspect the inner
-command — so test/lint/build/migration runs against the 4-service stack
-(`luna-core`, `luna-tools`, `luna-parsers`, `speaches`) pass through
-unchanged regardless of what the inner command is. Anything that touches
-the Anthropic SDK is a library call rather than a shell command, so host
-scripts that invoke it stay outside rtk too.
+`docker compose exec <svc> <inner>` is bypassed by rtk's **hardcoded
+internal logic**, not by the user's `exclude_commands` — the comment on
+the `docker exec` line in `config.toml` says so explicitly (`# bare form;
+\`docker compose exec\` is hardcoded in rtk`). The same built-in carve-out
+covers `docker compose run`, `up`, `down`, `restart`, and `exec`
+(mutation/execution subcommands); `docker compose ps` and
+`docker compose build` *do* have rtk wrappers and get rewritten. So
+test/lint/build/migration runs inside the 4-service stack (`luna-core`,
+`luna-tools`, `luna-parsers`, `speaches`) pass through unchanged regardless
+of the inner command.
+
+The Anthropic SDK is a library, not a CLI — it only enters rtk's view via
+whatever interpreter invokes a script. As of rtk 0.39.0: no wrapper for
+`python`, `node`, `bun`, or direct `tsx`, and `claude -p` (Luna's actual
+AI subprocess path) is unwrapped despite `claude setup-token` being in
+`exclude_commands`. `npx tsx <script>` IS rewritten to `rtk npx tsx
+<script>`, but `rtk npx` only applies specialized filters for
+`tsc`/`eslint`/`prisma`; for `tsx` it's a verified byte-identical
+passthrough (empirically tested 2026-05-15). Re-probe with `rtk rewrite --`
+after rtk version bumps in case a new wrapper appears for any of these.
 
 **Watch for cross-boundary output.** rtk compresses linear stdout/stderr, but
 traces that span process or sandbox boundaries can mis-stitch — V8 worker
