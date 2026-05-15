@@ -69,6 +69,45 @@ correctness. Confirm by exercising the feature end-to-end (live message, API
 call, UI click) before reporting the task done — `feedback_quality_standard.md`
 in memory pins this.
 
+## Shell Tooling: RTK Token Optimization
+
+`rtk` is installed via Homebrew on the host and project-scoped here via
+`rtk init`. Its hook transparently rewrites shell commands to compress output
+60–90% (`git status` → `rtk git status`, 0 tokens of overhead). Four rules:
+
+**Prefer shell over built-in file tools.** Use `cat`, `rg`, and `find` for
+file inspection — rtk compresses their output, the built-in Read/Grep/Glob
+tools don't go through it. Fall back to Read/Grep/Glob only when you need an
+exact line range, structured match positions, or guaranteed unmodified
+content (e.g., editing a file requires Read first).
+
+**Read the tee log on failure.** When a compressed command fails, the full
+uncompressed log path is printed at the end of the failure output. Read it
+before re-running — re-running blind throws away the diagnosis rtk already
+preserved.
+
+**Don't wrap bypassed commands.** These skip rtk by config or by environment,
+and manually prefixing `rtk` does nothing useful (or breaks interactive flows):
+- Excluded in `.rtk` config: `docker compose exec`, `docker exec`, `curl`
+- All test/lint/build/migration commands — they run inside Docker via
+  `docker compose exec` against the 4-service stack (`luna-core`,
+  `luna-tools`, `luna-parsers`, `speaches`), which bypasses rtk by design
+- Ollama subprocess output, `claude setup-token` and any OAuth flow,
+  `node --inspect` debug sessions
+- Host-only commands: `alembic revision --autogenerate`, `weasyprint`,
+  anything calling the Anthropic SDK
+
+**Watch for cross-boundary output.** rtk compresses linear stdout/stderr, but
+traces that span process or sandbox boundaries can mis-stitch — V8 worker
+isolate errors (SA1 sandbox, stack frames cross processes), security-critical
+traces (SSRF, prompt-injection framing tests), Telegram/grammy connection
+errors, FTS5 + sqlite-vec memory query failures. If compressed output looks
+truncated or out of order, fall back to the tee log.
+
+Meta commands: `rtk gain` for current savings, `rtk gain --history` for
+per-command history, `rtk discover` to analyze Claude Code history for missed
+opportunities, `rtk proxy <cmd>` to bypass filtering when debugging rtk itself.
+
 ## Key Architecture Decisions
 
 All decisions are documented in `reference/decisions.md`. Do NOT re-discuss them. Summary:
