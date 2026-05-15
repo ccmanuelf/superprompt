@@ -35,7 +35,7 @@ RUN mkdir -p /app/store /app/workspace/uploads && \
 
 USER luna
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD node -e "process.exit(0)" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=30s \
+    CMD curl -fsS -o /dev/null http://127.0.0.1:3030/api/health || exit 1
 
 ENTRYPOINT ["node", "dist/index.js"]

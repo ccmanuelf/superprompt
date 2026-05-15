@@ -80,8 +80,11 @@ RUN mkdir -p /app/store /app/workspace/uploads /app/workspace/repos /app/workspa
 # Switch to non-root user (node, UID 1000)
 USER node
 
-# Health check — verify the app process is running (PID file created at startup)
+# Health check — probe the HTTP server's /api/health endpoint (curl is
+# installed above; route is registered at src/web/server.ts and returns 204
+# when the voice server is up). Matches the docker-compose.yml healthcheck so
+# standalone `docker run` and `docker compose up` report the same liveness.
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=30s \
-    CMD test -f /app/store/luna.pid && kill -0 $(cat /app/store/luna.pid) 2>/dev/null || exit 1
+    CMD curl -fsS -o /dev/null http://127.0.0.1:3030/api/health || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
