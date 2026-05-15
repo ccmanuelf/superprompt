@@ -71,9 +71,13 @@ in memory pins this.
 
 ## Shell Tooling: RTK Token Optimization
 
-`rtk` is installed via Homebrew on the host and project-scoped here via
-`rtk init`. Its hook transparently rewrites shell commands to compress output
-60–90% (`git status` → `rtk git status`, 0 tokens of overhead). Four rules:
+`rtk` is installed via Homebrew on the host. `rtk init` registered a
+`rtk hook claude` entry in this project's `.claude/settings.json`; the
+filter rules live in `~/Library/Application Support/rtk/config.toml`
+(user-global, not project-local). The hook transparently rewrites shell
+commands to compress output 60–90% — `git status` → `rtk git status`,
+`cat file` → `rtk read file`, `rg foo` → `rtk grep foo`, `find . -name x`
+→ `rtk find . -name x`. Run `rtk verify` to confirm hook health. Four rules:
 
 **Prefer shell over built-in file tools.** Use `cat`, `rg`, and `find` for
 file inspection — rtk compresses their output, the built-in Read/Grep/Glob
@@ -86,16 +90,23 @@ uncompressed log path is printed at the end of the failure output. Read it
 before re-running — re-running blind throws away the diagnosis rtk already
 preserved.
 
-**Don't wrap bypassed commands.** These skip rtk by config or by environment,
-and manually prefixing `rtk` does nothing useful (or breaks interactive flows):
-- Excluded in `.rtk` config: `docker compose exec`, `docker exec`, `curl`
-- All test/lint/build/migration commands — they run inside Docker via
-  `docker compose exec` against the 4-service stack (`luna-core`,
-  `luna-tools`, `luna-parsers`, `speaches`), which bypasses rtk by design
-- Ollama subprocess output, `claude setup-token` and any OAuth flow,
-  `node --inspect` debug sessions
-- Host-only commands: `alembic revision --autogenerate`, `weasyprint`,
-  anything calling the Anthropic SDK
+**Don't wrap bypassed commands.** Some commands skip the hook by config,
+others by structure; either way, prefixing `rtk` manually does nothing
+useful (or breaks interactive flows). The exclude list lives in
+`~/Library/Application Support/rtk/config.toml` under
+`[hooks].exclude_commands`:
+- `curl `, `docker exec`, `docker logs`, `docker compose logs`
+- `pytest`, `npm install`, `npx playwright test`, `next build`
+- `alembic revision`, `weasyprint`, `ollama`, `claude setup-token`,
+  `node --inspect`
+
+`docker compose exec <svc> <inner>` is bypassed *structurally* — rtk only
+rewrites commands it has wrappers for and doesn't introspect the inner
+command — so test/lint/build/migration runs against the 4-service stack
+(`luna-core`, `luna-tools`, `luna-parsers`, `speaches`) pass through
+unchanged regardless of what the inner command is. Anything that touches
+the Anthropic SDK is a library call rather than a shell command, so host
+scripts that invoke it stay outside rtk too.
 
 **Watch for cross-boundary output.** rtk compresses linear stdout/stderr, but
 traces that span process or sandbox boundaries can mis-stitch — V8 worker
