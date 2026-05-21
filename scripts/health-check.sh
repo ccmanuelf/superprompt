@@ -42,10 +42,10 @@ if [[ "$NODE_VERSION" == "NOT FOUND" ]]; then
   ISSUES=$((ISSUES + 1))
 else
   MAJOR=$(echo "$NODE_VERSION" | sed 's/v//' | cut -d. -f1)
-  if (( MAJOR >= 20 )); then
+  if (( MAJOR >= 26 )); then
     echo -e "  ${GREEN}✓ Node.js $NODE_VERSION (OK)${NC}"
   else
-    echo -e "  ${YELLOW}⚠ Node.js $NODE_VERSION — recommend v20+ for ESM + native fetch${NC}"
+    echo -e "  ${YELLOW}⚠ Node.js $NODE_VERSION — recommend v26 (matches Docker prod + .nvmrc pin)${NC}"
     WARNINGS=$((WARNINGS + 1))
   fi
 fi

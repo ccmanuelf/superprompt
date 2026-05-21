@@ -4,7 +4,7 @@
   "description": "Luna (Inge Luna) — Personal AI assistant daemon bridging messaging platforms to AI backends",
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=26.0.0"
   },
   "scripts": {
     "build": "tsc",

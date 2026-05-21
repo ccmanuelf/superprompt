@@ -2,7 +2,7 @@
 # Usage: docker build -t luna .
 # For docker-compose, use docker-compose.yml which references docker/luna.dockerfile directly.
 
-FROM node:22-slim AS builder
+FROM node:26-slim AS builder
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 RUN npm run build
 
-FROM node:22-slim
+FROM node:26-slim
 
 WORKDIR /app
 

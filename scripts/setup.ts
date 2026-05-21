@@ -5,7 +5,7 @@
  * Usage: npx tsx scripts/setup.ts
  *
  * Steps:
- * 1. Check requirements (Node >=20, claude CLI, Docker, Ollama)
+ * 1. Check requirements (Node >=26, claude CLI, Docker, Ollama)
  * 2. Collect: Telegram bot token, chat ID, AI provider
  * 3. Open LUNA.md in $EDITOR for personalization
  * 4. Write .env
@@ -71,10 +71,10 @@ async function main(): Promise<void> {
   let hasErrors = false;
 
   const nodeVersion = parseInt(process.version.slice(1));
-  if (nodeVersion >= 20) {
+  if (nodeVersion >= 26) {
     pass(`Node.js ${process.version}`);
   } else {
-    fail(`Node.js ${process.version} — requires >= 20`);
+    fail(`Node.js ${process.version} — requires >= 26`);
     hasErrors = true;
   }
 
