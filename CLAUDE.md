@@ -56,7 +56,7 @@ make the loop dependent on the user; concrete criteria let the agent self-verify
 **Verify with the existing workflow.** This repo has real commands — use them
 before claiming done:
 - `npx tsc --noEmit` — type check
-- `npx vitest run` — full test suite (currently 2503 tests / 110 files)
+- `npx vitest run` — full test suite (currently 2704 tests / 128 files)
 - `npm run smoke` — dist-level ESM smoke (catches `require()`-in-ESM and similar
   runtime mismatches that vitest/tsx hide)
 - `docker compose build luna && docker compose up -d luna` — container rebuild
@@ -145,6 +145,7 @@ All decisions are documented in `reference/decisions.md`. Do NOT re-discuss them
 - **Memory**: Full dual-sector (semantic + episodic) with salience decay
 - **Infra**: Docker required (sandboxes `--dangerously-skip-permissions`)
 - **Dropped**: WhatsApp, Signal, Discord, iMessage, Agent SDK, ElevenLabs, Groq
+- **NovaLink Bridge**: read-only prod-data access via the `novalink` pack (`novalink_list_queries` / `novalink_query` / `novalink_health`, tools process). Config: `NOVALINK_BRIDGE_URL` + `NOVALINK_BRIDGE_API_KEY` (.env, whitelisted to the tools process). Tools call the internal bridge directly (intentional internal call, not the declarative-HTTP SSRF path).
 
 ### Architecture Hardening (SA1-SA5)
 

@@ -107,3 +107,5 @@ Writes; per-endpoint tools; admin/key-management UI; new self-improvement machin
 1. Does `/api/docs` require `X-API-Key`? (Determines the `novalink_health` auth-validation path — §5.)
 2. Exact JSON shape of `/api/docs` (field names for slug/params/description) — confirm against the live catalog before finalizing the discovery parser.
 3. Exact symbol/file for the tools-process env whitelist — confirm and add the two `NOVALINK_*` vars there.
+
+**Resolution (build, 2026-05-23):** (2) sidestepped — `novalink_list_queries` returns `/api/docs` verbatim, so there is no brittle catalog-shape coupling and no parser to finalize. (3) resolved — the symbol is `TOOLS_PROCESS_ENV` in `src/ipc/env-whitelist.ts`; both vars were added. (1) handled defensively — `novalink_health` treats HTTP 401/403 as `auth_valid:false` regardless of whether `/api/docs` is authenticated; still worth a one-time live confirmation of `/api/docs` auth behaviour.
