@@ -142,6 +142,7 @@ describe('NovaLink handlers (stubbed fetch)', () => {
     vi.stubGlobal('fetch', f);
     expect((await novalinkQuery({})).code).toBe('PARAM_MISSING');
     expect((await novalinkQuery({ slug: 'x', params: 'not-json' })).code).toBe('PARAM_INVALID');
+    expect((await novalinkQuery({ slug: 'x', params: '[]' })).code).toBe('PARAM_INVALID');
     expect(f).not.toHaveBeenCalled();
   });
 
@@ -179,5 +180,24 @@ describe('NovaLink handlers (stubbed fetch)', () => {
     const out = await novalinkHealth();
     expect(out.reachable).toBe(false);
     expect(out.error).toBeDefined();
+  });
+
+  it('novalink_query returns BAD_RESPONSE on a non-OK non-JSON body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => {
+        throw new Error('not JSON');
+      },
+    }));
+    const out = await novalinkQuery({ slug: 'im-bom' });
+    expect(out.code).toBe('BAD_RESPONSE');
+    expect(String(out.error)).toContain('503');
+  });
+
+  it('novalink_list_queries returns an error on HTTP failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }));
+    const out = await novalinkListQueries();
+    expect(String(out.error)).toContain('404');
   });
 });

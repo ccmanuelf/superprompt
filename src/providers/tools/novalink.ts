@@ -161,12 +161,16 @@ export async function novalinkQuery(args: { slug?: string; params?: string }): P
 
   let params: Record<string, unknown> = {};
   if (args.params) {
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(args.params);
-      if (parsed && typeof parsed === 'object') params = parsed as Record<string, unknown>;
+      parsed = JSON.parse(args.params);
     } catch {
       return { error: 'params must be a JSON object string, e.g. {"limit": 50}', code: 'PARAM_INVALID' };
     }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { error: 'params must be a JSON object string, e.g. {"limit": 50}', code: 'PARAM_INVALID' };
+    }
+    params = parsed as Record<string, unknown>;
   }
 
   try {
@@ -174,7 +178,10 @@ export async function novalinkQuery(args: { slug?: string; params?: string }): P
     if (res.json && typeof res.json === 'object' && 'status' in (res.json as object)) {
       return parseQueryResponse(res.json as BridgeEnvelope);
     }
-    return { error: `NovaLink Bridge returned HTTP ${res.status} with no error envelope`, code: 'BAD_RESPONSE' };
+    if (!res.ok) {
+      return { error: `NovaLink Bridge returned HTTP ${res.status}`, code: 'BAD_RESPONSE' };
+    }
+    return { error: 'NovaLink Bridge returned an unexpected response shape', code: 'BAD_RESPONSE' };
   } catch (err) {
     return { error: `NovaLink query failed: ${err instanceof Error ? err.message : String(err)}` };
   }
@@ -190,7 +197,10 @@ export async function novalinkHealth(): Promise<Record<string, unknown>> {
     // /api/docs may or may not require the key; treat 401/403 as key-invalid.
     const auth_valid = res.status !== 401 && res.status !== 403;
     let query_count: number | undefined;
-    const cat = res.json as Record<string, unknown> | null;
+    const cat =
+      res.json && typeof res.json === 'object' && !Array.isArray(res.json)
+        ? (res.json as Record<string, unknown>)
+        : null;
     if (cat) {
       for (const field of ['endpoints', 'queries', 'catalog']) {
         if (Array.isArray(cat[field])) {
