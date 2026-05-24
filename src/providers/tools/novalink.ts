@@ -201,13 +201,22 @@ export async function novalinkHealth(): Promise<Record<string, unknown>> {
       res.json && typeof res.json === 'object' && !Array.isArray(res.json)
         ? (res.json as Record<string, unknown>)
         : null;
-    if (cat) {
+    // The catalog is wrapped in the bridge's { status, data } envelope; the
+    // endpoint list lives at data.endpoints. Check there first, then a few
+    // top-level names as a fallback for other/future catalog shapes.
+    const data =
+      cat?.data && typeof cat.data === 'object' && !Array.isArray(cat.data)
+        ? (cat.data as Record<string, unknown>)
+        : undefined;
+    for (const container of [data, cat ?? undefined]) {
+      if (!container) continue;
       for (const field of ['endpoints', 'queries', 'catalog']) {
-        if (Array.isArray(cat[field])) {
-          query_count = (cat[field] as unknown[]).length;
+        if (Array.isArray(container[field])) {
+          query_count = (container[field] as unknown[]).length;
           break;
         }
       }
+      if (query_count !== undefined) break;
     }
     return { reachable: true, latency_ms, auth_valid, query_count, bridge_url: cfg.url, http_status: res.status };
   } catch (err) {

@@ -172,6 +172,13 @@ describe('NovaLink handlers (stubbed fetch)', () => {
     expect(out.bridge_url).toBe('http://bridge.test');
   });
 
+  it('novalink_health counts endpoints nested under the {status,data} envelope', async () => {
+    vi.stubGlobal('fetch', mockFetch({ status: 'OK', data: { endpoints: [{ slug: 'im-bom' }, { slug: 'as-company' }, { slug: 'x' }] } }));
+    const out = await novalinkHealth();
+    expect(out.reachable).toBe(true);
+    expect(out.query_count).toBe(3);
+  });
+
   it('novalink_health reports auth_valid=false on 401', async () => {
     vi.stubGlobal('fetch', mockFetch({}, { ok: false, status: 401 }));
     const out = await novalinkHealth();
