@@ -42,6 +42,11 @@ import {
   renderDeployStatusDefinition, renderDeployStatus,
   renderGetLogsDefinition, renderGetLogs,
 } from './render-status.js';
+import {
+  novalinkListQueriesDefinition, novalinkListQueries,
+  novalinkQueryDefinition, novalinkQuery,
+  novalinkHealthDefinition, novalinkHealth,
+} from './novalink.js';
 import { takeScreenshotDefinition, takeScreenshot } from './screenshot.js';
 import { kanbanManageDefinition, kanbanManage } from './kanban-manage.js';
 import {
@@ -174,6 +179,30 @@ export function registerBuiltinTools(): void {
       execute: async (args) => renderGetLogs(args as { serviceId: string; limit?: number }),
       source: 'builtin',
       process: 'tools',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
+    },
+    {
+      definition: novalinkListQueriesDefinition,
+      execute: async () => novalinkListQueries(),
+      source: 'builtin',
+      process: 'tools',
+      packName: 'novalink',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
+    },
+    {
+      definition: novalinkQueryDefinition,
+      execute: async (args) => novalinkQuery(args as { slug?: string; params?: string }),
+      source: 'builtin',
+      process: 'tools',
+      packName: 'novalink',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
+    },
+    {
+      definition: novalinkHealthDefinition,
+      execute: async () => novalinkHealth(),
+      source: 'builtin',
+      process: 'tools',
+      packName: 'novalink',
       policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
