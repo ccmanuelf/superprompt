@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { TOOLS_PROCESS_ENV } from '../src/ipc/env-whitelist.js';
 import {
   resolveBridgeConfig,
@@ -207,5 +210,27 @@ describe('env whitelist', () => {
   it('forwards the NovaLink vars to the tools process', () => {
     expect(TOOLS_PROCESS_ENV).toContain('NOVALINK_BRIDGE_URL');
     expect(TOOLS_PROCESS_ENV).toContain('NOVALINK_BRIDGE_API_KEY');
+  });
+});
+
+describe('novalink pack.yaml', () => {
+  const yamlPath = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    'packs',
+    'novalink',
+    'pack.yaml',
+  );
+  const content = readFileSync(yamlPath, 'utf-8');
+
+  it('declares the pack name and is enabled', () => {
+    expect(content).toContain('name: novalink');
+    expect(content).toContain('enabled: true');
+  });
+
+  it('routes intent to the three tools', () => {
+    expect(content).toContain('novalink_list_queries');
+    expect(content).toContain('novalink_query');
+    expect(content).toContain('intent_patterns:');
   });
 });
