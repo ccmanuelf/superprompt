@@ -20,6 +20,16 @@ describe('resolveBridgeConfig', () => {
     });
     expect(cfg).toEqual({ url: 'http://novalink-bridge:5000', key: 'nlb_test' });
   });
+
+  it('returns null for empty-string values', () => {
+    expect(resolveBridgeConfig({ NOVALINK_BRIDGE_URL: '', NOVALINK_BRIDGE_API_KEY: 'k' })).toBeNull();
+  });
+
+  it('strips multiple trailing slashes', () => {
+    expect(
+      resolveBridgeConfig({ NOVALINK_BRIDGE_URL: 'http://b:5000//', NOVALINK_BRIDGE_API_KEY: 'k' })?.url,
+    ).toBe('http://b:5000');
+  });
 });
 
 describe('buildQueryPath', () => {
@@ -59,5 +69,9 @@ describe('parseQueryResponse', () => {
     const out = parseQueryResponse({});
     expect(out.code).toBe('BAD_RESPONSE');
     expect(out.error).toBeDefined();
+  });
+
+  it('treats an OK envelope with no data as BAD_RESPONSE', () => {
+    expect(parseQueryResponse({ status: 'OK' }).code).toBe('BAD_RESPONSE');
   });
 });

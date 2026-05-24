@@ -28,7 +28,7 @@ export function resolveBridgeConfig(env: Record<string, string | undefined>): Br
   const url = env.NOVALINK_BRIDGE_URL;
   const key = env.NOVALINK_BRIDGE_API_KEY;
   if (!url || !key) return null;
-  return { url: url.replace(/\/$/, ''), key };
+  return { url: url.replace(/\/+$/, ''), key };
 }
 
 /** Build the bridge query path for a slug + params. */
@@ -37,7 +37,8 @@ export function buildQueryPath(slug: string, params: Record<string, unknown>): s
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null) qs.set(k, String(v));
   }
-  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const raw = qs.toString();
+  const suffix = raw ? `?${raw}` : '';
   return `/api/q/${encodeURIComponent(slug)}${suffix}`;
 }
 
@@ -62,5 +63,7 @@ export function parseQueryResponse(body: BridgeEnvelope): Record<string, unknown
       code: body.error.code ?? 'UNKNOWN',
     };
   }
+  // An OK envelope always carries `data`; an OK without data (or any other
+  // unrecognized shape) is treated as malformed.
   return { error: 'Unexpected NovaLink response shape', code: 'BAD_RESPONSE' };
 }
