@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { TOOLS_PROCESS_ENV } from '../src/ipc/env-whitelist.js';
 import {
   resolveBridgeConfig,
   buildQueryPath,
@@ -199,5 +200,12 @@ describe('NovaLink handlers (stubbed fetch)', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }));
     const out = await novalinkListQueries();
     expect(String(out.error)).toContain('404');
+  });
+});
+
+describe('env whitelist', () => {
+  it('forwards the NovaLink vars to the tools process', () => {
+    expect(TOOLS_PROCESS_ENV).toContain('NOVALINK_BRIDGE_URL');
+    expect(TOOLS_PROCESS_ENV).toContain('NOVALINK_BRIDGE_API_KEY');
   });
 });

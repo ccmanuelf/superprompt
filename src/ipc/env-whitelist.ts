@@ -17,6 +17,9 @@ export const TOOLS_PROCESS_ENV: string[] = [
   'GH_TOKEN',
   'GITHUB_TOKEN',
   'RENDER_API_KEY',
+  // NovaLink Bridge (novalink_* tools)
+  'NOVALINK_BRIDGE_URL',
+  'NOVALINK_BRIDGE_API_KEY',
   // Workspace paths (for read_file, run_command)
   'WORKSPACE_DIR',
   'UPLOADS_DIR',
