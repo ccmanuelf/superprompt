@@ -43,6 +43,11 @@ import {
   renderGetLogsDefinition, renderGetLogs,
 } from './providers/tools/render-status.js';
 import { takeScreenshotDefinition, takeScreenshot } from './providers/tools/screenshot.js';
+import {
+  novalinkListQueriesDefinition, novalinkListQueries,
+  novalinkQueryDefinition, novalinkQuery,
+  novalinkHealthDefinition, novalinkHealth,
+} from './providers/tools/novalink.js';
 
 import { executeInWorker } from './forge/worker-sandbox.js';
 import { executeDeclarativeHttp } from './forge/declarative-http.js';
@@ -68,6 +73,9 @@ const tools = [
   { def: renderDeployStatusDefinition, exec: async (args: any) => renderDeployStatus(args) },
   { def: renderGetLogsDefinition, exec: async (args: any) => renderGetLogs(args) },
   { def: takeScreenshotDefinition, exec: async (args: any) => takeScreenshot(args) },
+  { def: novalinkListQueriesDefinition, exec: async () => novalinkListQueries() },
+  { def: novalinkQueryDefinition, exec: async (args: any) => novalinkQuery(args) },
+  { def: novalinkHealthDefinition, exec: async () => novalinkHealth() },
 ];
 
 for (const { def, exec } of tools) {
