@@ -16,6 +16,25 @@ import { getDbDriver, type DbDriver } from './db-knex.js';
 import { logger } from './logger.js';
 
 /**
+ * Maximum length for user-supplied full-text queries. FTS5/BOOLEAN MODE
+ * operators on very long strings can trigger expensive query plans; memory
+ * search never benefits from more than a sentence or two of query text.
+ */
+const MAX_FTS_QUERY_LENGTH = 200;
+
+/**
+ * Guard for identifiers (table/column names) interpolated into raw DDL/DML.
+ * All callers pass hardcoded internal names today; this guard ensures the
+ * helpers stay safe if they're ever reached with derived input.
+ */
+function assertSafeIdentifier(name: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error(`Unsafe SQL identifier: ${JSON.stringify(name)}`);
+  }
+  return name;
+}
+
+/**
  * Check if a column exists in a table (cross-dialect).
  * Replaces PRAGMA table_info().
  */
@@ -46,6 +65,35 @@ export async function addColumnIfMissing(
 }
 
 /**
+ * Create an index if it doesn't already exist (cross-dialect migration).
+ * SQLite/PostgreSQL support IF NOT EXISTS natively; MariaDB needs an
+ * information_schema check first.
+ */
+export async function createIndexIfMissing(
+  db: Knex,
+  table: string,
+  columns: string[],
+  indexName: string,
+): Promise<void> {
+  assertSafeIdentifier(table);
+  assertSafeIdentifier(indexName);
+  columns.forEach(assertSafeIdentifier);
+  const columnList = columns.join(', ');
+
+  if (getDbDriver() === 'mariadb') {
+    const [rows] = await db.raw(
+      `SELECT COUNT(*) as cnt FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?`,
+      [table, indexName],
+    ) as [Array<{ cnt: number }>];
+    if (!rows[0]?.cnt) {
+      await db.raw(`CREATE INDEX ${indexName} ON ${table} (${columnList})`);
+    }
+    return;
+  }
+  await db.raw(`CREATE INDEX IF NOT EXISTS ${indexName} ON ${table} (${columnList})`);
+}
+
+/**
  * Create a full-text search setup for a table (dialect-specific).
  *
  * - SQLite: FTS5 virtual table + sync triggers
@@ -58,6 +106,9 @@ export async function createFullTextSearch(
   sourceColumn: string,
   ftsTableName: string,
 ): Promise<void> {
+  assertSafeIdentifier(sourceTable);
+  assertSafeIdentifier(sourceColumn);
+  assertSafeIdentifier(ftsTableName);
   const driver = getDbDriver();
 
   switch (driver) {
@@ -149,6 +200,13 @@ export async function fullTextSearch(
   query: string,
   limit: number = 5,
 ): Promise<unknown[]> {
+  assertSafeIdentifier(sourceTable);
+  assertSafeIdentifier(sourceColumn);
+  assertSafeIdentifier(ftsTableName);
+  if (query.length > MAX_FTS_QUERY_LENGTH) {
+    logger.debug({ length: query.length }, 'FTS query truncated to length cap');
+    query = query.slice(0, MAX_FTS_QUERY_LENGTH);
+  }
   const driver = getDbDriver();
 
   switch (driver) {
@@ -193,6 +251,8 @@ export async function createVectorTable(
   idColumn: string,
   dimensions: number = 768,
 ): Promise<void> {
+  assertSafeIdentifier(tableName);
+  assertSafeIdentifier(idColumn);
   const driver = getDbDriver();
 
   switch (driver) {
@@ -260,6 +320,8 @@ export async function insertVecRow(
   id: number,
   embedding: Buffer,
 ): Promise<void> {
+  assertSafeIdentifier(tableName);
+  assertSafeIdentifier(idColumn);
   if (getDbDriver() === 'sqlite') {
     const safeId = Math.trunc(Number(id));
     await db.raw(
@@ -287,6 +349,9 @@ export async function vectorSearch(
   embedding: number[],
   limit: number = 5,
 ): Promise<unknown[]> {
+  assertSafeIdentifier(vecTable);
+  assertSafeIdentifier(idColumn);
+  assertSafeIdentifier(sourceTable);
   const driver = getDbDriver();
 
   switch (driver) {

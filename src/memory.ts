@@ -64,8 +64,9 @@ export async function buildMemoryContext(
   try {
     const { buildGuardrailsContext } = await import('./guardrails.js');
     guardrailsCtx = await buildGuardrailsContext(chatId);
-  } catch {
+  } catch (err) {
     // Guardrails module not available — skip
+    logger.debug({ err, chatId }, 'Guardrails context unavailable — continuing without it');
   }
 
   // Sanitize query for FTS5: strip non-alphanumeric, add prefix matching
@@ -101,8 +102,8 @@ export async function buildMemoryContext(
       vecResults = await vectorSearchMemories(chatId, embedding, 3);
       vecEpisodes = await vectorSearchEpisodes(chatId, embedding, 2);
     }
-  } catch {
-    logger.debug('Vector search failed, using FTS5 only');
+  } catch (err) {
+    logger.debug({ err }, 'Vector search failed, using FTS5 only');
   }
 
   const recentResults = await getRecentMemories(chatId, 5);
@@ -134,12 +135,13 @@ export async function buildMemoryContext(
 
   if (topMemories.length === 0 && topEpisodes.length === 0) return '';
 
-  // Touch each memory: bump accessed_at and reinforce salience (+0.1, cap 5.0)
+  // Touch memories: bump accessed_at and reinforce salience (+0.1, cap 5.0).
+  // Single batched UPDATE — this runs on the per-message hot path.
   const db = getKnex();
   const now = Date.now();
-  for (const m of topMemories) {
+  if (topMemories.length > 0) {
     await db('memories')
-      .where({ id: m.id })
+      .whereIn('id', topMemories.map((m) => m.id))
       .update({
         accessed_at: now,
         salience: db.raw('MIN(salience + 0.1, 5.0)'),
@@ -215,8 +217,9 @@ export async function saveConversationTurn(
   let embedding: number[] | null = null;
   try {
     embedding = await generateEmbedding(content);
-  } catch {
+  } catch (err) {
     // Fire-and-forget: embedding failure is not critical
+    logger.debug({ err, chatId }, 'Embedding generation failed — memory saved without vector');
   }
 
   await insertMemory(chatId, content, sector, undefined, embedding ?? undefined);
@@ -281,11 +284,12 @@ export async function runDecaySweep(): Promise<void> {
     .where('salience', '<', 0.1)
     .select('id') as Array<{ id: number }>;
 
-  for (const row of toDelete) {
+  if (toDelete.length > 0) {
     try {
-      await db('memories_vec').where({ memory_id: row.id }).del();
-    } catch {
-      // best-effort
+      await db('memories_vec').whereIn('memory_id', toDelete.map((r) => r.id)).del();
+    } catch (err) {
+      // best-effort — vec table may not exist on this driver
+      logger.debug({ err, count: toDelete.length }, 'Vector cleanup during decay sweep failed');
     }
   }
 
@@ -476,8 +480,9 @@ Rules:
   try {
     const emb = await generateEmbedding(parsed.summary);
     if (emb) embedding = emb;
-  } catch {
+  } catch (err) {
     // Non-critical
+    logger.debug({ err, chatId }, 'Episode embedding failed — episode saved without vector');
   }
 
   // Save the episode

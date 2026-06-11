@@ -168,7 +168,8 @@ export async function isPackEnabled(chatId: string, packName: string): Promise<b
       .first() as { enabled: number } | undefined;
     if (!row) return true; // Default: enabled
     return row.enabled === 1;
-  } catch {
+  } catch (err) {
+    logger.debug({ err, chatId, packName }, 'Pack-enabled lookup failed — defaulting to enabled');
     return true; // DB not ready — default enabled
   }
 }
@@ -279,7 +280,8 @@ async function applyPackTuning(baseScore: number, packName: string, chatId: stri
   try {
     const { applyTunedWeight } = packTunerModule;
     return await applyTunedWeight(baseScore, packName, chatId);
-  } catch {
+  } catch (err) {
+    logger.debug({ err, packName, chatId }, 'Pack tuning weight failed — using untuned score');
     return baseScore;
   }
 }

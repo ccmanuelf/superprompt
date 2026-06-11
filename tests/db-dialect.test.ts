@@ -19,7 +19,7 @@ vi.mock('../src/logger.js', () => ({
   logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
 }));
 
-import { columnExists, createFullTextSearch, createVectorTable, fullTextSearch, insertVecRow } from '../src/db-dialect.js';
+import { columnExists, createFullTextSearch, createIndexIfMissing, createVectorTable, fullTextSearch, insertVecRow } from '../src/db-dialect.js';
 
 describe('db-dialect (SQLite)', () => {
   beforeEach(async () => {
@@ -82,6 +82,67 @@ describe('db-dialect (SQLite)', () => {
 
       const results = await fullTextSearch(testKnex, 'articles2', 'content', 'articles2_fts', 'user1', 'nonexistent*', 3);
       expect(results).toHaveLength(0);
+    });
+  });
+
+  describe('identifier guard (rc.113)', () => {
+    it('rejects unsafe table names in createFullTextSearch', async () => {
+      await expect(
+        createFullTextSearch(testKnex, 'articles; DROP TABLE users', 'content', 'x_fts'),
+      ).rejects.toThrow(/Unsafe SQL identifier/);
+    });
+
+    it('rejects unsafe column names in fullTextSearch', async () => {
+      await expect(
+        fullTextSearch(testKnex, 'articles', 'content) --', 'articles_fts', 'user1', 'q', 3),
+      ).rejects.toThrow(/Unsafe SQL identifier/);
+    });
+
+    it('rejects unsafe table names in createVectorTable', async () => {
+      await expect(
+        createVectorTable(testKnex, 'vec"t', 'id', 4),
+      ).rejects.toThrow(/Unsafe SQL identifier/);
+    });
+  });
+
+  describe('FTS query length cap (rc.113)', () => {
+    it('truncates oversized queries instead of erroring', async () => {
+      await testKnex.schema.createTable('articles3', (t) => {
+        t.increments('id').primary();
+        t.string('chat_id').notNullable();
+        t.text('content').notNullable();
+      });
+      await createFullTextSearch(testKnex, 'articles3', 'content', 'articles3_fts');
+      await testKnex('articles3').insert({ chat_id: 'user1', content: 'kaizen continuous improvement' });
+
+      // 200-char cap: a long query whose first term matches still searches
+      const longQuery = 'kaizen* ' + 'padding* '.repeat(60);
+      const results = await fullTextSearch(testKnex, 'articles3', 'content', 'articles3_fts', 'user1', longQuery, 3);
+      expect(Array.isArray(results)).toBe(true);
+    });
+  });
+
+  describe('createIndexIfMissing (rc.113)', () => {
+    it('creates an index and is idempotent', async () => {
+      await testKnex.schema.createTable('idx_target', (t) => {
+        t.increments('id').primary();
+        t.string('ref_id').notNullable();
+      });
+
+      await createIndexIfMissing(testKnex, 'idx_target', ['ref_id'], 'idx_idx_target_ref_id');
+      // Second call must not throw (IF NOT EXISTS)
+      await createIndexIfMissing(testKnex, 'idx_target', ['ref_id'], 'idx_idx_target_ref_id');
+
+      const rows = await testKnex.raw(
+        `SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_idx_target_ref_id'`,
+      ) as Array<{ name: string }>;
+      expect(rows).toHaveLength(1);
+    });
+
+    it('rejects unsafe index names', async () => {
+      await expect(
+        createIndexIfMissing(testKnex, 'idx_target', ['ref_id'], 'bad name'),
+      ).rejects.toThrow(/Unsafe SQL identifier/);
     });
   });
 

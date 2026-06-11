@@ -47,6 +47,8 @@ import {
   lockUserTool, unlockUserTool, insertToolRevision, getToolRevisions,
   // Episodes
   insertEpisode, getCompressibleMemories as _gc, closeDatabase,
+  // Voice mode
+  isVoiceModeEnabled, setVoiceMode,
 } from '../src/db-core.js';
 
 describe('db-core (Knex)', () => {
@@ -337,6 +339,29 @@ describe('db-core (Knex)', () => {
     it('inserts episode', async () => {
       const id = await insertEpisode('chat1', 'Summary of events', ['fact1'], ['thread1'], 5);
       expect(id).toBeGreaterThan(0);
+    });
+  });
+
+  // ── Voice mode (rc.113: persisted across restarts) ───
+
+  describe('voice mode', () => {
+    it('defaults to disabled', async () => {
+      expect(await isVoiceModeEnabled('chat1')).toBe(false);
+    });
+
+    it('persists enable and disable', async () => {
+      await setVoiceMode('chat1', true);
+      expect(await isVoiceModeEnabled('chat1')).toBe(true);
+      // Enabling twice is a no-op, not an error
+      await setVoiceMode('chat1', true);
+      expect(await isVoiceModeEnabled('chat1')).toBe(true);
+      await setVoiceMode('chat1', false);
+      expect(await isVoiceModeEnabled('chat1')).toBe(false);
+    });
+
+    it('is scoped per chat', async () => {
+      await setVoiceMode('chat1', true);
+      expect(await isVoiceModeEnabled('chat2')).toBe(false);
     });
   });
 });

@@ -14,9 +14,6 @@ import type { PlatformContext } from '../core/context.js';
 import type { CardStatus, CardAssignee } from '../kanban.js';
 import type { DigestFrequency } from '../proactive.js';
 
-// Per-room voice mode toggle
-const voiceModeRooms = new Set<string>();
-
 // ── Auth ────────────────────────────────────────────────────
 
 function isAuthorised(userId: string): boolean {
@@ -197,8 +194,9 @@ async function handleMessageInner(
           formatted_body: formatForMatrix(healResult.summary),
         });
       }
-    } catch {
+    } catch (err) {
       // Non-blocking
+      logger.debug({ err, roomId }, 'Skill self-heal attempt failed — continuing');
     }
   }
 
@@ -278,8 +276,9 @@ async function handleMessageInner(
             formatted_body: formatForMatrix(healResult.summary),
           });
         }
-      } catch {
+      } catch (err) {
         // Non-blocking
+        logger.debug({ err, roomId }, 'Skill self-heal attempt failed — continuing');
       }
     }
 
@@ -361,7 +360,7 @@ async function handleMessageInner(
     if (!response.text) return;
 
     // 4. Voice reply if enabled (force when message was voice)
-    const shouldVoice = isVoice || voiceModeRooms.has(roomId);
+    const shouldVoice = isVoice || (await ctx.voice.isVoiceMode(roomId));
     if (shouldVoice) {
       const caps = await ctx.voice.capabilities();
       if (caps.tts) {
@@ -527,8 +526,8 @@ async function handleCommand(
     }
 
     case '!voice': {
-      if (voiceModeRooms.has(roomId)) {
-        voiceModeRooms.delete(roomId);
+      if (await ctx.voice.isVoiceMode(roomId)) {
+        await ctx.voice.setVoiceMode(roomId, false);
         await sendNotice(client, roomId, 'Voice replies disabled.');
       } else {
         const caps = await ctx.voice.capabilities();
@@ -540,7 +539,7 @@ async function handleCommand(
           );
           return true;
         }
-        voiceModeRooms.add(roomId);
+        await ctx.voice.setVoiceMode(roomId, true);
         await sendNotice(client, roomId, 'Voice replies enabled. Send !voice again to disable.');
       }
       return true;

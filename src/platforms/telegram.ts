@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Bot, Context, InputFile } from 'grammy';
 import { config, UPLOADS_DIR } from '../config.js';
@@ -14,8 +15,18 @@ import { parseCalcModeFromText } from '../calculations/handler-boundary.js';
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
 
-// Per-chat voice mode toggle
-const voiceModeChats = new Set<string>();
+/**
+ * Reply in HTML; if Telegram rejects the formatting (malformed tags),
+ * retry as plain text so the user still gets the message.
+ */
+async function replyChunkWithFallback(ctx: Context, chunk: string): Promise<void> {
+  try {
+    await ctx.reply(chunk, { parse_mode: 'HTML' });
+  } catch (err) {
+    logger.debug({ err }, 'HTML reply rejected by Telegram — retrying as plain text');
+    await ctx.reply(chunk);
+  }
+}
 
 // ── Auth ────────────────────────────────────────────────────
 
@@ -199,7 +210,7 @@ async function handleMessageInner(
           const formatted = formatForTelegram(aiResponse.text);
           const chunks = splitMessage(formatted);
           for (const chunk of chunks) {
-            try { await ctx.reply(chunk, { parse_mode: 'HTML' }); } catch { await ctx.reply(chunk); }
+            await replyChunkWithFallback(ctx, chunk);
           }
         }
       }
@@ -361,11 +372,7 @@ async function handleMessageInner(
         const formatted = formatForTelegram(cleanText);
         const chunks = splitMessage(formatted);
         for (const chunk of chunks) {
-          try {
-            await ctx.reply(chunk, { parse_mode: 'HTML' });
-          } catch {
-            await ctx.reply(chunk);
-          }
+          await replyChunkWithFallback(ctx, chunk);
         }
       }
 
@@ -394,11 +401,7 @@ async function handleMessageInner(
         const formatted = formatForTelegram(response.text);
         const chunks = splitMessage(formatted);
         for (const chunk of chunks) {
-          try {
-            await ctx.reply(chunk, { parse_mode: 'HTML' });
-          } catch {
-            await ctx.reply(chunk);
-          }
+          await replyChunkWithFallback(ctx, chunk);
         }
 
         // Auto-skill detection for orchestrated tasks
@@ -560,7 +563,7 @@ async function handleMessageInner(
     if (response.generatedFiles?.length) {
       for (const file of response.generatedFiles) {
         try {
-          const fileBuffer = readFileSync(file.path);
+          const fileBuffer = await readFile(file.path);
           await ctx.replyWithDocument(new InputFile(fileBuffer, file.filename));
         } catch (err) {
           logger.warn({ err, file }, 'Failed to send generated file');
@@ -570,7 +573,7 @@ async function handleMessageInner(
 
     // 6. Send response
     const shouldVoice =
-      forceVoiceReply || voiceModeChats.has(chatId);
+      forceVoiceReply || (await pc.voice.isVoiceMode(chatId));
 
     if (shouldVoice) {
       const caps = await pc.voice.capabilities();
@@ -589,12 +592,7 @@ async function handleMessageInner(
     const chunks = splitMessage(formatted);
 
     for (const chunk of chunks) {
-      try {
-        await ctx.reply(chunk, { parse_mode: 'HTML' });
-      } catch {
-        // HTML parse failed (e.g. malformed tags) — retry as plain text
-        await ctx.reply(chunk);
-      }
+      await replyChunkWithFallback(ctx, chunk);
     }
   } catch (err) {
     logger.error({ err, chatId }, 'Message handling failed');
@@ -1624,8 +1622,8 @@ export function createTelegramBot(pc: PlatformContext): Bot {
   bot.command('voice', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
     const chatId = String(ctx.chat.id);
-    if (voiceModeChats.has(chatId)) {
-      voiceModeChats.delete(chatId);
+    if (await pc.voice.isVoiceMode(chatId)) {
+      await pc.voice.setVoiceMode(chatId, false);
       await ctx.reply('Voice replies disabled.');
     } else {
       const caps = await pc.voice.capabilities();
@@ -1637,7 +1635,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         );
         return;
       }
-      voiceModeChats.add(chatId);
+      await pc.voice.setVoiceMode(chatId, true);
       await ctx.reply('Voice replies enabled. Send /voice again to disable.');
     }
   });
@@ -2440,11 +2438,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     const formatted = formatForTelegram(lines.join('\n'));
     const chunks = splitMessage(formatted);
     for (const chunk of chunks) {
-      try {
-        await ctx.reply(chunk, { parse_mode: 'HTML' });
-      } catch {
-        await ctx.reply(chunk);
-      }
+      await replyChunkWithFallback(ctx, chunk);
     }
   });
 
@@ -3872,11 +3866,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           const formatted = formatForTelegram(response.text);
           const chunks = splitMessage(formatted);
           for (const chunk of chunks) {
-            try {
-              await ctx.reply(chunk, { parse_mode: 'HTML' });
-            } catch {
-              await ctx.reply(chunk);
-            }
+            await replyChunkWithFallback(ctx, chunk);
           }
         } finally {
           if (typingInterval) clearInterval(typingInterval);

@@ -24,8 +24,9 @@ let sqliteVecModule: { load: (db: any) => void } | null = null;
 try {
   const mod = await import('sqlite-vec');
   sqliteVecModule = mod;
-} catch {
+} catch (err) {
   // sqlite-vec not available (MariaDB/PostgreSQL don't need it)
+  logger.debug({ err }, 'sqlite-vec not loaded — SQLite vector search will be unavailable');
 }
 
 // ── Configuration ──────────────────────────────────────────

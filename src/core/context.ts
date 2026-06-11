@@ -20,6 +20,7 @@ import type {
   listUserTools, getUserToolByName, createUserTool, updateUserTool, deleteUserTool,
   enableUserTool, disableUserTool, lockUserTool, unlockUserTool, insertToolRevision,
   createTask, getTasksByChat, getTask, pauseTask, resumeTask, deleteTask,
+  isVoiceModeEnabled, setVoiceMode,
 } from '../db-core.js';
 import type { transcribeAudio, synthesizeSpeech, voiceCapabilities } from '../voice.js';
 import type { computeNextRun, validateCron } from '../scheduler.js';
@@ -162,6 +163,8 @@ export interface PlatformContext {
     transcribe: typeof transcribeAudio;
     synthesize: typeof synthesizeSpeech;
     capabilities: typeof voiceCapabilities;
+    isVoiceMode: typeof isVoiceModeEnabled;
+    setVoiceMode: typeof setVoiceMode;
   };
 
   files: {
@@ -443,6 +446,8 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
       transcribe: voiceMod.transcribeAudio,
       synthesize: voiceMod.synthesizeSpeech,
       capabilities: voiceMod.voiceCapabilities,
+      isVoiceMode: dbMod.isVoiceModeEnabled,
+      setVoiceMode: dbMod.setVoiceMode,
     },
     files: {
       parse: filesMod.parseFile,
