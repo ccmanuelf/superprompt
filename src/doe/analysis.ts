@@ -677,21 +677,40 @@ function computeResiduals(config: DOEConfig, matrix: ExperimentMatrix): Residual
 
 /**
  * Create a confirmation run from optimal factor settings.
+ *
+ * Prediction is the standard additive main-effects model:
+ *   ŷ = ȳ + Σ_factors (mean(y | factor at chosen level) − ȳ)
+ * computed directly from the experiment runs, so the predicted value
+ * reflects the chosen factor levels — the whole point of a confirmation
+ * run is comparing the model's prediction at those settings against a
+ * fresh actual. (rc.115: previously this returned the grand mean and
+ * ignored factorLevels entirely.)
  */
 export function createConfirmationRun(
   config: DOEConfig,
   factorLevels: Record<string, number>,
   analysis: DOEAnalysis,
 ): ConfirmationRun {
-  // Predict responses using main effects
   const predicted: Record<string, number> = {};
 
   for (const resp of config.responses) {
-    // Simple prediction: use closest level mean
-    const values = analysis.matrix.runs
-      .map((r) => r.responses[resp.id])
-      .filter((v): v is number => v != null);
-    predicted[resp.id] = values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+    const runs = analysis.matrix.runs.filter((r) => r.responses[resp.id] != null);
+    if (runs.length === 0) {
+      predicted[resp.id] = 0;
+      continue;
+    }
+    const grandMean = runs.reduce((s, r) => s + (r.responses[resp.id] as number), 0) / runs.length;
+
+    let prediction = grandMean;
+    for (const factor of config.factors) {
+      const chosenLevel = factorLevels[factor.id];
+      if (chosenLevel == null) continue;
+      const atLevel = runs.filter((r) => r.factor_levels[factor.id] === chosenLevel);
+      if (atLevel.length === 0) continue; // level never tested — no effect information
+      const levelMean = atLevel.reduce((s, r) => s + (r.responses[resp.id] as number), 0) / atLevel.length;
+      prediction += levelMean - grandMean;
+    }
+    predicted[resp.id] = round4(prediction);
   }
 
   return {

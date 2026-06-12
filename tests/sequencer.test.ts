@@ -37,6 +37,7 @@ import type {
   Job,
   Machine,
   SetupEntry,
+  ScheduleEntry,
 } from '../src/sequencer/models.js';
 import { ALL_RULES, productColor } from '../src/sequencer/models.js';
 
@@ -445,5 +446,56 @@ describe('Edge Cases', () => {
     // Jobs should be distributed across all 3 machines
     const machineIds = new Set(result.entries.map((e) => e.machine_id));
     expect(machineIds.size).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('buildGanttData — idle bars around setups (rc.115)', () => {
+  const M1: Machine = { id: 'm1', name: 'M1' };
+  const entry = (overrides: Partial<ScheduleEntry>): ScheduleEntry => ({
+    job_id: 'j', job_name: 'Job', product: 'A',
+    machine_id: 'm1', machine_name: 'M1',
+    start_time: 0, end_time: 10, processing_time: 10, setup_time: 0,
+    is_late: false, lateness_minutes: 0, sequence_position: 1,
+    ...overrides,
+  });
+
+  it('renders the residual gap before a partial setup as Idle', () => {
+    // Job 1 ends at 10; Job 2 starts at 30 with a 10-min setup (20→30).
+    // The genuinely idle 10→20 stretch must render as an Idle bar — before
+    // rc.115 any setup in the gap suppressed the whole idle bar.
+    const config: SequencerConfig = { name: 'GanttIdle', jobs: [], machines: [M1] };
+    const gantt = buildGanttData([
+      entry({ job_id: 'j1', job_name: 'Job 1', end_time: 10 }),
+      entry({ job_id: 'j2', job_name: 'Job 2', product: 'B', start_time: 30, end_time: 40, setup_time: 10, sequence_position: 2 }),
+    ], config);
+
+    const idle = gantt.bars.filter((b) => b.job_name === 'Idle');
+    expect(idle).toHaveLength(1);
+    expect(idle[0].start).toBe(10);
+    expect(idle[0].end).toBe(20);
+  });
+
+  it('emits no Idle bar when the setup fills the whole gap', () => {
+    // Job 1 ends at 10; Job 2 starts at 20 with a 10-min setup (10→20).
+    const config: SequencerConfig = { name: 'GanttFull', jobs: [], machines: [M1] };
+    const gantt = buildGanttData([
+      entry({ job_id: 'j1', job_name: 'Job 1', end_time: 10 }),
+      entry({ job_id: 'j2', job_name: 'Job 2', product: 'B', start_time: 20, end_time: 30, setup_time: 10, sequence_position: 2 }),
+    ], config);
+
+    expect(gantt.bars.filter((b) => b.job_name === 'Idle')).toHaveLength(0);
+  });
+
+  it('renders the whole gap as Idle when there is no setup', () => {
+    const config: SequencerConfig = { name: 'GanttBare', jobs: [], machines: [M1] };
+    const gantt = buildGanttData([
+      entry({ job_id: 'j1', job_name: 'Job 1', end_time: 10 }),
+      entry({ job_id: 'j2', job_name: 'Job 2', product: 'B', start_time: 25, end_time: 35, sequence_position: 2 }),
+    ], config);
+
+    const idle = gantt.bars.filter((b) => b.job_name === 'Idle');
+    expect(idle).toHaveLength(1);
+    expect(idle[0].start).toBe(10);
+    expect(idle[0].end).toBe(25);
   });
 });

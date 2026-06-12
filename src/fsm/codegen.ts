@@ -139,11 +139,15 @@ export function generateStructuredText(fsm: FSMDefinition): string {
 // ── Helpers ──────────────────────────────────────────────────
 
 function sanitizeName(name: string): string {
-  return name
+  // rc.115: the leading-digit guard must run AFTER the edge-trim — the old
+  // order prefixed `_` to a leading digit and then stripped it right back
+  // off, emitting illegal IEC 61131-3 identifiers like `9Station`.
+  const base = name
     .replace(/[^a-zA-Z0-9_]/g, '_')
-    .replace(/^(\d)/, '_$1')
     .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '') || 'unnamed';
+    .replace(/^_|_$/g, '');
+  if (!base) return 'unnamed';
+  return /^\d/.test(base) ? `_${base}` : base;
 }
 
 function extractGuardVars(guard: string): string[] {

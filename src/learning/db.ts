@@ -237,7 +237,11 @@ export async function calculateStreak(chatId?: string): Promise<number> {
   let streak = 0;
   const today = new Date().toISOString().slice(0, 10);
 
-  for (let i = 0; i < rows.length; i++) {
+  // rc.115: iterate one day past rows.length — when today is forgiven
+  // (no session yet), the first iteration consumes no row, and the old
+  // `i < rows.length` bound left the oldest fetched day unexamined,
+  // making every missing-today streak short by exactly one.
+  for (let i = 0; i <= rows.length; i++) {
     const expected = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const row = rows.find((r) => r.date === expected);
 

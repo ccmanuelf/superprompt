@@ -58,6 +58,17 @@ import {
   insertEpisode,
 } from '../src/db-core.js';
 
+// ── Helpers ────────────────────────────────────────────────
+
+/** Poll until `cond` holds — event-driven wait instead of fixed sleeps (flake-proof on slow CI). */
+async function waitFor(cond: () => boolean, opts: { timeoutMs?: number; intervalMs?: number } = {}): Promise<void> {
+  const deadline = Date.now() + (opts.timeoutMs ?? 5000);
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error('waitFor: condition not met within timeout');
+    await new Promise((r) => setTimeout(r, opts.intervalMs ?? 10));
+  }
+}
+
 // ── Setup ──────────────────────────────────────────────────
 
 beforeEach(async () => {
@@ -386,7 +397,7 @@ describe('WS2: Background tasks — user scenarios', () => {
       'user1',
       'Run 1000 Monte Carlo simulations',
       async () => {
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, 50)); // simulated workload (proves async execution)
         return 'Throughput 95% CI: [340, 485] units/day';
       },
     );
@@ -395,8 +406,8 @@ describe('WS2: Background tasks — user scenarios', () => {
     expect(message).toContain('Task queued / Tarea en cola');
     expect(message).toContain('Monte Carlo');
 
-    // Wait for completion
-    await new Promise(r => setTimeout(r, 300));
+    // Wait for completion (event-driven, not a fixed sleep)
+    await waitFor(() => notifications.length === 1);
 
     // User receives notification
     expect(notifications).toHaveLength(1);
@@ -410,7 +421,7 @@ describe('WS2: Background tasks — user scenarios', () => {
       throw new Error('Insufficient data');
     });
 
-    await new Promise(r => setTimeout(r, 200));
+    await waitFor(() => notifications.length === 1);
 
     expect(notifications).toHaveLength(1);
     expect(notifications[0].text).toContain('Task failed / Tarea fallida');
@@ -425,13 +436,13 @@ describe('WS2: Background tasks — user scenarios', () => {
       submitBackgroundTask('user1', `task-${i}`, async () => {
         running++;
         maxRunning = Math.max(maxRunning, running);
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, 50)); // simulated workload — must overlap so concurrency is observable
         running--;
         return 'done';
       });
     }
 
-    await new Promise(r => setTimeout(r, 500));
+    await waitFor(() => notifications.length === 5);
     expect(maxRunning).toBeLessThanOrEqual(2);
     expect(notifications).toHaveLength(5);
   });

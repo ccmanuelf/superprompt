@@ -63,6 +63,13 @@ describe('worker-sandbox', () => {
   });
 
   // --- Adaptive timeout ---
+  //
+  // NOTE on sleeps: the `setTimeout` calls below live INSIDE the worker code
+  // strings — they are deliberate simulated workloads that exercise the REAL
+  // heartbeat/rolling-timeout machinery in src/forge/worker-sandbox.ts. They
+  // are not test-level waits: each test already awaits the executeInWorker
+  // promise, which settles event-driven when the worker finishes or is killed.
+  // Do not replace them with condition polling or fake timers.
 
   it('kills infinite loop at base timeout (no heartbeat)', async () => {
     const start = Date.now();
@@ -122,7 +129,9 @@ describe('worker-sandbox', () => {
   // --- Conversational _timeout override ---
 
   it('_timeout overrides hard ceiling for that invocation', async () => {
-    // Default max would be 500ms, but _timeout: 2 (seconds) extends to 2000ms
+    // Default max would be 500ms, but _timeout: 2 (seconds) extends to 2000ms.
+    // The in-worker 800ms sleep is deliberate workload: it must outlive the
+    // 500ms ceiling to prove the override took effect.
     const result = await executeInWorker(
       `
       heartbeat();
@@ -162,7 +171,8 @@ describe('worker-sandbox', () => {
 
   it('_timeout extends base window — user-requested patience is honored', async () => {
     // _timeout: 2 (seconds) means user wants to wait up to 2s
-    // Code takes 800ms with heartbeat — should succeed even though baseTimeoutMs is tiny
+    // Code takes 800ms with heartbeat (deliberate in-worker workload —
+    // must exceed the 200ms base/max) — should succeed even though baseTimeoutMs is tiny
     const result = await executeInWorker(
       `
       heartbeat();

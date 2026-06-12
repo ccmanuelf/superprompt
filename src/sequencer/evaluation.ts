@@ -256,19 +256,32 @@ export function buildGanttData(
     for (let i = 0; i < machineBars.length - 1; i++) {
       const gapStart = machineBars[i].end;
       const nextBarStart = machineBars[i + 1].start;
-      // Check if there's a setup bar filling the gap
-      const setupFills = bars.some((b) =>
-        b.machine_id === machine.id && b.is_setup && b.start >= gapStart && b.end <= nextBarStart);
-      // Only if there's still a gap after accounting for setup
-      if (!setupFills && nextBarStart - gapStart > 0.5) {
+      // Setup bars may fill the gap partially — walk the uncovered
+      // sub-intervals and render each as Idle. (rc.115: previously any
+      // setup in the gap suppressed the whole idle bar, so the residual
+      // time after a setup rendered blank and idle time read low.)
+      const setupsInGap = bars
+        .filter((b) =>
+          b.machine_id === machine.id && b.is_setup && b.start >= gapStart && b.end <= nextBarStart)
+        .sort((a, b) => a.start - b.start);
+
+      let cursor = gapStart;
+      const subGaps: Array<{ start: number; end: number }> = [];
+      for (const setup of setupsInGap) {
+        if (setup.start - cursor > 0.5) subGaps.push({ start: cursor, end: setup.start });
+        cursor = Math.max(cursor, setup.end);
+      }
+      if (nextBarStart - cursor > 0.5) subGaps.push({ start: cursor, end: nextBarStart });
+
+      for (const gap of subGaps) {
         bars.push({
           machine_id: machine.id,
           machine_name: machine.name,
           job_id: '',
           job_name: 'Idle',
           product: '',
-          start: gapStart,
-          end: nextBarStart,
+          start: gap.start,
+          end: gap.end,
           is_setup: false,
           is_late: false,
           color: '#e0e0e0',

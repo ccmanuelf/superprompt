@@ -315,7 +315,7 @@ export async function generateMonteCarloHistogram(
   });
 
   // Create histogram bins from distribution stats
-  const { p5, p50, p95, mean, min, max } = stats.overall_utilization;
+  const { p5, p25, p50, p75, p95, mean, min, max } = stats.overall_utilization;
   const binCount = 10;
   const binWidth = (max - min) / binCount || 1;
   const bins: number[] = [];
@@ -357,7 +357,7 @@ export async function generateMonteCarloHistogram(
         legend: { display: false },
         subtitle: {
           display: true,
-          text: `P5=${p5.toFixed(1)}% | P50=${p50.toFixed(1)}% | P95=${p95.toFixed(1)}% | Bottleneck prob: ${stats.bottleneck_probability.toFixed(1)}%`,
+          text: `P5=${p5.toFixed(1)}% | P25=${p25.toFixed(1)}% | P50=${p50.toFixed(1)}% | P75=${p75.toFixed(1)}% | P95=${p95.toFixed(1)}% | Bottleneck prob: ${stats.bottleneck_probability.toFixed(1)}%`,
           font: { size: 12 },
         },
       },
