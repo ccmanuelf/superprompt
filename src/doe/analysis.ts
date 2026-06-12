@@ -687,9 +687,6 @@ export function createConfirmationRun(
   const predicted: Record<string, number> = {};
 
   for (const resp of config.responses) {
-    const mainEffect = analysis.main_effects.filter((e) =>
-      config.factors.some((f) => f.id === e.factor_id) && e.mean_responses.length > 0);
-
     // Simple prediction: use closest level mean
     const values = analysis.matrix.runs
       .map((r) => r.responses[resp.id])

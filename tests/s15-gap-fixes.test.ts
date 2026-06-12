@@ -26,7 +26,6 @@ import {
   type CapacityPlanConfig,
   type CapacityLine,
   type CalendarConfig,
-  type DemandEntry,
 } from '../src/capacity/analysis.js';
 import { initCapacityTables } from '../src/capacity/index.js';
 
@@ -37,7 +36,7 @@ import type { SequencerConfig } from '../src/sequencer/models.js';
 
 import { analyzeVSM } from '../src/vsm/analysis.js';
 import { initVsmTables } from '../src/vsm/index.js';
-import type { VSMConfig, ProcessStep } from '../src/vsm/models.js';
+import type { VSMConfig } from '../src/vsm/models.js';
 
 import { analyzeTOC } from '../src/toc/analysis.js';
 import { initTocTables, recordThroughput, getThroughputHistory } from '../src/toc/index.js';

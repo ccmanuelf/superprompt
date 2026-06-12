@@ -35,8 +35,8 @@ vi.mock('../src/config.js', () => ({
 // ── Imports (after mocks) ──────────────────────────────────
 
 import {
-  createWebToken, validateWebToken, revokeWebToken, listWebTokens,
-  getActiveTokenCount, revokeAllWebTokens, webTokenTableInit,
+  createWebToken, validateWebToken, revokeWebToken,
+  webTokenTableInit,
 } from '../src/web/web-tokens.js';
 
 import {
@@ -45,16 +45,16 @@ import {
 } from '../src/event-triggers.js';
 
 import {
-  initBackgroundTasks, submitBackgroundTask, getBackgroundTaskStatus,
+  initBackgroundTasks, submitBackgroundTask,
 } from '../src/background-tasks.js';
 
 import {
   coreTableInit, getSession, setSession, clearSession,
-  insertMemory, getRecentMemories, deleteMemory, decayMemories,
-  createSkill, getSkill, getSkillByName, listSkills, deleteSkill,
-  setActiveSkill, getActiveSkill, clearActiveSkill,
+  insertMemory, getRecentMemories, decayMemories,
+  createSkill, getSkill, listSkills, deleteSkill,
+  setActiveSkill, getActiveSkill,
   createTask, getTask, getDueTasks, deleteTask,
-  createUserTool, getUserTool, listUserTools, deleteUserTool,
+  createUserTool, getUserTool, deleteUserTool,
   insertEpisode,
 } from '../src/db-core.js';
 
@@ -114,7 +114,7 @@ describe('WS4: Knex CRUD — user scenarios', () => {
     });
 
     it('memory salience decays over time and low-salience memories are cleaned', async () => {
-      const id = await insertMemory('user1', 'will decay', 'episodic');
+      await insertMemory('user1', 'will decay', 'episodic');
 
       // Decay aggressively
       for (let i = 0; i < 50; i++) await decayMemories(0.9);
@@ -167,7 +167,7 @@ describe('WS4: Knex CRUD — user scenarios', () => {
     it('user tool lifecycle: create → use → disable → delete', async () => {
       await createUserTool('t1', 'my-api', 'Calls API', 'declarative_http', '{"url":"http://example.com"}');
 
-      let tool = await getUserTool('t1');
+      const tool = await getUserTool('t1');
       expect(tool?.enabled).toBe(1);
 
       // User finds by name
@@ -382,7 +382,7 @@ describe('WS2: Background tasks — user scenarios', () => {
   });
 
   it('user submits heavy computation → gets ack → gets result notification', async () => {
-    const { taskId, message } = submitBackgroundTask(
+    const { message } = submitBackgroundTask(
       'user1',
       'Run 1000 Monte Carlo simulations',
       async () => {

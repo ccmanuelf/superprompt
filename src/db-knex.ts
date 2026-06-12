@@ -15,7 +15,6 @@
 import Knex from 'knex';
 import type { Knex as KnexType } from 'knex';
 import { resolve } from 'node:path';
-import { mkdirSync } from 'node:fs';
 import { logger } from './logger.js';
 
 // sqlite-vec extension — loaded into SQLite connections for vector search
@@ -24,8 +23,9 @@ let sqliteVecModule: { load: (db: any) => void } | null = null;
 try {
   const mod = await import('sqlite-vec');
   sqliteVecModule = mod;
-} catch {
+} catch (err) {
   // sqlite-vec not available (MariaDB/PostgreSQL don't need it)
+  logger.debug({ err }, 'sqlite-vec not loaded — SQLite vector search will be unavailable');
 }
 
 // ── Configuration ──────────────────────────────────────────

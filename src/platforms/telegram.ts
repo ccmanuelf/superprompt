@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Bot, Context, InputFile } from 'grammy';
 import { config, UPLOADS_DIR } from '../config.js';
@@ -14,8 +14,18 @@ import { parseCalcModeFromText } from '../calculations/handler-boundary.js';
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
 
-// Per-chat voice mode toggle
-const voiceModeChats = new Set<string>();
+/**
+ * Reply in HTML; if Telegram rejects the formatting (malformed tags),
+ * retry as plain text so the user still gets the message.
+ */
+async function replyChunkWithFallback(ctx: Context, chunk: string): Promise<void> {
+  try {
+    await ctx.reply(chunk, { parse_mode: 'HTML' });
+  } catch (err) {
+    logger.debug({ err }, 'HTML reply rejected by Telegram — retrying as plain text');
+    await ctx.reply(chunk);
+  }
+}
 
 // ── Auth ────────────────────────────────────────────────────
 
@@ -153,7 +163,7 @@ async function handleMessage(
   return withTrace(generateTraceId(), () => handleMessageInner(ctx, rawText, pc, forceVoiceReply, skipTools, isVoice));
 }
 
-async function handleMessageInner(
+export async function handleMessageInner(
   ctx: Context,
   rawText: string,
   pc: PlatformContext,
@@ -199,7 +209,7 @@ async function handleMessageInner(
           const formatted = formatForTelegram(aiResponse.text);
           const chunks = splitMessage(formatted);
           for (const chunk of chunks) {
-            try { await ctx.reply(chunk, { parse_mode: 'HTML' }); } catch { await ctx.reply(chunk); }
+            await replyChunkWithFallback(ctx, chunk);
           }
         }
       }
@@ -361,11 +371,7 @@ async function handleMessageInner(
         const formatted = formatForTelegram(cleanText);
         const chunks = splitMessage(formatted);
         for (const chunk of chunks) {
-          try {
-            await ctx.reply(chunk, { parse_mode: 'HTML' });
-          } catch {
-            await ctx.reply(chunk);
-          }
+          await replyChunkWithFallback(ctx, chunk);
         }
       }
 
@@ -394,11 +400,7 @@ async function handleMessageInner(
         const formatted = formatForTelegram(response.text);
         const chunks = splitMessage(formatted);
         for (const chunk of chunks) {
-          try {
-            await ctx.reply(chunk, { parse_mode: 'HTML' });
-          } catch {
-            await ctx.reply(chunk);
-          }
+          await replyChunkWithFallback(ctx, chunk);
         }
 
         // Auto-skill detection for orchestrated tasks
@@ -560,7 +562,7 @@ async function handleMessageInner(
     if (response.generatedFiles?.length) {
       for (const file of response.generatedFiles) {
         try {
-          const fileBuffer = readFileSync(file.path);
+          const fileBuffer = await readFile(file.path);
           await ctx.replyWithDocument(new InputFile(fileBuffer, file.filename));
         } catch (err) {
           logger.warn({ err, file }, 'Failed to send generated file');
@@ -570,7 +572,7 @@ async function handleMessageInner(
 
     // 6. Send response
     const shouldVoice =
-      forceVoiceReply || voiceModeChats.has(chatId);
+      forceVoiceReply || (await pc.voice.isVoiceMode(chatId));
 
     if (shouldVoice) {
       const caps = await pc.voice.capabilities();
@@ -589,12 +591,7 @@ async function handleMessageInner(
     const chunks = splitMessage(formatted);
 
     for (const chunk of chunks) {
-      try {
-        await ctx.reply(chunk, { parse_mode: 'HTML' });
-      } catch {
-        // HTML parse failed (e.g. malformed tags) — retry as plain text
-        await ctx.reply(chunk);
-      }
+      await replyChunkWithFallback(ctx, chunk);
     }
   } catch (err) {
     logger.error({ err, chatId }, 'Message handling failed');
@@ -1624,8 +1621,8 @@ export function createTelegramBot(pc: PlatformContext): Bot {
   bot.command('voice', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
     const chatId = String(ctx.chat.id);
-    if (voiceModeChats.has(chatId)) {
-      voiceModeChats.delete(chatId);
+    if (await pc.voice.isVoiceMode(chatId)) {
+      await pc.voice.setVoiceMode(chatId, false);
       await ctx.reply('Voice replies disabled.');
     } else {
       const caps = await pc.voice.capabilities();
@@ -1637,7 +1634,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         );
         return;
       }
-      voiceModeChats.add(chatId);
+      await pc.voice.setVoiceMode(chatId, true);
       await ctx.reply('Voice replies enabled. Send /voice again to disable.');
     }
   });
@@ -2440,11 +2437,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     const formatted = formatForTelegram(lines.join('\n'));
     const chunks = splitMessage(formatted);
     for (const chunk of chunks) {
-      try {
-        await ctx.reply(chunk, { parse_mode: 'HTML' });
-      } catch {
-        await ctx.reply(chunk);
-      }
+      await replyChunkWithFallback(ctx, chunk);
     }
   });
 
@@ -2541,7 +2534,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const { session, openingPrompt } = await pc.learning.startSession(chatId, plan);
+        const { openingPrompt } = await pc.learning.startSession(chatId, plan);
 
         // Send opening prompt through AI for a natural start
         await ctx.replyWithChatAction('typing');
@@ -2570,7 +2563,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const { session, openingPrompt } = await pc.learning.startSession(chatId, plan, { type: 'review' });
+        const { openingPrompt } = await pc.learning.startSession(chatId, plan, { type: 'review' });
 
         await ctx.replyWithChatAction('typing');
         const sessionPrompt = await pc.learning.getSessionSystemPrompt(chatId);
@@ -2663,7 +2656,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           // Start assessment session
           const topic = await pc.learning.getTopicByTitle(plan.id, result.topicTitle);
           const assessPrompt = await pc.learning.buildAssessmentPrompt(plan.subject, result.topicTitle, topic?.description ?? null);
-          const { session } = await pc.learning.startSession(chatId, plan, {
+          await pc.learning.startSession(chatId, plan, {
             topicId: topic?.id,
             type: 'assessment',
             assessmentTarget: result.topicTitle,
@@ -3064,7 +3057,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         return;
       }
 
-      default:
+      default: {
         const webPort = config.VOICE_WEB_PORT || 3030;
         await ctx.reply(
           '<b>Production Line Simulator:</b>\n\n' +
@@ -3074,6 +3067,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
             'Or ask the AI: "Simulate a T-shirt line with 9 operations"',
           { parse_mode: 'HTML' },
         );
+      }
     }
   });
 
@@ -3274,7 +3268,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'status': {
         const projectName = parts.slice(1).join(' ');
         if (!projectName) { await ctx.reply('Usage: /inventory status &lt;name&gt;', { parse_mode: 'HTML' }); return; }
-        const { getInventoryProjectByName, getInventoryItems, getInventoryResults, formatReplenishmentPlan } = await import('../inventory.js');
+        const { getInventoryProjectByName, getInventoryResults, formatReplenishmentPlan } = await import('../inventory.js');
         const project = await getInventoryProjectByName(projectName);
         if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
         const results = await getInventoryResults(project.id);
@@ -3337,7 +3331,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'status': {
         const projectName = parts.slice(1).join(' ');
         if (!projectName) { await ctx.reply('Usage: /sigma status &lt;project name&gt;', { parse_mode: 'HTML' }); return; }
-        const { getSigmaProjectByName, getMeasurements, getSigmaResults, formatCapabilityResult } = await import('../sigma.js');
+        const { getSigmaProjectByName, getSigmaResults, formatCapabilityResult } = await import('../sigma.js');
         const project = await getSigmaProjectByName(projectName);
         if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
         const results = await getSigmaResults(project.id);
@@ -3479,7 +3473,6 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
   bot.command('compress', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
-    const chatId = String(ctx.chat.id);
 
     // Get the message being replied to, or ask the AI to compress its last response
     const replyText = ctx.message?.reply_to_message && 'text' in ctx.message.reply_to_message
@@ -3872,11 +3865,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           const formatted = formatForTelegram(response.text);
           const chunks = splitMessage(formatted);
           for (const chunk of chunks) {
-            try {
-              await ctx.reply(chunk, { parse_mode: 'HTML' });
-            } catch {
-              await ctx.reply(chunk);
-            }
+            await replyChunkWithFallback(ctx, chunk);
           }
         } finally {
           if (typingInterval) clearInterval(typingInterval);
@@ -3973,7 +3962,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const descMatch = args.match(/"([^"]+)"|'([^']+)'/);
         const description = descMatch ? (descMatch[1] || descMatch[2]) : `${name} domain tools`;
         try {
-          const path = scaffoldPack(name, description);
+          scaffoldPack(name, description);
           await ctx.reply(
             `Pack scaffolded: <code>packs/${name}/</code>\n\n` +
               'Next steps:\n' +

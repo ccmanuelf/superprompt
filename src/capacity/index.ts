@@ -7,7 +7,6 @@
 
 import { randomBytes } from 'node:crypto';
 import { getKnex } from '../db-knex.js';
-import { logger } from '../logger.js';
 
 import type {
   CapacityPlanConfig,
@@ -316,7 +315,7 @@ export async function generateMonteCarloHistogram(
   });
 
   // Create histogram bins from distribution stats
-  const { p5, p25, p50, p75, p95, mean, min, max } = stats.overall_utilization;
+  const { p5, p50, p95, mean, min, max } = stats.overall_utilization;
   const binCount = 10;
   const binWidth = (max - min) / binCount || 1;
   const bins: number[] = [];

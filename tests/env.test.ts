@@ -16,6 +16,7 @@ function writeEnv(name: string, content: string): string {
 afterEach(() => {
   // Clean up temp files (best-effort)
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional CJS require in test
     const { readdirSync } = require('node:fs');
     for (const f of readdirSync(TMP)) {
       unlinkSync(resolve(TMP, f));

@@ -1,6 +1,6 @@
 # Luna
 
-Luna (Inge Luna in Spanish) is a personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department. **v1.0.0-rc.86**
+Luna (Inge Luna in Spanish) is a personal AI assistant daemon that bridges messaging platforms to AI backends running on your machine. Docker-containerized with local voice processing, persistent memory, scheduled tasks, a learning coach, and a full suite of manufacturing engineering tools. Extensible with Domain Packs for any department. The current version lives in `package.json` (this README intentionally carries no version number — it drifted).
 
 **New here?** Start with the [Department Onboarding Runbook](docs/deployment-runbook.md) — a 30-minute step-by-step guide to get your own instance running.
 
@@ -80,7 +80,7 @@ Luna (Inge Luna in Spanish) is a personal AI assistant daemon that bridges messa
 
 - **4-layer defense-in-depth**: Policy gate --> Process boundary --> Worker V8 isolate --> SSRF-safe fetch
 - **Per-user trust memory**: works like "remember passwords" — once a user is trusted for a tool category, Luna never asks again
-- **43 tools classified by risk level**: 3 critical, 16 high, 19 medium, 5 low — each risk level gates differently through the policy engine
+- **Every builtin tool carries a risk classification** (critical/high/medium/low — see `src/providers/tools/index.ts` for the authoritative registry); each level gates differently through the policy engine, and unclassified tools default to high risk with confirmation
 - **Auto-generated skills with self-healing**: adapts from Hermes Agent concepts — Luna learns from failures and proposes corrected skill definitions
 - **Circuit breaker for agentic loops** (stagnation, repetition, error detection)
 - **Per-user rate limiting** (100 Claude / 200 Ollama calls per hour)

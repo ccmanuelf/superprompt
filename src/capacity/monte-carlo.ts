@@ -13,7 +13,6 @@ import type {
   MonteCarloCapacityResults,
   CapacityDistributionStats,
   DistributionConfig,
-  CapacityAnalysisResult,
 } from './models.js';
 import { DEFAULT_REPLICATIONS } from './models.js';
 

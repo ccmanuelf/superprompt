@@ -13,14 +13,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { Application } from '../src/core/app.js';
-import {
-  registerTool,
-  unregisterTool,
-  executeRegisteredTool,
-  getToolDefinitions,
-  listRegisteredTools,
-} from '../src/forge/tool-registry.js';
+import { unregisterTool } from '../src/forge/tool-registry.js';
 import { createToolProvider } from '../src/providers/tools/index.js';
+import { registerToolPolicy } from '../src/policy-engine.js';
 import { executeInWorker } from '../src/forge/worker-sandbox.js';
 import type { StorageProvider, TableInitializer, Platform } from '../src/core/interfaces.js';
 import type { Tool } from 'ollama';
@@ -125,6 +120,9 @@ describe('SA2 cross-phase integration — real execution', () => {
         execute: async (args) => ({ sum: (args.a as number) + (args.b as number) }),
         source: 'builtin',
       });
+      // rc.113: unregistered tools default to high risk + confirmation, so a
+      // test tool must carry an explicit policy like every real builtin does.
+      registerToolPolicy('sa2_test_add', { riskLevel: 'low', scopes: [], requiresConfirmation: false });
       cleanupTools.push('sa2_test_add');
 
       // List includes the registered tool

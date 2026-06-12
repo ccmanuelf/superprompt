@@ -11,13 +11,14 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
-import { resolve, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // vi.mock is hoisted above regular consts, so compute paths inside the
 // factory (vi.hoisted keeps them available both places).
 const { TMP, UPLOADS } = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional CJS require in test
   const { resolve } = require('node:path');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional CJS require in test
   const { tmpdir } = require('node:os');
   const root = resolve(tmpdir(), `luna-upload-manifest-test-${process.pid}`);
   return { TMP: root, UPLOADS: resolve(root, 'uploads') };

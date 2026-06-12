@@ -78,6 +78,13 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+  // A short legacy token defeats the web auth rate limiter by brute force.
+  if (config.VOICE_WEB_PORT && config.VOICE_WEB_TOKEN && config.VOICE_WEB_TOKEN.length < 16) {
+    logger.fatal(
+      'VOICE_WEB_TOKEN is set but shorter than 16 characters. Use a long random token (or unset it and use per-user /webtoken tokens).',
+    );
+    process.exit(1);
+  }
 
   // 3. Rebrand migration (rc.85): rename legacy data files to luna.*.
   // Must run BEFORE acquireLock() and BEFORE any DB open, so an upgraded instance
@@ -326,7 +333,7 @@ async function main(): Promise<void> {
         const userTools = await (await import('./db-core.js')).listUserTools();
         for (const tool of userTools) {
           if (!tool.enabled) continue;
-          const config = JSON.parse(tool.config);
+          JSON.parse(tool.config); // parse kept for its throw-on-invalid-JSON guard; result unused
           toolsClient.registerUserTool(
             tool.name,
             tool.description,

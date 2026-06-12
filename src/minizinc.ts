@@ -399,8 +399,8 @@ export async function optimizeAndValidate(
   }
   const totalDemand = dailyDemand * (config.horizon_days ?? 1);
 
-  let optimization: OperatorAssignmentResult | RebalancingResult | null = null;
-  let optimizedConfig = { ...config, operations: [...config.operations] };
+  let optimization: OperatorAssignmentResult | RebalancingResult | null;
+  const optimizedConfig = { ...config, operations: [...config.operations] };
 
   if (input.optimization_type === 'operators') {
     // Build station list from unique machine tools

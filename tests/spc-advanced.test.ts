@@ -24,14 +24,12 @@ import {
   cusumChart, ewmaChart, trendRegression,
   generateCusumChart, generateEwmaChart, generateAttributeChart,
   initSigmaTables,
-  type SpecLimits,
 } from '../src/sigma.js';
 
 import {
   initControlPlanTables,
   createControlPlan,
   getControlPlanByName,
-  listControlPlans,
   deleteControlPlan,
   addVocItem,
   getVocItems,
@@ -295,7 +293,7 @@ describe('EWMA Chart', () => {
 
   it('stable process has no violations', () => {
     const values = Array(20).fill(0).map(() => 10 + (Math.random() - 0.5) * 0.1);
-    const result = ewmaChart(values, 0.2, 3, 10, 0.1);
+    ewmaChart(values, 0.2, 3, 10, 0.1);
     // With tight sigma estimate, random noise within 0.05 shouldn't trigger
     // (depends on random values, but very unlikely to trigger with this small variation)
   });

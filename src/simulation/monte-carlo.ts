@@ -8,7 +8,6 @@
 import { ProductionLineSimulator } from './engine.js';
 import {
   type SimulationConfig,
-  type SimulationMetrics,
   type MonteCarloResults,
   type DistributionStats,
   type SimulationResults,

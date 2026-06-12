@@ -1,5 +1,3 @@
-import { logger } from '../logger.js';
-
 export interface ParsedSkill {
   name: string;
   description: string;

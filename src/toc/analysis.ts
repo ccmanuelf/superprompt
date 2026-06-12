@@ -179,7 +179,7 @@ export function calculateThroughputAccounting(
 export function buildDBRSchedule(
   config: TOCConfig,
   constraint: ConstraintAnalysis,
-  throughput: ThroughputAccounting,
+  _throughput: ThroughputAccounting,
 ): DBRSchedule {
   const ccrWc = config.work_centers.find((wc) => wc.id === constraint.ccr_id);
   const drumRate = ccrWc?.capacity_units_per_hour ?? 0;

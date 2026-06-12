@@ -19,12 +19,12 @@ vi.mock('../src/config.js', () => ({
 }));
 
 import {
-  initRcaTables, createRcaDoc, getRcaDocByName, listRcaDocs, deleteRcaDoc,
+  initRcaTables, createRcaDoc, getRcaDocByName, deleteRcaDoc,
   addRcaNode, getRcaNodes,
   build5Whys, buildFishbone, buildPdca, buildFaultTree, buildMindMap,
   generateMermaidSyntax, formatRcaDocument, generateA3Pdf,
   render5WhysPng, renderFishbonePng, renderPdcaPng, renderFtaPng, renderMindMapPng,
-  type FishboneCategory, type PdcaCycle,
+  type PdcaCycle,
 } from '../src/rca.js';
 
 async function initTestDb(): Promise<void> {
@@ -71,7 +71,7 @@ describe('Database CRUD', () => {
 describe('5 Whys', () => {
   it('builds a chain of whys', async () => {
     const doc = await createRcaDoc('5Why Test', '5why', 'Machine stopped');
-    const { root, chain } = await build5Whys(doc.id, 'Machine stopped', [
+    const { chain } = await build5Whys(doc.id, 'Machine stopped', [
       'Fuse blew',
       'Overload on circuit',
       'Bearing seized',

@@ -120,7 +120,8 @@ async function instantiateSource(
       try {
         const rosterSource = await selectAttendanceSource(moduleId, 'roster', deps);
         return new SupervisorSensorSource(moduleId, rosterSource);
-      } catch {
+      } catch (err) {
+        logger.warn({ err, moduleId }, 'Supervisor-sensor source unavailable — roster source failed to initialize');
         return null;
       }
     }

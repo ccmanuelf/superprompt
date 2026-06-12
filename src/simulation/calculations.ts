@@ -353,7 +353,7 @@ function calculateBlock6PerProduct(
 
 function calculateBlock7Rebalancing(
   stationPerformance: StationPerformanceRow[],
-  config: SimulationConfig,
+  _config: SimulationConfig,
 ): RebalancingSuggestionRow[] {
   const suggestions: RebalancingSuggestionRow[] = [];
 

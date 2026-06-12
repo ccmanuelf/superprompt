@@ -12,7 +12,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { resolve, basename } from 'node:path';
+import { resolve } from 'node:path';
 import { logger } from './logger.js';
 import { PROJECT_ROOT } from './config.js';
 import { parseToolMarkdown } from './forge/tool-parser.js';
@@ -168,7 +168,8 @@ export async function isPackEnabled(chatId: string, packName: string): Promise<b
       .first() as { enabled: number } | undefined;
     if (!row) return true; // Default: enabled
     return row.enabled === 1;
-  } catch {
+  } catch (err) {
+    logger.debug({ err, chatId, packName }, 'Pack-enabled lookup failed — defaulting to enabled');
     return true; // DB not ready — default enabled
   }
 }
@@ -279,7 +280,8 @@ async function applyPackTuning(baseScore: number, packName: string, chatId: stri
   try {
     const { applyTunedWeight } = packTunerModule;
     return await applyTunedWeight(baseScore, packName, chatId);
-  } catch {
+  } catch (err) {
+    logger.debug({ err, packName, chatId }, 'Pack tuning weight failed — using untuned score');
     return baseScore;
   }
 }
@@ -425,6 +427,7 @@ function parseYamlValue(raw: string): unknown {
       .replace(/\\n/g, '\n')
       .replace(/\\t/g, '\t')
       .replace(/\\"/g, '"')
+      // eslint-disable-next-line no-control-regex -- NUL is a deliberate sentinel that cannot appear in YAML input
       .replace(/\x00BSLASH\x00/g, '\\');    // restore \\ as single \
   } else if (isSingleQuoted) {
     unquoted = raw.slice(1, -1);

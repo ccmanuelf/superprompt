@@ -96,7 +96,7 @@ describe('agentic loop', () => {
       },
     ];
 
-    const result = simulateAgenticLoop(responses, (name) => {
+    const result = simulateAgenticLoop(responses, (_name) => {
       return { time: '3:00 PM' };
     });
 
@@ -202,7 +202,7 @@ describe('agentic loop', () => {
       },
     ];
 
-    const result = simulateAgenticLoop(responses, (name) => {
+    const result = simulateAgenticLoop(responses, (_name) => {
       return { error: 'Access denied' };
     });
 

@@ -4,7 +4,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { getKnex } from '../db-knex.js';
-import type { SavedConwip, StageUtilization, HeijunkaAnalysis, ProductMix } from './models.js';
+import type { SavedConwip, StageUtilization, ProductMix } from './models.js';
 
 export * from './models.js';
 export { analyzeCONWIP, analyzeHeijunka, simulateTokenFlow } from './analysis.js';

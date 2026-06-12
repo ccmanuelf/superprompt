@@ -32,7 +32,7 @@ import {
   listTOCs,
   deleteTOC,
 } from '../src/toc/index.js';
-import type { TOCConfig, WorkCenter, BufferConfig } from '../src/toc/models.js';
+import type { TOCConfig, WorkCenter } from '../src/toc/models.js';
 
 async function initTestDb(): Promise<void> {
   if (testKnex) await testKnex.destroy();

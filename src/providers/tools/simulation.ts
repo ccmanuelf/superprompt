@@ -3,7 +3,7 @@ import { logger } from '../../logger.js';
 import {
   validateSimulationConfig,
   saveScenario, getScenarioByName, listScenarios,
-  formatSimulationResults, generateUtilizationChart, generateThroughputChart,
+  formatSimulationResults,
   type SimulationConfig,
 } from '../../simulation/index.js';
 import {

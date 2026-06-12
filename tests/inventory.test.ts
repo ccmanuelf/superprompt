@@ -32,7 +32,6 @@ import {
   initInventoryTables,
   createInventoryProject,
   getInventoryProjectByName,
-  listInventoryProjects,
   deleteInventoryProject,
   insertInventoryItems,
   getInventoryItems,
@@ -448,8 +447,6 @@ describe('Real-World Scenarios', () => {
     }
 
     // Verify ABC makes sense: high dollar volume items are A
-    const partE = abc.find((i) => i.item_id === 'SKU-005')!; // 20000 × $5 = $100k
-    const gadgetD = abc.find((i) => i.item_id === 'SKU-004')!; // 500 × $100 = $50k
     const widgetB = abc.find((i) => i.item_id === 'SKU-002')!; // 5000 × $50 = $250k
     const widgetA = abc.find((i) => i.item_id === 'SKU-001')!; // 10000 × $25 = $250k
 

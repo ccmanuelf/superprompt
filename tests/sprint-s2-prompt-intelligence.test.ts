@@ -18,7 +18,6 @@ import { tmpdir } from 'node:os';
 import {
   QUALITY_RULES,
   COMMAND_LIST,
-  classifyMessage,
 } from '../src/providers/router.js';
 
 const TMP_DIR = resolve(tmpdir(), 'luna-test-s2');
@@ -198,6 +197,7 @@ describe('Superpowers-inspired skills', () => {
   it('debugger skill exists and has 4-phase process', () => {
     // Import and verify the actual skill definitions
     // We can't easily import skills.ts (eager db init), but we can verify the source
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional CJS require in test
     const { readFileSync } = require('node:fs');
     const skillsSource = readFileSync(
       resolve(__dirname, '..', 'src', 'skills.ts'),
@@ -215,6 +215,7 @@ describe('Superpowers-inspired skills', () => {
   });
 
   it('brainstormer skill has YAGNI and one-question-at-a-time rules', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional CJS require in test
     const { readFileSync } = require('node:fs');
     const skillsSource = readFileSync(
       resolve(__dirname, '..', 'src', 'skills.ts'),
@@ -226,6 +227,7 @@ describe('Superpowers-inspired skills', () => {
   });
 
   it('careful skill has verification rules and confirmation requirement', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional CJS require in test
     const { readFileSync } = require('node:fs');
     const skillsSource = readFileSync(
       resolve(__dirname, '..', 'src', 'skills.ts'),
@@ -238,6 +240,7 @@ describe('Superpowers-inspired skills', () => {
   });
 
   it('all new skills have anti-rationalization sections', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional CJS require in test
     const { readFileSync } = require('node:fs');
     const skillsSource = readFileSync(
       resolve(__dirname, '..', 'src', 'skills.ts'),

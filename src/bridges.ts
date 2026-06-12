@@ -5,9 +5,9 @@
  * GAP #29: VSM → S16 Simulation
  */
 
-import type { CapacityPlanConfig, CapacityLine, CalendarConfig } from './capacity/models.js';
+import type { CapacityPlanConfig } from './capacity/models.js';
 import type { TOCConfig, WorkCenter } from './toc/models.js';
-import type { VSMConfig, ProcessStep } from './vsm/models.js';
+import type { VSMConfig } from './vsm/models.js';
 import type { SimulationConfig, OperationInput, ScheduleConfig, DemandInput } from './simulation/models.js';
 
 // ── Capacity → TOC ──────────────────────────────────────────

@@ -78,10 +78,6 @@ function isSpreadsheet(c: DocGenRequest['content']): c is SpreadsheetContent {
 function isDocument(c: DocGenRequest['content']): c is DocumentContent {
   return c.type === 'document';
 }
-function isPresentation(c: DocGenRequest['content']): c is PresentationContent {
-  return c.type === 'presentation';
-}
-
 export interface DocGenResult {
   buffer: Buffer;
   filename: string;
@@ -132,7 +128,6 @@ export function stripDocGenBlock(text: string): string {
  */
 function sanitizePdfText(text: string): string {
   // Remove emoji and symbols outside Basic Latin + Latin-1 Supplement
-  // eslint-disable-next-line no-control-regex
   return text.replace(/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{FE00}-\u{FE0F}]|[\u{200D}]|[\u{20E3}]|[\u{E0020}-\u{E007F}]/gu, '').trim();
 }
 

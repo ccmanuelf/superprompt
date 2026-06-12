@@ -1,12 +1,11 @@
 import type { Tool } from 'ollama';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { logger } from '../../logger.js';
 import { STORE_DIR } from '../../config.js';
 import {
   executeBalance,
   listProjects,
-  getProject,
   getProjectByName,
   getProjectTasks,
   getResultsForProject,
@@ -16,7 +15,6 @@ import {
   generateYamazumiChart,
   generateGanttChart,
   runBalance,
-  parseBalanceCsv,
   type BalanceResult,
 } from '../../balance.js';
 
@@ -75,7 +73,7 @@ export async function lineBalance(
     project_name?: string;
     description?: string;
   },
-  chatId: string,
+  _chatId: string,
 ): Promise<Record<string, unknown>> {
   try {
     switch (args.action) {
@@ -174,7 +172,6 @@ export async function lineBalance(
         if (results.length === 0) return { error: 'No balance runs found.' };
 
         const latest = results[0];
-        const assignments = JSON.parse(latest.assignments_json);
         const tasks = await getProjectTasks(project.id);
 
         // Reconstruct BalanceResult for export

@@ -7,7 +7,7 @@ All versions below are confirmed compatible and should be used exactly as specif
 | Package | Version | Purpose | Notes |
 |---------|---------|---------|-------|
 | `grammy` | `^1.42.0` | Telegram bot framework | Stable, well-maintained. Supports all Telegram Bot API features. |
-| `@vector-im/matrix-bot-sdk` | `^0.9.0-element.0` | Matrix bot SDK | Element's maintained fork. The `request` transitive chain is unmaintained — npm overrides on form-data/qs/uuid neutralize the CVE chain. |
+| `@vector-im/matrix-bot-sdk` | `^0.9.0-element.0` | Matrix bot SDK | Element's maintained fork. The `request` transitive chain is unmaintained — npm overrides on form-data/qs/uuid neutralize the CVE chain (see Security Overrides below). |
 | `better-sqlite3` | `^12.9.0` | SQLite database | Synchronous API, WAL mode support, FTS5 included. |
 | `pino` | `^10.3.1` | Structured logger | JSON output, fast, low overhead. |
 | `pino-pretty` | `^13.1.3` | Dev log formatter | Human-readable logs during development. |
@@ -27,6 +27,7 @@ All versions below are confirmed compatible and should be used exactly as specif
 | `chart.js` | `^4.5.1` | Charting library | Peer dependency of chartjs-node-canvas. |
 | `knex` | `^3.2.10` | Multi-dialect SQL builder | SQLite/MariaDB/PostgreSQL via DB_DRIVER. |
 | `mysql2` | `^3.22.3` | MariaDB / MySQL driver | Used by Knex when DB_DRIVER=maria. |
+| `pg` | `^8.20.0` | PostgreSQL driver | Used by Knex when DB_DRIVER=postgres. |
 | `puppeteer-core` | `^24.42.0` | Headless browser | Server-side rendering of HTML to PDF / image. |
 | `undici` | `^8.2.0` | HTTP client | Used by fetch fallbacks where we need a configured dispatcher. |
 | `ws` | `^8.20.0` | WebSocket implementation | Voice and board/learn live channels. |
@@ -45,6 +46,21 @@ All versions below are confirmed compatible and should be used exactly as specif
 | `@types/pdf-parse` | `^1.1.5` | pdf-parse type definitions | |
 | `@types/ws` | `^8.18.1` | WebSocket type definitions | |
 
+## Security Overrides (package.json `overrides`)
+
+Last verified: **2026-06-11** (`npm audit fix` run; result: 0 critical / 0 high).
+
+| Override | Why |
+|----------|-----|
+| `tough-cookie ^4.1.4` | Neutralizes prototype-pollution CVE in the unmaintained `request` chain pulled in by `@vector-im/matrix-bot-sdk`. |
+| `form-data ^4.0.5` | Same `request` chain — predictable-boundary advisory. |
+| `qs ^6.15.1` | Same `request` chain — DoS advisories in old `qs`. |
+| `uuid ^14.0.0` | Same `request` chain — insecure-randomness advisory in ancient `uuid`. |
+
+Resolved by `npm audit fix` on 2026-06-11: `sanitize-html` XSS (GHSA-rpr9-rxv7-x643, critical), `tmp` path traversal (GHSA-ph9p-34f9-6g65, high), `ws` uninitialized memory disclosure (GHSA-58qx-3vcg-4xpx, moderate), plus other moderates.
+
+**Known residual (accepted):** 4 moderate advisories on `request`/`request-promise`/`request-promise-core` (SSRF, GHSA-p8p7-x288-28g6) — transitive under `@vector-im/matrix-bot-sdk`, **no fix available** upstream. Accepted because the Matrix bot only talks to the configured homeserver on the internal Docker network and the overrides above pin the rest of the chain. Re-evaluate (or replace the SDK) if a fix ships or Matrix becomes internet-facing.
+
 ## NOT Used (Explicitly Removed)
 
 | Package | Reason |
@@ -61,7 +77,7 @@ All versions below are confirmed compatible and should be used exactly as specif
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| Node.js | >= 20.0.0 | Required for ESM, `import.meta.url`, modern APIs. Pinned in `.nvmrc` (`20`). |
+| Node.js | >= 26.0.0 | Required for ESM, `import.meta.url`, modern APIs. Pinned in `.nvmrc` (`26`) and `package.json` `engines`. |
 | Docker | >= 24.0 | Required for sandboxing and service orchestration |
 | Ollama | >= 0.5.0 | Local LLM runtime for the Ollama provider |
 | `claude` CLI | Latest | Installed via `npm i -g @anthropic-ai/claude-code` |
@@ -70,7 +86,7 @@ All versions below are confirmed compatible and should be used exactly as specif
 
 | Image | Purpose | Notes |
 |-------|---------|-------|
-| `node:22-slim` | Bot container base | Minimal, includes npm |
+| `node:26-slim` | Bot container base | Minimal, includes npm (see `docker/luna.dockerfile`) |
 | `ghcr.io/speaches-ai/speaches:latest-cpu` | Voice sidecar | Bundles Kokoro-82M TTS + Faster-whisper STT. Models loaded via POST API. |
 | `matrixdotorg/synapse:latest` | Matrix homeserver | Official Synapse image |
 

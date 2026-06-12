@@ -317,6 +317,7 @@ describe('worker-sandbox behavioral', () => {
     });
 
     it('user code can use template literals', async () => {
+      // eslint-disable-next-line no-template-curly-in-string -- literal template placeholder is intentional
       const code = 'return { greeting: `Hello ${args.name}, you have ${args.count} items` };';
       const result = await executeInWorker(code, { name: 'Maria', count: 5 });
       expect(result).toEqual({ greeting: 'Hello Maria, you have 5 items' });

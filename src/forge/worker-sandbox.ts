@@ -105,7 +105,6 @@ export async function executeInWorker(
   return new Promise((resolvePromise) => {
     let settled = false;
     let rollingTimer: ReturnType<typeof setTimeout>;
-    let absoluteTimer: ReturnType<typeof setTimeout>;
 
     const worker = new Worker(WORKER_ENTRY, {
       workerData: { code, args: cleanArgs },
@@ -145,7 +144,7 @@ export async function executeInWorker(
     }
 
     // Absolute timer — never resets
-    absoluteTimer = setTimeout(
+    const absoluteTimer = setTimeout(
       () => onTimeout(`${Math.round(maxTimeoutMs / 1000)}s`, 'hard ceiling'),
       maxTimeoutMs,
     );

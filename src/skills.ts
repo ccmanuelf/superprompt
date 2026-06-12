@@ -2,7 +2,6 @@ import {
   createSkillIfNotExists,
   getActiveSkill,
   getSkillByName,
-  setActiveSkill,
   setActiveSkillAutoTriggered,
   isSkillAutoTriggered,
   decrementSkillTurns,

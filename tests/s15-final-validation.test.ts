@@ -27,9 +27,6 @@ import {
   analyzeCapacity,
   generateUtilizationHeatmap,
   type CapacityPlanConfig,
-  type CapacityLine,
-  type CalendarConfig,
-  type DemandEntry,
 } from '../src/capacity/analysis.js';
 import { initCapacityTables } from '../src/capacity/index.js';
 
@@ -57,12 +54,11 @@ import type { DOEConfig } from '../src/doe/models.js';
 import {
   initSimulation,
   runToCompletion,
-  analyzeSimulation,
   getTemplate,
   normalizeMachineName,
   generateStructuredText,
 } from '../src/fsm/index.js';
-import type { FSMConfig, FSMEvent, FSMDefinition } from '../src/fsm/models.js';
+import type { FSMConfig, FSMDefinition } from '../src/fsm/models.js';
 
 import { convertCapacityToTOC, convertVSMToSimulation } from '../src/bridges.js';
 
@@ -861,7 +857,6 @@ describe('GAP 27 — FSM guards evaluate event.data', () => {
     const finalState = runToCompletion(state, config);
 
     // Should have transitioned to Processing (not Starved)
-    const machine = finalState.machines.find((m) => m.machine_id === 'cnc_guard_test')!;
     // Check event log for the transition
     const jobArrivesLog = finalState.event_log.find(
       (e) => e.event === 'job_arrives' && e.machine_id === 'cnc_guard_test',

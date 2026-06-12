@@ -129,7 +129,7 @@ async function parseXlsx(filePath: string): Promise<ParsedFile> {
     sheetCount++;
     parts.push(`=== Sheet: ${sheet.name} ===`);
 
-    sheet.eachRow((row, rowNumber) => {
+    sheet.eachRow((row, _rowNumber) => {
       const cells = (row.values as unknown[])
         .slice(1) // exceljs row.values is 1-indexed with null at 0
         .map((v) => (v != null ? String(v) : ''));

@@ -13,7 +13,7 @@ import { STORE_DIR } from './config.js';
 import { logger } from './logger.js';
 import { getTraceId } from './trace.js';
 import { initKnex, getKnex, destroyKnex, readDbConfig } from './db-knex.js';
-import { createFullTextSearch, createVectorTable, columnExists, insertVecRow } from './db-dialect.js';
+import { createFullTextSearch, createVectorTable, columnExists, createIndexIfMissing, insertVecRow } from './db-dialect.js';
 import type { StorageProvider, TableInitializer } from './core/interfaces.js';
 import type { Knex } from 'knex';
 
@@ -269,6 +269,8 @@ async function createCoreTables(db: Knex): Promise<void> {
   if (!(await columnExists(db, 'chat_skills', 'remaining_turns'))) {
     await db.schema.alterTable('chat_skills', (t) => { t.integer('remaining_turns').notNullable().defaultTo(-1); });
   }
+  // Migration: FK lookup index (rc.113) — foreign keys don't auto-index
+  await createIndexIfMissing(db, 'chat_skills', ['skill_id'], 'idx_chat_skills_skill_id');
 
   // Skill revisions
   if (!(await db.schema.hasTable('skill_revisions'))) {
@@ -281,6 +283,8 @@ async function createCoreTables(db: Knex): Promise<void> {
       t.foreign('skill_id').references('skills.id').onDelete('CASCADE');
     });
   }
+  // Migration: FK lookup index (rc.113) — getSkillRevisions queries by skill_id
+  await createIndexIfMissing(db, 'skill_revisions', ['skill_id'], 'idx_skill_revisions_skill_id');
 
   // User tools
   if (!(await db.schema.hasTable('user_tools'))) {
@@ -349,9 +353,36 @@ async function createCoreTables(db: Knex): Promise<void> {
     });
   }
 
+  // Per-chat voice-mode toggle (rc.113) — persisted so /voice survives restarts
+  if (!(await db.schema.hasTable('chat_voice_modes'))) {
+    await db.schema.createTable('chat_voice_modes', (t) => {
+      t.string('chat_id').primary();
+      t.bigInteger('enabled_at').notNullable();
+    });
+  }
+
   // Vector tables (dialect-specific: sqlite-vec / BLOB / pgvector)
   await createVectorTable(db, 'memories_vec', 'memory_id', 768);
   await createVectorTable(db, 'episodes_vec', 'episode_id', 768);
+}
+
+// ── Voice mode (per-chat, persisted) ───────────────────────
+
+export async function isVoiceModeEnabled(chatId: string): Promise<boolean> {
+  const row = await getKnex()('chat_voice_modes').where({ chat_id: chatId }).first();
+  return !!row;
+}
+
+export async function setVoiceMode(chatId: string, enabled: boolean): Promise<void> {
+  const db = getKnex();
+  if (enabled) {
+    await db('chat_voice_modes')
+      .insert({ chat_id: chatId, enabled_at: Date.now() })
+      .onConflict('chat_id')
+      .ignore();
+  } else {
+    await db('chat_voice_modes').where({ chat_id: chatId }).del();
+  }
 }
 
 export const coreTableInit: TableInitializer = {
@@ -929,7 +960,8 @@ export async function searchEpisodes(chatId: string, query: string, limit: numbe
     const db = getKnex();
     const { fullTextSearch } = await import('./db-dialect.js');
     return fullTextSearch(db, 'episodes', 'summary', 'episodes_fts', chatId, query, limit) as Promise<Episode[]>;
-  } catch {
+  } catch (err) {
+    logger.debug({ err, chatId }, 'Episode full-text search failed — returning no results');
     return [];
   }
 }
@@ -939,7 +971,8 @@ export async function vectorSearchEpisodes(chatId: string, embedding: number[], 
     const db = getKnex();
     const { vectorSearch } = await import('./db-dialect.js');
     return vectorSearch(db, 'episodes_vec', 'episode_id', 'episodes', chatId, embedding, limit) as Promise<Episode[]>;
-  } catch {
+  } catch (err) {
+    logger.debug({ err, chatId }, 'Episode vector search failed — returning no results');
     return [];
   }
 }

@@ -54,6 +54,7 @@ function runGh(args: string): string {
     const msg = err instanceof Error ? err.message : String(err);
     // Extract just the stderr message, not the full stack
     const stderrMatch = msg.match(/stderr:\s*"?([^"]+)"?/);
+    // eslint-disable-next-line preserve-caught-error -- deliberately strip the noisy execSync stack; only the stderr text is useful
     throw new Error(stderrMatch?.[1]?.trim() || msg.slice(0, 300));
   }
 }
@@ -286,7 +287,7 @@ export function githubReadFile(args: { repo: string; path: string; ref?: string 
   try {
     // Use raw content Accept header — returns file content directly without base64 encoding
     const refQuery = args.ref ? `?ref=${encodeURIComponent(args.ref)}` : '';
-    const safePath = args.path.replace(/[^a-zA-Z0-9._\/-]/g, '');
+    const safePath = args.path.replace(/[^a-zA-Z0-9._/-]/g, '');
     const output = runGh(
       `api repos/${args.repo}/contents/${safePath}${refQuery} -H "Accept: application/vnd.github.raw+json"`,
     );
@@ -342,7 +343,7 @@ export function githubCloneRepo(args: { repo: string; branch?: string }): Record
       execSync(`test -d ${shellEscape(repoPath)}/.git`, { encoding: 'utf-8' });
       // Already exists — pull latest
       if (args.branch) {
-        const safeBranch = args.branch.replace(/[^a-zA-Z0-9._\/-]/g, '');
+        const safeBranch = args.branch.replace(/[^a-zA-Z0-9._/-]/g, '');
         execSync(`cd ${shellEscape(repoPath)} && git checkout ${shellEscape(safeBranch)}`, {
           timeout: GH_TIMEOUT_MS,
           encoding: 'utf-8',
@@ -357,7 +358,7 @@ export function githubCloneRepo(args: { repo: string; branch?: string }): Record
       // Not cloned yet
     }
 
-    const branchFlag = args.branch ? `--branch ${args.branch.replace(/[^a-zA-Z0-9._\/-]/g, '')}` : '';
+    const branchFlag = args.branch ? `--branch ${args.branch.replace(/[^a-zA-Z0-9._/-]/g, '')}` : '';
     runGh(`repo clone ${args.repo} ${shellEscape(repoPath)} -- ${branchFlag}`);
 
     logger.info({ repo: args.repo, path: repoPath }, 'Repository cloned');
@@ -433,7 +434,7 @@ export function githubCommitPush(args: { repo: string; message: string; branch?:
 
     // Checkout branch if specified
     if (args.branch) {
-      const safeBranch = args.branch.replace(/[^a-zA-Z0-9._\/-]/g, '');
+      const safeBranch = args.branch.replace(/[^a-zA-Z0-9._/-]/g, '');
       execSync(`cd ${shellEscape(repoPath)} && git checkout -B ${shellEscape(safeBranch)}`, {
         timeout: GH_TIMEOUT_MS,
         encoding: 'utf-8',
@@ -446,7 +447,7 @@ export function githubCommitPush(args: { repo: string; message: string; branch?:
       encoding: 'utf-8',
     });
 
-    const pushBranch = args.branch ? args.branch.replace(/[^a-zA-Z0-9._\/-]/g, '') : 'HEAD';
+    const pushBranch = args.branch ? args.branch.replace(/[^a-zA-Z0-9._/-]/g, '') : 'HEAD';
     execSync(`cd ${shellEscape(repoPath)} && git push origin ${shellEscape(pushBranch)}`, {
       timeout: GH_TIMEOUT_MS,
       encoding: 'utf-8',
@@ -471,8 +472,8 @@ export function githubCreatePr(args: {
   try {
     const base = args.base || 'main';
     const body = args.body || '';
-    const safeHead = args.head.replace(/[^a-zA-Z0-9._\/-]/g, '');
-    const safeBase = base.replace(/[^a-zA-Z0-9._\/-]/g, '');
+    const safeHead = args.head.replace(/[^a-zA-Z0-9._/-]/g, '');
+    const safeBase = base.replace(/[^a-zA-Z0-9._/-]/g, '');
     // Use shellEscape for user-provided text to prevent injection
     const output = runGh(
       `pr create -R ${args.repo} --title ${shellEscape(args.title)} --body ${shellEscape(body)} --head ${shellEscape(safeHead)} --base ${shellEscape(safeBase)}`,

@@ -11,7 +11,7 @@
 
 import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
-import type { ToolPolicy, PolicyDecision, ToolEntry } from './core/interfaces.js';
+import type { ToolPolicy, PolicyDecision } from './core/interfaces.js';
 import type { TableInitializer } from './core/interfaces.js';
 
 // ── Table Initialization ─────────────────────────────────────
@@ -141,11 +141,14 @@ export function getToolPolicy(toolName: string): ToolPolicy | undefined {
 /**
  * Default policy for tools without explicit risk metadata.
  * Applies to user-generated tools and unclassified tools.
+ * rc.113: defaults to high + confirmation — an unregistered tool must earn
+ * trust explicitly (one confirmation, then trust memory) rather than run
+ * with low friction because someone forgot to classify it.
  */
 const DEFAULT_POLICY: ToolPolicy = {
-  riskLevel: 'medium',
+  riskLevel: 'high',
   scopes: [],
-  requiresConfirmation: false,
+  requiresConfirmation: true,
 };
 
 /**
@@ -174,8 +177,9 @@ export async function evaluatePolicy(toolName: string, chatId: string): Promise<
       // User previously trusted this tool — skip confirmation
       return { allowed: true, requiresConfirmation: false };
     }
-  } catch {
+  } catch (err) {
     // DB not ready — skip trust check, fall through to policy
+    logger.debug({ err, toolName, chatId }, 'Trust lookup failed — falling through to policy check');
   }
 
   // 2. Check tool policy
@@ -192,7 +196,7 @@ export async function evaluatePolicy(toolName: string, chatId: string): Promise<
   // confirmation or narrower gating for some high-risk but non-critical tools."
   if (policy.riskLevel === 'high') {
     const confirmHighRisk = getHighRiskConfirmationList();
-    if (confirmHighRisk.has(toolName)) {
+    if (policy.requiresConfirmation || confirmHighRisk.has(toolName)) {
       return {
         allowed: true,
         requiresConfirmation: true,

@@ -14,8 +14,8 @@ import { listAllCards, createCard, moveCard, assignCard, updateCard, deleteCard,
 import {
   getAllPlans, getPlansByChat, getPlan, getTopic, getTopicsByPlan, getAllWeeklyTime, getAllRecentSessions,
   getRecentSessionsByChat, getWeeklyTime,
-  calculateStreak, getMasterySummary, getEffectiveMastery, countDueReviews,
-  reorderTopic, updatePlan, getSessionsByPlan, getDailyTime,
+  calculateStreak, getMasterySummary, getEffectiveMastery,
+  reorderTopic, updatePlan, getSessionsByPlan,
   type PlanStatus,
 } from '../learning/index.js';
 import type { ProviderRouter } from '../providers/router.js';
@@ -97,9 +97,9 @@ const AUTH_FAIL_MAX = 3;                  // max failures per minute (tightened 
 const AUTH_BAN_WINDOW_MS = 3_600_000;    // 1 hour ban window
 const AUTH_BAN_THRESHOLD = 15;            // failures in 1 hour triggers IP ban
 const authFailures = new Map<string, { count: number; resetAt: number }>();
-const authBans = new Map<string, { totalCount: number; bannedUntil: number }>();
+const authBans = new Map<string, { totalCount: number; windowResetAt: number; bannedUntil: number }>();
 
-function checkRateLimit(ip: string): boolean {
+export function checkRateLimit(ip: string): boolean {
   const now = Date.now();
 
   // Check hourly ban first
@@ -128,10 +128,16 @@ function recordAuthFailure(ip: string): void {
     entry.count++;
   }
 
-  // Hourly ban tracking
+  // Hourly ban tracking. rc.113: the counting window is tracked separately
+  // from bannedUntil — the old check (`now > ban.bannedUntil` with a 0 seed)
+  // reset the counter on every failure, so the ban could never trigger.
   const ban = authBans.get(ip);
-  if (!ban || now > ban.bannedUntil) {
-    authBans.set(ip, { totalCount: 1, bannedUntil: 0 });
+  if (!ban || now > ban.windowResetAt) {
+    authBans.set(ip, {
+      totalCount: 1,
+      windowResetAt: now + AUTH_BAN_WINDOW_MS,
+      bannedUntil: ban && now < ban.bannedUntil ? ban.bannedUntil : 0,
+    });
   } else {
     ban.totalCount++;
     if (ban.totalCount >= AUTH_BAN_THRESHOLD) {
@@ -147,7 +153,7 @@ function validateToken(clientToken: string, serverToken: string): boolean {
 }
 
 /** Validate Origin header for WebSocket connections (cloud-ready CSWSH protection). */
-function isOriginAllowed(origin: string | undefined): boolean {
+export function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true; // Browser omits Origin for same-origin; allow
   try {
     const url = new URL(origin);
@@ -205,7 +211,7 @@ function apiCorsHeaders(): Record<string, string> {
  * Returns the authenticated chatId (for per-user data scoping) or null if unauthenticated.
  * Handles CORS preflight (OPTIONS) — returns null and ends the response.
  */
-async function authenticateApiRequest(
+export async function authenticateApiRequest(
   req: import('node:http').IncomingMessage,
   res: import('node:http').ServerResponse,
 ): Promise<string | null> {

@@ -147,11 +147,9 @@ describe('sessions CRUD', () => {
 describe('memories CRUD', () => {
   it('inserts a memory and syncs to FTS5', () => {
     const now = Date.now();
-    const result = db.prepare(
+    db.prepare(
       'INSERT INTO memories (chat_id, topic_key, content, sector, salience, created_at, accessed_at) VALUES (?, ?, ?, ?, 1.0, ?, ?)',
     ).run('chat1', null, 'I like pizza', 'semantic', now, now);
-
-    const id = result.lastInsertRowid as number;
 
     // Verify FTS5 sync
     const ftsResult = db.prepare(

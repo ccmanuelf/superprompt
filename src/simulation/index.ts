@@ -9,7 +9,6 @@ import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { getKnex } from '../db-knex.js';
-import { logger } from '../logger.js';
 import { STORE_DIR } from '../config.js';
 
 import type {

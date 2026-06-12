@@ -8,10 +8,10 @@ import { readJsonBody } from './http-helpers.js';
 import {
   initSimulation, runToCompletion, generateDemoEvents, analyzeSimulation,
   validateFSM, listTemplates, getTemplate,
-  bridgeFromSimulation, bridgeFromVSM, bridgeFromTOC, bridgeFromSequencer, createFSMFromBridge,
+  bridgeFromSimulation, bridgeFromVSM, bridgeFromTOC, bridgeFromSequencer,
   saveFSM, getFSMConfig, listFSMs, deleteFSMConfig,
   generateStateResidenceChart, generateSystemUtilChart,
-  type FSMConfig, type FSMEvent,
+  type FSMConfig,
 } from '../fsm/index.js';
 
 export async function handleFsmApi(req: IncomingMessage, res: ServerResponse, urlPath: string, chatId: string): Promise<boolean> {

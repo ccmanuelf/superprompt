@@ -7,7 +7,7 @@
 import { logger } from '../logger.js';
 import {
   createPlan, createTopic, getTopicsByPlan, getPendingTopics, getCompletedTopics,
-  getTopicByTitle, reorderTopic, updateTopic, updatePlan, deleteTopic,
+  getTopicByTitle, reorderTopic, updateTopic,
   type LearningPlan, type LearningTopic,
 } from './db.js';
 import { selectPersonaForSubject } from './personas.js';

@@ -35,8 +35,6 @@ import {
   getSigmaResults,
   type MeasurementRow,
   type SpecLimits,
-  type ControlChartData,
-  type CapabilityResult,
 } from '../src/sigma.js';
 
 let testKnex: Knex;

@@ -45,8 +45,6 @@ import {
   dispatch,
   compareAllRules,
   runGA,
-  computeMetrics,
-  buildSingleMachineSchedule,
   type SequencerConfig,
   initSequencerTables,
 } from '../src/sequencer/index.js';
@@ -66,8 +64,6 @@ import {
   computeBufferStatus,
   computeWIPGauges,
   type TOCConfig,
-  BUFFER_GREEN_THRESHOLD,
-  BUFFER_YELLOW_THRESHOLD,
   initTocTables,
 } from '../src/toc/index.js';
 
@@ -98,7 +94,6 @@ import {
   bridgeFromVSM,
   bridgeFromTOC,
   type FSMConfig,
-  type FSMDefinition,
   initFsmTables,
 } from '../src/fsm/index.js';
 
@@ -347,8 +342,6 @@ describe('S15.2 — Sequencer Sanity Check', () => {
 
   it('should account for setup times between different products', () => {
     const result = dispatch(SEQ_CONFIG, 'FIFO');
-    // Some jobs should have setup times when switching products
-    const hasSetup = result.entries.some(e => e.setup_time > 0);
     // With setup matrix and mixed products, there should be changeovers
     // (depends on round-robin assignment — may or may not trigger changeovers)
     expect(result.metrics.total_setup_time).toBeGreaterThanOrEqual(0);

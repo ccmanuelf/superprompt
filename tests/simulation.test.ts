@@ -18,7 +18,7 @@ vi.mock('../src/config.js', () => ({
 }));
 
 import {
-  SimEnvironment, SimResource, ProductionLineSimulator, runSimulation,
+  SimEnvironment, SimResource, runSimulation,
 } from '../src/simulation/engine.js';
 import { validateSimulationConfig } from '../src/simulation/validation.js';
 import { calculateAllBlocks } from '../src/simulation/calculations.js';
@@ -426,7 +426,6 @@ describe('Real-World Scenarios', () => {
   });
 
   it('V3: warmup adds time penalty in first 30 minutes', async () => {
-    const { metrics: noWarmup } = await runSimulation(TSHIRT_CONFIG, 42);
     const { metrics: withWarmup } = await runSimulation({ ...TSHIRT_CONFIG, enable_warmup: true }, 42);
     expect(withWarmup.warmup_time_lost).toBeGreaterThan(0);
   });

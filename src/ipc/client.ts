@@ -385,7 +385,7 @@ export class ProcessClient {
   }
 
   private rejectAllPending(reason: string): void {
-    for (const [id, pending] of this.pending) {
+    for (const [, pending] of this.pending) {
       clearTimeout(pending.timer);
       pending.resolve({ error: reason });
     }

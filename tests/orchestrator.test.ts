@@ -11,7 +11,6 @@ import {
   validateSteps,
   buildFinalResponse,
   buildEpisodeSummary,
-  ORCHESTRATION_PATTERNS,
   type TaskStep,
   type StepResult,
 } from '../src/orchestrator.js';
@@ -258,7 +257,6 @@ describe('compressStepContext design', () => {
     // Verify the compression prompt template contains Filtration Analysis filters
     // We can't call it without a router, but we can verify it's properly designed
     // by checking the function source references Filtration Analysis
-    const sourceText = compressStepContext.toString();
     // The function body is compiled, so we verify the exports exist
     expect(compressStepContext.length).toBe(4); // 4 params: output, nextInstruction, router, chatId
   });

@@ -83,8 +83,6 @@ function simulateProcessAudio(
 
 // ── WebSocket handler state machine simulation ──────────────
 
-type WsState = 'idle' | 'processing' | 'error';
-
 interface WsMessage {
   type: 'status' | 'response' | 'error' | 'ready' | 'pong';
   status?: string;

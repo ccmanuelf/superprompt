@@ -104,7 +104,15 @@ describe('policy-engine — real execution', () => {
       expect(decision.reason).toContain('blocked');
     });
 
-    it('uses default medium policy for unknown tools', async () => {
+    it('requires confirmation for unknown tools (default high policy, rc.113)', async () => {
+      const decision = await evaluatePolicy('unknown_tool', 'chat-1');
+      expect(decision.allowed).toBe(true);
+      expect(decision.requiresConfirmation).toBe(true);
+      expect(decision.confirmationPrompt).toBeTruthy();
+    });
+
+    it('skips confirmation for unknown tools once trusted', async () => {
+      await setTrustDecision('chat-1', 'unknown_tool', 'allow');
       const decision = await evaluatePolicy('unknown_tool', 'chat-1');
       expect(decision.allowed).toBe(true);
       expect(decision.requiresConfirmation).toBe(false);

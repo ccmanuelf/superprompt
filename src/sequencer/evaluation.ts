@@ -6,8 +6,6 @@
  */
 
 import type {
-  Job,
-  Machine,
   SetupEntry,
   ScheduleEntry,
   ScheduleMetrics,
@@ -146,7 +144,7 @@ export function buildScheduleFromPermutation(
 
 export function computeMetrics(
   entries: ScheduleEntry[],
-  config: SequencerConfig,
+  _config: SequencerConfig,
 ): ScheduleMetrics {
   if (entries.length === 0) {
     return {
@@ -261,9 +259,6 @@ export function buildGanttData(
       // Check if there's a setup bar filling the gap
       const setupFills = bars.some((b) =>
         b.machine_id === machine.id && b.is_setup && b.start >= gapStart && b.end <= nextBarStart);
-      const effectiveGapStart = setupFills
-        ? bars.find((b) => b.machine_id === machine.id && b.is_setup && b.start >= gapStart)!.start
-        : gapStart;
       // Only if there's still a gap after accounting for setup
       if (!setupFills && nextBarStart - gapStart > 0.5) {
         bars.push({

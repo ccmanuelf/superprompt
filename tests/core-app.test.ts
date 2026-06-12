@@ -4,7 +4,6 @@ import type {
   StorageProvider,
   TableInitializer,
   Platform,
-  Subsystem,
 } from '../src/core/interfaces.js';
 
 // ── Helpers ──────────────────────────────────────────────────

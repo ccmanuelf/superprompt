@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 import { getKnex } from './db-knex.js';
-import { logger } from './logger.js';
 import type { TableInitializer } from './core/interfaces.js';
 
 // ── Types ────────────────────────────────────────────────────
@@ -284,7 +283,7 @@ export function recommendReaction(severity: number, chartType: ChartRecommendati
  * Suggest applicable standard based on product/process keywords.
  * Exported for testing.
  */
-export function suggestStandard(product: string, processType: ProcessType): string {
+export function suggestStandard(product: string, _processType: ProcessType): string {
   const p = product.toLowerCase();
 
   if (p.includes('harness') || p.includes('wire') || p.includes('cable')) return 'IPC/WHMA-A-620';

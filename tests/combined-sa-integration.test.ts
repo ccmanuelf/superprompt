@@ -22,17 +22,15 @@ vi.mock('../src/logger.js', () => ({
 
 import { executeInWorker } from '../src/forge/worker-sandbox.js';
 import {
-  detectSkillCandidate, draftSkillDefinition, proposeSkillToUser,
+  detectSkillCandidate, proposeSkillToUser,
   detectProposalResponse, handleProposalResponse, insertSkillProposal,
-  createAutoSkill, getPendingProposal, expirePendingProposals,
+  createAutoSkill, getPendingProposal,
   initAutoSkillsTables, getSkillTriggers,
   shouldHealSkill, detectSkillCorrection,
   type SkillProposal,
 } from '../src/auto-skills.js';
-import { Application } from '../src/core/app.js';
 import { ProcessClient } from '../src/ipc/client.js';
 import { TOOLS_PROCESS_ENV, PARSERS_PROCESS_ENV, buildChildEnv } from '../src/ipc/env-whitelist.js';
-import type { StorageProvider, TableInitializer } from '../src/core/interfaces.js';
 import type { Skill } from '../src/db-core.js';
 
 async function setupTestDb(): Promise<void> {

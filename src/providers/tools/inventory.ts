@@ -6,16 +6,11 @@ import {
   getInventoryProjectByName,
   getInventoryItems,
   getInventoryResults,
-  deleteInventoryProject,
-  generateReplenishmentPlan,
-  abcClassification,
   exponentialSmoothing,
   formatReplenishmentPlan,
   generateAbcChart,
   generateForecastChart,
   type AbcItem,
-  type ReplenishmentPlan,
-  type ForecastResult,
 } from '../../inventory.js';
 
 export const inventoryPlanDefinition: Tool = {
@@ -56,7 +51,7 @@ export async function inventoryPlan(
     project_name?: string;
     demand_history?: string;
   },
-  chatId: string,
+  _chatId: string,
 ): Promise<Record<string, unknown>> {
   try {
     switch (args.action) {

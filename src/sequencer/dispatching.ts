@@ -105,7 +105,7 @@ export function compareAllRules(config: SequencerConfig): RuleComparison {
 function sortJobsByRule(
   jobs: Job[],
   rule: DispatchRule,
-  config: SequencerConfig,
+  _config: SequencerConfig,
 ): string[] {
   const sorted = [...jobs];
 

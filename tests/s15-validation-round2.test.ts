@@ -58,14 +58,12 @@ import type { DOEConfig } from '../src/doe/models.js';
 import {
   initSimulation,
   runToCompletion,
-  generateDemoEvents,
   analyzeSimulation,
   validateFSM,
-  listTemplates,
   getTemplate,
 } from '../src/fsm/index.js';
 import { bridgeFromTOC, bridgeFromVSM } from '../src/fsm/bridge.js';
-import type { FSMConfig, FSMEvent, FSMDefinition } from '../src/fsm/models.js';
+import type { FSMConfig } from '../src/fsm/models.js';
 
 // ── Test Setup ──────────────────────────────────────────────
 
@@ -256,7 +254,7 @@ describe('S15.2 Sequencer — PCB Job Shop', () => {
         byMachine.get(entry.machine_id)!.push(entry);
       }
       // Check no overlaps
-      for (const [machineId, entries] of byMachine) {
+      for (const entries of byMachine.values()) {
         const sorted = [...entries].sort((a, b) => a.start_time - b.start_time);
         for (let i = 1; i < sorted.length; i++) {
           expect(sorted[i].start_time).toBeGreaterThanOrEqual(sorted[i - 1].end_time);
@@ -617,9 +615,6 @@ describe('S15.6 DOE — Solder Paste Optimization', () => {
     expect(analysis.anova.length).toBe(2); // one per response
 
     // For Strength: Temperature effect should be positive
-    const strengthEffects = analysis.main_effects.filter(e =>
-      e.factor_id === 'temp' && analysis.anova[0]?.response_name === 'Solder Strength'
-    );
     // Temperature main effect: high(260) - low(230) should produce ~16 delta
     const tempEffect = analysis.main_effects.find(e => e.factor_name === 'Temperature');
     expect(tempEffect).toBeDefined();

@@ -1,6 +1,5 @@
 import type { Tool } from 'ollama';
 import { readEnvFile } from '../../env.js';
-import { logger } from '../../logger.js';
 
 /**
  * Render deployment status tools for Ollama.

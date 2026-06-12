@@ -16,7 +16,6 @@
 
 import {
   registerLocalTool,
-  unregisterLocalTool,
   setUserToolHandler,
   startIPCServer,
 } from './ipc/server.js';
@@ -51,31 +50,46 @@ import {
 
 import { executeInWorker } from './forge/worker-sandbox.js';
 import { executeDeclarativeHttp } from './forge/declarative-http.js';
+import type { Tool } from 'ollama';
 
 // ── Register DB-free builtin tools ──────────────────────────
 
+/**
+ * Bind a typed tool implementation to its definition. Runtime args arrive as
+ * untyped JSON (validated by the model against def.parameters); this is the
+ * single place that cast happens, so each call site below stays checked
+ * against its tool's real argument interface.
+ */
+function tool<A>(def: Tool, fn: (args: A) => unknown) {
+  return {
+    def,
+    exec: async (args: Record<string, unknown>) =>
+      (await fn(args as A)) as Record<string, unknown>,
+  };
+}
+
 const tools = [
-  { def: webSearchDefinition, exec: async (args: any) => webSearch(args) },
-  { def: readFileDefinition, exec: async (args: any) => readFileTool(args) },
-  { def: runCommandDefinition, exec: async (args: any) => runCommand(args) },
-  { def: getTimeDefinition, exec: async () => getTime() },
-  { def: systemInfoDefinition, exec: async () => systemInfo() },
-  { def: summarizeUrlDefinition, exec: async (args: any) => summarizeUrl(args) },
-  { def: githubListReposDefinition, exec: async (args: any) => githubListRepos(args) },
-  { def: githubReadFileDefinition, exec: async (args: any) => githubReadFile(args) },
-  { def: githubListIssuesDefinition, exec: async (args: any) => githubListIssues(args) },
-  { def: githubListPrsDefinition, exec: async (args: any) => githubListPrs(args) },
-  { def: githubCloneRepoDefinition, exec: async (args: any) => githubCloneRepo(args) },
-  { def: githubDiffDefinition, exec: async (args: any) => githubDiff(args) },
-  { def: githubCommitPushDefinition, exec: async (args: any) => githubCommitPush(args) },
-  { def: githubCreatePrDefinition, exec: async (args: any) => githubCreatePr(args) },
-  { def: renderListServicesDefinition, exec: async (args: any) => renderListServices(args) },
-  { def: renderDeployStatusDefinition, exec: async (args: any) => renderDeployStatus(args) },
-  { def: renderGetLogsDefinition, exec: async (args: any) => renderGetLogs(args) },
-  { def: takeScreenshotDefinition, exec: async (args: any) => takeScreenshot(args) },
-  { def: novalinkListQueriesDefinition, exec: async () => novalinkListQueries() },
-  { def: novalinkQueryDefinition, exec: async (args: any) => novalinkQuery(args) },
-  { def: novalinkHealthDefinition, exec: async () => novalinkHealth() },
+  tool(webSearchDefinition, webSearch),
+  tool(readFileDefinition, readFileTool),
+  tool(runCommandDefinition, runCommand),
+  tool(getTimeDefinition, getTime),
+  tool(systemInfoDefinition, systemInfo),
+  tool(summarizeUrlDefinition, summarizeUrl),
+  tool(githubListReposDefinition, githubListRepos),
+  tool(githubReadFileDefinition, githubReadFile),
+  tool(githubListIssuesDefinition, githubListIssues),
+  tool(githubListPrsDefinition, githubListPrs),
+  tool(githubCloneRepoDefinition, githubCloneRepo),
+  tool(githubDiffDefinition, githubDiff),
+  tool(githubCommitPushDefinition, githubCommitPush),
+  tool(githubCreatePrDefinition, githubCreatePr),
+  tool(renderListServicesDefinition, renderListServices),
+  tool(renderDeployStatusDefinition, renderDeployStatus),
+  tool(renderGetLogsDefinition, renderGetLogs),
+  tool(takeScreenshotDefinition, takeScreenshot),
+  tool(novalinkListQueriesDefinition, novalinkListQueries),
+  tool(novalinkQueryDefinition, novalinkQuery),
+  tool(novalinkHealthDefinition, novalinkHealth),
 ];
 
 for (const { def, exec } of tools) {

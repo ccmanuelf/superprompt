@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { mkdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -19,8 +19,6 @@ import {
   isTopicDueForReview,
   selectNextTopic,
   getMasterySummary,
-  countDueReviews,
-  getEffectiveMastery,
 } from '../src/learning/spaced-repetition.js';
 
 import type { LearningTopic } from '../src/learning/db.js';
@@ -340,7 +338,7 @@ describe('subject extraction from goal', () => {
 
 // ── Session Markers (pure functions) ────────────────────────
 
-import { stripMarkers, processSessionResponse, getActiveSessions, FALLBACK_CORRECT_PATTERNS, FALLBACK_INCORRECT_PATTERNS } from '../src/learning/session.js';
+import { stripMarkers, FALLBACK_CORRECT_PATTERNS, FALLBACK_INCORRECT_PATTERNS } from '../src/learning/session.js';
 
 describe('session markers', () => {
   it('strips all marker types', () => {
@@ -550,8 +548,8 @@ describe('learning topic operations (real DB)', () => {
   it('reorders topics correctly — move down', () => {
     const planId = insertPlan('chat1', 'Math', 'Learn');
     const t1 = insertTopic(planId, 'A', 0);
-    const t2 = insertTopic(planId, 'B', 1);
-    const t3 = insertTopic(planId, 'C', 2);
+    insertTopic(planId, 'B', 1);
+    insertTopic(planId, 'C', 2);
 
     // Move A (pos 0) to pos 2 (after C)
     // Shift B,C up by 1, then set A to 2
@@ -677,8 +675,8 @@ describe('integration — plan creation to mastery tracking', () => {
 
     // Add topics (simulating parsePlanResponse output)
     const t1 = insertTopic(planId, 'Pinyin & Tones', 0);
-    const t2 = insertTopic(planId, 'Basic Greetings', 1);
-    const t3 = insertTopic(planId, 'Numbers 1-100', 2);
+    insertTopic(planId, 'Basic Greetings', 1);
+    insertTopic(planId, 'Numbers 1-100', 2);
 
     // Verify initial state
     const topics = db.prepare('SELECT * FROM learning_topics WHERE plan_id = ? ORDER BY sort_order').all(planId) as any[];

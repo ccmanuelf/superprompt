@@ -31,22 +31,24 @@ import {
   clearSession, setAutoRoute, isAutoRouteEnabled,
   // Memories
   insertMemory, getRecentMemories, touchMemory, deleteMemory, decayMemories,
-  getMemoriesByChatId, getUnembeddedMemoryCount, getUnembeddedMemories,
-  getCompressibleMemories, getChatsWithCompressibleMemories, deleteMemories,
+  getUnembeddedMemoryCount,
+  getCompressibleMemories, deleteMemories,
   // Tasks
-  createTask, getDueTasks, updateTaskAfterRun, pauseTask, resumeTask,
+  createTask, getDueTasks, pauseTask, resumeTask,
   deleteTask, getTasksByChat, getTask,
   // Skills
-  createSkill, createSkillIfNotExists, getSkill, getSkillByName, listSkills,
+  createSkill, createSkillIfNotExists, getSkill, listSkills,
   updateSkill, deleteSkill, setActiveSkill, getActiveSkill, clearActiveSkill,
   setActiveSkillAutoTriggered, isSkillAutoTriggered, decrementSkillTurns,
   lockSkill, unlockSkill, insertSkillRevision, getSkillRevisions,
   // User Tools
   createUserTool, getUserTool, getUserToolByName, listUserTools,
-  updateUserTool, deleteUserTool, enableUserTool, disableUserTool,
-  lockUserTool, unlockUserTool, insertToolRevision, getToolRevisions,
+  deleteUserTool, enableUserTool, disableUserTool,
+  insertToolRevision, getToolRevisions,
   // Episodes
-  insertEpisode, getCompressibleMemories as _gc, closeDatabase,
+  insertEpisode, getCompressibleMemories as _gc,
+  // Voice mode
+  isVoiceModeEnabled, setVoiceMode,
 } from '../src/db-core.js';
 
 describe('db-core (Knex)', () => {
@@ -337,6 +339,29 @@ describe('db-core (Knex)', () => {
     it('inserts episode', async () => {
       const id = await insertEpisode('chat1', 'Summary of events', ['fact1'], ['thread1'], 5);
       expect(id).toBeGreaterThan(0);
+    });
+  });
+
+  // ── Voice mode (rc.113: persisted across restarts) ───
+
+  describe('voice mode', () => {
+    it('defaults to disabled', async () => {
+      expect(await isVoiceModeEnabled('chat1')).toBe(false);
+    });
+
+    it('persists enable and disable', async () => {
+      await setVoiceMode('chat1', true);
+      expect(await isVoiceModeEnabled('chat1')).toBe(true);
+      // Enabling twice is a no-op, not an error
+      await setVoiceMode('chat1', true);
+      expect(await isVoiceModeEnabled('chat1')).toBe(true);
+      await setVoiceMode('chat1', false);
+      expect(await isVoiceModeEnabled('chat1')).toBe(false);
+    });
+
+    it('is scoped per chat', async () => {
+      await setVoiceMode('chat1', true);
+      expect(await isVoiceModeEnabled('chat2')).toBe(false);
     });
   });
 });
