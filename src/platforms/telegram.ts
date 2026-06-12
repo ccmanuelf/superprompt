@@ -163,7 +163,7 @@ async function handleMessage(
   return withTrace(generateTraceId(), () => handleMessageInner(ctx, rawText, pc, forceVoiceReply, skipTools, isVoice));
 }
 
-async function handleMessageInner(
+export async function handleMessageInner(
   ctx: Context,
   rawText: string,
   pc: PlatformContext,
