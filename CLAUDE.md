@@ -11,7 +11,7 @@ The repo contains:
 - `src/db-knex.ts` — Knex configuration (SQLite/MariaDB/PostgreSQL via DB_DRIVER)
 - `src/db-core.ts` — All database CRUD (async, Knex query builder)
 - `src/db-dialect.ts` — Cross-dialect FTS, vectors, column migrations
-- `prompts/` — Modular build prompts, one per phase (see `prompts/00-README.md`)
+- `prompts/` — **Historical scaffolding only.** The per-phase prompt files were never authored (see `prompts/00-README.md`); `PROJECT_PLAN.md` is the source of truth
 - `reference/` — Research artifacts and confirmed decisions
 
 ## Current Status
@@ -56,9 +56,10 @@ make the loop dependent on the user; concrete criteria let the agent self-verify
 **Verify with the existing workflow.** This repo has real commands — use them
 before claiming done:
 - `npx tsc --noEmit` — type check
-- `npx vitest run` — full test suite (currently 2704 tests / 128 files)
+- `npm run lint` — ESLint (must be 0 errors; `no-explicit-any` warnings are a ratchet, don't add new ones)
+- `npx vitest run` — full test suite (don't hardcode the count in docs; it drifts)
 - `npm run smoke` — dist-level ESM smoke (catches `require()`-in-ESM and similar
-  runtime mismatches that vitest/tsx hide)
+  runtime mismatches that vitest/tsx hide; run `npm run build` first)
 - `docker compose build luna && docker compose up -d luna` — container rebuild
   when the change touches anything Dockerized
 - pre-commit hook (`.githooks/pre-commit`) — secret-leak scan; never bypass
@@ -153,7 +154,7 @@ All decisions are documented in `reference/decisions.md`. Do NOT re-discuss them
 - **SA2 — Formal Core**: Application class, typed interfaces (StorageProvider, ToolProvider, MemoryProvider, PackProvider, Platform, Subsystem), PlatformContext facade
 - **SA3 — Process Separation**: 3 processes via `child_process.fork()` — core (DB access), tools (network/compute, no DB), parsers (file I/O only, no network)
 - **Auto-Skills**: Detection (3+ tools), AI drafting (Hermes-adapted), bilingual proposals, dynamic triggers, skill self-healing
-- **SA4 — Policy Engine**: 43 tools classified by risk (3 critical, 16 high, 19 medium, 5 low). Per-user trust memory ("always"/"never"). Confirmation flow across Telegram, Matrix, and voice.
+- **SA4 — Policy Engine**: every builtin tool carries a risk classification (critical/high/medium/low; authoritative registry in `src/providers/tools/index.ts` — don't hardcode counts here, they drift). Unclassified tools default to high risk + confirmation (rc.113). Per-user trust memory ("always"/"never"). Confirmation flow across Telegram, Matrix, and voice.
 - **SA5 — Everything as Packs**: Manufacturing extracted to Level 3 pack. 9 department starter packs. Subscription model (any department enables any pack). Conversational builder + guide.
 
 ## Code Conventions
@@ -170,21 +171,15 @@ These apply to ALL generated code across ALL phases:
 
 ## How To Work On This Repo
 
-### Continuing the build
-1. Read `PROJECT_PLAN.md` to find the next incomplete phase
-2. Read the corresponding `prompts/XX-*.md` for the full spec
-3. Read relevant `reference/*.md` docs for technical details
-4. Execute the phase in the target directory
-
-### Editing a prompt
-- Each prompt is self-contained. Changes to one prompt should be validated against downstream phases that depend on it.
-- The dependency graph is in `prompts/00-README.md`.
-
-### After completing a phase
-1. Run the verification steps from the prompt
-2. Commit: `feat(phase-N): description`
-3. Update the checkbox in `PROJECT_PLAN.md`
-4. Push to GitHub
+### Working on the repo
+All 26 build phases in `PROJECT_PLAN.md` are complete — the phase-prompt
+workflow below is retired (the `prompts/XX-*.md` files were never authored;
+`prompts/` is historical scaffolding). For new work:
+1. Read `PROJECT_PLAN.md` § Known Gotchas and `reference/decisions.md` first
+2. Read relevant `reference/*.md` docs for technical details
+3. Make the change; verify with the workflow commands above
+4. Commit conventionally (`feat:`/`fix:`/`docs:` …), bump the rc version in
+   `package.json` when shipping, push to GitHub
 
 ## Reference Documents
 

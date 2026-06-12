@@ -2,7 +2,7 @@
 
 **For:** a backend engineer with Node/TypeScript experience but no prior Luna context.
 **Outcome after reading:** you can clone, configure, start a local instance, ship a change end-to-end, and find your way around the codebase without asking the original maintainer.
-**Status:** rc.95, 2,367 tests across 107 files, 181 .ts files in `src/`.
+**Status:** current version in `package.json`; current test count from `npx vitest run` (hardcoded numbers in this doc drifted and were removed — rc.113).
 
 This document is the answer to "if I get hit by a bus, who runs Luna?" Read it once end-to-end, then keep it as a navigation aid.
 
@@ -99,11 +99,11 @@ In a Telegram chat with your bot, send `/start`. If it replies, you're done. If 
 - Complete the first-hour code tour (§2).
 - Stand up the local instance (§3).
 - Send 5–10 messages: a question, a command (`/help`, `/usage`, `/provider`), a follow-up that exercises memory, a request for a deliverable (`make me a CSV with these rows…`).
-- Read `npx vitest run --reporter=dot 2>&1 | tail -5` to confirm 2,367+ tests pass in your env.
+- Read `npx vitest run --reporter=dot 2>&1 | tail -5` to confirm the full suite passes in your env.
 
 ### Week 1
 
-- Ship the worked-example skill from §6. Open the PR. Make all 2,367 tests + `npx tsc --noEmit` + `npm run smoke` pass before requesting review.
+- Ship the worked-example skill from §6. Open the PR. Make the full test suite + `npx tsc --noEmit` + `npm run lint` + `npm run smoke` pass before requesting review (CI runs the same gauntlet).
 - Read `docs/security.md` end-to-end. Important — the threat model matters.
 - Read `docs/customization-guide.md`. It's longer than this onboarding doc; you don't need it on day 1, but you will reference it in the first month.
 - Get your name added to `CODEOWNERS` (file doesn't exist yet — create it as part of your first PR if you want).
@@ -285,7 +285,7 @@ npx tsc --noEmit
 npm run smoke
 ```
 
-The full run must show `2,367 passed (2,367)` — or whatever the post-rc count is. **A green typecheck and a green vitest run together are necessary but not sufficient** — `npm run smoke` exists because vitest uses `tsx` which papers over `require()`-in-ESM bugs that crash production. Always run all three before declaring a change done.
+The full run must show every test passing (the count grows per rc — don't pin it). **A green typecheck and a green vitest run together are necessary but not sufficient** — `npm run smoke` exists because vitest uses `tsx` which papers over `require()`-in-ESM bugs that crash production. Always run all three before declaring a change done.
 
 For UI / web-app changes, also exercise the feature in a browser. The runbook explains how to surface CSP errors and Vite issues.
 

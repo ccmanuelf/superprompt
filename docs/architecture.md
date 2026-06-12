@@ -2,9 +2,9 @@
 
 Internal architecture reference for developers and contributors.
 
-**Version:** v1.0.0-rc.95 — last refreshed 2026-04-27.
-**Test coverage at this revision:** 2,367 tests across 107 files. 181 .ts files in `src/`.
-**Active workstreams:** attendance reconciliation pilot (Phase A almost complete, Phase B engine landed in rc.94 awaiting wiring) and NovaLink bridge integration (PLANNED — see [`NOVALINK_BRIDGE_INTEGRATION.md`](./NOVALINK_BRIDGE_INTEGRATION.md)).
+**Version:** see `package.json` — last refreshed 2026-06-11 (rc.113).
+**Test coverage:** run `npx vitest run` for the current count (hardcoded counts drifted; removed).
+**Active workstreams:** attendance reconciliation pilot (Phase A almost complete, Phase B engine landed in rc.94 awaiting wiring); NovaLink bridge integration SHIPPED (see [`NOVALINK_BRIDGE_INTEGRATION.md`](./NOVALINK_BRIDGE_INTEGRATION.md)).
 
 ---
 
