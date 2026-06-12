@@ -6,6 +6,10 @@ import { config, UPLOADS_DIR } from '../config.js';
 import { logger } from '../logger.js';
 import { generateTraceId, withTrace, getTraceId } from '../trace.js';
 import type { PlatformContext } from '../core/context.js';
+import {
+  autoSkillProposalGate, toolConfirmationGate, skillHealingGate,
+  learningSessionGate, orchestrationGate, type GateIO,
+} from '../core/message-gates.js';
 import type { CardStatus, CardAssignee } from '../kanban.js';
 import type { DigestFrequency } from '../proactive.js';
 import type { CitationFormat } from '../citations.js';
@@ -25,6 +29,47 @@ async function replyChunkWithFallback(ctx: Context, chunk: string): Promise<void
     logger.debug({ err }, 'HTML reply rejected by Telegram — retrying as plain text');
     await ctx.reply(chunk);
   }
+}
+
+/**
+ * Download the attached document's text content via the Telegram file API.
+ * Replies with an error message and returns null on failure, so callers can
+ * simply bail with `if (content === null) return;`.
+ */
+async function downloadDocumentText(
+  ctx: Context,
+  downloadErrorMsg = 'Failed to download file.',
+): Promise<string | null> {
+  const file = await ctx.getFile();
+  if (!file.file_path) {
+    await ctx.reply('Could not download file.');
+    return null;
+  }
+  const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    await ctx.reply(downloadErrorMsg);
+    return null;
+  }
+  return res.text();
+}
+
+/** Telegram's reply adapter for the platform-neutral message gates. */
+function makeGateIO(ctx: Context): GateIO {
+  return {
+    reply: async (text) => {
+      await ctx.reply(formatForTelegram(text), { parse_mode: 'HTML' });
+    },
+    replyChunks: async (text) => {
+      const chunks = splitMessage(formatForTelegram(text));
+      for (const chunk of chunks) {
+        await replyChunkWithFallback(ctx, chunk);
+      }
+    },
+    replyPlain: async (text) => {
+      await ctx.reply(text);
+    },
+  };
 }
 
 // ── Auth ────────────────────────────────────────────────────
@@ -172,71 +217,13 @@ export async function handleMessageInner(
   isVoice: boolean = false,
 ): Promise<void> {
   const chatId = String(ctx.chat!.id);
+  const io = makeGateIO(ctx);
 
-  // 0. Check for pending auto-skill proposal response
-  const pendingProposal = await pc.autoSkills.getPending(chatId);
-  if (pendingProposal) {
-    const proposalAction = pc.autoSkills.detectResponse(rawText);
-    if (proposalAction) {
-      const confirmation = await pc.autoSkills.handleResponse(chatId, proposalAction === 'approve');
-      await ctx.reply(formatForTelegram(confirmation), { parse_mode: 'HTML' });
-      return;
-    }
-    // User sent a normal message — expire the proposal
-    pc.autoSkills.expirePending(chatId);
-  }
-
-  // 0a. Check for pending tool confirmation (SA4 policy engine)
-  const pendingToolConfirm = pc.policyEngine.getPendingConfirmation(chatId);
-  if (pendingToolConfirm) {
-    const confirmAction = pc.policyEngine.detectConfirmation(rawText);
-    if (confirmAction) {
-      const { executeTool } = await import('../providers/tools/index.js');
-      const confirmResult = await pc.policyEngine.handleConfirmation(chatId, confirmAction, executeTool);
-      if (confirmResult.message) {
-        await ctx.reply(formatForTelegram(confirmResult.message), { parse_mode: 'HTML' });
-      }
-      if (confirmResult.executed && confirmResult.result) {
-        // Send the tool result through the AI for a natural response
-        const aiResponse = await pc.router.sendMessage({
-          chatId,
-          message: `Tool "${pendingToolConfirm.toolName}" executed. Result: ${JSON.stringify(confirmResult.result)}`,
-          skipTools: true,
-          skipTurnLog: true,
-          platform: 'telegram',
-        });
-        if (aiResponse.text) {
-          const formatted = formatForTelegram(aiResponse.text);
-          const chunks = splitMessage(formatted);
-          for (const chunk of chunks) {
-            await replyChunkWithFallback(ctx, chunk);
-          }
-        }
-      }
-      return;
-    }
-    // User sent a normal message — clear pending confirmation
-    pc.policyEngine.clearPendingConfirmation(chatId);
-  }
-
-  // 0b. Skill self-healing: detect user corrections when a skill is active
-  const activeSkillForHealing = await pc.skills.getActive(chatId);
-  if (activeSkillForHealing && pc.autoSkills.detectCorrection(rawText)) {
-    try {
-      const healResult = await pc.autoSkills.heal(
-        activeSkillForHealing,
-        `User corrected the approach: "${rawText}"`,
-        rawText,
-        pc.router,
-        chatId,
-      );
-      if (healResult.patched) {
-        await ctx.reply(formatForTelegram(healResult.summary), { parse_mode: 'HTML' });
-      }
-    } catch (err) {
-      logger.debug({ err }, 'Skill self-healing skipped (non-blocking)');
-    }
-  }
+  // 0. Pending auto-skill proposal / 0a. pending tool confirmation /
+  // 0b. skill self-healing — platform-neutral gates (src/core/message-gates.ts)
+  if (await autoSkillProposalGate(pc, chatId, rawText, io)) return;
+  if (await toolConfirmationGate(pc, chatId, rawText, io, 'telegram')) return;
+  await skillHealingGate(pc, chatId, rawText, io);
 
   // 1. Build memory context (hybrid: FTS5 + vector)
   const memoryContext = await pc.memory.buildContext(chatId, rawText);
@@ -256,184 +243,15 @@ export async function handleMessageInner(
   typingInterval = setInterval(refreshTyping, TYPING_REFRESH_MS);
 
   try {
-    // 2a. Learning session gate — route through session handler if active
-    // Allow non-learning slash commands to pass through (user can /memory, /board, etc.)
-    const isNonLearnCommand = rawText.startsWith('/') && !rawText.startsWith('/learn');
-    if (pc.learning.isSessionActive(chatId) && !isNonLearnCommand) {
-      // Check for session-ending keywords
-      const lowerText = rawText.toLowerCase().trim();
-      if (['done', 'stop', 'enough', '/learn done', '/learn stop'].includes(lowerText)) {
-        clearInterval(typingInterval);
-        typingInterval = undefined;
-        const activeSession = pc.learning.getActiveSession(chatId)!;
-        const { durationSeconds, needsExpand } = await pc.learning.endSession(chatId, 'user_ended');
-        const summary = pc.learning.formatSessionSummary(durationSeconds, activeSession.questionsAsked, activeSession.correctAnswers);
-        await ctx.reply(formatForTelegram(summary), { parse_mode: 'HTML' });
-
-        // Rolling horizon: expand curriculum if needed
-        if (needsExpand) {
-          const plan = await pc.learning.getPlan(activeSession.planId);
-          if (plan) {
-            const expandPrompt = await pc.learning.buildExpandPrompt(plan);
-            const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true, skipTurnLog: true, platform: 'telegram' });
-            const newTopics = pc.learning.parsePlanResponse(expandResponse.text || '');
-            if (newTopics.length > 0) {
-              pc.learning.addExpansionTopics(plan.id, newTopics);
-              await ctx.reply(formatForTelegram(`Added ${newTopics.length} new topics to your **${plan.subject}** plan.`), { parse_mode: 'HTML' });
-            }
-          }
-        }
-        return;
-      }
-
-      if (lowerText === 'snooze' || lowerText === 'later' || lowerText === 'dismiss') {
-        clearInterval(typingInterval);
-        typingInterval = undefined;
-        pc.learning.dismissSession(chatId);
-        await ctx.reply('Session dismissed. We\'ll continue later.');
-        return;
-      }
-
-      // Active session: send message through AI with session system prompt
-      pc.learning.touchSession(chatId);
-      const sessionPrompt = await pc.learning.getSessionSystemPrompt(chatId);
-      const response = await pc.router.sendMessage({
-        chatId,
-        message: fullMessage,
-        rawUserMessage: rawText,
-        skipAutoTrigger: true,
-        systemPrompt: sessionPrompt ?? undefined,
-        platform: 'telegram',
-      });
-
-      if (response.text) {
-        // Process assessment markers
-        const result = await pc.learning.processSessionResponse(chatId, response.text);
-        const cleanText = pc.learning.stripMarkers(response.text);
-
-        // Handle assessment results
-        const activeSession = pc.learning.getActiveSession(chatId);
-        if (result.assessmentPassed && activeSession?.assessmentTarget) {
-          const plan = await pc.learning.getPlan(activeSession.planId);
-          if (plan) {
-            pc.learning.completeTopicRemoval(plan.id, activeSession.assessmentTarget);
-          }
-          await pc.learning.endSession(chatId, 'assessment_passed');
-          clearInterval(typingInterval);
-          typingInterval = undefined;
-          await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
-          await ctx.reply(formatForTelegram(`**${activeSession.assessmentTarget}** has been deferred from your plan.`), { parse_mode: 'HTML' });
-          return;
-        }
-
-        if (result.assessmentFailed && activeSession?.assessmentTarget) {
-          const rejectMsg = pc.learning.rejectTopicRemoval(activeSession.assessmentTarget);
-          await pc.learning.endSession(chatId, 'assessment_failed');
-          clearInterval(typingInterval);
-          typingInterval = undefined;
-          await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
-          await ctx.reply(formatForTelegram(rejectMsg), { parse_mode: 'HTML' });
-          return;
-        }
-
-        // Handle topic completion
-        if (result.topicComplete) {
-          const session = pc.learning.getActiveSession(chatId);
-          if (session) {
-            const { durationSeconds, needsExpand } = await pc.learning.endSession(chatId, 'topic_complete');
-            const summary = pc.learning.formatSessionSummary(durationSeconds, session.questionsAsked, session.correctAnswers);
-            clearInterval(typingInterval);
-            typingInterval = undefined;
-            await ctx.reply(formatForTelegram(cleanText), { parse_mode: 'HTML' });
-            await ctx.reply(formatForTelegram(summary), { parse_mode: 'HTML' });
-
-            if (needsExpand) {
-              const plan = await pc.learning.getPlan(session.planId);
-              if (plan) {
-                const expandPrompt = await pc.learning.buildExpandPrompt(plan);
-                const expandResponse = await pc.router.sendMessage({ chatId, message: expandPrompt, skipAutoTrigger: true, skipTurnLog: true, platform: 'telegram' });
-                const newTopics = pc.learning.parsePlanResponse(expandResponse.text || '');
-                if (newTopics.length > 0) {
-                  pc.learning.addExpansionTopics(plan.id, newTopics);
-                  await ctx.reply(formatForTelegram(`Added ${newTopics.length} new topics to your plan.`), { parse_mode: 'HTML' });
-                }
-              }
-            }
-            return;
-          }
-        }
-
-        // Normal session response
-        pc.memory.saveConversationTurn(chatId, rawText, cleanText).catch((err) => {
-          logger.warn({ err }, 'Failed to save learning session memory');
-        });
-
-        const formatted = formatForTelegram(cleanText);
-        const chunks = splitMessage(formatted);
-        for (const chunk of chunks) {
-          await replyChunkWithFallback(ctx, chunk);
-        }
-      }
-
+    const stopTyping = () => {
       clearInterval(typingInterval);
       typingInterval = undefined;
-      return;
-    }
+    };
 
-    // 2b. Check for multi-step orchestration (on raw message, not memory-augmented)
-    if (!skipTools && !isVoice && pc.orchestrator.shouldOrchestrate(rawText)) {
-      clearInterval(typingInterval);
-      typingInterval = undefined;
-
-      const progressFn = async (_chatId: string, text: string) => {
-        await ctx.reply(formatForTelegram(text), { parse_mode: 'HTML' });
-      };
-
-      const response = await pc.orchestrator.orchestrateTask(pc.router, chatId, fullMessage, progressFn);
-
-      // Save orchestration as conversation memory
-      if (response.text) {
-        pc.memory.saveConversationTurn(chatId, rawText, response.text).catch((err) => {
-          logger.warn({ err }, 'Failed to save orchestration memory');
-        });
-
-        const formatted = formatForTelegram(response.text);
-        const chunks = splitMessage(formatted);
-        for (const chunk of chunks) {
-          await replyChunkWithFallback(ctx, chunk);
-        }
-
-        // Auto-skill detection for orchestrated tasks
-        // rc.70: skip when the workflow had tool errors or hit max
-        // iterations — failed runs must not be offered as skill-worthy.
-        if (response.hitMaxIterations || (response.toolErrorCount ?? 0) >= 2) {
-          logger.debug(
-            { chatId, hitMax: response.hitMaxIterations, toolErrors: response.toolErrorCount },
-            'Auto-skill detection skipped (failed workflow)',
-          );
-        } else try {
-          const quality = pc.selfMonitor.checkQuality(response, rawText);
-          const candidate = await pc.autoSkills.detectCandidate({
-            toolsUsed: response.toolsUsed || [],
-            stepResults: undefined, // orchestrator doesn't expose step results here, but toolsUsed is tracked
-            qualityScore: quality.passed ? 80 : quality.score ?? 0,
-            chatId,
-            originalRequest: rawText,
-          });
-          if (candidate) {
-            const proposal = await pc.autoSkills.draftDefinition(candidate, pc.router, chatId);
-            if (proposal) {
-              pc.autoSkills.insertProposal(proposal);
-              const proposalMsg = pc.autoSkills.proposeToUser(proposal);
-              await ctx.reply(formatForTelegram(proposalMsg), { parse_mode: 'HTML' });
-            }
-          }
-        } catch (err) {
-          logger.debug({ err }, 'Auto-skill detection skipped (non-blocking)');
-        }
-      }
-      return;
-    }
+    // 2a. Learning session gate / 2b. orchestration gate — platform-neutral
+    // (src/core/message-gates.ts)
+    if (await learningSessionGate(pc, chatId, rawText, fullMessage, io, stopTyping, 'telegram')) return;
+    if (await orchestrationGate(pc, chatId, rawText, fullMessage, io, stopTyping, { skipTools, isVoice })) return;
 
     // 3. Send to AI provider
     const response = await pc.router.sendMessage({
@@ -755,14 +573,8 @@ async function handleFmeaCsv(ctx: Context, caption: string): Promise<void> {
   }
 
   try {
-    const file = await ctx.getFile();
-    if (!file.file_path) { await ctx.reply('Could not download file.'); return; }
-
-    const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-    const res = await fetch(url);
-    if (!res.ok) { await ctx.reply('Failed to download file.'); return; }
-
-    const csvContent = await res.text();
+    const csvContent = await downloadDocumentText(ctx);
+    if (csvContent === null) return;
     await ctx.reply(`Running FMEA analysis for "${docName}"...`);
 
     const { executeFmeaFromCsv, formatFmeaWorksheet, generateRiskHeatmap, generateRpnPareto } = await import('../fmea.js');
@@ -810,14 +622,8 @@ async function handleInventoryCsv(ctx: Context, caption: string): Promise<void> 
   }
 
   try {
-    const file = await ctx.getFile();
-    if (!file.file_path) { await ctx.reply('Could not download file.'); return; }
-
-    const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-    const res = await fetch(url);
-    if (!res.ok) { await ctx.reply('Failed to download file.'); return; }
-
-    const csvContent = await res.text();
+    const csvContent = await downloadDocumentText(ctx);
+    if (csvContent === null) return;
     await ctx.reply(`Running inventory analysis for "${projectName}"...`);
 
     const { executeInventoryAnalysis, formatReplenishmentPlan, generateAbcChart } = await import('../inventory.js');
@@ -883,14 +689,8 @@ async function handleSigmaCsv(ctx: Context, caption: string): Promise<void> {
   }
 
   try {
-    const file = await ctx.getFile();
-    if (!file.file_path) { await ctx.reply('Could not download file.'); return; }
-
-    const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-    const res = await fetch(url);
-    if (!res.ok) { await ctx.reply('Failed to download file.'); return; }
-
-    const csvContent = await res.text();
+    const csvContent = await downloadDocumentText(ctx);
+    if (csvContent === null) return;
     await ctx.reply(`Running Six Sigma analysis for "${projectName}" (USL=${usl}, LSL=${lsl})...`);
 
     const {
@@ -964,20 +764,8 @@ async function handleBalanceCsv(ctx: Context, caption: string): Promise<void> {
   const projectName = match[2].trim();
 
   try {
-    const file = await ctx.getFile();
-    if (!file.file_path) {
-      await ctx.reply('Could not download file.');
-      return;
-    }
-
-    const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      await ctx.reply('Failed to download file from Telegram.');
-      return;
-    }
-
-    const csvContent = await res.text();
+    const csvContent = await downloadDocumentText(ctx, 'Failed to download file from Telegram.');
+    if (csvContent === null) return;
     await ctx.reply(`Running balance for "${projectName}" with takt time ${taktTime}s...`);
 
     const { executeBalance, formatBalanceResult, generateYamazumiChart, generateGanttChart, exportAssignmentsCsv } = await import('../balance.js');

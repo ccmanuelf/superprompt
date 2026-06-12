@@ -1,6 +1,6 @@
 {
   "name": "luna",
-  "version": "1.0.0-rc.113",
+  "version": "1.0.0-rc.114",
   "description": "Luna (Inge Luna) — Personal AI assistant daemon bridging messaging platforms to AI backends",
   "type": "module",
   "engines": {
