@@ -758,11 +758,13 @@ describe('GAP 24 — DOE confirmation runs', () => {
     };
 
     const matrix = generateMatrix(config);
-    // Fill all runs
-    matrix.runs[0].responses['defects'] = 12;
-    matrix.runs[1].responses['defects'] = 8;
-    matrix.runs[2].responses['defects'] = 6;
-    matrix.runs[3].responses['defects'] = 4;
+    // Fill all runs keyed by factor levels (order-independent):
+    // (250,1.5)=12  (250,2.0)=8  (270,1.5)=6  (270,2.0)=4
+    for (const run of matrix.runs) {
+      const t = run.factor_levels['temp'];
+      const s = run.factor_levels['speed'];
+      run.responses['defects'] = t === 250 ? (s === 1.5 ? 12 : 8) : (s === 1.5 ? 6 : 4);
+    }
 
     const analysis = analyzeDOE(config, matrix);
     const confirmRun = createConfirmationRun(config, { temp: 270, speed: 2.0 }, analysis);
@@ -772,6 +774,15 @@ describe('GAP 24 — DOE confirmation runs', () => {
     expect(typeof confirmRun.predicted['defects']).toBe('number');
     expect(confirmRun.status).toBe('pending');
     expect(confirmRun.id).toBeDefined();
+
+    // rc.115: prediction is the additive main-effects model at the CHOSEN
+    // levels, not the grand mean. ȳ=7.5; temp=270 mean=5; speed=2.0 mean=6:
+    //   ŷ = 7.5 + (5 − 7.5) + (6 − 7.5) = 3.5
+    expect(confirmRun.predicted['defects']).toBe(3.5);
+
+    // The worst settings predict high defects — the model differentiates.
+    const worst = createConfirmationRun(config, { temp: 250, speed: 1.5 }, analysis);
+    expect(worst.predicted['defects']).toBe(11.5); // 7.5 + (10−7.5) + (9−7.5)
   });
 });
 

@@ -427,7 +427,12 @@ describe('Real-World Scenarios', () => {
 
   it('V3: warmup adds time penalty in first 30 minutes', async () => {
     const { metrics: withWarmup } = await runSimulation({ ...TSHIRT_CONFIG, enable_warmup: true }, 42);
+    const { metrics: noWarmup } = await runSimulation({ ...TSHIRT_CONFIG, enable_warmup: false }, 42);
     expect(withWarmup.warmup_time_lost).toBeGreaterThan(0);
+    // Baseline (rc.115): without warmup there is no lost time. (A same-seed
+    // throughput comparison is NOT valid here — warmup draws shift the RNG
+    // sample path, so stochastic runs legitimately diverge either way.)
+    expect(noWarmup.warmup_time_lost).toBe(0);
   });
 
   it('V3: shared resource pool limits cross-line capacity', async () => {
