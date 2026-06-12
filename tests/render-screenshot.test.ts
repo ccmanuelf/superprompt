@@ -94,7 +94,12 @@ describe('Screenshot input validation (real function)', () => {
     expect(result.error).toContain('http');
   });
 
-  it('accepts valid https URL (may fail on chromium availability, but validates input)', async () => {
+  // Live browser launch + network fetch — inherently environment-dependent
+  // (needs a working Chromium at PUPPETEER_EXECUTABLE_PATH or /usr/bin/chromium,
+  // which CI runners don't have; the snap stub there can hang past the test
+  // timeout). Opt in with SCREENSHOT_E2E=1 locally or in the Docker container.
+  // Input validation itself is covered by the three tests above.
+  it.runIf(process.env.SCREENSHOT_E2E === '1')('accepts valid https URL (live chromium launch, opt-in)', async () => {
     const result = await takeScreenshot({ url: 'https://example.com' });
     // Either succeeds (chromium available) or fails with a puppeteer/chromium error (not an input validation error)
     if (result.error) {
