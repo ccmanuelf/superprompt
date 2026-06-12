@@ -403,9 +403,10 @@ describe('handleMessageInner — normal flow (branch F)', () => {
     });
 
     const done = run(ctx, 'hello', pc);
-    // Let the pre-router awaits (getPending, getActive, buildContext) settle
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    // Let the pre-router awaits (gates, buildContext) settle. Bounded drain
+    // instead of a fixed tick count so the test doesn't couple to the exact
+    // number of await boundaries on the path to router.sendMessage.
+    for (let i = 0; i < 50 && !resolveRouter; i++) await Promise.resolve();
 
     expect(ctx.replyWithChatAction).toHaveBeenCalledWith('typing');
     expect(vi.getTimerCount()).toBe(1); // the 4s typing refresh interval
