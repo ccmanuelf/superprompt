@@ -4,7 +4,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { getKnex } from '../db-knex.js';
-import type { SavedFSM, MachineAnalysis, StateResidence } from './models.js';
+import type { SavedFSM, MachineAnalysis } from './models.js';
 import { MFG_STATE_COLORS } from './models.js';
 
 export * from './models.js';

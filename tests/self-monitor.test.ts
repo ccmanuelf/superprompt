@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import {
   checkResponseQuality,
   detectRepetition,
-  type QualityCheck,
 } from '../src/self-monitor.js';
 import type { AIResponse } from '../src/providers/types.js';
 

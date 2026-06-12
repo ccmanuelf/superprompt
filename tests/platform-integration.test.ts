@@ -78,7 +78,7 @@ import {
 
 // Learning coach
 import {
-  initLearningTables, createPlan as createLearningPlan, getPlan as getLearningPlan,
+  initLearningTables, createPlan as createLearningPlan,
   getPlansByChat, createTopic, getTopicsByPlan,
 } from '../src/learning/db.js';
 
@@ -486,8 +486,8 @@ describe('Learning Coach — user scenario', () => {
     expect(plan.id).toBeDefined();
     expect(plan.subject).toBe('TypeScript');
 
-    const t1 = await createTopic(plan.id, 'Basic Generics', { description: 'Type parameters' });
-    const t2 = await createTopic(plan.id, 'Conditional Types', { description: 'Infer keyword' });
+    await createTopic(plan.id, 'Basic Generics', { description: 'Type parameters' });
+    await createTopic(plan.id, 'Conditional Types', { description: 'Infer keyword' });
 
     const topics = await getTopicsByPlan(plan.id);
     expect(topics).toHaveLength(2);
@@ -560,7 +560,7 @@ describe('Kanban Board — user scenario', () => {
 
   it('chat_id scoping between users', async () => {
     const card1 = await createCard('user1', 'User 1 task');
-    const card2 = await createCard('user2', 'User 2 task');
+    await createCard('user2', 'User 2 task');
 
     // Each user sees only their cards
     const u1Cards = await listAllCards('user1');

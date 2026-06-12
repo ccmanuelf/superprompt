@@ -31,22 +31,22 @@ import {
   clearSession, setAutoRoute, isAutoRouteEnabled,
   // Memories
   insertMemory, getRecentMemories, touchMemory, deleteMemory, decayMemories,
-  getMemoriesByChatId, getUnembeddedMemoryCount, getUnembeddedMemories,
-  getCompressibleMemories, getChatsWithCompressibleMemories, deleteMemories,
+  getUnembeddedMemoryCount,
+  getCompressibleMemories, deleteMemories,
   // Tasks
-  createTask, getDueTasks, updateTaskAfterRun, pauseTask, resumeTask,
+  createTask, getDueTasks, pauseTask, resumeTask,
   deleteTask, getTasksByChat, getTask,
   // Skills
-  createSkill, createSkillIfNotExists, getSkill, getSkillByName, listSkills,
+  createSkill, createSkillIfNotExists, getSkill, listSkills,
   updateSkill, deleteSkill, setActiveSkill, getActiveSkill, clearActiveSkill,
   setActiveSkillAutoTriggered, isSkillAutoTriggered, decrementSkillTurns,
   lockSkill, unlockSkill, insertSkillRevision, getSkillRevisions,
   // User Tools
   createUserTool, getUserTool, getUserToolByName, listUserTools,
-  updateUserTool, deleteUserTool, enableUserTool, disableUserTool,
-  lockUserTool, unlockUserTool, insertToolRevision, getToolRevisions,
+  deleteUserTool, enableUserTool, disableUserTool,
+  insertToolRevision, getToolRevisions,
   // Episodes
-  insertEpisode, getCompressibleMemories as _gc, closeDatabase,
+  insertEpisode, getCompressibleMemories as _gc,
   // Voice mode
   isVoiceModeEnabled, setVoiceMode,
 } from '../src/db-core.js';

@@ -11,7 +11,6 @@ import type {
   WorkCenterUtilization,
   BufferStatus,
   WIPGauge,
-  ThroughputAccounting,
 } from './models.js';
 
 // ── Re-exports ───────────────────────────────────────────────

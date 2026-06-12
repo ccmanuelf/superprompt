@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { resolve, basename } from 'node:path';
+import { resolve } from 'node:path';
 import { logger } from '../logger.js';
 import { PROJECT_ROOT } from '../config.js';
 import { parseSkillMarkdown } from './skill-parser.js';
@@ -24,11 +24,8 @@ const TOOLS_DIR = resolve(FORGE_DIR, 'tools');
  * Call after initDatabase() and initBuiltinSkills().
  */
 export async function autoImportForge(): Promise<{ skills: number; tools: number }> {
-  let skills = 0;
-  let tools = 0;
-
-  skills = await importSkills();
-  tools = await importTools();
+  const skills = await importSkills();
+  const tools = await importTools();
 
   if (skills > 0 || tools > 0) {
     logger.info({ skills, tools }, 'Auto-imported from forge/ directory');

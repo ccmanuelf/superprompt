@@ -24,7 +24,6 @@ import {
   calculateActionPriority, buildRiskMatrix, parseFmeaCsv, executeFmeaFromCsv,
   formatFmeaWorksheet, exportFmeaCsv,
   generateRiskHeatmap, generateRpnPareto, generateRpnTrend,
-  type FailureMode, type ActionItem,
 } from '../src/fmea.js';
 
 async function initTestDb(): Promise<void> {
@@ -401,7 +400,7 @@ describe('Real-World Scenarios', () => {
     const doc = await createFmeaDoc('Lifecycle Test', 'pfmea', 'Harness', 'Crimp Process');
 
     // 2. Add failure modes
-    const fm1 = await addFailureMode(doc.id, {
+    await addFailureMode(doc.id, {
       process_step: 'Wire strip', failure_mode: 'Nick in conductor',
       effect: 'Reduced current capacity', severity: 7, cause: 'Blade wear',
       occurrence: 4, detection_method: 'Visual + pull test', detection: 5,

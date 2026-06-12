@@ -4,12 +4,10 @@
 
 import { randomBytes } from 'node:crypto';
 import { getKnex } from '../db-knex.js';
-import { logger } from '../logger.js';
 
 import type {
   SequencerConfig,
   ScheduleResult,
-  ScheduleEntry,
   SavedSchedule,
   GanttData,
   RuleComparison,
@@ -144,14 +142,6 @@ export async function generateGanttChart(
 
   // Convert Gantt bars to horizontal bar chart data
   // Each machine is a Y category; bars are floating horizontal bars
-  const datasets: Array<{
-    label: string;
-    data: Array<[number, number]>;
-    backgroundColor: string[];
-    borderColor: string[];
-    borderWidth: number;
-    barPercentage: number;
-  }> = [];
 
   // Group bars by machine
   const barsByMachine = new Map<string, typeof gantt.bars>();

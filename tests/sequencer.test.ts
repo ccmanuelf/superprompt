@@ -20,10 +20,6 @@ vi.mock('../src/config.js', () => ({
 import { dispatch, compareAllRules } from '../src/sequencer/dispatching.js';
 import { runGA } from '../src/sequencer/genetic.js';
 import {
-  buildSchedule,
-  buildSingleMachineSchedule,
-  buildScheduleFromPermutation,
-  computeMetrics,
   buildGanttData,
   buildSetupMatrix,
   buildSetupMap,
@@ -41,7 +37,6 @@ import type {
   Job,
   Machine,
   SetupEntry,
-  DispatchRule,
 } from '../src/sequencer/models.js';
 import { ALL_RULES, productColor } from '../src/sequencer/models.js';
 

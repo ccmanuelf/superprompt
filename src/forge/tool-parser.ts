@@ -1,5 +1,3 @@
-import { logger } from '../logger.js';
-
 export interface ToolParameter {
   name: string;
   type: string;

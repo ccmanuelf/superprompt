@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, afterEach } from 'vitest';
+import { existsSync, rmSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 // We need to test the pack system in isolation. Since packs.ts imports from db.ts
@@ -228,6 +228,7 @@ describe('Pack Scaffold', () => {
 
     scaffoldPack('_test_scaffold', 'Test pack');
 
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional CJS require in test
     const toolFiles = require('node:fs').readdirSync(resolve(TEST_PACK_DIR, 'tools'));
     expect(toolFiles.length).toBeGreaterThan(0);
 
@@ -242,6 +243,7 @@ describe('Pack Scaffold', () => {
 
     scaffoldPack('_test_scaffold', 'Test pack');
 
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional CJS require in test
     const skillFiles = require('node:fs').readdirSync(resolve(TEST_PACK_DIR, 'skills'));
     expect(skillFiles.length).toBeGreaterThan(0);
 

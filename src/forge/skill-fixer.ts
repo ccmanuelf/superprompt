@@ -1,4 +1,4 @@
-import { getSkill, getSkillRevisions, updateSkill, insertSkillRevision, type Skill } from '../db-core.js';
+import { getSkill, getSkillRevisions, updateSkill, insertSkillRevision } from '../db-core.js';
 import { logger } from '../logger.js';
 import type { ProviderRouter } from '../providers/router.js';
 

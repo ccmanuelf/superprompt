@@ -168,7 +168,7 @@ describe('event-triggers', () => {
     });
 
     it('respects cooldown period', async () => {
-      const trigger = await createEventTrigger(CHAT_A, 'card.created', {}, 'action', 60000);
+      await createEventTrigger(CHAT_A, 'card.created', {}, 'action', 60000);
 
       const mockRouter = {
         sendMessage: vi.fn().mockResolvedValue({ text: 'ok', provider: 'claude' as const }),

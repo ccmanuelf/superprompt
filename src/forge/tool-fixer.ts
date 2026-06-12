@@ -1,4 +1,4 @@
-import { getUserTool, getToolRevisions, updateUserTool, insertToolRevision, type UserTool } from '../db-core.js';
+import { getUserTool, getToolRevisions, updateUserTool, insertToolRevision } from '../db-core.js';
 import { logger, getRecentLogs } from '../logger.js';
 import { scanToolCode } from './safety-scanner.js';
 import { loadUserTools } from './tool-registry.js';

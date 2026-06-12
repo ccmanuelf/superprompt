@@ -1,8 +1,5 @@
 import type { Tool } from 'ollama';
-import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { logger } from '../../logger.js';
-import { STORE_DIR } from '../../config.js';
 import {
   calculateDpmoMetrics,
   calculateYieldMetrics,
@@ -16,11 +13,9 @@ import {
   getSigmaProjectByName,
   getMeasurements,
   getSigmaResults,
-  deleteSigmaProject,
   formatCapabilityResult,
   generateControlChart,
   generateParetoChart,
-  generateCapabilityChart,
   generateCusumChart,
   generateEwmaChart,
   generateAttributeChart,
@@ -30,10 +25,7 @@ import {
   trendRegression,
   pChart,
   cChart,
-  xbarS,
-  type CapabilityResult,
   type ControlChartData,
-  type SpecLimits,
 } from '../../sigma.js';
 
 export const sigmaAnalysisDefinition: Tool = {
@@ -94,7 +86,7 @@ export async function sigmaAnalysis(
     lambda?: number;
     step_yields?: string;
   },
-  chatId: string,
+  _chatId: string,
 ): Promise<Record<string, unknown>> {
   try {
     switch (args.action) {

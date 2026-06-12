@@ -4,11 +4,9 @@ import {
   createControlPlan,
   getControlPlanByName,
   listControlPlans,
-  deleteControlPlan,
   addVocItem,
   getVocItems,
   addCtqItem,
-  getCtqItems,
   buildControlPlanSummary,
   formatControlPlan,
   exportControlPlanCsv,
@@ -67,7 +65,7 @@ The tool auto-generates: RPN scores, chart type recommendations, sampling strate
 
 export async function spcSetup(
   args: Record<string, unknown>,
-  chatId: string,
+  _chatId: string,
 ): Promise<Record<string, unknown>> {
   try {
     const action = args.action as string;

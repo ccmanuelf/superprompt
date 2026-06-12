@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { mkdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -136,7 +136,7 @@ describe('buildMemoryContext logic', () => {
   });
 
   it('deduplicates FTS5 + recent results', () => {
-    const id = insertMemory('chat1', 'Unique memory content here', 'semantic');
+    insertMemory('chat1', 'Unique memory content here', 'semantic');
 
     const ftsResults = searchMemories('chat1', 'Unique*', 3);
     const recentResults = getRecentMemories('chat1', 5);

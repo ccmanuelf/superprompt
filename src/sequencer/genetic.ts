@@ -54,7 +54,7 @@ export function runGA(
   // Evaluate initial population
   let fitnesses = population.map((p) => evaluateFitness(p, config, ga));
   let bestFitness = Math.min(...fitnesses);
-  let bestIdx = fitnesses.indexOf(bestFitness);
+  const bestIdx = fitnesses.indexOf(bestFitness);
   let bestPermutation = [...population[bestIdx]];
 
   const fitnessHistory: number[] = [bestFitness];
@@ -228,7 +228,7 @@ function pmxCrossover(parent1: number[], parent2: number[]): number[] {
     if (child[i] !== -1) continue;
 
     // Try parent2's value at this position
-    let val = parent2[i];
+    const val = parent2[i];
     if (!childSet.has(val)) {
       child[i] = val;
       childSet.add(val);

@@ -15,7 +15,6 @@
 import Knex from 'knex';
 import type { Knex as KnexType } from 'knex';
 import { resolve } from 'node:path';
-import { mkdirSync } from 'node:fs';
 import { logger } from './logger.js';
 
 // sqlite-vec extension — loaded into SQLite connections for vector search

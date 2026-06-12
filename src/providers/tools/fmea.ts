@@ -1,7 +1,7 @@
 import type { Tool } from 'ollama';
 import { logger } from '../../logger.js';
 import {
-  executeFmeaFromCsv, createFmeaDoc, getFmeaDocByName, listFmeaDocs, deleteFmeaDoc,
+  executeFmeaFromCsv, createFmeaDoc, getFmeaDocByName, listFmeaDocs,
   addFailureMode, getFailureModes, addAction, getActions, completeAction,
   formatFmeaWorksheet, exportFmeaCsv, buildRiskMatrix,
   generateRiskHeatmap, generateRpnPareto, generateRpnTrend,
@@ -65,7 +65,7 @@ RPN = Severity × Occurrence × Detection. Action Priority per AIAG-VDA: H/M/L.`
 
 export async function fmeaManage(
   args: Record<string, unknown>,
-  chatId: string,
+  _chatId: string,
 ): Promise<Record<string, unknown>> {
   try {
     const action = args.action as string;

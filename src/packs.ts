@@ -12,7 +12,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { resolve, basename } from 'node:path';
+import { resolve } from 'node:path';
 import { logger } from './logger.js';
 import { PROJECT_ROOT } from './config.js';
 import { parseToolMarkdown } from './forge/tool-parser.js';
@@ -427,6 +427,7 @@ function parseYamlValue(raw: string): unknown {
       .replace(/\\n/g, '\n')
       .replace(/\\t/g, '\t')
       .replace(/\\"/g, '"')
+      // eslint-disable-next-line no-control-regex -- NUL is a deliberate sentinel that cannot appear in YAML input
       .replace(/\x00BSLASH\x00/g, '\\');    // restore \\ as single \
   } else if (isSingleQuoted) {
     unquoted = raw.slice(1, -1);

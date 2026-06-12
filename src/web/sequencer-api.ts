@@ -16,7 +16,6 @@ import { parseCalcMode, buildHandlerSnapshot, maybeRecordRecent } from '../calcu
 import {
   buildGanttData,
   buildSetupMatrix,
-  computeMetrics,
   saveSchedule,
   getSchedule,
   listSchedules,

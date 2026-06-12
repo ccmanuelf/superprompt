@@ -1,5 +1,5 @@
 import type { Tool } from 'ollama';
-import { getRecentLogs, type LogEntry } from '../../logger.js';
+import { getRecentLogs } from '../../logger.js';
 
 export const readBotLogsDefinition: Tool = {
   type: 'function',

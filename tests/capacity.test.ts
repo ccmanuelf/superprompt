@@ -27,10 +27,7 @@ import {
   type CalendarConfig,
   type DemandEntry,
   type ScenarioParams,
-  type MonteCarloCapacityConfig,
   type ROIInput,
-  BOTTLENECK_THRESHOLD_CRITICAL,
-  BOTTLENECK_THRESHOLD_WARNING,
 } from '../src/capacity/analysis.js';
 import { runScenario, compareScenarios, getScenarioDefaults } from '../src/capacity/scenarios.js';
 import { runCapacityMonteCarlo, computeStats } from '../src/capacity/monte-carlo.js';

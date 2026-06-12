@@ -333,7 +333,7 @@ async function main(): Promise<void> {
         const userTools = await (await import('./db-core.js')).listUserTools();
         for (const tool of userTools) {
           if (!tool.enabled) continue;
-          const config = JSON.parse(tool.config);
+          JSON.parse(tool.config); // parse kept for its throw-on-invalid-JSON guard; result unused
           toolsClient.registerUserTool(
             tool.name,
             tool.description,

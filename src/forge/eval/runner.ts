@@ -30,7 +30,6 @@ import {
 import {
   type EvalSessionRequest,
   type EvalConfiguration,
-  type EvalRun,
   type GraderResult,
   DEFAULT_MAX_EVAL_CALLS_PER_RUN,
   DEFAULT_RUNS_PER_CONFIG,

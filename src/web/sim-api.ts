@@ -21,13 +21,7 @@ import {
   deleteScenario,
   saveSimResult,
   getSimResults,
-  generateUtilizationChart,
-  generateThroughputChart,
-  generateWipChart,
-  generateMonteCarloChart,
-  formatSimulationResults,
   type SimulationConfig,
-  type SimulationResults,
 } from '../simulation/index.js';
 import {
   isMiniZincAvailable,

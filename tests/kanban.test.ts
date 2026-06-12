@@ -6,25 +6,11 @@ import { tmpdir } from 'node:os';
 
 // Import REAL functions from kanban.ts
 import {
-  createCard,
-  getCard,
-  getCardByPrefix,
-  listCards,
-  listAllCards,
-  moveCard,
-  assignCard,
-  updateCard,
-  deleteCard,
-  getBoardSummary,
-  getBotAssignedCards,
-  getChatsWithBotTasks,
   formatCard,
-  formatBoard,
   isKanbanAction,
   parseKanbanAction,
   stripKanbanBlock,
   parseDateHint,
-  initKanbanTable,
   type KanbanCard,
 } from '../src/kanban.js';
 

@@ -10,7 +10,7 @@ import {
   loadUserTools,
   type ToolEntry,
 } from '../../forge/tool-registry.js';
-import type { ToolProvider, ToolPolicy } from '../../core/interfaces.js';
+import type { ToolProvider } from '../../core/interfaces.js';
 import { registerToolPolicy } from '../../policy-engine.js';
 
 import { webSearchDefinition, webSearch } from './web-search.js';

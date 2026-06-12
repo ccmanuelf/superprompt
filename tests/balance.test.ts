@@ -648,7 +648,6 @@ describe('Formatting', () => {
   });
 
   it('shows overload warning when stations exceed takt time', () => {
-    const tasks = parseBalanceCsv(CONSTRAINED_CSV);
     // T1 (40s, station 1) + T3 (25s, no constraint) — T3 fits in station 1 (40+25=65 > 60 → no)
     // Use tight takt to force overloading with constraints
     const overloadCsv = `task_id,task_name,time_seconds,predecessors,station_requirement

@@ -385,7 +385,7 @@ export async function handleProposalResponse(chatId: string, approved: boolean):
   }
 
   if (approved) {
-    const skillId = await createAutoSkill(proposal);
+    await createAutoSkill(proposal);
     await updateProposalStatus(proposal.id, 'approved');
     return [
       `[EN] Skill "${proposal.name}" created! It will activate when similar tasks are detected.`,

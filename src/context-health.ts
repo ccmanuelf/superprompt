@@ -14,8 +14,6 @@
  * 4. Response quality trend (declining scores over recent messages)
  */
 
-import { logger } from './logger.js';
-
 // ── Types ────────────────────────────────────────────────────
 
 export type HealthStatus = 'green' | 'yellow' | 'red';

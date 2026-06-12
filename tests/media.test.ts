@@ -204,6 +204,7 @@ describe('cleanupOldUploads', () => {
     writeFileSync(filePath, 'old');
 
     // Set file mtime to 2 hours ago using utimesSync
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional CJS require in test
     const { utimesSync } = require('node:fs');
     const twoHoursAgo = new Date(Date.now() - 2 * 3600_000);
     utimesSync(filePath, twoHoursAgo, twoHoursAgo);

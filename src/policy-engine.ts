@@ -11,7 +11,7 @@
 
 import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
-import type { ToolPolicy, PolicyDecision, ToolEntry } from './core/interfaces.js';
+import type { ToolPolicy, PolicyDecision } from './core/interfaces.js';
 import type { TableInitializer } from './core/interfaces.js';
 
 // ── Table Initialization ─────────────────────────────────────

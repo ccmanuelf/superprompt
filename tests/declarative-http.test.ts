@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { executeDeclarativeHttp } from '../src/forge/declarative-http.js';
 import type { DeclarativeHttpEndpoint } from '../src/forge/tool-parser.js';
 
@@ -23,6 +23,7 @@ describe('executeDeclarativeHttp', () => {
     const endpoint: DeclarativeHttpEndpoint = {
       method: 'GET',
       url: 'https://api.example.com/weather',
+      // eslint-disable-next-line no-template-curly-in-string -- literal template placeholder is intentional
       query: { q: '${city}', key: '${API_KEY}' },
     };
 
@@ -92,6 +93,7 @@ describe('executeDeclarativeHttp', () => {
     const endpoint: DeclarativeHttpEndpoint = {
       method: 'POST',
       url: 'https://api.example.com/data',
+      // eslint-disable-next-line no-template-curly-in-string -- literal template placeholder is intentional
       body: { message: '${text}' } as Record<string, unknown>,
     };
 

@@ -20,7 +20,7 @@ const REPO_ROOT = resolve(here, '..');
 
 describe('rebrand audit (rc.85): no residual "clauded" product-brand references', () => {
   it('scripts/rebrand-audit.sh exits 0', () => {
-    let stdout = '';
+    let stdout: string;
     let stderr = '';
     let exitCode = 0;
     try {

@@ -83,6 +83,7 @@ describe('exportToolToMarkdown', () => {
         endpoint: {
           method: 'GET',
           url: 'https://api.weather.com/v1',
+          // eslint-disable-next-line no-template-curly-in-string -- literal template placeholder is intentional
           query: { q: '${city}', key: '${WEATHER_API_KEY}' },
           response_path: 'current.text',
         },
@@ -102,7 +103,9 @@ describe('exportToolToMarkdown', () => {
     expect(content).toContain('type: declarative_http');
     expect(content).toContain('method: GET');
     expect(content).toContain('url: "https://api.weather.com/v1"');
+    // eslint-disable-next-line no-template-curly-in-string -- literal template placeholder is intentional
     expect(content).toContain('q: "${city}"');
+    // eslint-disable-next-line no-template-curly-in-string -- literal template placeholder is intentional
     expect(content).toContain('key: "${WEATHER_API_KEY}"');
     expect(content).toContain('response_path: "current.text"');
     expect(content).toContain('- name: city');
@@ -152,6 +155,7 @@ describe('exportToolToMarkdown', () => {
         endpoint: {
           method: 'GET',
           url: 'https://api.example.com/jokes',
+          // eslint-disable-next-line no-template-curly-in-string -- literal template placeholder is intentional
           query: { category: '${category}' },
           response_path: 'joke.text',
         },

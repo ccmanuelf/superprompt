@@ -12,7 +12,7 @@
  */
 
 import type { Knex } from 'knex';
-import { getDbDriver, type DbDriver } from './db-knex.js';
+import { getDbDriver } from './db-knex.js';
 import { logger } from './logger.js';
 
 /**

@@ -57,7 +57,7 @@ export const ORCHESTRATION_PATTERNS = [
   // Sequential "and then" / "and after"
   /\b(and then|and after that|and afterwards|and finally)\b/i,
   // Numbered steps in the request: "1. X 2. Y" or "1) X 2) Y" or "step 1: X step 2: Y"
-  /(^|\s)(1[\.\):]|step\s*1\b).{5,}(2[\.\):]|step\s*2\b)/im,
+  /(^|\s)(1[.):]|step\s*1\b).{5,}(2[.):]|step\s*2\b)/im,
   // Multiple imperatives connected by commas/and: "research X, compare Y, and create Z"
   /\b(research|find|search|look up|gather)\b.{5,}\b(compare|analyze|evaluate|assess)\b.{5,}\b(create|write|draft|generate|build|make|produce)\b/i,
 ];

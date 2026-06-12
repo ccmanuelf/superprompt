@@ -4,7 +4,6 @@
 
 import { randomBytes } from 'node:crypto';
 import { getKnex } from '../db-knex.js';
-import { logger } from '../logger.js';
 
 import type {
   VSMConfig,

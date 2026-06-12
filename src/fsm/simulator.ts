@@ -7,16 +7,13 @@
 
 import type {
   FSMConfig,
-  FSMDefinition,
   FSMEvent,
   FSMSimulationState,
   MachineState,
   StateHistoryEntry,
-  EventLogEntry,
   FSMAnalysis,
   MachineAnalysis,
   StateResidence,
-  SystemMetrics,
 } from './models.js';
 import { validateFSM } from './validation.js';
 

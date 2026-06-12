@@ -6,7 +6,7 @@
 import { logger } from '../logger.js';
 import {
   createSession as createDbSession, updateSession, addDailyTime,
-  getTopicsByPlan, getPendingTopics, updateTopic, getPlan,
+  getTopicsByPlan, updateTopic, getPlan,
   type LearningPlan, type LearningTopic, type SessionType,
 } from './db.js';
 import { buildPersonaPrompt } from './personas.js';
@@ -79,7 +79,7 @@ export async function startSession(
   const type = options?.type ?? 'lesson';
 
   // Select topic
-  let topic: LearningTopic | null = null;
+  let topic: LearningTopic | null;
   if (options?.topicId) {
     topic = topics.find((t) => t.id === options.topicId) ?? null;
   } else if (type === 'review') {

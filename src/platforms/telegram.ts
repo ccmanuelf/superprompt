@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { writeFileSync, mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Bot, Context, InputFile } from 'grammy';
@@ -2535,7 +2534,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const { session, openingPrompt } = await pc.learning.startSession(chatId, plan);
+        const { openingPrompt } = await pc.learning.startSession(chatId, plan);
 
         // Send opening prompt through AI for a natural start
         await ctx.replyWithChatAction('typing');
@@ -2564,7 +2563,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           return;
         }
 
-        const { session, openingPrompt } = await pc.learning.startSession(chatId, plan, { type: 'review' });
+        const { openingPrompt } = await pc.learning.startSession(chatId, plan, { type: 'review' });
 
         await ctx.replyWithChatAction('typing');
         const sessionPrompt = await pc.learning.getSessionSystemPrompt(chatId);
@@ -2657,7 +2656,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
           // Start assessment session
           const topic = await pc.learning.getTopicByTitle(plan.id, result.topicTitle);
           const assessPrompt = await pc.learning.buildAssessmentPrompt(plan.subject, result.topicTitle, topic?.description ?? null);
-          const { session } = await pc.learning.startSession(chatId, plan, {
+          await pc.learning.startSession(chatId, plan, {
             topicId: topic?.id,
             type: 'assessment',
             assessmentTarget: result.topicTitle,
@@ -3058,7 +3057,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         return;
       }
 
-      default:
+      default: {
         const webPort = config.VOICE_WEB_PORT || 3030;
         await ctx.reply(
           '<b>Production Line Simulator:</b>\n\n' +
@@ -3068,6 +3067,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
             'Or ask the AI: "Simulate a T-shirt line with 9 operations"',
           { parse_mode: 'HTML' },
         );
+      }
     }
   });
 
@@ -3268,7 +3268,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'status': {
         const projectName = parts.slice(1).join(' ');
         if (!projectName) { await ctx.reply('Usage: /inventory status &lt;name&gt;', { parse_mode: 'HTML' }); return; }
-        const { getInventoryProjectByName, getInventoryItems, getInventoryResults, formatReplenishmentPlan } = await import('../inventory.js');
+        const { getInventoryProjectByName, getInventoryResults, formatReplenishmentPlan } = await import('../inventory.js');
         const project = await getInventoryProjectByName(projectName);
         if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
         const results = await getInventoryResults(project.id);
@@ -3331,7 +3331,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       case 'status': {
         const projectName = parts.slice(1).join(' ');
         if (!projectName) { await ctx.reply('Usage: /sigma status &lt;project name&gt;', { parse_mode: 'HTML' }); return; }
-        const { getSigmaProjectByName, getMeasurements, getSigmaResults, formatCapabilityResult } = await import('../sigma.js');
+        const { getSigmaProjectByName, getSigmaResults, formatCapabilityResult } = await import('../sigma.js');
         const project = await getSigmaProjectByName(projectName);
         if (!project) { await ctx.reply(`Project "${projectName}" not found.`); return; }
         const results = await getSigmaResults(project.id);
@@ -3473,7 +3473,6 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
   bot.command('compress', async (ctx) => {
     if (!isAuthorised(ctx.chat.id)) return;
-    const chatId = String(ctx.chat.id);
 
     // Get the message being replied to, or ask the AI to compress its last response
     const replyText = ctx.message?.reply_to_message && 'text' in ctx.message.reply_to_message
@@ -3963,7 +3962,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         const descMatch = args.match(/"([^"]+)"|'([^']+)'/);
         const description = descMatch ? (descMatch[1] || descMatch[2]) : `${name} domain tools`;
         try {
-          const path = scaffoldPack(name, description);
+          scaffoldPack(name, description);
           await ctx.reply(
             `Pack scaffolded: <code>packs/${name}/</code>\n\n` +
               'Next steps:\n' +

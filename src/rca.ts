@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { getKnex } from './db-knex.js';
-import { logger } from './logger.js';
 import { STORE_DIR } from './config.js';
 import type { TableInitializer } from './core/interfaces.js';
 
@@ -157,8 +156,7 @@ export async function build5Whys(
 
 // ── Ishikawa / Fishbone ──────────────────────────────────────
 
-const FISHBONE_6M = ['Man', 'Machine', 'Method', 'Material', 'Measurement', 'Environment'] as const;
-export type FishboneCategory = typeof FISHBONE_6M[number];
+export type FishboneCategory = 'Man' | 'Machine' | 'Method' | 'Material' | 'Measurement' | 'Environment';
 
 /**
  * Build an Ishikawa/Fishbone diagram structure.
@@ -344,7 +342,6 @@ function mermaidFishbone(doc: RcaDocument, nodes: RcaNode[]): string {
 function mermaidPdca(nodes: RcaNode[]): string {
   const lines = ['graph TD'];
   const phases = ['plan', 'do', 'check', 'act'];
-  const phaseEmoji: Record<string, string> = { plan: '📋', do: '⚙️', check: '🔍', act: '✅' };
 
   lines.push('  PLAN["📋 PLAN"] --> DO["⚙️ DO"]');
   lines.push('  DO --> CHECK["🔍 CHECK"]');

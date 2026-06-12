@@ -17,7 +17,6 @@ import {
   analyzeCapacity,
   runScenario,
   compareScenarios,
-  getScenarioDefaults,
   runCapacityMonteCarlo,
   compareROIs,
   savePlan,

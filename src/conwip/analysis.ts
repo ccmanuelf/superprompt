@@ -279,13 +279,13 @@ function buildHeijunkaBox(config: HeijunkaConfig): HeijunkaBox {
   // Sort by target (highest first) for greedy assignment
   productSlotCounts.sort((a, b) => b.targetSlots - a.targetSlots);
 
-  // Build assignment using interleaving pattern
+  // Build assignment using interleaving pattern. Over-assignment can't occur:
+  // positions stay within [0, totalSlots) and only unassigned slots are filled.
   const slotAssignments: Array<{ product: ProductType; shift: number; slot: number }> = [];
-  let slotIdx = 0;
 
   for (const psc of productSlotCounts) {
     const interval = psc.targetSlots > 0 ? totalSlots / psc.targetSlots : totalSlots + 1;
-    for (let i = 0; i < psc.targetSlots && slotIdx < totalSlots; i++) {
+    for (let i = 0; i < psc.targetSlots; i++) {
       const targetPos = Math.round(i * interval) % totalSlots;
       // Find nearest unassigned slot
       let pos = targetPos;

@@ -8,8 +8,6 @@ import type {
   SavedDOE,
   ANOVATable,
   MainEffect,
-  InteractionEffect,
-  ExperimentMatrix,
 } from './models.js';
 
 export * from './models.js';

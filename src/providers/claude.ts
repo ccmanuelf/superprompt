@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { AIProvider, AIResponse, SendMessageParams } from './types.js';
-import { config, PROJECT_ROOT } from '../config.js';
+import { PROJECT_ROOT } from '../config.js';
 import { logger } from '../logger.js';
 import { getClaudeTimeoutMs, buildClaudeTimeoutError } from '../circuit-breaker.js';
 

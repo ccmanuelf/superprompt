@@ -21,7 +21,7 @@
 import { randomUUID } from 'node:crypto';
 import { getKnex } from '../db-knex.js';
 import { logger } from '../logger.js';
-import { parseFile, type MappedRow } from './parser.js';
+import { parseFile } from './parser.js';
 import {
   validateRoster,
   validateBadgeRecords,

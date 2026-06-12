@@ -5,7 +5,7 @@ import {
   build5Whys, buildFishbone, buildPdca, buildFaultTree, buildMindMap,
   generateMermaidSyntax, formatRcaDocument, generateA3Pdf,
   render5WhysPng, renderFishbonePng, renderPdcaPng, renderFtaPng, renderMindMapPng,
-  type RcaMethod, type FishboneCategory, type PdcaCycle, type A3Report,
+  type FishboneCategory, type PdcaCycle, type A3Report,
 } from '../../rca.js';
 
 export const rcaManageDefinition: Tool = {
@@ -56,7 +56,7 @@ Actions:
 
 export async function rcaManage(
   args: Record<string, unknown>,
-  chatId: string,
+  _chatId: string,
 ): Promise<Record<string, unknown>> {
   try {
     const action = args.action as string;
