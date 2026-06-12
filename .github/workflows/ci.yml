@@ -30,11 +30,13 @@ jobs:
       - name: Lint
         run: npm run lint --if-present
 
-      - name: Test
-        run: npx vitest run
-
+      # Build before tests: sa3/ipc integration tests fork real child
+      # processes from dist/, and the smoke test imports dist/ directly.
       - name: Build
         run: npm run build
+
+      - name: Test
+        run: npx vitest run
 
       - name: Dist smoke test
         run: npm run smoke
