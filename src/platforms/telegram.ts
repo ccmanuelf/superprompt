@@ -290,7 +290,7 @@ export async function handleMessageInner(
       try {
         const healResult = await pc.autoSkills.heal(
           currentSkillForHealing,
-          `Low quality response (score: ${quality.score ?? 'unknown'}). Issues: ${quality.issues?.map((i: any) => i.message).join(', ') || 'none detected'}`,
+          `Low quality response (score: ${quality.score ?? 'unknown'}). Issues: ${quality.issues?.map((i) => i.message).join(', ') || 'none detected'}`,
           `User asked: "${rawText}"\nAI responded: "${response.text?.slice(0, 500) || '(empty)'}"`,
           pc.router,
           chatId,
@@ -301,6 +301,18 @@ export async function handleMessageInner(
       } catch (err) {
         logger.debug({ err }, 'Skill self-healing skipped (non-blocking)');
       }
+    }
+
+    // 4b2. Capture a known-good use as a replay case for the heal validation gate (A1).
+    if (currentSkillForHealing && quality.passed) {
+      pc.autoSkills
+        .captureSuccessfulUse({
+          skill: currentSkillForHealing,
+          userMessage: rawText,
+          responseText: response.text ?? '',
+          qualityScore: quality.score ?? 80,
+        })
+        .catch((err) => logger.debug({ err }, 'Eval-case capture skipped (non-blocking)'));
     }
 
     // 4c. Auto-skill detection for single-turn tool chains (3+ distinct tools)

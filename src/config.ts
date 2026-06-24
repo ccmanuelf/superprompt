@@ -39,6 +39,10 @@ export const config = {
   // .env to lock to the default provider unconditionally.
   AI_PROVIDER: (env.AI_PROVIDER || 'ollama') as 'claude' | 'ollama',
   AUTO_ROUTE: env.AUTO_ROUTE !== 'false',
+  // Skill self-healing validation gate: when on (default), the gate adds a
+  // Claude LLM-judge signal on top of the in-process self-monitor floor.
+  // Set HEAL_GATE_GRADER=false to gate on self-monitor alone (zero LLM cost).
+  HEAL_GATE_GRADER: env.HEAL_GATE_GRADER !== 'false',
 
   // Ollama
   OLLAMA_HOST: env.OLLAMA_HOST || 'http://localhost:11434',

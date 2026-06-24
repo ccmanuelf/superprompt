@@ -282,6 +282,18 @@ async function handleMessageInner(
       }
     }
 
+    // 2b2. Capture a known-good use as a replay case for the heal validation gate (A1).
+    if (currentSkillForHealing && quality.passed) {
+      ctx.autoSkills
+        .captureSuccessfulUse({
+          skill: currentSkillForHealing,
+          userMessage: body,
+          responseText: response.text ?? '',
+          qualityScore: quality.score ?? 80,
+        })
+        .catch((err) => logger.debug({ err, roomId }, 'Eval-case capture skipped (non-blocking)'));
+    }
+
     // 2c. Auto-skill detection for single-turn tool chains (3+ distinct tools)
     // rc.70: skip failed workflows — max iterations or 2+ tool errors.
     const workflowFailed = response.hitMaxIterations || (response.toolErrorCount ?? 0) >= 2;

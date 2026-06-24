@@ -14,6 +14,9 @@
 import { randomBytes } from 'node:crypto';
 import { getKnex } from './db-knex.js';
 import { logger } from './logger.js';
+import { config } from './config.js';
+import { checkResponseQuality } from './self-monitor.js';
+import { ClaudeProvider } from './providers/claude.js';
 import type { ProviderRouter } from './providers/router.js';
 import type { StepResult } from './orchestrator.js';
 import type { TableInitializer } from './core/interfaces.js';
@@ -93,6 +96,20 @@ export async function initAutoSkillsTables(): Promise<void> {
       t.index(['status']);
     });
   }
+
+  if (!(await db.schema.hasTable('skill_eval_cases'))) {
+    await db.schema.createTable('skill_eval_cases', (t) => {
+      t.increments('id').primary();
+      t.string('skill_id').notNullable();
+      t.text('user_message').notNullable();
+      t.text('context_summary').nullable();
+      t.integer('expected_signal').notNullable();
+      t.string('split').notNullable(); // 'held_in' | 'held_out'
+      t.bigInteger('created_at').notNullable();
+      t.foreign('skill_id').references('skills.id').onDelete('CASCADE');
+      t.index(['skill_id', 'split']);
+    });
+  }
 }
 
 export const autoSkillsTableInit: TableInitializer = {
@@ -119,6 +136,85 @@ export async function getSkillTriggersForSkill(skillId: string): Promise<Array<{
   return db('skill_triggers').where({ skill_id: skillId }).select('pattern', 'mode');
 }
 
+// ── Eval cases (replay set for the self-healing validation gate) ──
+// Recorded examples of the skill working. A heal candidate is replayed against
+// these before promotion. Capped per (skill, split) to bound replay cost.
+
+/** Max recorded cases per split per skill — FIFO bound on replay cost. */
+export const MAX_EVAL_CASES_PER_SPLIT = 10;
+
+export interface SkillEvalCase {
+  id: number;
+  skill_id: string;
+  user_message: string;
+  context_summary: string;
+  expected_signal: number;
+  split: 'held_in' | 'held_out';
+  created_at: number;
+}
+
+/** Record one replay case, evicting the oldest in its split past the cap. */
+export async function recordSkillEvalCase(c: {
+  skillId: string;
+  userMessage: string;
+  contextSummary: string;
+  qualityScore: number;
+  split: 'held_in' | 'held_out';
+}): Promise<void> {
+  const db = getKnex();
+  await db('skill_eval_cases').insert({
+    skill_id: c.skillId,
+    user_message: c.userMessage,
+    context_summary: c.contextSummary,
+    expected_signal: c.qualityScore,
+    split: c.split,
+    created_at: Date.now(),
+  });
+  const rows = await db('skill_eval_cases')
+    .where({ skill_id: c.skillId, split: c.split })
+    .orderBy('id', 'asc')
+    .select('id');
+  if (rows.length > MAX_EVAL_CASES_PER_SPLIT) {
+    const evict = rows.slice(0, rows.length - MAX_EVAL_CASES_PER_SPLIT).map((r) => r.id);
+    await db('skill_eval_cases').whereIn('id', evict).del();
+  }
+}
+
+/** All recorded cases for a skill, oldest first. */
+export async function getSkillEvalCases(skillId: string): Promise<SkillEvalCase[]> {
+  const db = getKnex();
+  return db('skill_eval_cases')
+    .where({ skill_id: skillId })
+    .orderBy('id', 'asc')
+    .select('id', 'skill_id', 'user_message', 'context_summary', 'expected_signal', 'split', 'created_at');
+}
+
+/**
+ * Capture a known-good interaction as a replay case. Platform-neutral so both
+ * Telegram and Matrix call it with one line at their post-response success seam.
+ * Only auto-generated skills are healed, so only they accrue a replay set; the
+ * first good use seeds held_in, later ones fill held_out (the regression guard).
+ */
+export async function captureSuccessfulUse(params: {
+  skill: Skill;
+  userMessage: string;
+  responseText: string;
+  qualityScore: number;
+}): Promise<void> {
+  const { skill, userMessage, responseText, qualityScore } = params;
+  if (skill.is_builtin || !skill.id.startsWith('auto-')) return;
+  if (qualityScore < MIN_QUALITY_SCORE) return; // a gap to fix, not an example to keep
+  const existing = await getSkillEvalCases(skill.id);
+  const split: 'held_in' | 'held_out' = existing.some((c) => c.split === 'held_in') ? 'held_out' : 'held_in';
+  await recordSkillEvalCase({
+    skillId: skill.id,
+    userMessage,
+    contextSummary: responseText.slice(0, 500),
+    qualityScore,
+    split,
+  });
+}
+
 export async function insertSkillProposal(proposal: SkillProposal): Promise<void> {
   const db = getKnex();
   await db('skill_proposals').insert({
@@ -136,12 +232,26 @@ export async function insertSkillProposal(proposal: SkillProposal): Promise<void
   });
 }
 
+interface SkillProposalRow {
+  id: string;
+  chat_id: string;
+  proposed_name: string;
+  proposed_description: string;
+  proposed_prompt: string;
+  proposed_tools: string | null;
+  proposed_triggers: string | null;
+  source_type: string;
+  source_summary: string;
+  created_at: number;
+  status: string;
+}
+
 export async function getPendingProposal(chatId: string): Promise<SkillProposal | null> {
   const db = getKnex();
-  const row = await db('skill_proposals')
+  const row = (await db('skill_proposals')
     .where({ chat_id: chatId, status: 'pending' })
     .orderBy('created_at', 'desc')
-    .first() as any;
+    .first()) as SkillProposalRow | undefined;
   if (!row) return null;
   return {
     id: row.id,
@@ -512,11 +622,192 @@ export function shouldHealSkill(
   return false;
 }
 
+/** Mean quality scores for a candidate/current prompt on each replay split. */
+export interface HealScores {
+  heldIn: number[];
+  heldOut: number[];
+}
+
+/** Outcome of the non-regression gate for one heal attempt. */
+export interface HealAcceptance {
+  promote: boolean;
+  deltaIn: number;
+  deltaOut: number;
+  reason: string;
+}
+
+/** mean(candidate) − mean(current); 0 if either side has no cases (no evidence). */
+function splitDelta(current: number[], candidate: number[]): number {
+  if (current.length === 0 || candidate.length === 0) return 0;
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  return mean(candidate) - mean(current);
+}
+
 /**
- * Heal a skill by patching its system prompt based on what went wrong.
- * Uses AI self-reflection to improve the skill instructions.
+ * Self-Harness non-regression rule (paper 2606.09498): a healed candidate
+ * prompt is promoted only if it does not regress either split and improves at
+ * least one: Δ_in ≥ 0 ∧ Δ_out ≥ 0 ∧ max(Δ_in, Δ_out) > 0. An empty split
+ * contributes Δ = 0 — it can neither block nor justify a promotion.
+ */
+export function evaluateHealAcceptance(current: HealScores, candidate: HealScores): HealAcceptance {
+  const deltaIn = splitDelta(current.heldIn, candidate.heldIn);
+  const deltaOut = splitDelta(current.heldOut, candidate.heldOut);
+  const promote = deltaIn >= 0 && deltaOut >= 0 && Math.max(deltaIn, deltaOut) > 0;
+  const reason = promote
+    ? `promote: Δ_in=${deltaIn}, Δ_out=${deltaOut}`
+    : `reject: Δ_in=${deltaIn}, Δ_out=${deltaOut} (rule: Δ_in≥0 ∧ Δ_out≥0 ∧ max>0)`;
+  return { promote, deltaIn, deltaOut, reason };
+}
+
+/** Scores a response generated under `prompt` for `userMessage` (0–100). */
+export type ReplayScorer = (prompt: string, userMessage: string) => Promise<number>;
+
+export interface HealGateResult {
+  promote: boolean;
+  acceptance: HealAcceptance;
+}
+
+async function scoreCases(prompt: string, cases: SkillEvalCase[], scorer: ReplayScorer): Promise<number[]> {
+  const scores: number[] = [];
+  for (const c of cases) scores.push(await scorer(prompt, c.user_message));
+  return scores;
+}
+
+/**
+ * The validation gate: replay the recorded cases under the current and candidate
+ * prompts, apply the non-regression rule, and promote the candidate only if it
+ * passes. Persists a structured insight note on BOTH promote and reject (A3) so
+ * later heals and the stop-ceiling (A4) can read why prior attempts went the way
+ * they did. With no eval coverage, the heal cannot be verified, so it is refused
+ * rather than shipped blind.
+ */
+export async function gateHealCandidate(
+  skill: Skill,
+  candidatePrompt: string,
+  issue: string,
+  scorer: ReplayScorer,
+): Promise<HealGateResult> {
+  const cases = await getSkillEvalCases(skill.id);
+  if (cases.length === 0) {
+    return {
+      promote: false,
+      acceptance: { promote: false, deltaIn: 0, deltaOut: 0, reason: 'reject: no eval cases — heal cannot be verified (ungated)' },
+    };
+  }
+  const heldIn = cases.filter((c) => c.split === 'held_in');
+  const heldOut = cases.filter((c) => c.split === 'held_out');
+  const current: HealScores = {
+    heldIn: await scoreCases(skill.system_prompt, heldIn, scorer),
+    heldOut: await scoreCases(skill.system_prompt, heldOut, scorer),
+  };
+  const candidate: HealScores = {
+    heldIn: await scoreCases(candidatePrompt, heldIn, scorer),
+    heldOut: await scoreCases(candidatePrompt, heldOut, scorer),
+  };
+  const acceptance = evaluateHealAcceptance(current, candidate);
+
+  const db = getKnex();
+  const now = Date.now();
+  if (acceptance.promote) {
+    await db('skills').where({ id: skill.id }).update({ system_prompt: candidatePrompt, updated_at: now });
+  }
+  await db('skill_revisions').insert({
+    skill_id: skill.id,
+    system_prompt: acceptance.promote ? candidatePrompt : skill.system_prompt,
+    revision_note: `${acceptance.reason} | issue: ${issue.slice(0, 160)}`,
+    created_at: now,
+  });
+  return { promote: acceptance.promote, acceptance };
+}
+
+/** Consecutive gate rejections before auto-healing pauses for manual review. */
+export const MAX_CONSECUTIVE_HEAL_REJECTS = 3;
+
+/**
+ * Number of consecutive gate rejections at the head of the skill's revision log
+ * (most recent first), stopping at the first promotion. A4's stop signal: it
+ * reads the structured notes A3 persists, so a skill whose candidates keep
+ * losing is detected and paused rather than re-drafted forever.
+ */
+export async function countConsecutiveHealRejections(skillId: string): Promise<number> {
+  const db = getKnex();
+  const rows = await db('skill_revisions')
+    .where({ skill_id: skillId })
+    .orderBy('id', 'desc')
+    .select('revision_note');
+  let count = 0;
+  for (const r of rows) {
+    if (/^reject/i.test(String(r.revision_note ?? '').trim())) count++;
+    else break;
+  }
+  return count;
+}
+
+const JUDGE_SYSTEM =
+  'You are a strict evaluator. Given a user REQUEST and an assistant RESPONSE, '
+  + 'rate how well the response satisfies the request. Reply with JSON only: '
+  + '{"score": <integer 0-100>} where 100 is a perfect answer and 0 is useless or wrong.';
+
+/** Extract a 0–100 score from the judge reply; null if unparseable. */
+function parseJudgeScore(text: string): number | null {
+  if (!text) return null;
+  let body = text.trim();
+  const fence = body.match(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/);
+  if (fence) body = fence[1].trim();
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (typeof parsed === 'object' && parsed !== null && 'score' in parsed) {
+      const s = Number((parsed as { score: unknown }).score);
+      if (Number.isFinite(s)) return Math.max(0, Math.min(100, s));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Production scorer for the heal gate. Generates a response under the given
+ * prompt (the router picks the provider — usually the free local model),
+ * applies self-monitor as a hard floor (an obviously-broken response scores low
+ * regardless of the judge), then — unless HEAL_GATE_GRADER is off — adds a
+ * Claude LLM-judge that rates 0–100 how well the response served the request.
+ */
+export function makeDefaultScorer(router: ProviderRouter, chatId: string): ReplayScorer {
+  const judge = new ClaudeProvider();
+  return async (prompt: string, userMessage: string): Promise<number> => {
+    const gen = await router.sendMessage({
+      message: userMessage,
+      chatId,
+      systemPrompt: prompt,
+      skipTools: true,
+      skipAutoTrigger: true,
+      skipTurnLog: true,
+    });
+    const quality = checkResponseQuality(gen, userMessage);
+    if (!quality.passed) return Math.max(0, quality.score); // broken — floor it, skip the judge
+    if (!config.HEAL_GATE_GRADER) return Math.max(0, quality.score);
+    try {
+      const judged = await judge.sendMessage({
+        message: `REQUEST:\n${userMessage}\n\nRESPONSE:\n${gen.text ?? ''}`,
+        chatId,
+        systemPrompt: JUDGE_SYSTEM,
+        skipTools: true,
+      });
+      return parseJudgeScore(judged.text ?? '') ?? Math.max(0, quality.score);
+    } catch (err) {
+      logger.debug({ err, skillId: chatId }, 'Heal-gate judge failed — using self-monitor score');
+      return Math.max(0, quality.score);
+    }
+  };
+}
+
+/**
+ * Heal a skill: draft a candidate prompt, then promote it ONLY if it passes the
+ * validation gate (replay recorded cases under the non-regression rule). The
+ * `scorer` seam is injectable for tests; production uses makeDefaultScorer.
  *
- * This is the closed loop: use → find gap → patch → next use is better.
+ * This is the closed loop: use → find gap → draft → verify → promote-or-reject.
  */
 export async function healSkill(
   skill: Skill,
@@ -524,7 +815,24 @@ export async function healSkill(
   conversationContext: string,
   router: ProviderRouter,
   chatId: string,
+  scorer?: ReplayScorer,
 ): Promise<{ patched: boolean; summary: string }> {
+  // A4 guard 1: nothing to verify against yet — don't draft a candidate we can't gate.
+  const evalCases = await getSkillEvalCases(skill.id);
+  if (evalCases.length === 0) {
+    logger.debug({ skillId: skill.id }, 'Heal skipped — no eval cases to verify against yet');
+    return { patched: false, summary: '' };
+  }
+  // A4 guard 2: candidates keep losing — stop drafting and flag for manual review.
+  const consecutiveRejects = await countConsecutiveHealRejections(skill.id);
+  if (consecutiveRejects >= MAX_CONSECUTIVE_HEAL_REJECTS) {
+    logger.warn(
+      { skillId: skill.id, skillName: skill.name, consecutiveRejects },
+      'Heal paused — too many consecutive rejected candidates; manual review suggested',
+    );
+    return { patched: false, summary: '' };
+  }
+
   const metaprompt = `You are improving an existing skill that had an issue during use.
 
 CURRENT SKILL: "${skill.name}"
@@ -558,23 +866,18 @@ Return ONLY the updated system prompt text (no JSON wrapper, no markdown code bl
     }
 
     const newPrompt = response.text.trim();
-    const db = getKnex();
-    const now = Date.now();
 
-    // Update the skill
-    await db('skills').where({ id: skill.id }).update({ system_prompt: newPrompt, updated_at: now });
-
-    // Store revision
-    await db('skill_revisions').insert({
-      skill_id: skill.id, system_prompt: newPrompt,
-      revision_note: `Self-healed: ${issue.slice(0, 200)}`, created_at: now,
-    });
+    // Validation gate: replay recorded cases and promote only on non-regression.
+    const gate = await gateHealCandidate(skill, newPrompt, issue, scorer ?? makeDefaultScorer(router, chatId));
 
     logger.info(
-      { skillId: skill.id, skillName: skill.name, issue: issue.slice(0, 100) },
-      'Skill self-healed',
+      { skillId: skill.id, skillName: skill.name, promote: gate.promote, reason: gate.acceptance.reason },
+      gate.promote ? 'Skill self-healed (gate passed)' : 'Skill heal candidate rejected by gate',
     );
 
+    if (!gate.promote) {
+      return { patched: false, summary: '' }; // rejected — no user-facing claim of improvement
+    }
     return {
       patched: true,
       summary: `[EN] Skill "${skill.name}" has been automatically improved based on this experience.\n`

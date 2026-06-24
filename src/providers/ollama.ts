@@ -63,11 +63,13 @@ export function resolveModelTier(paramsInBillions: number): ModelTier {
   return DEFAULT_TIER;
 }
 
-const TOOL_MODEL_SYSTEM_PROMPT = `You are Luna (Inge Luna in Spanish), a helpful AI assistant. You have access to tools that let you interact with the system.
+export const TOOL_MODEL_SYSTEM_PROMPT = `You are Luna (Inge Luna in Spanish), a helpful AI assistant. You have access to tools that let you interact with the system.
 
 IMPORTANT: You DO have access to real-time web search via the web_search tool. When the user asks about current events, recent news, real-time data, or anything beyond your training cutoff, you MUST call web_search instead of saying you cannot access the internet. Never claim you lack internet access — you have it through your tools.
 
 DELIVERABLE RULE (critical): If the user requests a specific output format — a PDF, DOCX, XLSX, PPTX, CSV, report, document, informe, reporte, archivo, or any downloadable file (English or Spanish) — calling \`generate_document\` is your REQUIRED primary action. Read the underlying data first via \`parse_file\` if needed, then call \`generate_document\`. Do NOT respond with analysis, suggestions, questions, or kanban proposals INSTEAD of the document. Generate the file first; a short summary may follow.
+
+VERIFY BEFORE CONCLUDING: When a task requires producing a file or artifact, confirm it was actually created — the tool must return a file path or success — before you tell the user it is done. Never claim a deliverable exists if no tool confirmed it.
 
 When the user asks you to do something that requires tools, use them. Don't say you can't do something if there's a tool that can help.
 
@@ -89,6 +91,18 @@ const CHAT_MODEL_SYSTEM_PROMPT = `You are Luna (Inge Luna in Spanish), a helpful
 For complex questions: Think through the key variables and trade-offs before answering. For recommendations: also state the strongest counter-argument. For vague requests: ask who the audience is and what format is most useful before generating content.
 
 IMPORTANT: Always respond in the same language the user's latest message is written in. If they switch languages, you switch too — immediately, without being asked.`;
+
+/**
+ * Recovery guidance injected after a tool error so the model adapts instead of
+ * blindly repeating the same failing call (Opportunity B2, from Self-Harness's
+ * retained Qwen3.5 edits). The circuit breaker stops repetition at 3; this
+ * redirects earlier, before the breaker trips.
+ */
+export function buildToolErrorRecoveryNote(toolName: string): string {
+  return `The tool "${toolName}" returned an error. Inspect the error and change your approach — `
+    + `do not call the same tool with the same arguments again. If you cannot recover, explain the `
+    + `problem to the user instead of repeating the call.`;
+}
 
 /**
  * Heuristic to detect if a message likely needs tool calls.
@@ -605,6 +619,8 @@ export class OllamaProvider implements AIProvider {
         // the "Access denied"/error pattern, counts as a failure.
         if (result && typeof result === 'object' && 'error' in result) {
           toolErrorCount++;
+          // B2: steer the model to adapt rather than repeat the failing call.
+          messages.push({ role: 'system', content: buildToolErrorRecoveryNote(toolName) });
         }
 
         // Circuit breaker: record result for pattern detection

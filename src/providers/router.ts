@@ -655,20 +655,40 @@ export const SHORT_MESSAGE_THRESHOLD = 100;
 export const LONG_MESSAGE_THRESHOLD = 500;
 
 /**
+ * Self-contained verifiable reasoning (explicit math/algebra/logic solving with
+ * no tool needs and no open-domain-knowledge dependency). Per the
+ * Compression-Coverage Hypothesis (VibeThinker-3B, 2606.16140) this class
+ * compresses well into a small local reasoner, so it stays on Ollama rather
+ * than escalating to Claude purely for length. Kept deliberately tight to math
+ * objects/verbs so it never steals genuine analysis, writing, or coding work.
+ * Exported for testing.
+ */
+export const VERIFIABLE_REASONING_PATTERNS = [
+  /\b(solve|simplify|factor|integrate|differentiate)\s+(for\s+|the\s+)?(equation|expression|integral|derivative|system|inequality|polynomial)\b/i,
+  /\b(calculate|compute|find)\s+(the\s+)?(value|result|sum|product|derivative|integral|gcd|lcm|probability|determinant|area|volume|mean|median|factorial)\b/i,
+];
+
+/**
  * Classify a message to determine the best provider.
  * Heuristic-based — no AI call needed.
  *
  * Priority order:
  * 1. Tool-dependent patterns → Ollama (Claude can't call tools)
- * 2. Claude-preferred patterns → Claude (complex reasoning, writing)
- * 3. Length heuristic → long=Claude, short=Ollama
- * 4. Default → Ollama (local, no API cost)
+ * 2. Verifiable-reasoning patterns → Ollama (compresses into the local reasoner)
+ * 3. Claude-preferred patterns → Claude (complex reasoning, writing)
+ * 4. Length heuristic → long=Claude, short=Ollama
+ * 5. Default → Ollama (local, no API cost)
  *
  * Exported for testing.
  */
 export function classifyMessage(message: string): 'claude' | 'ollama' {
   // FIRST: Tool-dependent requests MUST go to Ollama (Claude can't call tools)
   for (const pattern of OLLAMA_TOOL_PATTERNS) {
+    if (pattern.test(message)) return 'ollama';
+  }
+
+  // G: self-contained verifiable reasoning stays local, even when long.
+  for (const pattern of VERIFIABLE_REASONING_PATTERNS) {
     if (pattern.test(message)) return 'ollama';
   }
 
