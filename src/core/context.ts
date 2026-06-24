@@ -68,7 +68,7 @@ import type {
   detectSkillCandidate, draftSkillDefinition, proposeSkillToUser,
   handleProposalResponse, getPendingProposal, expirePendingProposals,
   detectProposalResponse, insertSkillProposal, createAutoSkill,
-  shouldHealSkill, healSkill, detectSkillCorrection,
+  shouldHealSkill, healSkill, detectSkillCorrection, captureSuccessfulUse,
 } from '../auto-skills.js';
 
 // Policy engine
@@ -263,6 +263,7 @@ export interface PlatformContext {
     shouldHeal: typeof shouldHealSkill;
     heal: typeof healSkill;
     detectCorrection: typeof detectSkillCorrection;
+    captureSuccessfulUse: typeof captureSuccessfulUse;
   };
 
   policyEngine: {
@@ -532,6 +533,7 @@ export async function buildPlatformContext(router: ProviderRouter): Promise<Plat
       shouldHeal: autoSkillsMod.shouldHealSkill,
       heal: autoSkillsMod.healSkill,
       detectCorrection: autoSkillsMod.detectSkillCorrection,
+      captureSuccessfulUse: autoSkillsMod.captureSuccessfulUse,
     },
     policyEngine: {
       evaluate: policyMod.evaluatePolicy,
