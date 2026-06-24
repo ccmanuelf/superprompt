@@ -115,4 +115,30 @@ describe('auto-routing classifier (real function)', () => {
       expect(classifyMessage(msgOverLong)).toBe('claude');
     });
   });
+
+  // Opportunity G — Compression-Coverage nudge (VibeThinker-3B 2606.16140):
+  // self-contained verifiable reasoning belongs on the local model, even when
+  // long, instead of escalating to Claude purely for length.
+  describe('verifiable-reasoning stays local (G)', () => {
+    it('keeps a LONG self-contained math problem on Ollama (the gain over length-escalation)', () => {
+      const longMath =
+        'Consider the scenario described in the following setup. '.repeat(10)
+        + 'Now solve the equation 3x + 12 = 7x - 8 for x and show each step.';
+      expect(longMath.length).toBeGreaterThan(LONG_MESSAGE_THRESHOLD); // would otherwise be Claude
+      expect(classifyMessage(longMath)).toBe('ollama');
+    });
+
+    it('routes explicit math-solving requests to Ollama', () => {
+      expect(classifyMessage('calculate the determinant of this 3x3 matrix')).toBe('ollama');
+      expect(classifyMessage('simplify the expression (x^2 - 1) / (x - 1)')).toBe('ollama');
+    });
+
+    it('does NOT steal genuine Claude work (no regression on code/analysis)', () => {
+      // "const x = 1" inside code must not look like a math problem.
+      const codeMessage = '```\n' + 'const x = 1;\n'.repeat(20) + '```';
+      expect(classifyMessage(codeMessage)).toBe('claude');
+      expect(classifyMessage('debug this issue with the login flow')).toBe('claude');
+      expect(classifyMessage('evaluate the pros and cons of this approach')).toBe('claude');
+    });
+  });
 });
