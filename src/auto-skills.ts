@@ -1006,6 +1006,11 @@ export interface HealRequest {
   onResult?: (result: { patched: boolean; summary: string }) => void;
 }
 
+// Per-skill exclusivity currently holds only because HEAL_CONCURRENCY === 1:
+// a single in-flight slot can never hold two heals for the same skill. If this
+// is ever raised above 1, pumpHeals must also skip dequeuing a request whose
+// skillId is already in healInFlight, or two heals for one skill could run
+// concurrently. Not added now (YAGNI).
 const HEAL_CONCURRENCY = 1;
 const healQueue: HealRequest[] = [];
 const healInFlight = new Set<string>();          // skillIds currently running
@@ -1032,15 +1037,12 @@ export function enqueueHeal(req: HealRequest): void {
     queued.onResult = req.onResult;
     return;
   }
-  if (healInFlight.has(id)) {
-    // Running but nothing queued yet — queue a single follow-up.
-    healQueue.push(req);
-    healQueued.set(id, req);
-    return;
-  }
+  // Either idle (start it now) or running with nothing queued (queue one
+  // follow-up). Only kick the pump when nothing for this skill is in flight —
+  // an in-flight heal already re-pumps from its .finally().
   healQueue.push(req);
   healQueued.set(id, req);
-  pumpHeals();
+  if (!healInFlight.has(id)) pumpHeals();
 }
 
 function pumpHeals(): void {

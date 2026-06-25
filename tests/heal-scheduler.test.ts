@@ -21,14 +21,16 @@ function reqFor(skillId: string, over: Partial<HealRequest> = {}): HealRequest {
 /** A runner whose completion is controlled by the test via a returned resolver. */
 function deferredRunner() {
   const calls: string[] = [];
+  const issues: string[] = [];
   const resolvers: Array<(v: { patched: boolean; summary: string }) => void> = [];
   const runner = (req: HealRequest) => {
     calls.push(req.skill.id);
+    issues.push(req.issue);
     return new Promise<{ patched: boolean; summary: string }>((resolve) => {
       resolvers.push(resolve);
     });
   };
-  return { runner, calls, resolveNext: (r = { patched: false, summary: '' }) => resolvers.shift()!(r) };
+  return { runner, calls, issues, resolveNext: (r = { patched: false, summary: '' }) => resolvers.shift()!(r) };
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -63,11 +65,13 @@ describe('heal scheduler', () => {
     await tick();
 
     expect(d.calls).toEqual(['skill-a']); // still only the first in-flight, no stacking
+    expect(d.issues).toEqual(['first']); // in-flight run keeps its original context
 
     d.resolveNext(); // finish first
     await tick();
 
     expect(d.calls).toEqual(['skill-a', 'skill-a']); // exactly one coalesced follow-up
+    expect(d.issues).toEqual(['first', 'third']); // coalesced run used the LATEST context
   });
 
   it('slot is released even when a heal throws (no deadlock)', async () => {
