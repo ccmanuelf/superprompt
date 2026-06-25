@@ -190,6 +190,8 @@ workflow below is retired (the `prompts/XX-*.md` files were never authored;
 | `reference/ollama-tools.md` | Tool definitions, agentic loop pattern, model config |
 | `reference/matrix-setup.md` | Synapse deployment, bot SDK usage |
 | `reference/voice-local.md` | Speaches/Kokoro-82M/Faster-whisper integration with language detection |
+| `reference/heal-gate-contract.md` | Self-healing gate completion contract (invariants, tunables, conformance) |
+| `reference/loop-guards-checklist.md` | Reusable agent-loop guard checklist + heal-loop audit |
 
 ## Secret Leak Prevention
 
