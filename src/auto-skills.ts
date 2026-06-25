@@ -689,6 +689,13 @@ async function scoreCases(prompt: string, cases: SkillEvalCase[], scorer: Replay
   return scores;
 }
 
+/** Insert one skill_revisions row (promote or reject). Shared by both gates. */
+async function recordHealRevision(skillId: string, systemPrompt: string, note: string): Promise<void> {
+  await getKnex()('skill_revisions').insert({
+    skill_id: skillId, system_prompt: systemPrompt, revision_note: note, created_at: Date.now(),
+  });
+}
+
 /**
  * The validation gate: replay the recorded cases under the current and candidate
  * prompts, apply the non-regression rule, and promote the candidate only if it
@@ -696,13 +703,22 @@ async function scoreCases(prompt: string, cases: SkillEvalCase[], scorer: Replay
  * later heals and the stop-ceiling (A4) can read why prior attempts went the way
  * they did. With no eval coverage, the heal cannot be verified, so it is refused
  * rather than shipped blind.
+ *
+ * The optional `opts` param injects a wall-clock budget (default: HEAL_GATE.BUDGET_MS).
+ * A deadline breach is fail-closed — the gate aborts as a reject so it counts toward
+ * the stop ceiling rather than promoting on partial evidence.
  */
 export async function gateHealCandidate(
   skill: Skill,
   candidatePrompt: string,
   issue: string,
   scorer: ReplayScorer,
+  opts: { budgetMs?: number; now?: () => number } = {},
 ): Promise<HealGateResult> {
+  const now = opts.now ?? Date.now;
+  const deadline = now() + (opts.budgetMs ?? HEAL_GATE.BUDGET_MS);
+  const overBudget = (): boolean => now() > deadline;
+
   const cases = await getSkillEvalCases(skill.id);
   if (cases.length === 0) {
     return {
@@ -712,27 +728,28 @@ export async function gateHealCandidate(
   }
   const heldIn = cases.filter((c) => c.split === 'held_in');
   const heldOut = cases.filter((c) => c.split === 'held_out');
-  const current: HealScores = {
-    heldIn: await scoreCases(skill.system_prompt, heldIn, scorer),
-    heldOut: await scoreCases(skill.system_prompt, heldOut, scorer),
-  };
-  const candidate: HealScores = {
-    heldIn: await scoreCases(candidatePrompt, heldIn, scorer),
-    heldOut: await scoreCases(candidatePrompt, heldOut, scorer),
-  };
-  const acceptance = evaluateHealAcceptance(current, candidate);
 
-  const db = getKnex();
-  const now = Date.now();
-  if (acceptance.promote) {
-    await db('skills').where({ id: skill.id }).update({ system_prompt: candidatePrompt, updated_at: now });
+  // Delivery gate under a wall-clock deadline. Check before each batch; a breach
+  // is fail-closed — abort as a reject rather than promote on partial evidence.
+  const batch = async (prompt: string, b: SkillEvalCase[]): Promise<number[] | null> =>
+    overBudget() ? null : scoreCases(prompt, b, scorer);
+  const cIn = await batch(skill.system_prompt, heldIn);
+  const cOut = cIn === null ? null : await batch(skill.system_prompt, heldOut);
+  const nIn = cOut === null ? null : await batch(candidatePrompt, heldIn);
+  const nOut = nIn === null ? null : await batch(candidatePrompt, heldOut);
+
+  if (cIn === null || cOut === null || nIn === null || nOut === null) {
+    const reason = `reject: aborted — budget exceeded (${opts.budgetMs ?? HEAL_GATE.BUDGET_MS}ms)`;
+    await recordHealRevision(skill.id, skill.system_prompt, `${reason} | issue: ${issue.slice(0, 160)}`);
+    return { promote: false, acceptance: { promote: false, deltaIn: 0, deltaOut: 0, reason } };
   }
-  await db('skill_revisions').insert({
-    skill_id: skill.id,
-    system_prompt: acceptance.promote ? candidatePrompt : skill.system_prompt,
-    revision_note: `${acceptance.reason} | issue: ${issue.slice(0, 160)}`,
-    created_at: now,
-  });
+
+  const acceptance = evaluateHealAcceptance({ heldIn: cIn, heldOut: cOut }, { heldIn: nIn, heldOut: nOut });
+  if (acceptance.promote) {
+    await getKnex()('skills').where({ id: skill.id }).update({ system_prompt: candidatePrompt, updated_at: Date.now() });
+  }
+  await recordHealRevision(skill.id, acceptance.promote ? candidatePrompt : skill.system_prompt,
+    `${acceptance.reason} | issue: ${issue.slice(0, 160)}`);
   return { promote: acceptance.promote, acceptance };
 }
 
