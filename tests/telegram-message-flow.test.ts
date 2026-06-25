@@ -69,6 +69,7 @@ function makePc(overrides: Bags = {}) {
       detectCorrection: vi.fn(() => false),
       shouldHeal: vi.fn(() => false),
       heal: vi.fn(async () => ({ patched: false, summary: '' })),
+      enqueueHeal: vi.fn(),
       detectCandidate: vi.fn(async () => null),
       draftDefinition: vi.fn(async () => null),
       insertProposal: vi.fn(),
@@ -457,6 +458,37 @@ describe('handleMessageInner — error path (branch H)', () => {
     );
     expect(pc.memory.saveConversationTurn).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0); // finally clause clears the typing interval
+  });
+});
+
+describe('skillHealingGate — non-blocking enqueue', () => {
+  it('skillHealingGate enqueues a heal and never awaits it (non-blocking)', async () => {
+    const { skillHealingGate } = await import('../src/core/message-gates.js');
+    const io = { reply: vi.fn(), replyChunks: vi.fn(), replyPlain: vi.fn() };
+    const pc = makePc({
+      skills: { getActive: vi.fn(async () => ({ id: 's1', name: 's1', system_prompt: 'p' })) },
+      autoSkills: {
+        detectCorrection: vi.fn(() => true),
+        // heal would hang forever if (wrongly) awaited:
+        heal: vi.fn(() => new Promise(() => {})),
+        enqueueHeal: vi.fn(),
+      },
+    });
+
+    // Resolves promptly despite heal never resolving → proves no await on heal.
+    await skillHealingGate(pc as never, CHAT_ID, 'no, that is wrong', io as never);
+
+    expect(pc.autoSkills.enqueueHeal).toHaveBeenCalledTimes(1);
+    expect(pc.autoSkills.heal).not.toHaveBeenCalled();
+
+    // The gate wires onResult to reply only when the heal patched the skill.
+    const req = (pc.autoSkills.enqueueHeal as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    req.onResult({ patched: true, summary: 'improved' });
+    expect(io.reply).toHaveBeenCalledWith('improved');
+
+    io.reply.mockClear();
+    req.onResult({ patched: false, summary: '' });
+    expect(io.reply).not.toHaveBeenCalled();
   });
 });
 
