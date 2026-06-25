@@ -59,8 +59,12 @@ export const HEAL_GATE = {
   MAX_EVAL_CASES_PER_SPLIT: 10,
   /** Min self-monitor score to capture a use as an eval case. */
   MIN_QUALITY_SCORE: 70,
-  /** Wall-clock ceiling for one delivery-gate replay; breach → reject (fail-closed). */
-  BUDGET_MS: 60_000,
+  /** Wall-clock ceiling for one delivery-gate replay; breach → reject (fail-closed).
+   *  5 min: a real heal replays N eval cases through the local model (qwen3.5) plus
+   *  a Claude judge each, and 60s aborted before the local replay could finish
+   *  (observed live, rc.117). 5 min lets the slow local-model replay complete while
+   *  still hard-bounding a runaway heal. */
+  BUDGET_MS: 300_000,
 } as const;
 
 /** Minimum distinct tools to qualify as a skill candidate (single-turn) */

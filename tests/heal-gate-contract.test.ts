@@ -12,7 +12,7 @@ describe('HEAL_GATE contract values', () => {
     expect(HEAL_GATE.MAX_CONSECUTIVE_REJECTS).toBe(3);
     expect(HEAL_GATE.MAX_EVAL_CASES_PER_SPLIT).toBe(10);
     expect(HEAL_GATE.MIN_QUALITY_SCORE).toBe(70);
-    expect(HEAL_GATE.BUDGET_MS).toBe(60_000);
+    expect(HEAL_GATE.BUDGET_MS).toBe(300_000);
   });
 
   it('keeps the legacy exported names pointed at the single source of truth', () => {

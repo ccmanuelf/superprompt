@@ -92,7 +92,7 @@ The non-regression replay gate. Runs only if the plan-gate passes.
 
 **Mechanism:**
 1. Load all `skill_eval_cases` for the skill.
-2. Capture `deadline = now() + HEAL_GATE.BUDGET_MS` (default 60 000 ms).
+2. Capture `deadline = now() + HEAL_GATE.BUDGET_MS` (default 300 000 ms).
 3. Score four batches in order: current prompt on `held_in`, current on `held_out`, candidate on `held_in`, candidate on `held_out`. Check `now() > deadline` before each batch.
 4. Apply `evaluateHealAcceptance` to the four score arrays.
 5. If the rule passes: update `skills.system_prompt`, write a `promote: …` revision note.
@@ -161,7 +161,7 @@ Every heal attempt — regardless of outcome — writes one row to `skill_revisi
 | `MAX_CONSECUTIVE_REJECTS` | `3` | Consecutive gate rejections before heal pauses for manual review. |
 | `MAX_EVAL_CASES_PER_SPLIT` | `10` | Replay cases retained per split per skill (FIFO eviction). |
 | `MIN_QUALITY_SCORE` | `70` | Minimum self-monitor score to capture a use as an eval case, and to trigger a heal. |
-| `BUDGET_MS` | `60000` | Wall-clock ceiling (ms) for one delivery-gate replay; breach → fail-closed reject. |
+| `BUDGET_MS` | `300000` | Wall-clock ceiling (ms) for one delivery-gate replay; breach → fail-closed reject. 5 min (rc.118): 60s aborted local-model replays before they could finish (observed live, rc.117). |
 
 These are exported as `HEAL_GATE` and also individually re-exported (`MAX_EVAL_CASES_PER_SPLIT`, `MAX_CONSECUTIVE_HEAL_REJECTS`) for backwards compatibility. The `HEAL_GATE` object is the single authoritative source; callers should prefer it. `tests/heal-gate-contract.test.ts` pins every value — a value change in source breaks the contract test immediately.
 
