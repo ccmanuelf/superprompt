@@ -989,3 +989,91 @@ Return ONLY the updated system prompt text (no JSON wrapper, no markdown code bl
     return { patched: false, summary: 'Self-healing failed — will retry on next use' };
   }
 }
+
+// ── Heal scheduler (non-blocking) ────────────────────────────
+// The message-gate enqueues a heal and returns immediately; heals run here
+// off the request path. Policy: at most HEAL_CONCURRENCY heals at once, at
+// most one queued-or-running heal per skill (coalesce duplicates), in-memory
+// and best-effort (lost on restart, re-triggers on the next correction).
+// Each heal is still budget-capped inside healSkill via HEAL_GATE.BUDGET_MS.
+
+export interface HealRequest {
+  skill: Skill;
+  issue: string;
+  rawText: string;
+  router: ProviderRouter;
+  chatId: string;
+  onResult?: (result: { patched: boolean; summary: string }) => void;
+}
+
+const HEAL_CONCURRENCY = 1;
+const healQueue: HealRequest[] = [];
+const healInFlight = new Set<string>();          // skillIds currently running
+const healQueued = new Map<string, HealRequest>(); // skillId -> its single pending request
+
+type HealRunner = (req: HealRequest) => Promise<{ patched: boolean; summary: string }>;
+const defaultHealRunner: HealRunner = (req) =>
+  healSkill(req.skill, req.issue, req.rawText, req.router, req.chatId);
+let healRunner: HealRunner = defaultHealRunner;
+
+/**
+ * Schedule a heal without blocking the caller. Coalesces against any
+ * queued-or-running heal for the same skill so corrections never stack.
+ */
+export function enqueueHeal(req: HealRequest): void {
+  const id = req.skill.id;
+  const queued = healQueued.get(id);
+  if (queued) {
+    // Already a pending heal for this skill — fold in the newer context.
+    queued.issue = req.issue;
+    queued.rawText = req.rawText;
+    queued.router = req.router;
+    queued.chatId = req.chatId;
+    queued.onResult = req.onResult;
+    return;
+  }
+  if (healInFlight.has(id)) {
+    // Running but nothing queued yet — queue a single follow-up.
+    healQueue.push(req);
+    healQueued.set(id, req);
+    return;
+  }
+  healQueue.push(req);
+  healQueued.set(id, req);
+  pumpHeals();
+}
+
+function pumpHeals(): void {
+  while (healInFlight.size < HEAL_CONCURRENCY && healQueue.length > 0) {
+    const req = healQueue.shift()!;
+    const id = req.skill.id;
+    healQueued.delete(id);
+    healInFlight.add(id);
+    healRunner(req)
+      .then((result) => {
+        try {
+          req.onResult?.(result);
+        } catch (err) {
+          logger.debug({ err }, 'Heal onResult callback failed (non-blocking)');
+        }
+      })
+      .catch((err) => logger.debug({ err }, 'Skill self-healing skipped (non-blocking)'))
+      .finally(() => {
+        healInFlight.delete(id);
+        pumpHeals();
+      });
+  }
+}
+
+/** Test seam: override the heal executor. */
+export function __setHealRunnerForTests(fn: HealRunner): void {
+  healRunner = fn;
+}
+
+/** Test seam: clear scheduler state between tests. */
+export function __resetHealSchedulerForTests(): void {
+  healQueue.length = 0;
+  healInFlight.clear();
+  healQueued.clear();
+  healRunner = defaultHealRunner;
+}
