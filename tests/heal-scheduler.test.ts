@@ -11,7 +11,7 @@ function reqFor(skillId: string, over: Partial<HealRequest> = {}): HealRequest {
   return {
     skill: { id: skillId, name: skillId, system_prompt: 'x' } as HealRequest['skill'],
     issue: `issue-${skillId}`,
-    rawText: `raw-${skillId}`,
+    conversationContext: `ctx-${skillId}`,
     router: {} as HealRequest['router'],
     chatId: 'chat-1',
     ...over,

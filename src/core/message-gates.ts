@@ -111,10 +111,12 @@ export async function skillHealingGate(
   pc.autoSkills.enqueueHeal({
     skill: activeSkillForHealing,
     issue: `User corrected the approach: "${rawText}"`,
-    rawText,
+    conversationContext: rawText,
     router: pc.router,
     chatId,
-    onResult: (r) => { if (r.patched) void io.reply(r.summary); },
+    onResult: (r) => {
+      if (r.patched) io.reply(r.summary).catch((err) => logger.debug({ err }, 'Heal summary reply failed'));
+    },
   });
 }
 

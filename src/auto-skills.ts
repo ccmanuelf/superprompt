@@ -1000,7 +1000,7 @@ Return ONLY the updated system prompt text (no JSON wrapper, no markdown code bl
 export interface HealRequest {
   skill: Skill;
   issue: string;
-  rawText: string;
+  conversationContext: string;
   router: ProviderRouter;
   chatId: string;
   onResult?: (result: { patched: boolean; summary: string }) => void;
@@ -1018,7 +1018,7 @@ const healQueued = new Map<string, HealRequest>(); // skillId -> its single pend
 
 type HealRunner = (req: HealRequest) => Promise<{ patched: boolean; summary: string }>;
 const defaultHealRunner: HealRunner = (req) =>
-  healSkill(req.skill, req.issue, req.rawText, req.router, req.chatId);
+  healSkill(req.skill, req.issue, req.conversationContext, req.router, req.chatId);
 let healRunner: HealRunner = defaultHealRunner;
 
 /**
@@ -1031,7 +1031,7 @@ export function enqueueHeal(req: HealRequest): void {
   if (queued) {
     // Already a pending heal for this skill — fold in the newer context.
     queued.issue = req.issue;
-    queued.rawText = req.rawText;
+    queued.conversationContext = req.conversationContext;
     queued.router = req.router;
     queued.chatId = req.chatId;
     queued.onResult = req.onResult;

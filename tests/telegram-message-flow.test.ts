@@ -464,7 +464,7 @@ describe('handleMessageInner — error path (branch H)', () => {
 describe('skillHealingGate — non-blocking enqueue', () => {
   it('skillHealingGate enqueues a heal and never awaits it (non-blocking)', async () => {
     const { skillHealingGate } = await import('../src/core/message-gates.js');
-    const io = { reply: vi.fn(), replyChunks: vi.fn(), replyPlain: vi.fn() };
+    const io = { reply: vi.fn(async () => {}), replyChunks: vi.fn(async () => {}), replyPlain: vi.fn(async () => {}) };
     const pc = makePc({
       skills: { getActive: vi.fn(async () => ({ id: 's1', name: 's1', system_prompt: 'p' })) },
       autoSkills: {
