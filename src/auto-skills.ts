@@ -47,6 +47,22 @@ export interface SkillProposal {
 
 // ── Constants ────────────────────────────────────────────────
 
+/**
+ * Single source of truth for the self-healing gate's numeric tunables.
+ * Documented in reference/heal-gate-contract.md and pinned by
+ * tests/heal-gate-contract.test.ts — change a value here, change the contract.
+ */
+export const HEAL_GATE = {
+  /** Consecutive gate rejections before auto-healing pauses for manual review. */
+  MAX_CONSECUTIVE_REJECTS: 3,
+  /** Replay cases retained per split (FIFO eviction). */
+  MAX_EVAL_CASES_PER_SPLIT: 10,
+  /** Min self-monitor score to capture a use as an eval case. */
+  MIN_QUALITY_SCORE: 70,
+  /** Wall-clock ceiling for one delivery-gate replay; breach → reject (fail-closed). */
+  BUDGET_MS: 60_000,
+} as const;
+
 /** Minimum distinct tools to qualify as a skill candidate (single-turn) */
 const MIN_TOOLS_FOR_CANDIDATE = 3;
 
@@ -54,7 +70,7 @@ const MIN_TOOLS_FOR_CANDIDATE = 3;
 const MIN_STEPS_FOR_CANDIDATE = 3;
 
 /** Minimum quality score to consider a skill candidate */
-const MIN_QUALITY_SCORE = 70;
+const MIN_QUALITY_SCORE = HEAL_GATE.MIN_QUALITY_SCORE;
 
 /** Cooldown: max 1 proposal per chat per this many milliseconds */
 const PROPOSAL_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
@@ -141,7 +157,7 @@ export async function getSkillTriggersForSkill(skillId: string): Promise<Array<{
 // these before promotion. Capped per (skill, split) to bound replay cost.
 
 /** Max recorded cases per split per skill — FIFO bound on replay cost. */
-export const MAX_EVAL_CASES_PER_SPLIT = 10;
+export const MAX_EVAL_CASES_PER_SPLIT = HEAL_GATE.MAX_EVAL_CASES_PER_SPLIT;
 
 export interface SkillEvalCase {
   id: number;
@@ -673,6 +689,13 @@ async function scoreCases(prompt: string, cases: SkillEvalCase[], scorer: Replay
   return scores;
 }
 
+/** Insert one skill_revisions row (promote or reject). Shared by both gates. */
+async function recordHealRevision(skillId: string, systemPrompt: string, note: string): Promise<void> {
+  await getKnex()('skill_revisions').insert({
+    skill_id: skillId, system_prompt: systemPrompt, revision_note: note, created_at: Date.now(),
+  });
+}
+
 /**
  * The validation gate: replay the recorded cases under the current and candidate
  * prompts, apply the non-regression rule, and promote the candidate only if it
@@ -680,13 +703,22 @@ async function scoreCases(prompt: string, cases: SkillEvalCase[], scorer: Replay
  * later heals and the stop-ceiling (A4) can read why prior attempts went the way
  * they did. With no eval coverage, the heal cannot be verified, so it is refused
  * rather than shipped blind.
+ *
+ * The optional `opts` param injects a wall-clock budget (default: HEAL_GATE.BUDGET_MS).
+ * A deadline breach is fail-closed — the gate aborts as a reject so it counts toward
+ * the stop ceiling rather than promoting on partial evidence.
  */
 export async function gateHealCandidate(
   skill: Skill,
   candidatePrompt: string,
   issue: string,
   scorer: ReplayScorer,
+  opts: { budgetMs?: number; now?: () => number } = {},
 ): Promise<HealGateResult> {
+  const now = opts.now ?? Date.now;
+  const deadline = now() + (opts.budgetMs ?? HEAL_GATE.BUDGET_MS);
+  const overBudget = (): boolean => now() > deadline;
+
   const cases = await getSkillEvalCases(skill.id);
   if (cases.length === 0) {
     return {
@@ -696,32 +728,33 @@ export async function gateHealCandidate(
   }
   const heldIn = cases.filter((c) => c.split === 'held_in');
   const heldOut = cases.filter((c) => c.split === 'held_out');
-  const current: HealScores = {
-    heldIn: await scoreCases(skill.system_prompt, heldIn, scorer),
-    heldOut: await scoreCases(skill.system_prompt, heldOut, scorer),
-  };
-  const candidate: HealScores = {
-    heldIn: await scoreCases(candidatePrompt, heldIn, scorer),
-    heldOut: await scoreCases(candidatePrompt, heldOut, scorer),
-  };
-  const acceptance = evaluateHealAcceptance(current, candidate);
 
-  const db = getKnex();
-  const now = Date.now();
-  if (acceptance.promote) {
-    await db('skills').where({ id: skill.id }).update({ system_prompt: candidatePrompt, updated_at: now });
+  // Delivery gate under a wall-clock deadline. Check before each batch; a breach
+  // is fail-closed — abort as a reject rather than promote on partial evidence.
+  const batch = async (prompt: string, b: SkillEvalCase[]): Promise<number[] | null> =>
+    overBudget() ? null : scoreCases(prompt, b, scorer);
+  const cIn = await batch(skill.system_prompt, heldIn);
+  const cOut = cIn === null ? null : await batch(skill.system_prompt, heldOut);
+  const nIn = cOut === null ? null : await batch(candidatePrompt, heldIn);
+  const nOut = nIn === null ? null : await batch(candidatePrompt, heldOut);
+
+  if (cIn === null || cOut === null || nIn === null || nOut === null) {
+    const reason = `reject: aborted — budget exceeded (${opts.budgetMs ?? HEAL_GATE.BUDGET_MS}ms)`;
+    await recordHealRevision(skill.id, skill.system_prompt, `${reason} | issue: ${issue.slice(0, 160)}`);
+    return { promote: false, acceptance: { promote: false, deltaIn: 0, deltaOut: 0, reason } };
   }
-  await db('skill_revisions').insert({
-    skill_id: skill.id,
-    system_prompt: acceptance.promote ? candidatePrompt : skill.system_prompt,
-    revision_note: `${acceptance.reason} | issue: ${issue.slice(0, 160)}`,
-    created_at: now,
-  });
+
+  const acceptance = evaluateHealAcceptance({ heldIn: cIn, heldOut: cOut }, { heldIn: nIn, heldOut: nOut });
+  if (acceptance.promote) {
+    await getKnex()('skills').where({ id: skill.id }).update({ system_prompt: candidatePrompt, updated_at: Date.now() });
+  }
+  await recordHealRevision(skill.id, acceptance.promote ? candidatePrompt : skill.system_prompt,
+    `${acceptance.reason} | issue: ${issue.slice(0, 160)}`);
   return { promote: acceptance.promote, acceptance };
 }
 
 /** Consecutive gate rejections before auto-healing pauses for manual review. */
-export const MAX_CONSECUTIVE_HEAL_REJECTS = 3;
+export const MAX_CONSECUTIVE_HEAL_REJECTS = HEAL_GATE.MAX_CONSECUTIVE_REJECTS;
 
 /**
  * Number of consecutive gate rejections at the head of the skill's revision log
@@ -802,6 +835,63 @@ export function makeDefaultScorer(router: ProviderRouter, chatId: string): Repla
   };
 }
 
+export interface PlanGateResult { pass: boolean; reason: string; }
+
+/** Apology/refusal/truncation heuristic for a degenerate rewrite. */
+function isDegenerateRewrite(text: string): boolean {
+  const t = text.trim();
+  if (/^(sorry|i'?m sorry|i (can'?t|cannot|am unable|won'?t)\b)/i.test(t)) return true;
+  if (!t.includes('\n') && t.length < 80) return true; // single-line stub — likely truncated
+  return false;
+}
+
+/**
+ * Cheap plan-gate: reject obviously-bad candidates BEFORE the expensive replay.
+ * Deterministic checks always run (blocking). The optional council judge (one
+ * cross-family Claude call) is gated by HEAL_GATE_PLAN_JUDGE upstream and fails
+ * OPEN — the delivery gate is the real safety net, so a flaky judge must never
+ * block a heal.
+ */
+export async function planGateCandidate(
+  skill: Skill,
+  candidate: string,
+  issue: string,
+  judge?: (issue: string, candidate: string) => Promise<boolean>,
+): Promise<PlanGateResult> {
+  const c = candidate.trim();
+  if (c === skill.system_prompt.trim()) return { pass: false, reason: 'no-op (identical to current)' };
+  if (c.length < 50) return { pass: false, reason: 'too short (<50 chars)' };
+  if (isDegenerateRewrite(c)) return { pass: false, reason: 'degenerate (apology/truncated)' };
+  if (judge) {
+    try {
+      if (!(await judge(issue, c))) return { pass: false, reason: 'council judge: implausible fix' };
+    } catch (err) {
+      logger.debug({ err, skillId: skill.id }, 'Plan-gate judge failed — deferring to delivery gate');
+      // fail-open
+    }
+  }
+  return { pass: true, reason: 'plan-gate passed' };
+}
+
+const PLAN_JUDGE_SYSTEM =
+  'You are reviewing a proposed rewrite of an assistant skill prompt meant to fix a reported issue. '
+  + 'Answer ONLY with JSON {"plausible": true|false}: true if the rewrite plausibly addresses the issue '
+  + "without obviously breaking the skill's purpose; false if it is off-topic, empty of substance, or harmful.";
+
+/** Cross-family council judge for the plan-gate (Claude, not the local router). */
+export function makeDefaultPlanJudge(chatId: string): (issue: string, candidate: string) => Promise<boolean> {
+  const judge = new ClaudeProvider();
+  return async (issue: string, candidate: string): Promise<boolean> => {
+    const res = await judge.sendMessage({
+      message: `ISSUE:\n${issue}\n\nPROPOSED REWRITE:\n${candidate}`,
+      chatId, systemPrompt: PLAN_JUDGE_SYSTEM, skipTools: true,
+    });
+    const body = (res.text ?? '').trim().replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```$/, '');
+    try { return (JSON.parse(body) as { plausible?: unknown }).plausible === true; }
+    catch { return true; } // unparseable → fail-open
+  };
+}
+
 /**
  * Heal a skill: draft a candidate prompt, then promote it ONLY if it passes the
  * validation gate (replay recorded cases under the non-regression rule). The
@@ -816,6 +906,7 @@ export async function healSkill(
   router: ProviderRouter,
   chatId: string,
   scorer?: ReplayScorer,
+  planJudge?: (issue: string, candidate: string) => Promise<boolean>,
 ): Promise<{ patched: boolean; summary: string }> {
   // A4 guard 1: nothing to verify against yet — don't draft a candidate we can't gate.
   const evalCases = await getSkillEvalCases(skill.id);
@@ -861,13 +952,19 @@ Return ONLY the updated system prompt text (no JSON wrapper, no markdown code bl
       skipTurnLog: true,
     });
 
-    if (!response.text || response.text.length < 50) {
-      return { patched: false, summary: 'AI could not generate a meaningful patch' };
+    const newPrompt = (response.text ?? '').trim();
+
+    // Plan-gate (cheap): reject obvious non-fixes before the expensive replay.
+    const effectiveJudge = config.HEAL_GATE_PLAN_JUDGE ? (planJudge ?? makeDefaultPlanJudge(chatId)) : planJudge;
+    const plan = await planGateCandidate(skill, newPrompt, issue, effectiveJudge);
+    if (!plan.pass) {
+      const reason = `reject: plan-gate (${plan.reason})`;
+      await recordHealRevision(skill.id, skill.system_prompt, `${reason} | issue: ${issue.slice(0, 160)}`);
+      logger.info({ skillId: skill.id, skillName: skill.name, reason: plan.reason }, 'Heal candidate rejected by plan-gate');
+      return { patched: false, summary: '' };
     }
 
-    const newPrompt = response.text.trim();
-
-    // Validation gate: replay recorded cases and promote only on non-regression.
+    // Delivery gate (expensive): replay recorded cases under the non-regression rule.
     const gate = await gateHealCandidate(skill, newPrompt, issue, scorer ?? makeDefaultScorer(router, chatId));
 
     logger.info(
