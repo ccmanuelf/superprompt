@@ -835,6 +835,63 @@ export function makeDefaultScorer(router: ProviderRouter, chatId: string): Repla
   };
 }
 
+export interface PlanGateResult { pass: boolean; reason: string; }
+
+/** Apology/refusal/truncation heuristic for a degenerate rewrite. */
+function isDegenerateRewrite(text: string): boolean {
+  const t = text.trim();
+  if (/^(sorry|i'?m sorry|i (can'?t|cannot|am unable|won'?t)\b)/i.test(t)) return true;
+  if (!t.includes('\n') && t.length < 80) return true; // single-line stub — likely truncated
+  return false;
+}
+
+/**
+ * Cheap plan-gate: reject obviously-bad candidates BEFORE the expensive replay.
+ * Deterministic checks always run (blocking). The optional council judge (one
+ * cross-family Claude call) is gated by HEAL_GATE_PLAN_JUDGE upstream and fails
+ * OPEN — the delivery gate is the real safety net, so a flaky judge must never
+ * block a heal.
+ */
+export async function planGateCandidate(
+  skill: Skill,
+  candidate: string,
+  issue: string,
+  judge?: (issue: string, candidate: string) => Promise<boolean>,
+): Promise<PlanGateResult> {
+  const c = candidate.trim();
+  if (c === skill.system_prompt.trim()) return { pass: false, reason: 'no-op (identical to current)' };
+  if (c.length < 50) return { pass: false, reason: 'too short (<50 chars)' };
+  if (isDegenerateRewrite(c)) return { pass: false, reason: 'degenerate (apology/truncated)' };
+  if (judge) {
+    try {
+      if (!(await judge(issue, c))) return { pass: false, reason: 'council judge: implausible fix' };
+    } catch (err) {
+      logger.debug({ err, skillId: skill.id }, 'Plan-gate judge failed — deferring to delivery gate');
+      // fail-open
+    }
+  }
+  return { pass: true, reason: 'plan-gate passed' };
+}
+
+const PLAN_JUDGE_SYSTEM =
+  'You are reviewing a proposed rewrite of an assistant skill prompt meant to fix a reported issue. '
+  + 'Answer ONLY with JSON {"plausible": true|false}: true if the rewrite plausibly addresses the issue '
+  + "without obviously breaking the skill's purpose; false if it is off-topic, empty of substance, or harmful.";
+
+/** Cross-family council judge for the plan-gate (Claude, not the local router). */
+export function makeDefaultPlanJudge(chatId: string): (issue: string, candidate: string) => Promise<boolean> {
+  const judge = new ClaudeProvider();
+  return async (issue: string, candidate: string): Promise<boolean> => {
+    const res = await judge.sendMessage({
+      message: `ISSUE:\n${issue}\n\nPROPOSED REWRITE:\n${candidate}`,
+      chatId, systemPrompt: PLAN_JUDGE_SYSTEM, skipTools: true,
+    });
+    const body = (res.text ?? '').trim().replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```$/, '');
+    try { return (JSON.parse(body) as { plausible?: unknown }).plausible === true; }
+    catch { return true; } // unparseable → fail-open
+  };
+}
+
 /**
  * Heal a skill: draft a candidate prompt, then promote it ONLY if it passes the
  * validation gate (replay recorded cases under the non-regression rule). The
