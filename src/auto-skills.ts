@@ -906,6 +906,7 @@ export async function healSkill(
   router: ProviderRouter,
   chatId: string,
   scorer?: ReplayScorer,
+  planJudge?: (issue: string, candidate: string) => Promise<boolean>,
 ): Promise<{ patched: boolean; summary: string }> {
   // A4 guard 1: nothing to verify against yet — don't draft a candidate we can't gate.
   const evalCases = await getSkillEvalCases(skill.id);
@@ -951,13 +952,19 @@ Return ONLY the updated system prompt text (no JSON wrapper, no markdown code bl
       skipTurnLog: true,
     });
 
-    if (!response.text || response.text.length < 50) {
-      return { patched: false, summary: 'AI could not generate a meaningful patch' };
+    const newPrompt = (response.text ?? '').trim();
+
+    // Plan-gate (cheap): reject obvious non-fixes before the expensive replay.
+    const effectiveJudge = config.HEAL_GATE_PLAN_JUDGE ? (planJudge ?? makeDefaultPlanJudge(chatId)) : planJudge;
+    const plan = await planGateCandidate(skill, newPrompt, issue, effectiveJudge);
+    if (!plan.pass) {
+      const reason = `reject: plan-gate (${plan.reason})`;
+      await recordHealRevision(skill.id, skill.system_prompt, `${reason} | issue: ${issue.slice(0, 160)}`);
+      logger.info({ skillId: skill.id, skillName: skill.name, reason: plan.reason }, 'Heal candidate rejected by plan-gate');
+      return { patched: false, summary: '' };
     }
 
-    const newPrompt = response.text.trim();
-
-    // Validation gate: replay recorded cases and promote only on non-regression.
+    // Delivery gate (expensive): replay recorded cases under the non-regression rule.
     const gate = await gateHealCandidate(skill, newPrompt, issue, scorer ?? makeDefaultScorer(router, chatId));
 
     logger.info(
