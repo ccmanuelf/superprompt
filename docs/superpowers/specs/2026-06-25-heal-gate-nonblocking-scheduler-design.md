@@ -61,9 +61,6 @@ working — it aborted at exactly `300000ms`.)
   re-trigger on the next correction; the daemon restarts routinely.
 - Changing the heal gate's *decision* logic (plan-gate, delivery-gate, budget,
   reject ceiling) — only *when/how* the heal is invoked.
-- The deliverable-retry path (`src/providers/router.ts:1103`) implicated in the
-  16:45 incident. It is bounded to one retry and is a separate concern; out of
-  scope here.
 
 ## Design
 
@@ -205,10 +202,41 @@ background.
   invocation timing.
 - Conventional commit (`fix:`), PR to main.
 
-## Interim safety note
+## Resolved flags (no deferrals)
+
+Both items raised at spec review are resolved here rather than parked.
+
+### Interim freeze window → resolved by shipping the fix
 
 The smoke left `auto-system-time-nodejs-version` at 1 consecutive reject
-(un-paused). Until this fix lands, a correction to an active skill can still
-trigger the multi-minute freeze. Mitigation options: avoid sending corrections
-to active skills, or re-pause the skill (insert reject markers to reach the
-ceiling). To revisit at implementation time.
+(un-paused), so until the fix lands a correction to an active skill could still
+freeze the handler. **Resolution: ship the permanent fix now** rather than
+band-aid. Re-pausing via hand-inserted reject rows was considered and rejected —
+synthetic audit-log rows would be throwaway debt requiring later cleanup, and a
+per-skill re-pause would not protect *other* active skills anyway. The code fix
+makes every skill freeze-proof; the window is closed at deploy. No corrections
+are exercised against active skills in the interim.
+
+### Deliverable-retry path (16:45 incident) → investigated, no defect
+
+The `Deliverable retry FAILED — surfacing hard error to user` event at 16:45
+(`src/providers/router.ts:1103`) is **graceful degradation working as designed**
+(Code Convention #6), not a bug:
+
+- Bounded to exactly one retry; on failure it surfaces a clear bilingual
+  user-facing message (`retryToolsUsed: []`), it does not crash.
+- The 16:46 restart was a **clean manual shutdown** (`Shutting down Luna...` →
+  orderly subsystem stops → `Luna stopped. Goodbye.`), ~45s later — not a crash
+  caused by the retry.
+
+No change required.
+
+## Related observation (separate scope)
+
+For `auto-system-time-nodejs-version`, every heal candidate has been rejected
+(delivery-gate no-op, plan-gate implausible, budget abort) — the local qwen3.5
+cannot draft a candidate that passes the gates for this skill. This is a heal
+*effectiveness* limitation of the local model, not a correctness defect of this
+change, and improving local-model heal-candidate quality is a distinct,
+larger effort. Tracked here so it is not lost; explicitly out of scope for the
+blocking-gate fix.
