@@ -1,6 +1,6 @@
 # Self-Healing Gate Completion Contract
 
-**Version:** rc.116 (2026-06-24)
+**Version:** rc.117 (2026-06-24)
 **Source of truth:** `src/auto-skills.ts` (`HEAL_GATE`, `healSkill`, `gateHealCandidate`, `planGateCandidate`, `evaluateHealAcceptance`)
 **Pinned by:** `tests/heal-gate-contract.test.ts` — if a value in the tunables table changes in source, the contract test fails.
 
@@ -75,6 +75,8 @@ A cost-saving pre-filter that rejects obviously-bad candidates before the expens
 | No-op | `candidate.trim() === skill.system_prompt.trim()` | `no-op (identical to current)` |
 | Too short | `candidate.trim().length < 50` | `too short (<50 chars)` |
 | Degenerate | starts with apology/refusal, or is a single-line stub <80 chars | `degenerate (apology/truncated)` |
+
+> The **Too short** check subsumes the pre-rc.117 inline guard that returned early on an empty/short draft. As a result, an empty or failed draft is now recorded as a `reject: plan-gate (too short …)` revision and **counts toward `MAX_CONSECUTIVE_REJECTS`** — so a router that repeatedly emits empty drafts self-pauses for manual review instead of retrying silently.
 
 **Optional council judge (flag `HEAL_GATE_PLAN_JUDGE`, default on):**
 
