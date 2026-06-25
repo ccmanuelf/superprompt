@@ -47,6 +47,22 @@ export interface SkillProposal {
 
 // ── Constants ────────────────────────────────────────────────
 
+/**
+ * Single source of truth for the self-healing gate's numeric tunables.
+ * Documented in reference/heal-gate-contract.md and pinned by
+ * tests/heal-gate-contract.test.ts — change a value here, change the contract.
+ */
+export const HEAL_GATE = {
+  /** Consecutive gate rejections before auto-healing pauses for manual review. */
+  MAX_CONSECUTIVE_REJECTS: 3,
+  /** Replay cases retained per split (FIFO eviction). */
+  MAX_EVAL_CASES_PER_SPLIT: 10,
+  /** Min self-monitor score to capture a use as an eval case. */
+  MIN_QUALITY_SCORE: 70,
+  /** Wall-clock ceiling for one delivery-gate replay; breach → reject (fail-closed). */
+  BUDGET_MS: 60_000,
+} as const;
+
 /** Minimum distinct tools to qualify as a skill candidate (single-turn) */
 const MIN_TOOLS_FOR_CANDIDATE = 3;
 
@@ -54,7 +70,7 @@ const MIN_TOOLS_FOR_CANDIDATE = 3;
 const MIN_STEPS_FOR_CANDIDATE = 3;
 
 /** Minimum quality score to consider a skill candidate */
-const MIN_QUALITY_SCORE = 70;
+const MIN_QUALITY_SCORE = HEAL_GATE.MIN_QUALITY_SCORE;
 
 /** Cooldown: max 1 proposal per chat per this many milliseconds */
 const PROPOSAL_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
@@ -141,7 +157,7 @@ export async function getSkillTriggersForSkill(skillId: string): Promise<Array<{
 // these before promotion. Capped per (skill, split) to bound replay cost.
 
 /** Max recorded cases per split per skill — FIFO bound on replay cost. */
-export const MAX_EVAL_CASES_PER_SPLIT = 10;
+export const MAX_EVAL_CASES_PER_SPLIT = HEAL_GATE.MAX_EVAL_CASES_PER_SPLIT;
 
 export interface SkillEvalCase {
   id: number;
@@ -721,7 +737,7 @@ export async function gateHealCandidate(
 }
 
 /** Consecutive gate rejections before auto-healing pauses for manual review. */
-export const MAX_CONSECUTIVE_HEAL_REJECTS = 3;
+export const MAX_CONSECUTIVE_HEAL_REJECTS = HEAL_GATE.MAX_CONSECUTIVE_REJECTS;
 
 /**
  * Number of consecutive gate rejections at the head of the skill's revision log

@@ -43,6 +43,11 @@ export const config = {
   // Claude LLM-judge signal on top of the in-process self-monitor floor.
   // Set HEAL_GATE_GRADER=false to gate on self-monitor alone (zero LLM cost).
   HEAL_GATE_GRADER: env.HEAL_GATE_GRADER !== 'false',
+  // Plan-gate council judge: when on (default), a single cross-family Claude
+  // call vets a heal candidate for plausibility BEFORE the expensive replay.
+  // Fails open (defers to the delivery gate). Set HEAL_GATE_PLAN_JUDGE=false to
+  // gate on the deterministic plan-gate checks alone (zero LLM cost).
+  HEAL_GATE_PLAN_JUDGE: env.HEAL_GATE_PLAN_JUDGE !== 'false',
 
   // Ollama
   OLLAMA_HOST: env.OLLAMA_HOST || 'http://localhost:11434',
