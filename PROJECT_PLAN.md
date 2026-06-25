@@ -472,6 +472,7 @@ feat(phase-12): integration — index.ts, e2e validation
 - [x] **Phase D**: Matrix Parity — schedule commands, photo/file handlers, notifications
 - [x] **Phase E**: Skills Infrastructure — registration, routing, per-skill prompts and tools
 - [x] **Phase F**: Integration Testing, Validation, Documentation updates
+- [x] **Self-Modifying Harness Hardening** — non-regression validation gate on skill self-healing (**rc.116**: held-in/held-out acceptance rule `Δ_in≥0 ∧ Δ_out≥0 ∧ max>0`, `skill_eval_cases`, structured reject notes, reject ceiling) + bounded-loop guards (**rc.117**: wall-clock budget cap `gateHealCandidate` fail-closed, cheap `planGateCandidate` pre-filter, cross-family Claude council judge) + completion contract (`reference/heal-gate-contract.md`) and reusable loop-guard checklist (`reference/loop-guards-checklist.md`). PR #6 (A/B/G) + PR #7. **Proven in production 2026-06-25** (deployed `/app/dist` build, live Claude judge, 9/9 guard checks).
 
 > **Naming clash note:** the "Phase A / Phase B" labels reused below for the
 > Attendance pilot are scoped to that pilot only — they are not the same as
