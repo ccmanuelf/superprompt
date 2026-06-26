@@ -95,7 +95,7 @@ Migrated unchanged via §4, **except** these deliberate prod `.env` edits:
   `http://novalink-bridge:5000`. Mount the bridge's public cert and set
   `NODE_EXTRA_CA_CERTS=/app/certs/bridge-cert.pem` so Node trusts it (full contract in §8).
 - Web UI enabled: `VOICE_WEB_PORT=3030`, per-user tokens (`/webtoken` flow),
-  `CADDY_DOMAIN=<luna-hostname>`, `VOICE_WEB_ORIGIN=https://<luna-hostname>`.
+  `CADDY_DOMAIN=luna.novalink.local`, `VOICE_WEB_ORIGIN=https://luna.novalink.local`.
 - Compose runs with the **`production` profile** (Caddy up, serving HTTPS for the full
   web UI: voice chat, `/sim` `/capacity` `/sequence` `/board` `/learn`).
   **Matrix profile stays OFF** (Telegram only).
@@ -146,7 +146,9 @@ Validation includes a concurrent voice + calc job RSS check.
 - **Why mkcert, not Let's Encrypt:** no usable company domain / internal DNS, so there is
   no DNS lever for an ACME challenge. mkcert stands up a local CA → trusted HTTPS on the
   LAN with no public dependency; each team device trusts the CA once.
-- **Stable hostname** (not a hard-coded IP) so a future VPN is a clean add-on.
+- **Hostname `luna.novalink.local`** (not a hard-coded IP) so a future VPN is a clean
+  add-on. Resolved on team devices via local `hosts` entries (no internal DNS) →
+  `192.168.2.244`; the mkcert cert is issued for this name.
 - **Off-site (future, ~2–3 months):** add a VPN/WireGuard overlay; the same mkcert + LAN
   setup then works remotely unchanged. (Tailscale could fold LAN + off-site into one tool
   with real certs, at the cost of a cloud coordination dependency — weigh when off-site lands.)
@@ -158,7 +160,7 @@ Validation includes a concurrent voice + calc job RSS check.
 - All container healthchecks green; **survives a test reboot** unattended
   (stack + Ollama auto-recover).
 - `novalink_health` + a real bridge query succeed from prod over the LAN.
-- Web UI reachable at `https://<hostname>` with a **trusted** cert on a CA-installed
+- Web UI reachable at `https://luna.novalink.local` with a **trusted** cert on a CA-installed
   device; dashboards + browser voice chat + `/learn` all functional.
 - A backup tarball lands on the VM and **restores cleanly** in a dry run.
 - §9 soak test shows **flat RSS** (no unbounded growth) over the soak window.
@@ -210,7 +212,13 @@ Findings from the 2026-06-26 recon, and the audit scope:
   provider that builds the Ollama request body). Tunable, with an aggressive default
   suited to 16 GB.
 
-### Audit targets (require reading, not grep — verify and fix or explicitly defer)
+### Audit targets (require reading, not grep — verify and fix; NO deferral)
+
+> **Policy (spec-owner directive, 2026-06-26):** every issue this audit surfaces is fixed
+> **before go-live** — trivial or non-trivial, and **even if pre-existing**. Nothing ships
+> as a known leak. This hardens the repo's standing "self-audit findings stay in scope" rule
+> into an absolute go-live gate for this deployment.
+
 - **SA1 Worker sandbox lifecycle.** A quick grep found no explicit `.terminate()`; V8
   isolates that are not terminated leak hard. Verify each generated-code Worker is
   terminated on completion/timeout/error and that no isolate outlives its task.
@@ -228,7 +236,7 @@ Findings from the 2026-06-26 recon, and the audit scope:
 - A **soak test**: drive representative traffic (chat, a bridge query, a voice round-trip,
   one heavy calc) over a sustained window and confirm **flat RSS** for the Luna container
   and bounded host memory (Ollama unloads, Speaches unloads). Any monotonic climb is a
-  finding to fix before go-live (per repo policy: self-audit findings stay in scope).
+  finding that **must be fixed before go-live** (no-deferral policy above).
 
 ---
 
@@ -239,6 +247,6 @@ Findings from the 2026-06-26 recon, and the audit scope:
    `NODE_EXTRA_CA_CERTS`, `ufw` allow `5443`, and Luna's own minted bridge key.
 2. **`host.docker.internal` under Colima** (§2): verify the Luna container reaches host
    Ollama on `:11434`; fallback is the Colima gateway IP. (Native under Docker Desktop.)
-3. **Luna hostname** for the cert/CADDY_DOMAIN (e.g. `luna.novalink.local` or the Mac's
-   hostname).
+3. ~~Luna hostname~~ → **resolved: `luna.novalink.local`** (hosts entries on team devices →
+   `192.168.2.244`; mkcert cert issued for this name).
 4. **Backup retention** policy (count/age) on the VM.
