@@ -33,6 +33,12 @@ vi.mock('../src/logger.js', () => ({
 }));
 
 import { handleMessageInner } from '../src/platforms/telegram.js';
+import {
+  enqueueHeal,
+  shouldHealSkill,
+  __setHealRunnerForTests,
+  __resetHealSchedulerForTests,
+} from '../src/auto-skills.js';
 
 // ── Factories ────────────────────────────────────────────────
 
@@ -509,5 +515,46 @@ describe('handleMessageInner — HTML fallback (branch I)', () => {
     expect(ctx.reply).not.toHaveBeenCalledWith(
       expect.stringContaining('something went wrong'),
     );
+  });
+});
+
+// rc.119 — the quality-triggered heal (telegram.ts §4b) must never block the
+// reply. This drives the REAL handler through the REAL enqueueHeal scheduler and
+// the REAL shouldHealSkill, with a heal that NEVER resolves: pre-rc.119 the
+// block did `await pc.autoSkills.heal(...)`, so handleMessageInner would hang
+// before sending the main reply (this test would time out). The non-blocking
+// enqueue lets the handler reach the reply while the heal runs off-path.
+describe('handleMessageInner — quality-triggered heal is non-blocking (rc.119, real scheduler)', () => {
+  afterEach(() => __resetHealSchedulerForTests());
+
+  it('schedules the heal via the real enqueueHeal and still delivers the reply when the heal never resolves', async () => {
+    __resetHealSchedulerForTests();
+    // Never-resolving heal: an `await` on this would hang the handler forever.
+    const healRunner = vi.fn(() => new Promise<{ patched: boolean; summary: string }>(() => {}));
+    __setHealRunnerForTests(healRunner);
+
+    const ctx = makeCtx();
+    const pc = makePc({
+      // Active auto-skill — shouldHealSkill requires id starts with 'auto-' and not builtin.
+      skills: { getActive: vi.fn(async () => ({ id: 'auto-demo', name: 'demo', system_prompt: 'p', is_builtin: 0 })) },
+      // Sub-70 score so the REAL shouldHealSkill returns true (40 < MIN_QUALITY_SCORE 70).
+      selfMonitor: { checkQuality: vi.fn(() => ({ passed: false, score: 40, issues: [] })), logCheck: vi.fn() },
+      autoSkills: {
+        enqueueHeal,                  // REAL scheduler entry point (not a mock)
+        shouldHeal: shouldHealSkill,  // REAL gate logic
+        detectCorrection: vi.fn(() => false), // keep the correction gate (0b) out of this test
+      },
+      router: { sendMessage: vi.fn(async () => ({ text: 'a normal answer', provider: 'ollama' as const })) },
+    });
+
+    // If §4b awaited the heal, this would never resolve. Reaching the assertions
+    // at all is the proof of non-blocking.
+    await run(ctx, 'a non-trivial question long enough to be substantial', pc);
+
+    expect(healRunner).toHaveBeenCalledTimes(1); // heal scheduled through the real enqueueHeal
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining('a normal answer'),
+      expect.objectContaining({ parse_mode: 'HTML' }),
+    ); // main reply delivered after the (non-awaited) enqueue
   });
 });
