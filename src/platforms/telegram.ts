@@ -284,23 +284,20 @@ export async function handleMessageInner(
       pc.selfMonitor.logCheck(chatId, response.provider, quality.score, quality.issues);
     }
 
-    // 4b. Skill self-healing: if a skill was active and quality was low, patch it
+    // 4b. Skill self-healing: if a skill was active and quality was low, patch it.
+    // Fire-and-continue via the scheduler — never await the heal on the handler path.
     const currentSkillForHealing = await pc.skills.getActive(chatId);
     if (currentSkillForHealing && pc.autoSkills.shouldHeal(currentSkillForHealing, quality.score ?? (quality.passed ? 80 : 40))) {
-      try {
-        const healResult = await pc.autoSkills.heal(
-          currentSkillForHealing,
-          `Low quality response (score: ${quality.score ?? 'unknown'}). Issues: ${quality.issues?.map((i) => i.message).join(', ') || 'none detected'}`,
-          `User asked: "${rawText}"\nAI responded: "${response.text?.slice(0, 500) || '(empty)'}"`,
-          pc.router,
-          chatId,
-        );
-        if (healResult.patched) {
-          await ctx.reply(formatForTelegram(healResult.summary), { parse_mode: 'HTML' });
-        }
-      } catch (err) {
-        logger.debug({ err }, 'Skill self-healing skipped (non-blocking)');
-      }
+      pc.autoSkills.enqueueHeal({
+        skill: currentSkillForHealing,
+        issue: `Low quality response (score: ${quality.score ?? 'unknown'}). Issues: ${quality.issues?.map((i) => i.message).join(', ') || 'none detected'}`,
+        conversationContext: `User asked: "${rawText}"\nAI responded: "${response.text?.slice(0, 500) || '(empty)'}"`,
+        router: pc.router,
+        chatId,
+        onResult: (r) => {
+          if (r.patched) ctx.reply(formatForTelegram(r.summary), { parse_mode: 'HTML' }).catch((err) => logger.debug({ err }, 'Heal summary reply failed'));
+        },
+      });
     }
 
     // 4b2. Capture a known-good use as a replay case for the heal validation gate (A1).

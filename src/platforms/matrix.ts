@@ -175,29 +175,27 @@ async function handleMessageInner(
     ctx.policyEngine.clearPendingConfirmation(roomId);
   }
 
-  // 0b. Skill self-healing: detect user corrections when a skill is active
+  // 0b. Skill self-healing: detect user corrections when a skill is active.
+  // Fire-and-continue via the scheduler — never await the heal on the handler path.
   const activeSkillForHealing = await ctx.skills.getActive(roomId);
   if (activeSkillForHealing && ctx.autoSkills.detectCorrection(body)) {
-    try {
-      const healResult = await ctx.autoSkills.heal(
-        activeSkillForHealing,
-        `User corrected the approach: "${body}"`,
-        body,
-        router,
-        roomId,
-      );
-      if (healResult.patched) {
-        await client.sendMessage(roomId, {
-          msgtype: 'm.notice',
-          body: healResult.summary,
-          format: 'org.matrix.custom.html',
-          formatted_body: formatForMatrix(healResult.summary),
-        });
-      }
-    } catch (err) {
-      // Non-blocking
-      logger.debug({ err, roomId }, 'Skill self-heal attempt failed — continuing');
-    }
+    ctx.autoSkills.enqueueHeal({
+      skill: activeSkillForHealing,
+      issue: `User corrected the approach: "${body}"`,
+      conversationContext: body,
+      router,
+      chatId: roomId,
+      onResult: (r) => {
+        if (r.patched) {
+          client.sendMessage(roomId, {
+            msgtype: 'm.notice',
+            body: r.summary,
+            format: 'org.matrix.custom.html',
+            formatted_body: formatForMatrix(r.summary),
+          }).catch((err) => logger.debug({ err, roomId }, 'Heal summary reply failed'));
+        }
+      },
+    });
   }
 
   // 1. Build memory context (hybrid: FTS5 + vector)
@@ -257,29 +255,27 @@ async function handleMessageInner(
       ctx.selfMonitor.logCheck(roomId, response.provider, quality.score, quality.issues);
     }
 
-    // 2b. Skill self-healing: if a skill was active and quality was low, patch it
+    // 2b. Skill self-healing: if a skill was active and quality was low, patch it.
+    // Fire-and-continue via the scheduler — never await the heal on the handler path.
     const currentSkillForHealing = await ctx.skills.getActive(roomId);
     if (currentSkillForHealing && ctx.autoSkills.shouldHeal(currentSkillForHealing, quality.score ?? (quality.passed ? 80 : 40))) {
-      try {
-        const healResult = await ctx.autoSkills.heal(
-          currentSkillForHealing,
-          `Low quality response (score: ${quality.score ?? 'unknown'})`,
-          `User asked: "${body}"\nAI responded: "${response.text?.slice(0, 500) || '(empty)'}"`,
-          router,
-          roomId,
-        );
-        if (healResult.patched) {
-          await client.sendMessage(roomId, {
-            msgtype: 'm.notice',
-            body: healResult.summary,
-            format: 'org.matrix.custom.html',
-            formatted_body: formatForMatrix(healResult.summary),
-          });
-        }
-      } catch (err) {
-        // Non-blocking
-        logger.debug({ err, roomId }, 'Skill self-heal attempt failed — continuing');
-      }
+      ctx.autoSkills.enqueueHeal({
+        skill: currentSkillForHealing,
+        issue: `Low quality response (score: ${quality.score ?? 'unknown'})`,
+        conversationContext: `User asked: "${body}"\nAI responded: "${response.text?.slice(0, 500) || '(empty)'}"`,
+        router,
+        chatId: roomId,
+        onResult: (r) => {
+          if (r.patched) {
+            client.sendMessage(roomId, {
+              msgtype: 'm.notice',
+              body: r.summary,
+              format: 'org.matrix.custom.html',
+              formatted_body: formatForMatrix(r.summary),
+            }).catch((err) => logger.debug({ err, roomId }, 'Heal summary reply failed'));
+          }
+        },
+      });
     }
 
     // 2b2. Capture a known-good use as a replay case for the heal validation gate (A1).

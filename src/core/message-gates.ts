@@ -106,20 +106,18 @@ export async function skillHealingGate(
 ): Promise<void> {
   const activeSkillForHealing = await pc.skills.getActive(chatId);
   if (!activeSkillForHealing || !pc.autoSkills.detectCorrection(rawText)) return;
-  try {
-    const healResult = await pc.autoSkills.heal(
-      activeSkillForHealing,
-      `User corrected the approach: "${rawText}"`,
-      rawText,
-      pc.router,
-      chatId,
-    );
-    if (healResult.patched) {
-      await io.reply(healResult.summary);
-    }
-  } catch (err) {
-    logger.debug({ err }, 'Skill self-healing skipped (non-blocking)');
-  }
+  // Fire-and-continue: schedule the heal off the request path so a long
+  // replay (up to HEAL_GATE.BUDGET_MS) never blocks the message handler.
+  pc.autoSkills.enqueueHeal({
+    skill: activeSkillForHealing,
+    issue: `User corrected the approach: "${rawText}"`,
+    conversationContext: rawText,
+    router: pc.router,
+    chatId,
+    onResult: (r) => {
+      if (r.patched) io.reply(r.summary).catch((err) => logger.debug({ err }, 'Heal summary reply failed'));
+    },
+  });
 }
 
 /**
