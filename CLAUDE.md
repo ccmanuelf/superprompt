@@ -192,6 +192,7 @@ workflow below is retired (the `prompts/XX-*.md` files were never authored;
 | `reference/voice-local.md` | Speaches/Kokoro-82M/Faster-whisper integration with language detection |
 | `reference/heal-gate-contract.md` | Self-healing gate completion contract (invariants, tunables, conformance) |
 | `reference/loop-guards-checklist.md` | Reusable agent-loop guard checklist + heal-loop audit |
+| `reference/heal-self-improvement-evaluation.md` | Deferred decision (2026-06-26): keep heal drafting local vs route to Claude — evidence-collection plan + log, review ~2026-09-26 |
 
 ## Secret Leak Prevention
 
