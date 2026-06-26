@@ -30,6 +30,8 @@ describe('worker teardown on success', () => {
     // Without the terminate-on-success fix the dangling interval keeps the
     // thread alive → count stays 1 → this fails.
     const remaining = await waitForWorkersToDrain(2_000);
+    // NOTE: liveWorkerCount is process-wide module state; do NOT add additional
+    // worker-spawning tests to this file, as concurrent workers would make this check flake.
     expect(remaining).toBe(0);
   });
 });
