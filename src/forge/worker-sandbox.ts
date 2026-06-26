@@ -32,6 +32,18 @@ const DEFAULT_WORKER_MEMORY_MB = 64;
 /** Maximum memory override via _memory_mb — 512 MB */
 const MAX_WORKER_MEMORY_MB = 512;
 
+/**
+ * Live Worker-thread counter. Incremented when a Worker is spawned, decremented
+ * on its `exit` event. A non-zero idle value signals a leaked thread (each holds
+ * up to DEFAULT_WORKER_MEMORY_MB). Also a useful ops health signal.
+ */
+let liveWorkerCount = 0;
+
+/** Number of Worker threads currently alive (spawned, not yet exited). */
+export function activeWorkerCount(): number {
+  return liveWorkerCount;
+}
+
 function getBaseTimeoutMs(): number {
   const env = readEnvFile();
   const val = parseInt(env.TOOL_TIMEOUT_MS || '', 10);
@@ -112,18 +124,23 @@ export async function executeInWorker(
         maxOldGenerationSizeMb: memoryMb,
       },
     });
+    liveWorkerCount += 1;
 
     function finish(result: Record<string, unknown>): void {
       if (settled) return;
       settled = true;
       clearTimeout(rollingTimer);
       clearTimeout(absoluteTimer);
-      worker.removeAllListeners();
+      // Guarantee teardown on ALL paths (success, error, timeout). The worker
+      // does not self-exit, so user code that leaves a dangling handle
+      // (e.g. setInterval) would keep the thread (≤64 MB) alive otherwise.
+      // terminate() fires the `exit` event, but `settled` is already true so
+      // the exit handler is a no-op. Idempotent: finish() runs at most once.
+      worker.terminate().catch(() => {});
       resolvePromise(result);
     }
 
     function onTimeout(elapsed: string, reason: string): void {
-      worker.terminate().catch(() => {});
       finish({
         error: `[EN] Tool execution timed out after ${elapsed} (${reason}). `
           + 'If this tool needs more time, you can retry with a longer timeout '
@@ -153,6 +170,12 @@ export async function executeInWorker(
     resetRollingTimer();
 
     worker.on('message', (msg: { type: string; success?: boolean; result?: unknown; error?: string }) => {
+      // Once settled the worker is being torn down; ignore any late/buffered
+      // messages so a trailing heartbeat can't arm a new rolling timer (finish()
+      // no longer removes listeners — the exit handler needs to stay attached
+      // to decrement the live-worker counter).
+      if (settled) return;
+
       if (msg.type === 'heartbeat') {
         resetRollingTimer();
         return;
@@ -205,6 +228,7 @@ export async function executeInWorker(
     });
 
     worker.on('exit', (exitCode) => {
+      liveWorkerCount -= 1;
       if (!settled) {
         finish({
           error: `[EN] Worker exited unexpectedly with code ${exitCode}. `
