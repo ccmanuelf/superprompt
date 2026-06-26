@@ -197,42 +197,48 @@ there yet — a **bridge-session** prerequisite). This plan only defines what Lu
 
 ## 9. Memory-hygiene & leak audit (workstream)
 
-The 16 GB ceiling makes enforced memory release a deployment requirement, not a nicety.
-Findings from the 2026-06-26 recon, and the audit scope:
+The 16 GB ceiling makes *verified* memory behavior a go-live gate.
 
-### Confirmed clean (do not touch)
-- **Timer lifecycle.** All 20 `setInterval` sites have matching `clearInterval`
-  (per-request typing indicators, IPC heartbeat, scheduler poll, salience-decay,
-  proactive follow-up, learning-session cleanup, calc result sweep). Not a leak source.
+> **Tooling correction (2026-06-26):** an earlier pass reported several "leaks" (Ollama
+> `keep_alive` unset, Worker sandbox missing `terminate()`). Those were **false negatives** —
+> `rg` is not installed on this host, so every `rg`/rtk-grep search silently returned zero
+> matches. Re-checked with `grep` + Read, the codebase's memory hygiene is in fact already
+> good. The accurate baseline and the *narrow* residual targets are below.
 
-### Confirmed fix (high value)
-- **Ollama `keep_alive` is never set** (0 occurrences in `src/`). Default 5-minute model
-  residency pins `qwen3.5:4b` in RAM after every call. **Action:** set `keep_alive`
-  explicitly on Ollama requests and enforce unload between idle periods (target the
-  provider that builds the Ollama request body). Tunable, with an aggressive default
-  suited to 16 GB.
+### Already handled — verified by reading the code (do not "fix")
+- **Ollama model residency.** `keep_alive` IS set — `MODEL_KEEP_ALIVE='3m'` (rc.82), applied
+  on every chat + agentic call — plus explicit `unloadModel()` (keep_alive=0),
+  `preloadModel()`, `listLoadedModels()`, `getLoadedModelSize()` in `src/providers/ollama.ts`.
+- **SA1 Worker sandbox.** `src/forge/worker-sandbox.ts` terminates on timeout, caps memory at
+  64 MB (`maxOldGenerationSizeMb`), and `finish()` is idempotent (clears both timers +
+  `removeAllListeners()`).
+- **Timers.** 20 `setInterval`/13 `clearInterval`, 27 `setTimeout`/22 `clearTimeout`; the
+  deltas are process-lifetime singletons (scheduler, salience-decay) that legitimately never
+  clear. Not a leak source.
+- **Caches.** `claude.ts` model-list cache is single-entry with a 24h TTL; per-chat
+  `chatHistories`/`tierCache` maps are content-bounded. Negligible at team scale.
 
-### Audit targets (require reading, not grep — verify and fix; NO deferral)
+### Genuine residual targets — found by reading, not grep (verify → fix; NO deferral)
 
 > **Policy (spec-owner directive, 2026-06-26):** every issue this audit surfaces is fixed
 > **before go-live** — trivial or non-trivial, and **even if pre-existing**. Nothing ships
 > as a known leak. This hardens the repo's standing "self-audit findings stay in scope" rule
 > into an absolute go-live gate for this deployment.
 
-- **SA1 Worker sandbox lifecycle.** A quick grep found no explicit `.terminate()`; V8
-  isolates that are not terminated leak hard. Verify each generated-code Worker is
-  terminated on completion/timeout/error and that no isolate outlives its task.
-- **In-memory caches.** The 24h model-list cache (`providers/claude.ts`) and any other
-  module-level caches/Maps: confirm bounded size + TTL eviction; no unbounded growth keyed
-  by chat/user/session.
-- **Heavy calc modules.** `sigma.ts` (1885L), `balance.ts` (1106L), and the DOE /
-  Monte-Carlo / GA paths the base compose already flags at the 4 GB ceiling: ensure large
-  intermediate arrays are released after the result is produced (no retained references via
-  closures, history buffers, or logs).
-- **Speaches idle-unload.** Confirm the sidecar's STT/TTS models unload on idle and the TTL
-  is tuned so they are not resident during long text-only stretches.
+- **`keep_alive` tuning for the new profile.** `'3m'` was tuned (rc.82) for a ~9 GB model on
+  a larger Mac. On the 16 GB M1 with `qwen3.5:4b` (3.4 GB), confirm `3m` is still right (or
+  shorten), and that the model actually evicts — verify via `ollama ps` during the soak test.
+- **Worker success-path teardown.** On success (`msg.type === 'result'`), `finish()` relies
+  on the worker self-exiting and does **not** call `worker.terminate()`. Check
+  `worker-entry.ts`: if user code can leave a dangling handle/timer, the thread (≤64 MB) may
+  linger. Verify, and if confirmed add an explicit terminate-on-success.
+- **Heavy calc modules.** `sigma.ts` (1885L), `balance.ts` (1106L), DOE/Monte-Carlo/GA (the
+  base compose flags these at the 4 GB ceiling): confirm large intermediate arrays are
+  released after the result (no retention via closures/history buffers/logs).
+- **Speaches idle-unload.** Confirm the sidecar unloads STT/TTS models on idle so they are
+  not resident during long text-only stretches.
 
-### Proof
+### Proof (the real gate — static reading can't catch everything)
 - A **soak test**: drive representative traffic (chat, a bridge query, a voice round-trip,
   one heavy calc) over a sustained window and confirm **flat RSS** for the Luna container
   and bounded host memory (Ollama unloads, Speaches unloads). Any monotonic climb is a
