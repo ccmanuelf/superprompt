@@ -91,9 +91,9 @@ Migrated unchanged via §4, **except** these deliberate prod `.env` edits:
 - `OLLAMA_CHAT_MODEL=qwen3.5:4b`, `OLLAMA_TOOL_MODEL=qwen3.5:4b` (was `qwen3.5:latest`).
   `OLLAMA_EMBED_MODEL=nomic-embed-text` unchanged.
 - `AI_PROVIDER=ollama`, `AUTO_ROUTE=true` (on-prem-first; Claude is the fallback).
-- `NOVALINK_BRIDGE_URL` → the VM (LAN), **not** `http://novalink-bridge:5000`.
-  Scheme/port per the §8 contract (prefer HTTPS so the API key + prod data are not
-  sent in cleartext over the LAN).
+- `NOVALINK_BRIDGE_URL=https://192.168.2.234:5443` (the VM, LAN), **not**
+  `http://novalink-bridge:5000`. Mount the bridge's public cert and set
+  `NODE_EXTRA_CA_CERTS=/app/certs/bridge-cert.pem` so Node trusts it (full contract in §8).
 - Web UI enabled: `VOICE_WEB_PORT=3030`, per-user tokens (`/webtoken` flow),
   `CADDY_DOMAIN=<luna-hostname>`, `VOICE_WEB_ORIGIN=https://<luna-hostname>`.
 - Compose runs with the **`production` profile** (Caddy up, serving HTTPS for the full
@@ -170,9 +170,23 @@ Validation includes a concurrent voice + calc job RSS check.
 Luna cannot fully go live until NovaLink-Bridge is up on the VM (Docker not installed
 there yet — a **bridge-session** prerequisite). This plan only defines what Luna consumes:
 
-- **URL + port + scheme**, pinned now so neither side guesses later. Recommendation:
-  **HTTPS** (mkcert or internal CA on the bridge too) on a fixed port, e.g.
-  `https://<bridge-hostname-or-VM-IP>:<port>`.
+- **Endpoint (pinned 2026-06-26):** `NOVALINK_BRIDGE_URL=https://192.168.2.234:5443`.
+  TLS terminates at `5443` on the VM and forwards to the bridge container's `:5000`
+  internally (`https://192.168.2.234:5443 → bridge:5000`).
+- **Cert:** self-signed for the IP `192.168.2.234`. **Hard requirements:**
+  1. The cert **must** carry an IP SAN — `subjectAltName = IP:192.168.2.234` — or Node
+     rejects it even when trusted (CN-only is not enough).
+  2. **Luna trusts it via `NODE_EXTRA_CA_CERTS`**: mount the bridge's *public* cert PEM
+     (cert only) into the Luna container and set `NODE_EXTRA_CA_CERTS=/app/certs/bridge-cert.pem`.
+     Keep TLS verification **on**. Do **not** use `NODE_TLS_REJECT_UNAUTHORIZED=0` (disables
+     verification process-wide). Implementation check: confirm Luna's bridge client uses
+     Node's default trust store and does not build its own HTTPS agent that ignores the var.
+  3. Make the cert **long-lived** (≈10 yr, both ends self-controlled); record expiry.
+  - *Optional:* issue this cert from the same **mkcert** CA used for the web UI
+    (`mkcert 192.168.2.234` sets the IP SAN automatically) for a single trusted CA
+    everywhere — vs. a standalone self-signed cert that keeps the bridge self-contained.
+    Bridge session's call; both are acceptable.
+- **VM firewall:** allow `5443/tcp` from `192.168.2.244` (bridge-session checklist item).
 - **API key**: Luna's own bridge key (pre-prod TODO: mint Luna its own key and revoke the
   shared test key).
 - **Tools unaffected**: `novalink_list_queries` / `novalink_query` / `novalink_health`.
@@ -220,8 +234,9 @@ Findings from the 2026-06-26 recon, and the audit scope:
 
 ## 10. Open items to confirm before / during execution
 
-1. **Bridge contract** (§8): final hostname/port/scheme + Luna's own key — coordinate with
-   the bridge session.
+1. **Bridge contract** (§8): endpoint pinned to `https://192.168.2.234:5443`. Remaining to
+   coordinate with the bridge session: cert with IP SAN delivered to Luna for
+   `NODE_EXTRA_CA_CERTS`, `ufw` allow `5443`, and Luna's own minted bridge key.
 2. **`host.docker.internal` under Colima** (§2): verify the Luna container reaches host
    Ollama on `:11434`; fallback is the Colima gateway IP. (Native under Docker Desktop.)
 3. **Luna hostname** for the cert/CADDY_DOMAIN (e.g. `luna.novalink.local` or the Mac's
