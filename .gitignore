@@ -16,3 +16,6 @@ workspace/uploads/*
 .env.development
 .gstack/
 .memsearch/
+# Bridge/web certs — real certs are deployment-only; placeholder is the exception
+certs/*.pem
+!certs/bridge-cert.pem

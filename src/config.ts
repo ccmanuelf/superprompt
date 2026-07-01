@@ -55,6 +55,7 @@ export const config = {
     env.OLLAMA_CHAT_MODEL ||
     'qwen3.5:latest',
   OLLAMA_TOOL_MODEL: env.OLLAMA_TOOL_MODEL || 'qwen3.5:latest',
+  OLLAMA_KEEP_ALIVE: env.OLLAMA_KEEP_ALIVE || '3m',
 
   // Telegram
   TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN || '',

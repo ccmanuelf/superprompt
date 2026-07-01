@@ -25,6 +25,9 @@ services:
       # Linux host with native overlay (no virtiofs) for higher
       # concurrency.
       - SQLITE_JOURNAL_MODE=${SQLITE_JOURNAL_MODE:-DELETE}
+      # Trust the bridge's self-signed cert without disabling TLS verification.
+      # NEVER use NODE_TLS_REJECT_UNAUTHORIZED=0 (disables verification process-wide).
+      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-/app/certs/bridge-cert.pem}
     volumes:
       # Config files (readEnvFile reads from disk, not process.env)
       - ./.env:/app/.env:ro
@@ -46,6 +49,9 @@ services:
       - ./forge:/app/forge
       # Documentation (served via /docs web UI)
       - ./docs:/app/docs:ro
+      # Bridge CA cert (read-only) — lets Node trust the self-signed bridge TLS.
+      # The host ./certs/bridge-cert.pem is supplied during deployment.
+      - ./certs/bridge-cert.pem:/app/certs/bridge-cert.pem:ro
     # Web UI: Voice Chat, Board, Learning Coach
     ports:
       - "127.0.0.1:3030:3030"
