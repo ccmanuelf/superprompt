@@ -1,17 +1,28 @@
 # Caddy reverse proxy for Luna
 #
-# Provides: automatic HTTPS (Let's Encrypt), HTTP/2, WebSocket proxy,
-# request size limits, basic security headers.
+# Provides: HTTPS, HTTP/2, WebSocket proxy, request size limits,
+# basic security headers.
 #
 # Configuration via environment variables:
-#   CADDY_DOMAIN — your domain (e.g. luna.example.com)
-#                  Set to ":443" for IP-based access with self-signed cert
+#   CADDY_DOMAIN — your domain (e.g. luna.novalink.local)
+#                  Set to ":443" for IP-based access
 #                  Set to "localhost" for local development
+#   CADDY_TLS    — arguments for the `tls` directive:
+#                  unset → "internal" (Caddy's own CA; dev default, no
+#                    ACME attempts for LAN names with no public DNS)
+#                  cert/key paths → serve a pre-issued cert (e.g. mkcert),
+#                    files mounted at /certs via CADDY_CERTS_DIR:
+#                    CADDY_TLS=/certs/luna.novalink.local+1.pem /certs/luna.novalink.local+1-key.pem
 #
-# For production: point your domain's DNS to this server, then Caddy
-# automatically obtains and renews TLS certificates from Let's Encrypt.
+# LAN deployments (no public domain/DNS) cannot use Let's Encrypt —
+# issue a cert with mkcert on the host and point CADDY_TLS at it.
 
 {$CADDY_DOMAIN:localhost} {
+	# ── TLS ──
+	# Defaults to Caddy's internal CA; production overrides with the
+	# mkcert cert/key mounted read-only at /certs (docker-compose.yml).
+	tls {$CADDY_TLS:internal}
+
 	# ── Request limits ──
 	# Prevent large payload attacks (10MB max body)
 	request_body {
