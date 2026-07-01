@@ -147,16 +147,21 @@ services:
           memory: 512M
 
   # ── Caddy reverse proxy (production HTTPS) ─────────────────
-  # Provides automatic HTTPS via Let's Encrypt, HTTP/2, WebSocket proxy,
-  # request size limits (10MB), security headers, and access logging.
-  # Only service that exposes ports to the network (80 + 443).
+  # Provides HTTPS (internal CA by default, pre-issued cert via CADDY_TLS),
+  # HTTP/2, WebSocket proxy, request size limits (10MB), security headers,
+  # and access logging. Only service that exposes ports to the network (80 + 443).
   caddy:
     image: caddy:2-alpine
     container_name: luna-caddy
     environment:
       - CADDY_DOMAIN=${CADDY_DOMAIN:-localhost}
+      # tls directive args: "internal" (default) or mounted cert/key paths,
+      # e.g. CADDY_TLS=/certs/luna.novalink.local+1.pem /certs/luna.novalink.local+1-key.pem
+      - CADDY_TLS=${CADDY_TLS:-internal}
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Pre-issued web-UI certs (mkcert); harmless default when unused
+      - ${CADDY_CERTS_DIR:-./certs}:/certs:ro
       - caddy-data:/data      # TLS certificates (auto-managed)
       - caddy-config:/config   # Caddy runtime config
     ports:
