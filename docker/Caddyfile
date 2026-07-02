@@ -62,11 +62,10 @@
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Forwarded-Proto {scheme}
 
-		# WebSocket support (board, voice, learn)
-		transport http {
-			# Allow WebSocket connections
-			versions h2c 1.1
-		}
+		# WebSockets (board, voice, learn) are handled automatically by the
+		# default HTTP/1.1 transport. Do NOT force h2c here: Luna's web
+		# server speaks HTTP/1.1 only, and h2c prior-knowledge breaks the
+		# health check ("http2: frame too large") → 503 no upstreams.
 	}
 
 	# ── Logging ──
