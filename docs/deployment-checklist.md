@@ -1,3 +1,5 @@
+> ⚠️ **SUPERSEDED (2026-07-02).** This guide documents an earlier deployment plan that was never (or no longer) the production path. The authoritative documents are `docs/superpowers/specs/2026-06-26-luna-macbook-deployment-design.md` (design) and `docs/superpowers/plans/2026-06-26-luna-macbook-cutover.md` (runbook, executed 2026-07-02). Team onboarding: `docs/luna-team-access.md`.
+
 # Luna v1.0.0-rc.60 — Deployment Checklist
 
 Pre-deployment criteria, considerations, and decision factors for production deployment.

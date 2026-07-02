@@ -76,6 +76,15 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
   - S15.5: CONWIP & Heijunka (token board, production leveling)
   - S15.6: Design of Experiments (5 design types, ANOVA, desirability, residuals)
   - S15.7: State Machine Simulator (FSM with DES states, PLC export, 4 cross-tool bridges)
+- [x] **PRODUCTION DEPLOYMENT** (2026-07-02): Luna cut over from the dev Mac to the dedicated
+  MacBook Pro M1/16GB (`192.168.2.244`, macOS 26.5.1). Topology: Colima (vz, `preferredRoute`)
+  + host Ollama `qwen3.5:4b` (AI_PROVIDER=ollama, on-prem-first) + Caddy HTTPS web UI at
+  `https://luna.novalink.local` (mkcert internal CA) + NovaLink Bridge cross-host at
+  `https://192.168.2.234:5443` (self-signed IP-SAN cert via NODE_EXTRA_CA_CERTS). Unattended
+  server: never-sleep, FileVault off, auto-login, daily encrypted `store/` backup to the VM
+  (launchd, 02:00). Reboot-to-healthy verified at 69 s. Runbook:
+  `docs/superpowers/plans/2026-06-26-luna-macbook-cutover.md`; team onboarding:
+  `docs/luna-team-access.md`.
 
 ---
 

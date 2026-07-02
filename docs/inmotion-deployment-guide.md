@@ -1,3 +1,5 @@
+> ⚠️ **SUPERSEDED (2026-07-02).** This guide documents an earlier deployment plan that was never (or no longer) the production path. The authoritative documents are `docs/superpowers/specs/2026-06-26-luna-macbook-deployment-design.md` (design) and `docs/superpowers/plans/2026-06-26-luna-macbook-cutover.md` (runbook, executed 2026-07-02). Team onboarding: `docs/luna-team-access.md`.
+
 # Luna -- InMotion Dedicated Server Deployment Guide
 
 Complete deployment guide for Luna on an InMotion Hosting dedicated server running AlmaLinux 8. Covers MariaDB and PostgreSQL with equal detail -- the CTO chooses which database at deploy time.
