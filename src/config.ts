@@ -56,6 +56,10 @@ export const config = {
     'qwen3.5:latest',
   OLLAMA_TOOL_MODEL: env.OLLAMA_TOOL_MODEL || 'qwen3.5:latest',
   OLLAMA_KEEP_ALIVE: env.OLLAMA_KEEP_ALIVE || '3m',
+  // Thinking mode for qwen3.5 et al. Hidden reasoning multiplies output
+  // tokens 10-100x; on slow GPUs (M1 ~16 tok/s) that is minutes per reply.
+  // Set OLLAMA_THINK=false on such hosts to trade depth for latency.
+  OLLAMA_THINK: env.OLLAMA_THINK !== 'false',
 
   // Telegram
   TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN || '',
