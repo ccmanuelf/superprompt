@@ -409,7 +409,7 @@ export class OllamaProvider implements AIProvider {
     // takes the stricter 256-token ceiling.
     const tier = await this.getModelTier(model);
     const options: Record<string, unknown> = {
-      num_ctx: 32768,
+      num_ctx: config.OLLAMA_NUM_CTX,
       temperature: tier.temperature,
     };
     if (isVoice) {
@@ -487,7 +487,7 @@ export class OllamaProvider implements AIProvider {
       );
 
       const agenticOptions: Record<string, unknown> = {
-        num_ctx: 32768,
+        num_ctx: config.OLLAMA_NUM_CTX,
         temperature: tier.temperature,
       };
       if (isVoice) {

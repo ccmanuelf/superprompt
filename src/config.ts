@@ -60,6 +60,10 @@ export const config = {
   // tokens 10-100x; on slow GPUs (M1 ~16 tok/s) that is minutes per reply.
   // Set OLLAMA_THINK=false on such hosts to trade depth for latency.
   OLLAMA_THINK: env.OLLAMA_THINK !== 'false',
+  // Context window requested per call. The KV allocation scales with this:
+  // 32k on qwen3.5:4b ≈ 4.3 GB resident — on a RAM-tight host that lands in
+  // swap and turns 5s model loads into minutes. 8192 fits 16 GB comfortably.
+  OLLAMA_NUM_CTX: Number(env.OLLAMA_NUM_CTX) || 32768,
 
   // Telegram
   TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN || '',
