@@ -68,7 +68,10 @@ COPY src/forge/eval/prompts/ ./dist/forge/eval/prompts/
 COPY docs/ ./docs/
 # NovaLink bridge query wrapper for the claude -p subprocess (cert-pinned
 # curl; key/URL from env). Referenced by the bridge system-prompt block.
-COPY --chmod=755 docker/bridge /usr/local/bin/bridge
+# Plain COPY + chmod (not COPY --chmod) so it works without BuildKit — the
+# Colima daemon on the prod box runs the legacy builder.
+COPY docker/bridge /usr/local/bin/bridge
+RUN chmod 755 /usr/local/bin/bridge
 # Copy domain packs (tools, skills, templates for department customization)
 COPY packs/ ./packs/
 # Copy forge directory (user tools and skills for auto-import)
