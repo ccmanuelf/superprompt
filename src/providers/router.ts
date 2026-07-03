@@ -3,6 +3,7 @@ import { ClaudeProvider, ModelDiscoveryUnavailableError } from './claude.js';
 import { OllamaProvider, clearOllamaHistory, seedOllamaHistory } from './ollama.js';
 import type { Message as OllamaMessage } from 'ollama';
 import { config } from '../config.js';
+import { NOVALINK_BRIDGE_PROMPT } from './bridge-prompt.js';
 import { logger } from '../logger.js';
 import {
   getSession,
@@ -1007,7 +1008,7 @@ export class ProviderRouter {
     // - rc.74: deliverableReminder injected near the end when applicable, so it's read last (high recency weight)
     // - rc.76: simulationScaffolding + languageOverride placed at the VERY end for maximum recency weight
     const systemPrompt = provider.name === 'claude'
-      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_PROVIDER_NOTICE, CLAUDE_DOCUMENT_PROMPT, CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, simulationScaffolding, LANGUAGE_HINT, languageOverride].filter(Boolean).join('\n\n')
+      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_PROVIDER_NOTICE, NOVALINK_BRIDGE_PROMPT, CLAUDE_DOCUMENT_PROMPT, CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, simulationScaffolding, LANGUAGE_HINT, languageOverride].filter(Boolean).join('\n\n')
       : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, OLLAMA_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, simulationScaffolding, LANGUAGE_HINT, languageOverride].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
