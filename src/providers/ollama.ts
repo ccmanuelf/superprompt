@@ -422,7 +422,7 @@ export class OllamaProvider implements AIProvider {
       model,
       messages,
       stream: false,
-      think: true,
+      think: config.OLLAMA_THINK,
       options,
       keep_alive: MODEL_KEEP_ALIVE,
     });
@@ -501,7 +501,7 @@ export class OllamaProvider implements AIProvider {
         messages,
         tools,
         stream: false,
-        think: true,
+        think: config.OLLAMA_THINK,
         options: agenticOptions,
         keep_alive: MODEL_KEEP_ALIVE,
       });
