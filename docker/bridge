@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# bridge <slug> [querystring] — read-only query against the NovaLink bridge.
+#   e.g.  bridge companies
+#         bridge inventory-wip "companyId=1025"
+#         bridge part-locations-batch "parts=TD14302POLYLAM-US,JXZIP0044-999-PC-US"
+# Auth key and base URL come from the environment; TLS is pinned to the
+# bridge's self-signed cert (never -k). Responses are the bridge's JSON
+# envelope: {"status":"OK","data":{columns,rows}} or {"status":"ERROR",...}.
+set -euo pipefail
+: "${NOVALINK_BRIDGE_URL:?NOVALINK_BRIDGE_URL not set}"
+: "${NOVALINK_BRIDGE_API_KEY:?NOVALINK_BRIDGE_API_KEY not set}"
+[ $# -ge 1 ] || { echo "usage: bridge <slug> [querystring]" >&2; exit 2; }
+exec curl -fsS --max-time 30 \
+  --cacert "${BRIDGE_CACERT:-/app/certs/bridge-cert.pem}" \
+  -H "X-API-Key: $NOVALINK_BRIDGE_API_KEY" \
+  "$NOVALINK_BRIDGE_URL/api/q/$1${2:+?$2}"
