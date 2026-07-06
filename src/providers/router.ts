@@ -1084,13 +1084,19 @@ export class ProviderRouter {
       logger.info({ chatId, bucket: localTurn.bucket, toolCount: localTurn.allowedTools.length }, 'Local turn bucket selected');
     }
 
+    // Capture the caller's system prompt (e.g. learning.getSessionSystemPrompt —
+    // persona + active learning-session context + assessment-mode instructions)
+    // BEFORE composing — the spread below (`...params, systemPrompt`) overwrites
+    // params.systemPrompt with the composed prompt, so it must be read out first.
+    const callerSystemPrompt = params.systemPrompt ?? '';
+
     // Provider-aware system prompt composition:
     // - BOTH providers: platformIdentity comes FIRST (prevents Claude identity confusion)
     // - Claude: CLAUDE_PROVIDER_NOTICE (tool access via JSON blocks) + CLAUDE_KANBAN_PROMPT + LANGUAGE_HINT
     // - Ollama: buildLocalSystemPrompt() (Task 4 assembler) — frozen persona/rules/kanban/capabilities/skill
     //   prefix + bucket-specific doc prose + a volatile "## This turn" tail (rc.75/rc.76 hints included).
-    //   params.systemPrompt is intentionally NOT folded in here — it stays a provider-level append
-    //   (ollama.ts folds it into extraSystemPrompt, appended after the assembled prompt).
+    //   callerSystemPrompt is threaded in as the `sessionPrompt` volatile (first among volatiles —
+    //   it's the most instruction-like) so it isn't silently dropped by the spread below.
     // - rc.74: deliverableReminder injected near the end when applicable, so it's read last (high recency weight)
     // - rc.76: simulationScaffolding + languageOverride placed at the VERY end for maximum recency weight
     const systemPrompt = provider.name === 'claude'
@@ -1100,6 +1106,7 @@ export class ProviderRouter {
           skillPrompt,
           fullCapabilities,
           volatiles: {
+            sessionPrompt: callerSystemPrompt,
             platformNote: `The user is chatting via ${platformName}.`,
             voiceHint,
             mfgHint: mfgHint ?? '',

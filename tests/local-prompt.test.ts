@@ -3,7 +3,7 @@ import { buildLocalSystemPrompt, LOCAL_PERSONA, LOCAL_RULES } from '../src/provi
 import { estimateTokens } from '../src/context-budget.js';
 
 const VOLATILES = {
-  platformNote: 'via Telegram Bot', voiceHint: '', mfgHint: 'MFG_HINT',
+  sessionPrompt: '', platformNote: 'via Telegram Bot', voiceHint: '', mfgHint: 'MFG_HINT',
   uploadsManifest: 'UPLOADS', deliverableReminder: '', simulationScaffolding: '',
   languageHint: 'LANG_HINT', languageOverride: 'LANG_OVERRIDE', continuityAppend: '',
 };
@@ -22,6 +22,15 @@ describe('LocalPromptAssembler', () => {
     const out = buildLocalSystemPrompt({ bucket: 'core', skillPrompt: 'SKILL', fullCapabilities: 'CAPS', volatiles: VOLATILES });
     expect(out.indexOf('UPLOADS')).toBeGreaterThan(out.indexOf('CAPS'));
     expect(out.indexOf('LANG_OVERRIDE')).toBeGreaterThan(out.indexOf('UPLOADS'));
+  });
+
+  it('caller systemPrompt (learning-session prompt) is threaded into the assembled prompt, after the This turn marker', () => {
+    const out = buildLocalSystemPrompt({
+      bucket: 'core', skillPrompt: '', fullCapabilities: 'CAPS',
+      volatiles: { ...VOLATILES, sessionPrompt: 'LEARNING_SESSION_BLOCK' },
+    });
+    expect(out).toContain('LEARNING_SESSION_BLOCK');
+    expect(out.indexOf('LEARNING_SESSION_BLOCK')).toBeGreaterThan(out.indexOf('## This turn'));
   });
 
   it('doc-schema prose ships only in the docs bucket', () => {

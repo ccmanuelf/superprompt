@@ -31,6 +31,9 @@ export const LOCAL_RULES = `## Quality rules
 /help /voice /provider /model /skill /tool /board /schedule /reload /pack — if asked what a command does, answer briefly; do not invent commands.`;
 
 export interface LocalPromptVolatiles {
+  /** Caller's params.systemPrompt (e.g. learning.getSessionSystemPrompt) — most
+   * instruction-like volatile block, placed first among the volatiles. */
+  sessionPrompt: string;
   platformNote: string;
   voiceHint: string;
   mfgHint: string;
@@ -57,7 +60,7 @@ export function buildLocalSystemPrompt(input: LocalPromptInput): string {
 
   const v = input.volatiles;
   const volatileBlocks = [
-    v.platformNote, v.voiceHint, v.mfgHint, v.uploadsManifest,
+    v.sessionPrompt, v.platformNote, v.voiceHint, v.mfgHint, v.uploadsManifest,
     v.deliverableReminder, v.simulationScaffolding, v.continuityAppend,
     v.languageHint, v.languageOverride,
   ].filter(Boolean).join('\n\n');
