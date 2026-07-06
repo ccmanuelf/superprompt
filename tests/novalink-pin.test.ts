@@ -51,6 +51,15 @@ describe('novalink-data classification — regex precision (Task 8 fix pass)', (
     it('detects plural accented "órdenes de compra"', () => {
       expect(isNovalinkDataTurn('cuántas órdenes de compra están pendientes')).toBe(true);
     });
+    it('detects EN plural "work orders"', () => {
+      expect(isNovalinkDataTurn('how many open work orders are there')).toBe(true);
+    });
+    it('detects EN plural "purchase orders"', () => {
+      expect(isNovalinkDataTurn('list my purchase orders from last week')).toBe(true);
+    });
+    it('detects ES plural "órdenes de trabajo"', () => {
+      expect(isNovalinkDataTurn('cuántas órdenes de trabajo están abiertas')).toBe(true);
+    });
   });
 
   describe('sanity set (must keep matching after the fix)', () => {

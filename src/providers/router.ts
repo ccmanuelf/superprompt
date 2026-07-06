@@ -654,12 +654,14 @@ export const OLLAMA_TOOL_PATTERNS = [
  *     sentence ([^.?!]{0,40}, either word order).
  *   - "company\s+\d+" caught any trailing number ("5 years"); now requires
  *     an id-shaped number (\d{2,}, optionally "id"/"#") since a real
- *     NovaLink company id is never a single digit.
+ *     NovaLink company id is never a single digit. Known residual FP: "with the
+ *     company 15 years" still matches (\d{2,} accepts "15"); accepted tradeoff.
  *   - "bridge .* verb" had an unbounded gap so any later "check" in the
  *     sentence counted, catching "golden gate bridge ... check this photo".
  *     Bare "bridge" now ONLY matches verb-then-bridge order ("check/query/
- *     consultar el bridge") — that's the actual NovaLink usage shape and it
- *     structurally excludes "bridge ... check" landmark sentences. im_db/
+ *     consultar el bridge") — that's the dominant NovaLink usage shape. Precision
+ *     trade-off accepted: in this deployment "the bridge" is dominated by NovaLink
+ *     bridge mentions, so false positives cost one slow local turn (acceptable). im_db/
  *     as_db are unambiguous jargon so they keep both orders, each bounded
  *     to the same 40-char within-sentence window.
  *   - "production status" alone is generic filler ("album release
@@ -674,8 +676,9 @@ export const OLLAMA_TOOL_PATTERNS = [
  */
 export const NOVALINK_DATA_PATTERNS = [
   /\bnovalink\b/i,
-  /\b(bom|faltantes?|po receipts?|purchase order|orden de compra|work order|orden de trabajo)\b/i,
+  /\b(bom|faltantes?|po receipts?|purchase orders?|orden de compra|work orders?|orden de trabajo)\b/i,
   /(?<!\w)[oó]rdenes de compra\b/i,
+  /(?<!\w)[oó]rdenes de trabajo\b/i,
   /\bwip\s+(status|levels?|count)\b/i,
   /\b(company|compa[ñn][ií]a)\s+(id\s*)?#?\d{2,}\b/i,
   /\b(?:shortages?\b[^.?!]{0,40}\b(?:company|compa[ñn][ií]a|line|l[ií]nea|order|orden|part|material|sku|item|planta)s?\b|(?:company|compa[ñn][ií]a|line|l[ií]nea|order|orden|part|material|sku|item|planta)s?\b[^.?!]{0,40}\bshortages?\b)/i,
