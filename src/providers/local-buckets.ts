@@ -40,12 +40,17 @@ export const BUCKET_TOOLS: Record<Exclude<BucketId, 'core'>, string[]> = {
   ],
 };
 
-/** Bucket trigger regexes, EN+ES, checked in declaration order. */
+/**
+ * Bucket trigger regexes, EN+ES, checked in declaration order. Specific-vocabulary
+ * buckets (simulation, manufacturing, devops) are checked before the generic
+ * docs bucket, so domain-specific phrases containing generic doc words (e.g.
+ * "genera un reporte de capacidad") route to the domain bucket, not docs.
+ */
 const BUCKET_PATTERNS: Array<[Exclude<BucketId, 'core'>, RegExp]> = [
-  ['simulation', /\b(simulat\w*|simulaci[oó]n|doe\b|design of experiments|experiment\w*|experimento|state machine|m[aá]quina de estados|minizinc|conwip|heijunka|sequenc\w* (the )?jobs?|secuencia\w* (de )?trabajos?)\b/i],
+  ['simulation', /\b(simulat\w*|simulaci[oó]n|doe\b|design of experiments|experiment\w*|state machine|m[aá]quina de estados|minizinc|conwip|heijunka|sequenc\w* (the )?jobs?|secuencia\w* (de )?trabajos?)\b/i],
+  ['manufacturing', /\b(bom|shortage|faltante|compan(y|ies)\s+\d+|companies\b|compa[ñn][ií]as?\s+\d+|capacity|capacidad|value stream|flujo de valor|toc\b|bottleneck|cuello de botella|balance|sigma|cpk|spc|control chart|carta de control|fmea|rca|root cause|causa ra[ií]z|inventory|inventario|novalink|producci[oó]n|production data)\b/i],
+  ['devops', /\b(github|repo|repos|branch|commit|push|pull request|prs?\b|issues\b|(open|creat\w*|file|list|clos\w*|track\w*)\s+(an?\s+)?issues?\b|render|deploy|deployment|clone|run command|ejecuta\w* (el )?comando)\b/i],
   ['docs', /\b(pdf|docx|xlsx|pptx|csv|report|reporte|informe|document|documento|archivo|file|spreadsheet|hoja de c[aá]lculo|citation|cita|papers?|art[ií]culos?)\b/i],
-  ['manufacturing', /\b(bom|shortage|faltante|company|compa[ñn][ií]a|capacity|capacidad|value stream|flujo de valor|toc\b|bottleneck|cuello de botella|balance|sigma|cpk|spc|control chart|carta de control|fmea|rca|root cause|causa ra[ií]z|inventory|inventario|novalink|producci[oó]n|production data)\b/i],
-  ['devops', /\b(github|repo|repos|branch|commit|push|pull request|prs?\b|issue|issues|render|deploy|deployment|clone|run command|ejecuta\w* (el )?comando)\b/i],
 ];
 
 export function selectBucket(message: string, currentBucket: BucketId | undefined): BucketId {

@@ -29,6 +29,16 @@ describe('bucket selection', () => {
   it('explicit different-bucket match switches buckets', () => {
     expect(selectBucket('now generate the docx summary', 'manufacturing')).toBe('docs');
   });
+  it('specific-vocabulary buckets win over generic docs vocabulary after reorder', () => {
+    expect(selectBucket('genera un reporte de capacidad', undefined)).toBe('manufacturing');
+    expect(selectBucket('read this file from the repo and diff it', undefined)).toBe('devops');
+  });
+  it('bare "company" without plural/numeric/data context does not false-positive to manufacturing', () => {
+    expect(selectBucket("let's start a company selling shoes", undefined)).toBe('core');
+  });
+  it('bare singular "issue" without verb/plural context does not false-positive to devops', () => {
+    expect(selectBucket('I have an issue with my order', undefined)).toBe('core');
+  });
 });
 
 describe('bucket tool lists', () => {
