@@ -85,6 +85,7 @@ Apple Silicon Mac, 32GB RAM. Ollama models:
   (launchd, 02:00). Reboot-to-healthy verified at 69 s. Runbook:
   `docs/superpowers/plans/2026-06-26-luna-macbook-cutover.md`; team onboarding:
   `docs/luna-team-access.md`.
+- [x] Pipeline surgery: local prompt diet + hybrid novalink routing (2026-07-06, feat/pipeline-surgery)
 
 ---
 
