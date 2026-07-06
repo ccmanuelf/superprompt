@@ -6,6 +6,7 @@ import { logger } from '../logger.js';
 import { getToolDefinitions, executeTool } from './tools/index.js';
 import { getOllamaTimeoutMs, buildOllamaTimeoutError } from '../circuit-breaker.js';
 import { bucketForTool, toolNamesForBucket } from './local-buckets.js';
+import { estimateTokens } from '../context-budget.js';
 
 const MAX_HISTORY_TURNS = 20; // 20 turns = 40 messages (user + assistant)
 const MAX_HISTORY_MESSAGES = MAX_HISTORY_TURNS * 2;
@@ -100,6 +101,30 @@ export function buildToolErrorRecoveryNote(toolName: string): string {
   return `The tool "${toolName}" returned an error. Inspect the error and change your approach — `
     + `do not call the same tool with the same arguments again. If you cannot recover, explain the `
     + `problem to the user instead of repeating the call.`;
+}
+
+/**
+ * Pipeline surgery Task 6: context-budget backstop for the local path.
+ * Drops the oldest history messages first until system + history fits
+ * maxInputTokens. Never drops the last message (the current user turn),
+ * even if it alone exceeds the budget. Does not mutate `history` — returns
+ * a new array via spread, since `history` is the live per-chat array and
+ * mutating it would corrupt persistent history. Exported for testing.
+ */
+export function capHistoryToBudget(
+  history: Message[],
+  systemTokens: number,
+  maxInputTokens: number,
+): { kept: Message[]; dropped: number } {
+  const kept = [...history];
+  let dropped = 0;
+  const total = () =>
+    systemTokens + kept.reduce((s, m) => s + estimateTokens(typeof m.content === 'string' ? m.content : ''), 0);
+  while (kept.length > 1 && total() > maxInputTokens) {
+    kept.shift();
+    dropped++;
+  }
+  return { kept, dropped };
 }
 
 /**
@@ -469,6 +494,19 @@ export class OllamaProvider implements AIProvider {
       { role: 'system', content: systemContent },
       ...history,
     ];
+
+    // Pipeline surgery Task 6: token-budget backstop. Caps what the first
+    // iteration sends by dropping the oldest history messages; later
+    // iterations grow `messages` by design and are NOT re-trimmed — this is
+    // a per-turn input backstop, not an in-loop governor. `history` (the
+    // live per-chat array) is never mutated, only `messages` is spliced.
+    const LOCAL_MAX_INPUT_TOKENS = 12000; // spec target ≤10-12k; frozen prefix + schemas excluded from trimming by construction
+    const sysTokens = estimateTokens(systemContent);
+    const { kept, dropped } = capHistoryToBudget(history, sysTokens, LOCAL_MAX_INPUT_TOKENS);
+    if (dropped > 0) {
+      logger.info({ dropped, sysTokens }, 'Local budget backstop trimmed oldest history');
+      messages.splice(1, messages.length - 1, ...kept);
+    }
 
     // rc.72: tier gates the loop ceiling and per-request options. A 2B
     // model that spirals for 10 iterations does more damage than a 2B
