@@ -93,6 +93,8 @@ export interface AIResponse {
    * failed workflows.
    */
   toolErrorCount?: number;
+  /** Provider-level failure (timeout, unreachable, loop death) — enables router fallback. */
+  failed?: boolean;
 }
 
 export interface AIProvider {

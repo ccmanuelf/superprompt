@@ -693,6 +693,25 @@ export function isNovalinkDataTurn(message: string): boolean {
   return NOVALINK_DATA_PATTERNS.some((p) => p.test(message));
 }
 
+// Pipeline surgery Task 9 — soft Claude fallback for pinned local turns.
+// NovaLink-data turns are pinned to Ollama for data governance (Task 8), but
+// a pinned turn that fails locally (timeout, unreachable, agentic loop death)
+// would otherwise strand the user with an error. Bilingual disclosure makes
+// the degraded-context cloud answer visible rather than silent.
+export const FALLBACK_DISCLOSURE =
+  '⚠️ Answered via cloud fallback — local AI unavailable. / Respondido vía nube — IA local no disponible.\n\n';
+
+/** Fallback fires only when a pinned turn's local response reports failure. */
+export function shouldFallbackToClaude(args: { pinned: boolean; response: AIResponse }): boolean {
+  return args.pinned && args.response.failed === true;
+}
+
+/** Idempotent — a response already carrying the disclosure is returned unchanged. */
+export function applyFallbackDisclosure(response: AIResponse): AIResponse {
+  if (response.text?.startsWith(FALLBACK_DISCLOSURE)) return response;
+  return { ...response, text: `${FALLBACK_DISCLOSURE}${response.text ?? ''}` };
+}
+
 /**
  * Heuristic patterns that suggest Claude is the better provider.
  * These indicate complex analysis, creative writing, or document generation.
@@ -922,6 +941,8 @@ export class ProviderRouter {
   private lastUsedProvider = new Map<string, 'claude' | 'ollama'>();
   /** Tracks the active tool bucket per chat for local (Ollama) turns — hysteresis state (pipeline surgery Task 5) */
   private chatBuckets = new Map<string, BucketId>();
+  /** Chats whose current turn is pinned to local (NovaLink-data governance) — per-turn, reset at the top of the auto-route block (pipeline surgery Task 9) */
+  private pinnedTurns = new Set<string>();
 
   constructor() {
     this.claude = new ClaudeProvider();
@@ -940,11 +961,15 @@ export class ProviderRouter {
 
     // Auto-routing: classify message and pick provider
     if (session?.auto_route && message) {
+      // Per-turn reset — pin status must not leak across turns (pipeline surgery Task 9).
+      this.pinnedTurns.delete(chatId);
+
       // Phase 2 pin: NovaLink-data turns stay on-LAN, overriding both the
       // classifier and Claude-stickiness (data governance, spec 2026-07-06).
       if (config.NOVALINK_PIN_LOCAL && isNovalinkDataTurn(message)) {
         logger.info({ chatId }, 'novalink-data turn — pinned to local provider');
         this.lastUsedProvider.set(chatId, this.ollama.name);
+        this.pinnedTurns.add(chatId);
         return this.ollama;
       }
 
@@ -1311,6 +1336,31 @@ export class ProviderRouter {
             + 'El modelo siguio respondiendo con texto en lugar de llamar a generate_document. '
             + 'Intenta simplificar la solicitud, o cambia a un modelo mas capaz con /model qwen3.5:latest o /claude.',
         };
+      }
+    }
+
+    // Pipeline surgery Task 9 — soft Claude fallback for pinned NovaLink-data
+    // turns whose local response failed (timeout, unreachable, loop death).
+    // Placed after the deliverable-retry block (not immediately after the
+    // primary sendMessage call) so it sees the FINAL local outcome: if the
+    // deliverable retry above already recovered on Ollama, `response.failed`
+    // is no longer set and no fallback fires; if it also failed, `failed`
+    // still carries through (the retry's hard-error branch spreads the
+    // original `response`), so the fallback below still catches it. Firing
+    // right after the primary call instead would let this block hand back a
+    // good Claude answer only to have the deliverable-retry logic below
+    // immediately overwrite it with another (likely also-failing) Ollama
+    // attempt, since that logic keys off `provider.name === 'ollama'`
+    // (the static provider selection), not the live `response.provider`.
+    if (provider.name === 'ollama' && shouldFallbackToClaude({ pinned: this.pinnedTurns.has(chatId), response })) {
+      logger.warn({ chatId, reason: response.text }, 'Pinned local turn failed — soft fallback to Claude');
+      try {
+        const fallback = await this.claude.sendMessage({
+          ...params, message: effectiveMessage, systemPrompt: undefined, sessionId: undefined,
+        });
+        response = applyFallbackDisclosure(fallback);
+      } catch (err) {
+        logger.error({ err, chatId }, 'Cloud fallback also failed — returning local error');
       }
     }
 

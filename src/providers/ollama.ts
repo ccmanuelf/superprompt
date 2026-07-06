@@ -401,6 +401,7 @@ export class OllamaProvider implements AIProvider {
           text: buildOllamaTimeoutError(timeoutMs, model),
           provider: 'ollama',
           model,
+          failed: true,
         };
       }
 
@@ -409,6 +410,7 @@ export class OllamaProvider implements AIProvider {
         text: `Ollama error: ${err instanceof Error ? err.message : String(err)}`,
         provider: 'ollama',
         model,
+        failed: true,
       };
     }
   }
@@ -692,13 +694,17 @@ export class OllamaProvider implements AIProvider {
       breaker.recordIterationEnd(msg.content?.length ?? 0);
     }
 
-    // Max iterations reached (tier-dependent; 4 for small models, 10 default)
+    // Loop ended without a final no-tool-calls response: either max
+    // iterations exhausted, or the circuit breaker opened (stagnation /
+    // repetition / cascading tool errors).
+    const iterationsExhausted = iterations >= tier.maxIterations;
     logger.warn(
-      { chatId, model, iterations: tier.maxIterations, tier },
-      'Agentic loop hit max iterations',
+      { chatId, model, iterations, maxIterations: tier.maxIterations, breakerState: breaker.state },
+      iterationsExhausted ? 'Agentic loop hit max iterations' : 'Agentic loop circuit breaker opened',
     );
 
     const lastMsg = messages.at(-1);
+    const hasUsableText = Boolean(lastMsg?.content);
     const fallbackText =
       lastMsg?.content || '[Max tool iterations reached. Please try a simpler request.]';
 
@@ -706,6 +712,14 @@ export class OllamaProvider implements AIProvider {
       role: 'assistant',
       content: fallbackText,
     });
+
+    // Pipeline surgery Task 9 — "loop death" (iteration exhaustion) always
+    // counts as a provider failure for router fallback purposes. A
+    // breaker-open exit only counts as failure when the model left no
+    // usable text behind: if it produced real content before stagnating,
+    // that's still more useful to the user than a fresh cloud turn with
+    // none of this turn's local context.
+    const failed = iterationsExhausted || !hasUsableText;
 
     return {
       text: fallbackText,
@@ -716,6 +730,7 @@ export class OllamaProvider implements AIProvider {
       toolsUsed: toolsUsedSet.size > 0 ? [...toolsUsedSet] : undefined,
       hitMaxIterations: true,
       toolErrorCount: toolErrorCount > 0 ? toolErrorCount : undefined,
+      failed,
     };
   }
 }
