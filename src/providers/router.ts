@@ -220,7 +220,7 @@ Kanban handling is provider-specific and lives in its own section below — foll
 // Ollama models were observed picking the Claude-only JSON path (the
 // platform then auto-executed the JSON, creating a card the user never
 // asked for). Each provider now sees only its own path.
-const OLLAMA_KANBAN_PROMPT = `## Kanban Board — Tool-Based Access
+export const OLLAMA_KANBAN_PROMPT = `## Kanban Board — Tool-Based Access
 
 The board is ALWAYS accessible via the \`kanban_manage\` tool. NEVER say "the board is unavailable" or "I can't access it."
 
@@ -494,7 +494,7 @@ const VOICE_RESPONSE_HINT = `The user sent a voice message. Respond as if in a v
  * and detects DocGenRequest JSON blocks in responses to generate real files.
  * Claude just needs to know the JSON schema to trigger document generation.
  */
-const CLAUDE_DOCUMENT_PROMPT = `## Document Capabilities
+export const CLAUDE_DOCUMENT_PROMPT = `## Document Capabilities
 
 ### Reading Files
 When a user uploads a document (PDF, DOCX, XLSX, CSV, PPTX, JSON, MD, TXT), the system extracts its text content and includes it in the message as "[Document: filename]" followed by the parsed content. You can analyze, summarize, and answer questions about this content directly.
