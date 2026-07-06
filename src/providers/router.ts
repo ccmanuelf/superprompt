@@ -638,6 +638,21 @@ export const OLLAMA_TOOL_PATTERNS = [
   /\b(search papers|find papers|academic search|busca art[ií]culos|papers)\b/i,
 ];
 
+/** Phase 2 pipeline surgery — data-governance pin. Turns that reason over
+ * NovaLink production data stay on the LOCAL model (spec 2026-07-06).
+ * Exported for testing. */
+export const NOVALINK_DATA_PATTERNS = [
+  /\bnovalink\b/i,
+  /\b(bom|shortage|faltantes?|po receipts?|purchase order|orden de compra|wip\b|work order|orden de trabajo)\b/i,
+  /\b(company|compa[ñn][ií]a)\s+\d+\b/i,
+  /\b(production|producci[oó]n)\s+(data|status|numbers|datos|estado|cifras)\b/i,
+  /\b(im_db|as_db|bridge)\b.*\b(quer|consult|check|revis)/i,
+];
+
+export function isNovalinkDataTurn(message: string): boolean {
+  return NOVALINK_DATA_PATTERNS.some((p) => p.test(message));
+}
+
 /**
  * Heuristic patterns that suggest Claude is the better provider.
  * These indicate complex analysis, creative writing, or document generation.
@@ -885,6 +900,14 @@ export class ProviderRouter {
 
     // Auto-routing: classify message and pick provider
     if (session?.auto_route && message) {
+      // Phase 2 pin: NovaLink-data turns stay on-LAN, overriding both the
+      // classifier and Claude-stickiness (data governance, spec 2026-07-06).
+      if (config.NOVALINK_PIN_LOCAL && isNovalinkDataTurn(message)) {
+        logger.info({ chatId }, 'novalink-data turn — pinned to local provider');
+        this.lastUsedProvider.set(chatId, this.ollama.name);
+        return this.ollama;
+      }
+
       const autoChoice = classifyMessage(message);
       const lastUsed = this.lastUsedProvider.get(chatId);
 
