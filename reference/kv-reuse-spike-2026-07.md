@@ -36,3 +36,34 @@
 ## Caveats
 
 The benchmark scenarios run sequentially against shared server state, so individual scenarios are not clean isolated A/B tests. The verdict rests on uniform non-engagement across all of them (no scenario showed KV cache activation).
+
+## Phase 1 post-surgery benchmark (Task 7)
+
+**Date:** 2026-07-06
+**Method:** throwaway scripts (`.superpowers/sdd/bench-pipe*.ts`, not committed) importing the REAL production modules — `registerBuiltinTools()` + manufacturing pack registration, `resolveLocalTurnConfig()`, `buildLocalSystemPrompt()`, and `OllamaProvider.sendMessage()` (agentic loop, `assembledSystemPrompt: true`, exactly as the router wires it) — driven against **.244's Ollama 0.31.1** via SSH tunnel (`127.0.0.1:11435 → 192.168.2.244:11434`). Model `ministral-3:3b`, `num_ctx` 32768, `think: false` (the model 400s on thinking). `prompt_eval_count` captured by intercepting the `/api/chat` responses in-process. No bot/poller was started; the prod luna-bot container was untouched.
+
+### Numbers
+
+| Turn | Bucket | Wall-clock | prompt_eval_count | Tool schemas | Sys-prompt est. tokens |
+|------|--------|-----------:|------------------:|-------------:|-----------------------:|
+| (a) cold manufacturing | manufacturing | 191.0s / 104.3s / 241.8s (3 runs) | 15,195 | 22 | 9,571 |
+| (b) warm same-bucket | manufacturing | **650s (timeout)** / **140.6s** / **145.7s** (3 runs) | 15,443–15,688 | 22 | 9,571 |
+| (c) bucket switch → docs | docs | 32.3s | 12,866 | 18 | 10,416 |
+| (d) agentic tool turn (get_time) | core | 24.9s | 10,767 + 10,824 (2 iters) | 10 | 9,571 |
+
+Turn (d) called `get_time` correctly and answered with the real time — the agentic path works end-to-end through the slimmed pipe.
+
+### GATE: warm same-bucket turn < 30s → **FAIL**
+
+Warm same-bucket measured 140.6s and 145.7s on two clean reruns; the first attempt stalled past the 600s provider timeout entirely (memory-pressure stall — the stall also killed the SSH tunnel). ~4.7–4.9× over the 30s target.
+
+### Interpretation
+
+1. **The token diet itself worked.** Composed system prompt is ~9.6–10.4k estimated tokens (vs ~27k pre-surgery) and 10–22 schemas per turn (vs 48). Total per-turn prompt is now ~15.2k actual tokens on the manufacturing bucket (schemas ≈ 245 real tokens each), roughly half the pre-surgery load.
+2. **KV reuse still does not engage** (consistent with the Phase 0 verdict): warm-turn `prompt_eval_count` (15,443–15,688) ≈ cold (15,195). Every turn re-evaluates the full prompt.
+3. **.244's prompt-eval throughput is the binding constraint.** At ~100–150 tok/s effective prompt eval on this host/model, a 15k-token prompt alone costs ~100–150s — the <30s gate is unreachable at this prompt size without either KV reuse engaging, a much smaller prompt (~3–4k tokens total), or a faster eval path. Only the leanest core-bucket turn (10.8k tokens, warm model) came in under 30s (24.9s, and that was TWO chat calls).
+4. **Wall-clock variance is large** (cold: 104–242s across runs) and one warm turn stalled >600s — the 16 GB host runs the model (4.3 GB at 32k ctx) plus the Docker stack; memory is tight (≈6.2 GB wired with the model resident).
+
+### Decision points for Phase 2 (per the task-7 brief: STOP and consult)
+
+Options named in the brief: switch to qwen3.5:4b, smaller buckets (prompt closer to ~4k tokens), or change the threshold. Additional levers observed here: `num_ctx` reduction (32k KV allocation strains the host), and the model's verbose clarifying-question responses inflating decode time.
