@@ -957,13 +957,17 @@ export class ProviderRouter {
    * unless the classifier strongly disagrees (prevents mid-conversation switching).
    */
   private async getProviderForChat(chatId: string, message?: string): Promise<AIProvider> {
+    // Per-turn reset — pin status must not leak across turns (pipeline surgery
+    // Task 9). Unconditional: if this ran only inside the auto_route branch,
+    // a chat that pinned once and then had auto_route disabled would keep a
+    // stale pin forever, over-firing the governance fallback below on every
+    // later (non-pinned) failed turn.
+    this.pinnedTurns.delete(chatId);
+
     const session = await getSession(chatId);
 
     // Auto-routing: classify message and pick provider
     if (session?.auto_route && message) {
-      // Per-turn reset — pin status must not leak across turns (pipeline surgery Task 9).
-      this.pinnedTurns.delete(chatId);
-
       // Phase 2 pin: NovaLink-data turns stay on-LAN, overriding both the
       // classifier and Claude-stickiness (data governance, spec 2026-07-06).
       if (config.NOVALINK_PIN_LOCAL && isNovalinkDataTurn(message)) {
@@ -1352,6 +1356,13 @@ export class ProviderRouter {
     // immediately overwrite it with another (likely also-failing) Ollama
     // attempt, since that logic keys off `provider.name === 'ollama'`
     // (the static provider selection), not the live `response.provider`.
+    // Tracks who actually produced `response.text`, since a successful
+    // fallback below replaces `response` with a Claude reply while `provider`
+    // (the static pre-fallback selection) stays 'ollama' — chat_log and
+    // session bookkeeping must attribute to the true responder, not the
+    // provider that was originally picked for this turn.
+    let respondedVia: 'claude' | 'ollama' = provider.name;
+
     if (provider.name === 'ollama' && shouldFallbackToClaude({ pinned: this.pinnedTurns.has(chatId), response })) {
       logger.warn({ chatId, reason: response.text }, 'Pinned local turn failed — soft fallback to Claude');
       try {
@@ -1359,6 +1370,7 @@ export class ProviderRouter {
           ...params, message: effectiveMessage, systemPrompt: undefined, sessionId: undefined,
         });
         response = applyFallbackDisclosure(fallback);
+        respondedVia = 'claude';
       } catch (err) {
         logger.error({ err, chatId }, 'Cloud fallback also failed — returning local error');
       }
@@ -1393,9 +1405,13 @@ export class ProviderRouter {
       return retryResponse;
     }
 
-    // Persist new session ID for Claude
+    // Persist new session ID for Claude. Only Claude ever sets
+    // `newSessionId` (Ollama has no such concept), so this only fires for a
+    // genuine Claude response — attribute it with `respondedVia`, not the
+    // static `provider.name`, so a post-fallback Claude session id is never
+    // stored under the 'ollama' provider label.
     if (response.newSessionId) {
-      await setSession(chatId, response.newSessionId, provider.name);
+      await setSession(chatId, response.newSessionId, respondedVia);
     }
 
     if (autoTriggerNotice) response.autoTriggerNotice = autoTriggerNotice;
@@ -1407,10 +1423,12 @@ export class ProviderRouter {
     // later provider switch can seed the incoming provider with it.
     // rc.70: use rawUserMessage (before memory/enrichment prefix) so
     // the log stores clean user text; skip entirely for internal calls.
+    // Attribute to `respondedVia` (not `provider.name`) so a soft fallback
+    // that swapped the response in above logs correctly as 'claude'.
     if (!params.skipTurnLog) {
       await this.logConversationTurn(
         chatId,
-        provider.name,
+        respondedVia,
         params.rawUserMessage ?? params.message,
         response.text,
       );

@@ -128,6 +128,25 @@ export function capHistoryToBudget(
 }
 
 /**
+ * Pipeline surgery Task 9 — breaker-open failure detection. Finds the last
+ * *assistant* message with non-empty content, searching backwards. At every
+ * real agentic-loop exit the trailing message is a `role: 'tool'` message
+ * (JSON.stringify'd tool result), which is never empty — reading
+ * `messages.at(-1)?.content` for "usable text" is always truthy and never
+ * reflects whether the model produced anything for the user. Exported for
+ * testing.
+ */
+export function lastAssistantText(messages: Message[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === 'assistant' && typeof m.content === 'string' && m.content.trim().length > 0) {
+      return m.content;
+    }
+  }
+  return null;
+}
+
+/**
  * Heuristic to detect if a message likely needs tool calls.
  * Routes to tool model when detected, chat model otherwise.
  */
@@ -704,7 +723,12 @@ export class OllamaProvider implements AIProvider {
     );
 
     const lastMsg = messages.at(-1);
-    const hasUsableText = Boolean(lastMsg?.content);
+    // rc.9 fix: at every real loop exit the trailing message is a
+    // `role: 'tool'` message with JSON.stringify'd (never-empty) content, so
+    // `Boolean(lastMsg?.content)` was always true and `failed` never fired on
+    // breaker-open. "Usable text" means the model itself said something —
+    // check the last *assistant* message, not the last message overall.
+    const hasUsableText = lastAssistantText(messages) !== null;
     const fallbackText =
       lastMsg?.content || '[Max tool iterations reached. Please try a simpler request.]';
 
