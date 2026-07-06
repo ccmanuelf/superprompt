@@ -1,16 +1,41 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import type { Knex } from 'knex';
+import { createTestKnex } from '../src/db-knex.js';
 import { estimateTokens } from '../src/context-budget.js';
+
+// Hermetic in-memory Knex bootstrap — same pattern as
+// tests/router-pinned-turns.test.ts. loadAllPacks()'s tool/skill import
+// calls getKnex() (via db-core.ts / assumptions.ts); previously that threw
+// "Knex not initialized" on every pack (caught per-file and merely logged),
+// which depended on nothing but was noisy and untested-by-design. Wiring a
+// real in-memory DB makes the pack-loading path actually exercised and
+// removes any dependence on ambient process state or test ordering.
+let testKnex: Knex;
+
+vi.mock('../src/db-knex.js', async (importOriginal) => {
+  const original = (await importOriginal()) as Record<string, unknown>;
+  return { ...original, getKnex: () => testKnex, getDbDriver: () => 'sqlite' };
+});
 
 describe('buildLocalCapabilitiesPrompt (Task 7b — capabilities diet for the local path)', () => {
   beforeAll(async () => {
+    testKnex = createTestKnex();
+    const { coreTableInit } = await import('../src/db-core.js');
+    const { autoSkillsTableInit } = await import('../src/auto-skills.js');
+    const { assumptionsTableInit } = await import('../src/assumptions.js');
+    await coreTableInit.initTables();
+    await autoSkillsTableInit.initTables();
+    await assumptionsTableInit.initTables();
+
     // Populate the real pack registry from packs/*/pack.yaml (same source
     // getAggregatedCapabilities() reads) so the budget/content tests reflect
-    // "all current packs enabled", not an empty registry. DB-touching tool/skill
-    // import calls fail safely (getKnex() throws, caught per-file) — pack
-    // metadata (name/displayName/description/capabilities/enabled) is parsed
-    // from YAML regardless and does not depend on DB state.
+    // "all current packs enabled", not an empty registry.
     const { loadAllPacks } = await import('../src/packs.js');
     await loadAllPacks();
+  });
+
+  afterAll(async () => {
+    if (testKnex) await testKnex.destroy();
   });
 
   it('hard budget: estimated tokens <= 800 with all current packs enabled', async () => {
