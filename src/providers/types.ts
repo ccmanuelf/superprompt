@@ -49,6 +49,16 @@ export interface SendMessageParams {
    * prior turn's language inertia win (rc.82).
    */
   languageHint?: 'en' | 'es';
+  /**
+   * When true, `systemPrompt` is already a complete, self-contained system
+   * prompt (the router's Task 4 local assembler for the Ollama path) rather
+   * than a fragment meant to be layered on top of a provider's own base
+   * persona. Ollama's agentic loop uses this to skip prepending its fat
+   * TOOL_MODEL_SYSTEM_PROMPT persona, avoiding duplication (pipeline surgery
+   * Task 5). Non-router callers (e.g. voice) omit this and keep today's
+   * un-assembled behavior.
+   */
+  assembledSystemPrompt?: boolean;
 }
 
 export interface GeneratedFile {

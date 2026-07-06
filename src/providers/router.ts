@@ -5,6 +5,8 @@ import type { Message as OllamaMessage } from 'ollama';
 import { config } from '../config.js';
 import { NOVALINK_BRIDGE_PROMPT } from './bridge-prompt.js';
 import { logger } from '../logger.js';
+import { selectBucket, toolNamesForBucket, type BucketId } from './local-buckets.js';
+import { buildLocalSystemPrompt } from './local-prompt.js';
 import {
   getSession,
   setSession,
@@ -841,11 +843,30 @@ export function composeClaudeSystemPrompt(p: ClaudePromptParts): string {
   ].filter(Boolean).join('\n\n');
 }
 
+/** Pure core of the Ollama-branch turn wiring (exported for testing). */
+export function resolveLocalTurnConfig(
+  message: string,
+  currentBucket: BucketId | undefined,
+  skillAllowedTools: string[] | undefined,
+  deliverableIntent: { isDeliverable: boolean; allowedTools?: string[] | null },
+): { bucket: BucketId; allowedTools: string[] } {
+  const bucket = selectBucket(message, currentBucket);
+  if (deliverableIntent.isDeliverable && deliverableIntent.allowedTools) {
+    return { bucket, allowedTools: deliverableIntent.allowedTools };
+  }
+  if (skillAllowedTools?.length) {
+    return { bucket, allowedTools: skillAllowedTools };
+  }
+  return { bucket, allowedTools: toolNamesForBucket(bucket) };
+}
+
 export class ProviderRouter {
   private claude: ClaudeProvider;
   private ollama: OllamaProvider;
   /** Tracks the last provider actually used per chat (for /provider status in auto mode) */
   private lastUsedProvider = new Map<string, 'claude' | 'ollama'>();
+  /** Tracks the active tool bucket per chat for local (Ollama) turns — hysteresis state (pipeline surgery Task 5) */
+  private chatBuckets = new Map<string, BucketId>();
 
   constructor() {
     this.claude = new ClaudeProvider();
@@ -1026,16 +1047,70 @@ export class ProviderRouter {
         ? SIMULATION_SCAFFOLDING_HINT
         : '';
 
+    // rc.75 — when the user's raw message requests a deliverable,
+    // narrow the tool allowlist so the model literally cannot propose
+    // kanban, memory, screenshots etc. and deflect the user's ask.
+    // Override the skill-based allowedTools when deliverable is
+    // detected: user's explicit ask beats background skill context.
+    // Pipeline surgery Task 5: moved above the systemPrompt composition
+    // because the Ollama branch's resolveLocalTurnConfig() needs
+    // deliverableIntent as an input (deliverable narrowing beats bucket tools).
+    const deliverableIntent = classifyDeliverableIntent(params.rawUserMessage ?? params.message);
+
+    if (deliverableIntent.isDeliverable) {
+      logger.info(
+        {
+          chatId,
+          provider: provider.name,
+          needsSimulation: deliverableIntent.needsSimulation,
+          allowedTools: deliverableIntent.allowedTools,
+        },
+        'Deliverable intent detected — narrowing tool allowlist',
+      );
+    }
+
+    // Pipeline surgery Task 5 — local (Ollama) turn wiring: resolve the
+    // hysteresis bucket + effective tool allowlist for this turn and
+    // remember the bucket for the next turn in this chat.
+    let localTurn: { bucket: BucketId; allowedTools: string[] } | undefined;
+    if (provider.name === 'ollama') {
+      localTurn = resolveLocalTurnConfig(
+        params.rawUserMessage ?? params.message,
+        this.chatBuckets.get(chatId),
+        allowedTools ?? undefined,
+        deliverableIntent,
+      );
+      this.chatBuckets.set(chatId, localTurn.bucket);
+      logger.info({ chatId, bucket: localTurn.bucket, toolCount: localTurn.allowedTools.length }, 'Local turn bucket selected');
+    }
+
     // Provider-aware system prompt composition:
     // - BOTH providers: platformIdentity comes FIRST (prevents Claude identity confusion)
     // - Claude: CLAUDE_PROVIDER_NOTICE (tool access via JSON blocks) + CLAUDE_KANBAN_PROMPT + LANGUAGE_HINT
-    // - Ollama: OLLAMA_KANBAN_PROMPT + LANGUAGE_HINT (rc.75 — English requests were getting Spanish replies
-    //   when continuity bridge seeded Spanish history; hint forces language parity with the user's latest)
+    // - Ollama: buildLocalSystemPrompt() (Task 4 assembler) — frozen persona/rules/kanban/capabilities/skill
+    //   prefix + bucket-specific doc prose + a volatile "## This turn" tail (rc.75/rc.76 hints included).
+    //   params.systemPrompt is intentionally NOT folded in here — it stays a provider-level append
+    //   (ollama.ts folds it into extraSystemPrompt, appended after the assembled prompt).
     // - rc.74: deliverableReminder injected near the end when applicable, so it's read last (high recency weight)
     // - rc.76: simulationScaffolding + languageOverride placed at the VERY end for maximum recency weight
     const systemPrompt = provider.name === 'claude'
       ? composeClaudeSystemPrompt({ platformIdentity, voiceHint, systemPrompt: params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, deliverableReminder, simulationScaffolding, languageOverride })
-      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, OLLAMA_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, simulationScaffolding, LANGUAGE_HINT, languageOverride].filter(Boolean).join('\n\n') || undefined;
+      : buildLocalSystemPrompt({
+          bucket: localTurn!.bucket,
+          skillPrompt,
+          fullCapabilities,
+          volatiles: {
+            platformNote: `The user is chatting via ${platformName}.`,
+            voiceHint,
+            mfgHint: mfgHint ?? '',
+            uploadsManifest,
+            deliverableReminder,
+            simulationScaffolding,
+            languageHint: LANGUAGE_HINT,
+            languageOverride,
+            continuityAppend: '',
+          },
+        });
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)
@@ -1090,27 +1165,12 @@ export class ProviderRouter {
       }
     }
 
-    // rc.75 — when the user's raw message requests a deliverable,
-    // narrow the tool allowlist so the model literally cannot propose
-    // kanban, memory, screenshots etc. and deflect the user's ask.
-    // Override the skill-based allowedTools when deliverable is
-    // detected: user's explicit ask beats background skill context.
-    const deliverableIntent = classifyDeliverableIntent(params.rawUserMessage ?? params.message);
-    const effectiveAllowedTools = deliverableIntent.isDeliverable
-      ? deliverableIntent.allowedTools!
-      : (allowedTools ?? undefined);
-
-    if (deliverableIntent.isDeliverable) {
-      logger.info(
-        {
-          chatId,
-          provider: provider.name,
-          needsSimulation: deliverableIntent.needsSimulation,
-          allowedTools: effectiveAllowedTools,
-        },
-        'Deliverable intent detected — narrowing tool allowlist',
-      );
-    }
+    // Pipeline surgery Task 5: effectiveAllowedTools for Ollama now comes
+    // from localTurn (bucket tools, narrowed by deliverable/skill intent
+    // inside resolveLocalTurnConfig); Claude keeps the pre-surgery formula.
+    const effectiveAllowedTools = provider.name === 'ollama'
+      ? localTurn!.allowedTools
+      : (deliverableIntent.isDeliverable ? deliverableIntent.allowedTools! : (allowedTools ?? undefined));
 
     let response = await provider.sendMessage({
       ...params,
@@ -1120,6 +1180,7 @@ export class ProviderRouter {
       systemPromptAppend: continuityAppend,
       allowedTools: effectiveAllowedTools,
       modelOverride,
+      assembledSystemPrompt: provider.name === 'ollama' ? true : undefined,
     });
 
     // rc.75 — post-loop validator: when the user asked for a
@@ -1150,6 +1211,11 @@ export class ProviderRouter {
         modelOverride,
         skipTurnLog: true,
         skipAutoTrigger: true,
+        // This retry branch only fires for provider.name === 'ollama' (see guard
+        // above) and reuses the already-assembled local systemPrompt — without
+        // this flag ollama.ts would re-prepend the fat TOOL_MODEL_SYSTEM_PROMPT
+        // persona on top of it (pipeline surgery Task 5).
+        assembledSystemPrompt: true,
       });
       if (retryResponse.toolsUsed?.includes('generate_document')) {
         logger.info({ chatId }, 'Deliverable retry succeeded');

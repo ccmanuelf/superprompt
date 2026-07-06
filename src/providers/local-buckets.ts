@@ -21,7 +21,7 @@ export const CORE_TOOLS: string[] = [
 export const BUCKET_TOOLS: Record<Exclude<BucketId, 'core'>, string[]> = {
   docs: [
     'parse_file', 'read_file', 'generate_document', 'review_report',
-    'search_papers', 'manage_citations',
+    'search_papers', 'manage_citations', 'read_documentation', 'search_documentation',
   ],
   manufacturing: [
     'capacity_planning', 'value_stream_map', 'toc_analysis', 'line_balance',

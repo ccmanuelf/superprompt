@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { getToolDefinitions, executeTool } from './tools/index.js';
 import { getOllamaTimeoutMs, buildOllamaTimeoutError } from '../circuit-breaker.js';
+import { bucketForTool, toolNamesForBucket } from './local-buckets.js';
 
 const MAX_HISTORY_TURNS = 20; // 20 turns = 40 messages (user + assistant)
 const MAX_HISTORY_MESSAGES = MAX_HISTORY_TURNS * 2;
@@ -350,6 +351,7 @@ export class OllamaProvider implements AIProvider {
           onTyping,
           extraSystemPrompt,
           isVoice,
+          params.assembledSystemPrompt === true,
         );
       } else {
         result = await this.runChatTurn(model, history, onTyping, extraSystemPrompt, isVoice);
@@ -449,10 +451,18 @@ export class OllamaProvider implements AIProvider {
     onTyping?: () => void,
     extraSystemPrompt?: string,
     isVoice?: boolean,
+    assembled?: boolean,
   ): Promise<AIResponse> {
-    const systemContent = extraSystemPrompt
-      ? `${TOOL_MODEL_SYSTEM_PROMPT}\n\n${extraSystemPrompt}`
-      : TOOL_MODEL_SYSTEM_PROMPT;
+    // Pipeline surgery Task 5: when the router already sent a complete,
+    // self-contained system prompt (Task 4's local assembler), skip the fat
+    // TOOL_MODEL_SYSTEM_PROMPT base persona — it would duplicate what the
+    // assembler already covers. Non-router callers (e.g. voice) don't set
+    // `assembled` and keep today's un-assembled behavior.
+    const systemContent = assembled && extraSystemPrompt
+      ? extraSystemPrompt
+      : extraSystemPrompt
+        ? `${TOOL_MODEL_SYSTEM_PROMPT}\n\n${extraSystemPrompt}`
+        : TOOL_MODEL_SYSTEM_PROMPT;
 
     // Build message list with system prompt
     const messages: Message[] = [
@@ -623,6 +633,21 @@ export class OllamaProvider implements AIProvider {
         // Circuit breaker: record result for pattern detection
         breaker.recordResult(toolName, toolArgs, result);
         // Pack tuner recording moved to executeTool() — covers both providers
+
+        // Pipeline surgery: model called a registered tool outside the current
+        // bucket's schema set (selector miss). Execute normally (registry knows
+        // it) and widen the tool set so later iterations see its whole bucket.
+        const sentNames = new Set(tools.map((t) => t.function.name));
+        if (!sentNames.has(toolName)) {
+          const bucket = bucketForTool(toolName);
+          if (bucket) {
+            const widened = getToolDefinitions(toolNamesForBucket(bucket));
+            for (const def of widened) {
+              if (!sentNames.has(def.function.name)) tools.push(def);
+            }
+            logger.info({ toolName, bucket }, 'Mid-loop bucket swap — widened tool set');
+          }
+        }
       }
 
       // Circuit breaker: record iteration end for stagnation detection
