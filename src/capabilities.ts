@@ -10,7 +10,7 @@
  * This is injected into the system prompt for both providers.
  */
 
-import { scorePackIntent } from './packs.js';
+import { scorePackIntent, getLoadedPacks } from './packs.js';
 import { renderDocumentationManifest } from './doc-awareness.js';
 
 // ── Capability Map (injected into system prompts) ────────────
@@ -668,4 +668,56 @@ export function getCapabilitiesPrompt(): string {
 /** Same pattern for the "what can you do?" self-description. */
 export function getSelfDescription(): string {
   return spliceAtMarker(SELF_DESCRIPTION, SELF_DESC_MARKER, renderSelfDescriptionBullets());
+}
+
+// ── Task 7b — pipeline surgery: condensed capabilities for the local path ──
+
+/**
+ * Static, information-dense condensation of what getCapabilitiesPrompt() +
+ * getAggregatedCapabilities() + buildWebAppsPrompt() + buildWebUIAwarenessPrompt()
+ * convey — one line per capability area, marketing prose and examples dropped.
+ * The Claude path is untouched; this exists ONLY for the Ollama branch's
+ * assembled system prompt (small-model context budget).
+ */
+const LOCAL_CAPABILITIES_HEADER = `## Your Capabilities (condensed)
+You are Luna (Inge Luna in Spanish), a full-featured AI assistant: manufacturing/IE tools, documents, memory, tasks, learning, voice, web dashboards. Use real tools instead of solving from scratch — never recreate what a tool already does. Always answer in the language of the user's current message. Telegram already gives you direct tool access — never claim you lack API/web-UI access.
+
+- Manufacturing/IE tools: capacity_planning, job_sequencer, production_simulation, minizinc_optimize, sigma_analysis, spc_setup, fmea_manage, rca_manage, design_of_experiments, value_stream_map, toc_analysis, conwip_heijunka, line_balance, inventory_plan, state_machine_simulator.
+- Documents: generate_document creates real XLSX/DOCX/PDF/PPTX/CSV with charts — create the file, don't describe it.
+- Memory/research: query_memory/save_memory (persistent facts+events); search_papers + manage_citations (BibTeX/APA/Chicago).
+- Tasks: kanban_manage (direct board access) + create_reminder (cron).
+- Learning coach /learn: spaced-repetition, Socratic micro-sessions, 12 personas.
+- Web/system: web_search (Ollama needs SEARXNG_URL/BRAVE_API_KEY), summarize_url, take_screenshot, read_file/parse_file, run_command, GitHub + Render tools.
+- Voice: auto-transcribed (99 languages); web voice chat at /.
+- Dashboards (be a co-pilot, guide tabs/buttons): / /board /learn /docs, mfg: /sim /capacity /sequence /vsm /toc /conwip /doe /fsm, ops: /hub /hub/bom (preview). Packs may add more — /pack list.
+- Skills: /skill <name> — debugger, analyst, coder, brainstormer, careful, researcher, learning-coach, manufacturing-expert, antislop, council, interviewer.
+- Boundaries: you CAN build tools/skills/packs/API integrations conversationally. You CANNOT build custom dashboards, DB schemas, or new platform commands — say so, offer to draft dev-team requirements.`;
+
+/** Collapse whitespace and hard-cap to a single terse phrase. */
+function toOnePhrase(text: string, maxLen: number): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxLen) return clean;
+  const cut = clean.slice(0, maxLen);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > maxLen * 0.6 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+}
+
+/**
+ * Condensed, information-dense capabilities prompt for the LOCAL (Ollama)
+ * path only — pipeline surgery Task 7b. Keeps everything the model needs to
+ * ACT (tool names, document/dashboard existence, boundaries) but drops the
+ * verbose Claude-path prose. Enabled pack names + one-phrase descriptions are
+ * rendered from the SAME data source getAggregatedCapabilities() uses
+ * (getLoadedPacks(), filtered the same way) so newly enabled/disabled packs
+ * stay accurate without touching this function.
+ * Hard budget: estimateTokens(buildLocalCapabilitiesPrompt()) <= 800 with all
+ * current packs enabled (tests/local-capabilities.test.ts).
+ */
+export function buildLocalCapabilitiesPrompt(): string {
+  const packLines = getLoadedPacks()
+    .filter((p) => p.enabled && p.capabilities)
+    .map((p) => `- ${p.name}: ${toOnePhrase(p.description || p.displayName, 60)}`);
+
+  if (packLines.length === 0) return LOCAL_CAPABILITIES_HEADER;
+  return `${LOCAL_CAPABILITIES_HEADER}\n\nEnabled packs:\n${packLines.join('\n')}`;
 }

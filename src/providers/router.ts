@@ -118,7 +118,7 @@ function chatLogToClaudeRecap(entries: ChatLogEntry[]): string {
   ].join('\n');
 }
 import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAutoTrigger } from '../skills.js';
-import { getCapabilitiesPrompt, generateMfgContextHint } from '../capabilities.js';
+import { getCapabilitiesPrompt, generateMfgContextHint, buildLocalCapabilitiesPrompt } from '../capabilities.js';
 import { getAggregatedCapabilities, buildWebAppsPrompt } from '../packs.js';
 import { buildWebUIAwarenessPrompt } from '../web-ui-guide.js';
 import { getRecentUploads, formatUploadManifest } from '../upload-manifest.js';
@@ -997,6 +997,12 @@ export class ProviderRouter {
     const webAppsPrompt = buildWebAppsPrompt();
     const webUIAwareness = buildWebUIAwarenessPrompt();
     const fullCapabilities = [getCapabilitiesPrompt(), packCaps, webAppsPrompt, webUIAwareness].filter(Boolean).join('\n\n');
+    // Task 7b — pipeline surgery: the Ollama branch uses a condensed variant
+    // of the same information (small-model context budget); the Claude
+    // branch keeps `fullCapabilities` above byte-identical (frozen by
+    // tests/claude-prompt-freeze.test.ts). Cheap to compute unconditionally —
+    // it's pure string assembly, no I/O — so no provider branch needed here.
+    const localCapabilities = buildLocalCapabilitiesPrompt();
 
     // rc.71: upload manifest — short list of recently uploaded files
     // with their exact absolute paths, so small models don't invent
@@ -1104,7 +1110,7 @@ export class ProviderRouter {
       : buildLocalSystemPrompt({
           bucket: localTurn!.bucket,
           skillPrompt,
-          fullCapabilities,
+          fullCapabilities: localCapabilities,
           volatiles: {
             sessionPrompt: callerSystemPrompt,
             platformNote: `The user is chatting via ${platformName}.`,

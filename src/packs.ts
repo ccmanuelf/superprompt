@@ -339,8 +339,10 @@ export function parsePackYaml(content: string): RawPackYaml {
     const key = keyMatch[1];
     const inlineValue = keyMatch[2].trim();
 
-    // Multiline block scalar (key: |)
-    if (inlineValue === '|' || inlineValue === '|+' || inlineValue === '|-') {
+    // Multiline block scalar (key: | literal, key: > folded)
+    if (inlineValue === '|' || inlineValue === '|+' || inlineValue === '|-'
+      || inlineValue === '>' || inlineValue === '>+' || inlineValue === '>-') {
+      const folded = inlineValue.startsWith('>');
       i++;
       const blockLines: string[] = [];
       while (i < lines.length) {
@@ -357,7 +359,23 @@ export function parsePackYaml(content: string): RawPackYaml {
       }
       // Trim trailing empty lines
       while (blockLines.length > 0 && blockLines[blockLines.length - 1] === '') blockLines.pop();
-      (result as Record<string, unknown>)[key] = blockLines.join('\n');
+      if (folded) {
+        // YAML folding: consecutive non-blank lines join with a single
+        // space; a blank line starts a new paragraph (kept as \n).
+        const paragraphs: string[] = [];
+        let current: string[] = [];
+        for (const bl of blockLines) {
+          if (bl === '') {
+            if (current.length) { paragraphs.push(current.join(' ')); current = []; }
+          } else {
+            current.push(bl);
+          }
+        }
+        if (current.length) paragraphs.push(current.join(' '));
+        (result as Record<string, unknown>)[key] = paragraphs.join('\n');
+      } else {
+        (result as Record<string, unknown>)[key] = blockLines.join('\n');
+      }
       continue;
     }
 

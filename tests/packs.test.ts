@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, rmSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { parsePackYaml } from '../src/packs.js';
 
 // We need to test the pack system in isolation. Since packs.ts imports from db.ts
 // and other modules that need initialization, we'll test the pure functions directly
@@ -61,6 +62,24 @@ describe('Pack YAML Parser', () => {
     expect(content).toContain('enabled: false');
     expect(content).toContain('capabilities: |');
     expect(content).toContain('intent_patterns:');
+  });
+
+  // Task 7b follow-up: buildLocalCapabilitiesPrompt() surfaced that
+  // `description: >` (YAML folded block scalar) was never handled —
+  // parsePackYaml only recognized `|` (literal). manufacturing/client-acme/
+  // operations-hub pack.yaml all use `>` for `description`, so
+  // PackMetadata.description silently came out as the literal string ">" —
+  // already user-facing today via /pack info on Telegram/Matrix.
+  it('parses a folded block scalar (description: >) into joined prose, not the literal ">"', () => {
+    const MANUFACTURING_YAML_PATH = resolve(process.cwd(), 'packs/manufacturing/pack.yaml');
+    const content = readFileSync(MANUFACTURING_YAML_PATH, 'utf-8');
+    expect(content).toContain('description: >');
+
+    const parsed = parsePackYaml(content);
+    expect(parsed.description).not.toBe('>');
+    expect(parsed.description).toContain('manufacturing operations toolkit');
+    // Folded scalars join wrapped lines with a single space, not a newline.
+    expect(parsed.description).not.toContain('\n');
   });
 });
 

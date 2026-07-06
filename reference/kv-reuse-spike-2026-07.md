@@ -67,3 +67,45 @@ Warm same-bucket measured 140.6s and 145.7s on two clean reruns; the first attem
 ### Decision points for Phase 2 (per the task-7 brief: STOP and consult)
 
 Options named in the brief: switch to qwen3.5:4b, smaller buckets (prompt closer to ~4k tokens), or change the threshold. Additional levers observed here: `num_ctx` reduction (32k KV allocation strains the host), and the model's verbose clarifying-question responses inflating decode time.
+
+## Task 7b re-gate (capabilities diet + num_ctx 16384)
+
+**Date:** 2026-07-06
+**Change under test:** `buildLocalCapabilitiesPrompt()` (`src/capabilities.ts`) — a condensed, information-dense replacement for the ~5–8k-token verbatim `fullCapabilities` block, used ONLY in the Ollama arm's `buildLocalSystemPrompt()` input (`src/providers/router.ts`). The Claude arm's `fullCapabilities` composition is untouched (`composeClaudeSystemPrompt` — guarded by `tests/claude-prompt-freeze.test.ts`, still green and unmodified). Plus: `config.OLLAMA_NUM_CTX` forced to 16384 for the bench run (down from Task 7's 32768).
+**Method:** same as Task 7 — throwaway script `.superpowers/sdd/bench-pipe-7b.ts` (not committed) imports the real production modules (`registerBuiltinTools()` + manufacturing pack registration, `loadAllPacks()` for real pack metadata, `resolveLocalTurnConfig()`, `buildLocalSystemPrompt()`, `OllamaProvider.sendMessage()` with `assembledSystemPrompt: true`), driven against **.244's Ollama 0.31.1** via SSH tunnel (`127.0.0.1:11435 → 192.168.2.244:11434`). Model `ministral-3:3b`, `think: false`. `prompt_eval_count` captured by intercepting `/api/chat` responses in-process. Only 3 turns per the amended brief (cold mfg / warm same-bucket mfg / core agentic) — the docs bucket-switch turn from Task 7 was dropped, it isn't part of the gate. No bot/poller started; prod `luna-bot` verified `Up 2 days (healthy)` before and after; SSH tunnel killed at the end (`pkill -f 'ssh -f -N -L 11435'`, confirmed down via curl).
+
+**Note on `OLLAMA_NUM_CTX` and env vars:** `config.ts` reads `OLLAMA_NUM_CTX` from `readEnvFile()` (a custom `.env`-file reader), **not** `process.env` (Code Convention #2 — never pollute `process.env`). A shell-exported `OLLAMA_NUM_CTX=16384` before `npx tsx` does **nothing** to `config.OLLAMA_NUM_CTX`. The bench script sets `config.OLLAMA_NUM_CTX = 16384` directly on the imported config object (same pattern already used for `OLLAMA_HOST`/`OLLAMA_TOOL_MODEL`/`OLLAMA_THINK`). **For the prod flip, the correct mechanism is different: add `OLLAMA_NUM_CTX=16384` to .244's `.env` file** (not attempted here — prod `.env` was not touched, per the no-prod-changes constraint).
+
+### Side finding fixed in this task: YAML folded-scalar bug
+
+Building `buildLocalCapabilitiesPrompt()`'s dynamic pack-list section (one line per enabled pack, from the same `getLoadedPacks()` data `getAggregatedCapabilities()` reads) surfaced a pre-existing bug: `parsePackYaml()` in `src/packs.ts` only handled the YAML literal block scalar (`key: |`), not the folded block scalar (`key: >`). Three pack.yaml files (`manufacturing`, `client-acme`, `operations-hub`) use `description: >` — their parsed `description` came out as the literal string `">"`, silently dropping the rest of the block. This is already user-facing today via `/pack info <name>` on Telegram (`src/platforms/telegram.ts:3734`) and Matrix (`src/platforms/matrix.ts:1181`). Fixed `parsePackYaml()` to fold wrapped lines with a space (YAML folding semantics) and added a regression test (`tests/packs.test.ts` — "parses a folded block scalar (description: >) into joined prose, not the literal \">\"" ). Confirmed RED before the fix, GREEN after.
+
+### Numbers — Task 7 vs Task 7b
+
+| Turn | Task 7 (verbatim caps, num_ctx 32768) | Task 7b (condensed caps, num_ctx 16384) |
+|------|---------------------------------------|-------------------------------------------|
+| Sys-prompt est. tokens | 9,571 | **1,428** |
+| (a) cold manufacturing — wall-clock | 191.0s / 104.3s / 241.8s (3 runs) | **66.8s** |
+| (a) cold manufacturing — prompt_eval_count | 15,195 | **7,395** |
+| (b) warm same-bucket — wall-clock | 650s (timeout) / 140.6s / 145.7s | **60.2s** |
+| (b) warm same-bucket — prompt_eval_count | 15,443–15,688 | **7,592** |
+| (c) agentic tool turn — wall-clock | 24.9s | **59.5s** |
+| (c) agentic tool turn — prompt_eval_count | 10,767 + 10,824 (2 iters) | **7,781 + 7,838 (2 iters)** |
+| Tool schemas (manufacturing bucket) | 22 | 22 (unchanged — schema diet was Task 3/4, not in scope here) |
+
+`buildLocalCapabilitiesPrompt()` itself: 2,760 chars / ~690 estimated tokens with all 12 currently-enabled packs listed (business-dev, client-acme, customer-service, engineering, finance, hr, manufacturing, novalink, operations-hub, supply-chain, trade-compliance, warehousing) — under the 800-token hard budget with margin. `developer` pack contributes nothing to either the old or new capabilities prompt (its `capabilities:` field is a YAML list the parser doesn't aggregate into a string — pre-existing behavior, unrelated to this task, out of scope).
+
+Turn (c) called `get_time` correctly and answered with the real time (America/Matamoros) — the agentic tool-calling path still works end-to-end.
+
+### GATE: warm same-bucket turn < 30s → **FAIL** (60.2s)
+
+### Interpretation
+
+1. **The capabilities diet worked as designed.** System-prompt tokens dropped 9,571 → 1,428 (−85%); actual prompt_eval_count roughly halved (15.2–15.7k → 7.4–7.8k) — the remaining prompt is dominated by the 22 tool schemas (unchanged, out of this task's scope) plus the frozen persona/rules/kanban prefix.
+2. **Wall-clock roughly halved in lockstep with tokens** (140.6–145.7s → 60.2s for the warm turn), consistent with Task 7's finding that .244's prompt-eval throughput (~120–150 tok/s effective) is the binding constraint, not KV-cache reuse.
+3. **KV-cache reuse still does not engage.** Warm `prompt_eval_count` (7,592) ≈ cold (7,395) — the full prompt is re-evaluated every turn regardless of `num_ctx`. This confirms `num_ctx` 16384 vs 32768 did not change this behavior; the wall-clock improvement here is entirely attributable to the capabilities diet (fewer tokens to evaluate), not to `num_ctx`.
+4. **Remaining gap to gate:** at ~120–150 tok/s, hitting <30s needs the total prompt under ~3.6–4.5k tokens. Current manufacturing-bucket prompt is ~7.5–7.8k tokens (22 schemas ≈ 245 tok each ≈ 5.4k of that). The capabilities block is no longer the whale — the tool-schema count is now the largest remaining lever, followed by switching to a faster model/host path or engaging KV reuse (neither achieved by any surgery to date).
+
+### Decision point (per the task-7b brief: gate still fails → consult, no further fixes)
+
+This ships DONE_WITH_CONCERNS. The user/controller should decide the next lever: (a) shrink the manufacturing bucket's tool schema set further (currently 22, largest remaining prompt cost), (b) switch to `qwen3.5:4b` or a faster host, (c) accept a relaxed threshold given the diet's real (if insufficient) improvement, or (d) revisit whether KV-cache reuse can be forced (e.g. Ollama flags, `/api/generate` context param reuse) since neither Task 7 nor 7b's `num_ctx` change engaged it.
