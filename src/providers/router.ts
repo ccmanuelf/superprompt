@@ -640,13 +640,50 @@ export const OLLAMA_TOOL_PATTERNS = [
 
 /** Phase 2 pipeline surgery — data-governance pin. Turns that reason over
  * NovaLink production data stay on the LOCAL model (spec 2026-07-06).
- * Exported for testing. */
+ * Exported for testing.
+ *
+ * Task 8 review fix pass (2026-07-06). The reviewer found the
+ * original 5-pattern set misfired in both directions (empirically verified
+ * with node regex probes; see .superpowers/sdd/task-8-report.md § Fix pass).
+ * Judgment calls made while tightening, precision-first per the review
+ * contract (a missed pin just falls through to Claude — status quo — while
+ * a false pin burns a slow local turn on an innocent message):
+ *   - bare "shortage"/"wip" were unanchored dev/grocery-chat magnets; both
+ *     now require co-occurring business context (company/line/order/part
+ *     for shortage(s); "status|levels|count" for wip) within the same
+ *     sentence ([^.?!]{0,40}, either word order).
+ *   - "company\s+\d+" caught any trailing number ("5 years"); now requires
+ *     an id-shaped number (\d{2,}, optionally "id"/"#") since a real
+ *     NovaLink company id is never a single digit.
+ *   - "bridge .* verb" had an unbounded gap so any later "check" in the
+ *     sentence counted, catching "golden gate bridge ... check this photo".
+ *     Bare "bridge" now ONLY matches verb-then-bridge order ("check/query/
+ *     consultar el bridge") — that's the actual NovaLink usage shape and it
+ *     structurally excludes "bridge ... check" landmark sentences. im_db/
+ *     as_db are unambiguous jargon so they keep both orders, each bounded
+ *     to the same 40-char within-sentence window.
+ *   - "production status" alone is generic filler ("album release
+ *     production status"); it now requires a line/order/plant anchor in
+ *     the same sentence, either order.
+ *   - added the ES word-order form "estado de producción" (verb/noun
+ *     order flips in Spanish) and an accent-safe plural "[oó]rdenes de
+ *     compra" — a bare \b before an accented first letter (e.g. "ó") never
+ *     matches in JS regex because \b is defined over ASCII \w only, so a
+ *     leading space + "órdenes" reads as non-word/non-word (no boundary);
+ *     fixed with a (?<!\w) lookbehind instead of \b on that one entry.
+ */
 export const NOVALINK_DATA_PATTERNS = [
   /\bnovalink\b/i,
-  /\b(bom|shortage|faltantes?|po receipts?|purchase order|orden de compra|wip\b|work order|orden de trabajo)\b/i,
-  /\b(company|compa[ñn][ií]a)\s+\d+\b/i,
-  /\b(production|producci[oó]n)\s+(data|status|numbers|datos|estado|cifras)\b/i,
-  /\b(im_db|as_db|bridge)\b.*\b(quer|consult|check|revis)/i,
+  /\b(bom|faltantes?|po receipts?|purchase order|orden de compra|work order|orden de trabajo)\b/i,
+  /(?<!\w)[oó]rdenes de compra\b/i,
+  /\bwip\s+(status|levels?|count)\b/i,
+  /\b(company|compa[ñn][ií]a)\s+(id\s*)?#?\d{2,}\b/i,
+  /\b(?:shortages?\b[^.?!]{0,40}\b(?:company|compa[ñn][ií]a|line|l[ií]nea|order|orden|part|material|sku|item|planta)s?\b|(?:company|compa[ñn][ií]a|line|l[ií]nea|order|orden|part|material|sku|item|planta)s?\b[^.?!]{0,40}\bshortages?\b)/i,
+  /\b(?:(?:production|producci[oó]n)\s+(?:data|status|numbers|datos|estado|cifras)\b[^.?!]{0,40}\b(?:line|l[ií]nea|order|orden|planta|plant)s?\b|(?:line|l[ií]nea|order|orden|planta|plant)s?\b[^.?!]{0,40}\b(?:production|producci[oó]n)\s+(?:data|status|numbers|datos|estado|cifras)\b)/i,
+  /\b(estado|status)\s+de\s+(producci[oó]n|production)\b/i,
+  /\b(im_db|as_db)\b[^.?!]{0,40}\b(quer\w*|consult\w*|check\w*|revis\w*)\b/i,
+  /\b(quer\w*|consult\w*|check\w*|revis\w*)\b[^.?!]{0,40}\b(im_db|as_db)\b/i,
+  /\b(quer\w*|consult\w*|check\w*|revis\w*)\b[^.?!]{0,40}\b(el\s+|the\s+)?bridge\b/i,
 ];
 
 export function isNovalinkDataTurn(message: string): boolean {
