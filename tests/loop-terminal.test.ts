@@ -49,4 +49,28 @@ describe('lastAssistantText', () => {
     const messages = [assistant('   \n  ')];
     expect(lastAssistantText(messages as never)).toBeNull();
   });
+
+  it('does not leak a prior turn\'s assistant reply when the current turn has no usable text', () => {
+    const messages = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'previous question' },
+      assistant('previous answer, all good'),
+      { role: 'user', content: 'current question' },
+      assistant('', true),
+      tool(JSON.stringify({ status: 'ok' })),
+      tool(JSON.stringify({ status: 'confirmation_required' })),
+    ];
+    expect(lastAssistantText(messages as never)).toBeNull();
+  });
+
+  it('returns the current turn\'s assistant prose, not a prior turn\'s', () => {
+    const messages = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'previous question' },
+      assistant('previous answer, all good'),
+      { role: 'user', content: 'current question' },
+      assistant('here is the current answer'),
+    ];
+    expect(lastAssistantText(messages as never)).toBe('here is the current answer');
+  });
 });

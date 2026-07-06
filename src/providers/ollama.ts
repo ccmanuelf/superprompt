@@ -135,9 +135,24 @@ export function capHistoryToBudget(
  * `messages.at(-1)?.content` for "usable text" is always truthy and never
  * reflects whether the model produced anything for the user. Exported for
  * testing.
+ *
+ * Bounded to the current turn: `messages` includes the full per-chat
+ * history (prior turns' user/assistant messages), so an unbounded backward
+ * walk can find a *previous* turn's assistant reply and return it even when
+ * the current turn produced nothing — the fallback then never fires, and
+ * `failed` never flips, on a chat with any history. Only assistant messages
+ * after the last `role: 'user'` entry (the current turn's user message)
+ * count.
  */
 export function lastAssistantText(messages: Message[]): string | null {
+  let lastUserIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      lastUserIndex = i;
+      break;
+    }
+  }
+  for (let i = messages.length - 1; i > lastUserIndex; i--) {
     const m = messages[i];
     if (m.role === 'assistant' && typeof m.content === 'string' && m.content.trim().length > 0) {
       return m.content;
@@ -728,9 +743,13 @@ export class OllamaProvider implements AIProvider {
     // `Boolean(lastMsg?.content)` was always true and `failed` never fired on
     // breaker-open. "Usable text" means the model itself said something —
     // check the last *assistant* message, not the last message overall.
-    const hasUsableText = lastAssistantText(messages) !== null;
+    const detectedText = lastAssistantText(messages);
+    const hasUsableText = detectedText !== null;
+    // Deliver what we detected: when the current turn left usable prose
+    // behind, send that to the user instead of the tool-JSON tail that
+    // `lastMsg?.content` would otherwise surface.
     const fallbackText =
-      lastMsg?.content || '[Max tool iterations reached. Please try a simpler request.]';
+      detectedText || lastMsg?.content || '[Max tool iterations reached. Please try a simpler request.]';
 
     history.push({
       role: 'assistant',
