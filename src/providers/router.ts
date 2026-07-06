@@ -956,7 +956,11 @@ export class ProviderRouter {
    * Auto-routing has stickiness: if the last message used a provider, prefer it
    * unless the classifier strongly disagrees (prevents mid-conversation switching).
    */
-  private async getProviderForChat(chatId: string, message?: string): Promise<AIProvider> {
+  private async getProviderForChat(
+    chatId: string,
+    message?: string,
+    rawMessage?: string,
+  ): Promise<AIProvider> {
     // Per-turn reset — pin status must not leak across turns (pipeline surgery
     // Task 9). Unconditional: if this ran only inside the auto_route branch,
     // a chat that pinned once and then had auto_route disabled would keep a
@@ -970,7 +974,11 @@ export class ProviderRouter {
     if (session?.auto_route && message) {
       // Phase 2 pin: NovaLink-data turns stay on-LAN, overriding both the
       // classifier and Claude-stickiness (data governance, spec 2026-07-06).
-      if (config.NOVALINK_PIN_LOCAL && isNovalinkDataTurn(message)) {
+      // Classifies the RAW user text (pre-memory-prefix) — the memory-enriched
+      // `message` can surface past NovaLink content (e.g. recalled shortage/
+      // company chatter) and pin an otherwise-innocent turn. classifyMessage
+      // below still reads `message` unchanged — routing behavior stays as-is.
+      if (config.NOVALINK_PIN_LOCAL && isNovalinkDataTurn(rawMessage ?? message)) {
         logger.info({ chatId }, 'novalink-data turn — pinned to local provider');
         this.lastUsedProvider.set(chatId, this.ollama.name);
         this.pinnedTurns.add(chatId);
@@ -1010,7 +1018,7 @@ export class ProviderRouter {
    */
   async sendMessage(params: SendMessageParams): Promise<AIResponse> {
     const { chatId } = params;
-    const provider = await this.getProviderForChat(chatId, params.message);
+    const provider = await this.getProviderForChat(chatId, params.message, params.rawUserMessage);
 
     // Rate limiting — check before sending to provider
     const { getRateLimiter } = await import('../rate-limiter.js');
@@ -1541,6 +1549,7 @@ export class ProviderRouter {
     await clearSession(chatId);
     clearOllamaHistory(chatId);
     this.lastUsedProvider.delete(chatId); // Reset auto-routing stickiness
+    this.chatBuckets.delete(chatId); // New conversations start in core — no bucket hysteresis carryover
     logger.info({ chatId }, 'New chat started');
   }
 

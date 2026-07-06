@@ -1,7 +1,7 @@
 /**
  * Pipeline surgery Phase 1 — slim, KV-cache-stable system prompt for the
  * local (Ollama) path. Layout contract (spec 2026-07-06):
- *   [frozen prefix: persona + rules + capabilities + skill]  ← byte-stable per conversation
+ *   [frozen prefix: persona + rules + kanban + capabilities + skill]  ← byte-stable per conversation
  *   [bucket prose: docs schema help only in the docs bucket]
  *   [## This turn: ALL volatile per-turn blocks, last]
  * The Claude path never imports from this module.

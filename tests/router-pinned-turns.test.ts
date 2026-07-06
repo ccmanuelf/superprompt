@@ -74,4 +74,60 @@ describe('pinned-turn lifecycle across auto_route toggling', () => {
     await router.getProviderForChat(chatId, 'tell me a joke');
     expect(router.pinnedTurns.has(chatId)).toBe(false);
   });
+
+  // Final-review fix wave: the pin must classify RAW user text, not the
+  // memory-enriched `message` (memoryContext + '\n\n' + rawText). Recalled
+  // memory content about past NovaLink data (shortages/companies) must not
+  // pin an otherwise-innocent turn — every other new classifier on this
+  // branch already prefers rawUserMessage; the pin was the odd one out.
+  it('does NOT pin when only the memory-enriched message contains NovaLink content but the raw text is innocent', async () => {
+    const chatId = 'chat-memory-enriched-no-pin';
+    await setSession(chatId, '', 'ollama');
+    await setAutoRoute(chatId, true);
+
+    const router = new ProviderRouter() as any;
+    const rawMessage = 'thanks, sounds good';
+    const enrichedMessage = `MEMORY: company 1054 shortage discussed last week\n\n${rawMessage}`;
+
+    await router.getProviderForChat(chatId, enrichedMessage, rawMessage);
+    expect(router.pinnedTurns.has(chatId)).toBe(false);
+  });
+
+  it('still pins when the raw text itself contains NovaLink content, memory prefix or not', async () => {
+    const chatId = 'chat-raw-pins';
+    await setSession(chatId, '', 'ollama');
+    await setAutoRoute(chatId, true);
+
+    const router = new ProviderRouter() as any;
+    const rawMessage = 'how many open shortages does company 1054 have?';
+    const enrichedMessage = `MEMORY: unrelated prior chat about vacation plans\n\n${rawMessage}`;
+
+    await router.getProviderForChat(chatId, enrichedMessage, rawMessage);
+    expect(router.pinnedTurns.has(chatId)).toBe(true);
+  });
+});
+
+describe('newChat clears bucket hysteresis', () => {
+  beforeEach(async () => {
+    if (testKnex) await testKnex.destroy();
+    testKnex = createTestKnex();
+    await coreTableInit.initTables();
+  });
+
+  afterAll(async () => {
+    if (testKnex) await testKnex.destroy();
+  });
+
+  it('clears chatBuckets so a new conversation starts in core, not the last active bucket', async () => {
+    const chatId = 'chat-newchat-buckets';
+    await setSession(chatId, '', 'ollama');
+
+    const router = new ProviderRouter() as any;
+    router.chatBuckets.set(chatId, 'docs');
+    expect(router.chatBuckets.has(chatId)).toBe(true);
+
+    await router.newChat(chatId);
+
+    expect(router.chatBuckets.has(chatId)).toBe(false);
+  });
 });
