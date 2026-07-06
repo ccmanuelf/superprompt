@@ -815,6 +815,32 @@ async function prefetchDataForClaude(chatId: string, message: string): Promise<s
   return sections.join('\n\n');
 }
 
+/** Pipeline surgery Task 2 — pure extraction of the Claude-branch prompt
+ * composition so a snapshot test can freeze it byte-for-byte. MUST keep the
+ * exact same block list and order as before the extraction. */
+export interface ClaudePromptParts {
+  platformIdentity: string;
+  voiceHint: string;
+  systemPrompt?: string;
+  skillPrompt: string;
+  fullCapabilities: string;
+  mfgHint: string | null;
+  uploadsManifest: string;
+  deliverableReminder: string;
+  simulationScaffolding: string;
+  languageOverride: string;
+}
+
+export function composeClaudeSystemPrompt(p: ClaudePromptParts): string {
+  return [
+    p.platformIdentity, p.voiceHint, p.systemPrompt, p.skillPrompt,
+    p.fullCapabilities, p.mfgHint, p.uploadsManifest,
+    CLAUDE_PROVIDER_NOTICE, NOVALINK_BRIDGE_PROMPT, CLAUDE_DOCUMENT_PROMPT,
+    CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST,
+    p.deliverableReminder, p.simulationScaffolding, LANGUAGE_HINT, p.languageOverride,
+  ].filter(Boolean).join('\n\n');
+}
+
 export class ProviderRouter {
   private claude: ClaudeProvider;
   private ollama: OllamaProvider;
@@ -1008,7 +1034,7 @@ export class ProviderRouter {
     // - rc.74: deliverableReminder injected near the end when applicable, so it's read last (high recency weight)
     // - rc.76: simulationScaffolding + languageOverride placed at the VERY end for maximum recency weight
     const systemPrompt = provider.name === 'claude'
-      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_PROVIDER_NOTICE, NOVALINK_BRIDGE_PROMPT, CLAUDE_DOCUMENT_PROMPT, CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, simulationScaffolding, LANGUAGE_HINT, languageOverride].filter(Boolean).join('\n\n')
+      ? composeClaudeSystemPrompt({ platformIdentity, voiceHint, systemPrompt: params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, deliverableReminder, simulationScaffolding, languageOverride })
       : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, OLLAMA_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, simulationScaffolding, LANGUAGE_HINT, languageOverride].filter(Boolean).join('\n\n') || undefined;
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
