@@ -1,5 +1,10 @@
 # KV-reuse spike — Phase 0 (pipeline surgery)
 
+> **SUPERSEDED by Task 7d** (see bottom of file): the "KV prefix reuse does
+> NOT engage" verdict below rests on a metric misread (`prompt_eval_count`
+> doesn't change on a cache hit — it's not a valid signal). Corrected verdict:
+> reuse DOES engage.
+
 **Date:** 2026-07-06
 **Script:** `scripts/bench-local-pipeline.mjs`
 **Baseline host:** `192.168.2.244` (`Developers-MacBook-Pro.local`), model `ministral-3:3b`, Ollama at `http://127.0.0.1:11434`
@@ -39,6 +44,10 @@ The benchmark scenarios run sequentially against shared server state, so individ
 
 ## Phase 1 post-surgery benchmark (Task 7)
 
+> **SUPERSEDED by Task 7d** (see bottom of file): the "KV reuse still does not
+> engage" verdict and the resulting gate **FAIL** below both rest on the same
+> `prompt_eval_count` misread. Corrected gate verdict: **PASS**.
+
 **Date:** 2026-07-06
 **Method:** throwaway scripts (`.superpowers/sdd/bench-pipe*.ts`, not committed) importing the REAL production modules — `registerBuiltinTools()` + manufacturing pack registration, `resolveLocalTurnConfig()`, `buildLocalSystemPrompt()`, and `OllamaProvider.sendMessage()` (agentic loop, `assembledSystemPrompt: true`, exactly as the router wires it) — driven against **.244's Ollama 0.31.1** via SSH tunnel (`127.0.0.1:11435 → 192.168.2.244:11434`). Model `ministral-3:3b`, `num_ctx` 32768, `think: false` (the model 400s on thinking). `prompt_eval_count` captured by intercepting the `/api/chat` responses in-process. No bot/poller was started; the prod luna-bot container was untouched.
 
@@ -69,6 +78,13 @@ Warm same-bucket measured 140.6s and 145.7s on two clean reruns; the first attem
 Options named in the brief: switch to qwen3.5:4b, smaller buckets (prompt closer to ~4k tokens), or change the threshold. Additional levers observed here: `num_ctx` reduction (32k KV allocation strains the host), and the model's verbose clarifying-question responses inflating decode time.
 
 ## Task 7b re-gate (capabilities diet + num_ctx 16384)
+
+> **SUPERSEDED by Task 7d** (see bottom of file): the "KV-cache reuse still
+> does not engage" verdict and the resulting gate **FAIL** (60.2s) below both
+> rest on the same `prompt_eval_count` misread. Corrected gate verdict:
+> **PASS** (5.7s), and the capabilities/schema diet in this section is
+> real and still stands — it's the verdict interpretation that was wrong,
+> not the measured token/wall-clock reductions themselves.
 
 **Date:** 2026-07-06
 **Change under test:** `buildLocalCapabilitiesPrompt()` (`src/capabilities.ts`) — a condensed, information-dense replacement for the ~5–8k-token verbatim `fullCapabilities` block, used ONLY in the Ollama arm's `buildLocalSystemPrompt()` input (`src/providers/router.ts`). The Claude arm's `fullCapabilities` composition is untouched (`composeClaudeSystemPrompt` — guarded by `tests/claude-prompt-freeze.test.ts`, still green and unmodified). Plus: `config.OLLAMA_NUM_CTX` forced to 16384 for the bench run (down from Task 7's 32768).
@@ -155,3 +171,113 @@ path does. A future pack that adds new `intent_patterns[].web_apps` entries
 will auto-appear in the Claude prompt (dynamic) but **not** in the LOCAL
 (Ollama) prompt (static) until this header is hand-edited. Full/Claude
 prompt is unaffected — this is local-path-only.
+
+## Task 7d — corrected methodology and verdict
+
+**Date:** 2026-07-06
+
+### What was wrong
+
+Every prior verdict in this file ("KV prefix reuse does NOT engage" — Phase 0,
+Task 7, Task 7b) was decided by comparing `warm.prompt_eval_count` to
+`cold.prompt_eval_count` and finding them roughly equal. That comparison is
+invalid: Ollama's `/api/chat` response field `prompt_eval_count` **always
+reports the total prompt token count**, not the number of tokens actually
+re-evaluated — it does not change between a cold miss and a hot cache hit.
+This was proven by a controlled probe in Task 7c
+(`.superpowers/sdd/task-7c-report.md`): two byte-identical back-to-back
+requests both reported `prompt_eval_count: 15645`, but the first (cold load)
+took `prompt_eval_duration: 153.4s` and the second (warm) took `0.116s`
+(server log: `sim_best = 1.000`, only 1 token evaluated). The valid signal is
+`prompt_eval_duration` (API field, nanoseconds) or the server log's
+`prompt eval time = X ms / N tokens` line — both reflect actual work done.
+
+### Corrected re-measurement (real pipe, real gate)
+
+Re-ran the Phase 1 gate using the same production building blocks as Task
+7/7b (`registerBuiltinTools()` + manufacturing pack, `resolveLocalTurnConfig()`,
+`buildLocalSystemPrompt()` with the Task 7b condensed capabilities,
+`OllamaProvider.sendMessage()`'s real agentic path, `num_ctx` 16384), but as
+**one persistent process driving one multi-turn conversation** (same `chatId`,
+sequential turns) so the KV prefix persists server-side the way a real
+Telegram conversation does — the prior scripts used single isolated calls
+per scenario. Script: `.superpowers/sdd/bench-pipe-7d.ts` (not committed).
+Reached `.244`'s Ollama 0.31.1 via the same SSH tunnel pattern
+(`127.0.0.1:11435 → 192.168.2.244:11434`), model `ministral-3:3b`. Model was
+confirmed unloaded (`ollama ps` empty) before turn 1, so turn 1 is a genuine
+cold load. Prod `luna-bot`/`luna-caddy`/`luna-speaches`/`luna-searxng`
+confirmed `Up`/`healthy` before and after; tunnel killed at the end
+(confirmed via a refused `curl` afterward).
+
+| Turn | Message intent | Bucket | Wall-clock | prompt tokens (count) | prompt-eval time | newly-evaluated tokens (server log) | generation time / tokens |
+|---|---|---|---|---:|---:|---:|---:|
+| 1 — cold mfg | "what capacity tools do you have" | manufacturing | 15.25s | 1,513 | 6.646s | 1,513 (full, cold load) | 6.712s / 118 |
+| 2 — **GATE** warm same-bucket | mfg follow-up ("spot a bottleneck on line 3") | manufacturing | **5.69s** | 1,648 | **0.742s** | **136** (sim_best 0.917) | 4.573s / 80 |
+| 3 — warm same-bucket | mfg follow-up ("run a capacity check… using your tools") | manufacturing | 5.41s | 1,745 | 0.600s | 98 (sim_best 0.944) | 4.532s / 79 |
+| 4 — bucket switch → docs | "generate a PDF summary" | docs | 42.37s | 5,388 | 31.460s | 5,376 (full miss — LRU slot pick, no LCP match) | 10.599s / 138 |
+
+Cross-checked directly against `.244`'s server log
+(`/opt/homebrew/var/log/ollama.log`), which independently confirms the API
+field values above (e.g. task 120: `prompt eval time = 741.98 ms / 136
+tokens`, matching turn 2's `prompt_eval_duration`).
+
+### GATE: turn 2 (warm same-bucket) wall-clock < 30s → **PASS** (5.69s)
+
+Breakdown: prompt-eval 0.742s (only 136 of 1,648 prompt tokens newly
+evaluated — a cache **hit**, `sim_best = 0.917`) + generation 4.573s (80
+tokens) + overhead ≈ 5.69s total. Extrapolating turn 1's cold per-token rate
+(4.39 ms/token) to a full 1,648-token re-eval would cost ~7.2s on prompt-eval
+alone — turn 2 measured 10x less, which is only explainable by KV-prefix
+reuse, not by prompt size.
+
+### Interpretation
+
+1. **KV-prefix reuse does engage on the real production pipe**, confirmed by
+   both the API's `prompt_eval_duration` and the server log's `sim_best`/
+   newly-evaluated-token counts for turns 2 and 3 (same-bucket warm turns):
+   only the conversational delta (136 and 98 tokens respectively) was
+   re-evaluated each turn, not the full prompt.
+2. **A bucket switch (turn 4) caused a full cache miss here** (5,376 of
+   5,388 tokens re-evaluated, slot picked by LRU with no LCP match at all) —
+   worse than Task 7c's synthetic bucket-switch probe (~970/15,227 partial
+   re-eval). Plausible cause: this is a real, growing multi-turn conversation
+   plus an actual tool-schema-set change, so the shared prefix before the
+   divergence point is smaller than in 7c's isolated single-turn synthetic
+   test. Bucket switches remain the expensive case; same-bucket turns are
+   cheap.
+3. **Caveat — not every turn actually attached tool schemas.**
+   `OllamaProvider.sendMessage()` has its own independent heuristic
+   (`shouldUseTools()`) deciding whether to send the `tools` array at all,
+   separate from bucket selection. Turns 1–3 logged `useTools: false` (plain
+   chat turn, no schemas sent over the wire at all — this is why their
+   prompt sizes are ~1.5–1.7k tokens, not the ~7.5k seen in Task 7b's
+   always-tools-on synthetic scenarios). Turn 4 logged `useTools: true`
+   (schemas attached, prompt jumped to 5,388 tokens). None of the 4 turns
+   actually invoked a tool (`resp.toolsUsed` was empty every turn) — turn 4's
+   model asked a clarifying question instead of calling `generate_document`.
+   This means the GATE turn measured here reflects a common
+   no-tool-needed conversational follow-up, which is realistic Telegram
+   traffic, but a same-bucket warm turn that *does* attach tool schemas
+   (`useTools: true`, no bucket switch) was not isolated in this run and
+   would be the more conservative case to re-check if a future gate audit
+   wants that combination specifically.
+4. **The Task 7b capabilities/schema diet numbers stand.** The corrected
+   verdict is about the *interpretation* of `prompt_eval_count`, not about
+   walking back the real token/wall-clock reductions Task 7b measured from
+   the condensed-capabilities change — those were genuine, independent of
+   this metric bug.
+
+### Revised recommendation
+
+Do not reopen Phase 2 (model swap to `qwen3.5:4b`, further schema trimming,
+or threshold relaxation) on the basis of the old FAIL verdicts — the gate
+passes with the current Phase 1 surgery (condensed capabilities +
+`num_ctx` 16384 + KV-cache reuse, which was already engaging, just
+mismeasured). Recommended follow-ups, not gating: (a) re-run turn 2's exact
+scenario with `useTools: true` forced (a same-bucket, tool-schema-attached,
+no-switch turn) to get the conservative-case number; (b) treat bucket
+switches as a known, real cost (30–45s) that should be minimized by
+avoiding oscillation, not by trying to make it as cheap as same-bucket
+turns; (c) stop using `prompt_eval_count` anywhere in this codebase's
+benchmarking for cache-engagement judgments — use `prompt_eval_duration` or
+server-log `prompt eval time` only.
