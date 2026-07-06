@@ -5,6 +5,8 @@ import type { Message as OllamaMessage } from 'ollama';
 import { config } from '../config.js';
 import { NOVALINK_BRIDGE_PROMPT } from './bridge-prompt.js';
 import { logger } from '../logger.js';
+import { selectBucket, toolNamesForBucket, type BucketId } from './local-buckets.js';
+import { buildLocalSystemPrompt } from './local-prompt.js';
 import {
   getSession,
   setSession,
@@ -116,7 +118,7 @@ function chatLogToClaudeRecap(entries: ChatLogEntry[]): string {
   ].join('\n');
 }
 import { getSkillSystemPrompt, getSkillAllowedTools, detectSkillTrigger, applyAutoTrigger } from '../skills.js';
-import { getCapabilitiesPrompt, generateMfgContextHint } from '../capabilities.js';
+import { getCapabilitiesPrompt, generateMfgContextHint, buildLocalCapabilitiesPrompt } from '../capabilities.js';
 import { getAggregatedCapabilities, buildWebAppsPrompt } from '../packs.js';
 import { buildWebUIAwarenessPrompt } from '../web-ui-guide.js';
 import { getRecentUploads, formatUploadManifest } from '../upload-manifest.js';
@@ -220,7 +222,7 @@ Kanban handling is provider-specific and lives in its own section below — foll
 // Ollama models were observed picking the Claude-only JSON path (the
 // platform then auto-executed the JSON, creating a card the user never
 // asked for). Each provider now sees only its own path.
-const OLLAMA_KANBAN_PROMPT = `## Kanban Board — Tool-Based Access
+export const OLLAMA_KANBAN_PROMPT = `## Kanban Board — Tool-Based Access
 
 The board is ALWAYS accessible via the \`kanban_manage\` tool. NEVER say "the board is unavailable" or "I can't access it."
 
@@ -494,7 +496,7 @@ const VOICE_RESPONSE_HINT = `The user sent a voice message. Respond as if in a v
  * and detects DocGenRequest JSON blocks in responses to generate real files.
  * Claude just needs to know the JSON schema to trigger document generation.
  */
-const CLAUDE_DOCUMENT_PROMPT = `## Document Capabilities
+export const CLAUDE_DOCUMENT_PROMPT = `## Document Capabilities
 
 ### Reading Files
 When a user uploads a document (PDF, DOCX, XLSX, CSV, PPTX, JSON, MD, TXT), the system extracts its text content and includes it in the message as "[Document: filename]" followed by the parsed content. You can analyze, summarize, and answer questions about this content directly.
@@ -635,6 +637,80 @@ export const OLLAMA_TOOL_PATTERNS = [
   // Research
   /\b(search papers|find papers|academic search|busca art[ií]culos|papers)\b/i,
 ];
+
+/** Phase 2 pipeline surgery — data-governance pin. Turns that reason over
+ * NovaLink production data stay on the LOCAL model (spec 2026-07-06).
+ * Exported for testing.
+ *
+ * Task 8 review fix pass (2026-07-06). The reviewer found the
+ * original 5-pattern set misfired in both directions (empirically verified
+ * with node regex probes; see .superpowers/sdd/task-8-report.md § Fix pass).
+ * Judgment calls made while tightening, precision-first per the review
+ * contract (a missed pin just falls through to Claude — status quo — while
+ * a false pin burns a slow local turn on an innocent message):
+ *   - bare "shortage"/"wip" were unanchored dev/grocery-chat magnets; both
+ *     now require co-occurring business context (company/line/order/part
+ *     for shortage(s); "status|levels|count" for wip) within the same
+ *     sentence ([^.?!]{0,40}, either word order).
+ *   - "company\s+\d+" caught any trailing number ("5 years"); now requires
+ *     an id-shaped number (\d{2,}, optionally "id"/"#") since a real
+ *     NovaLink company id is never a single digit. Known residual FP: "with the
+ *     company 15 years" still matches (\d{2,} accepts "15"); accepted tradeoff.
+ *   - "bridge .* verb" had an unbounded gap so any later "check" in the
+ *     sentence counted, catching "golden gate bridge ... check this photo".
+ *     Bare "bridge" now ONLY matches verb-then-bridge order ("check/query/
+ *     consultar el bridge") — that's the dominant NovaLink usage shape. Precision
+ *     trade-off accepted: in this deployment "the bridge" is dominated by NovaLink
+ *     bridge mentions, so false positives cost one slow local turn (acceptable). im_db/
+ *     as_db are unambiguous jargon so they keep both orders, each bounded
+ *     to the same 40-char within-sentence window.
+ *   - "production status" alone is generic filler ("album release
+ *     production status"); it now requires a line/order/plant anchor in
+ *     the same sentence, either order.
+ *   - added the ES word-order form "estado de producción" (verb/noun
+ *     order flips in Spanish) and an accent-safe plural "[oó]rdenes de
+ *     compra" — a bare \b before an accented first letter (e.g. "ó") never
+ *     matches in JS regex because \b is defined over ASCII \w only, so a
+ *     leading space + "órdenes" reads as non-word/non-word (no boundary);
+ *     fixed with a (?<!\w) lookbehind instead of \b on that one entry.
+ */
+export const NOVALINK_DATA_PATTERNS = [
+  /\bnovalink\b/i,
+  /\b(bom|faltantes?|po receipts?|purchase orders?|orden de compra|work orders?|orden de trabajo)\b/i,
+  /(?<!\w)[oó]rdenes de compra\b/i,
+  /(?<!\w)[oó]rdenes de trabajo\b/i,
+  /\bwip\s+(status|levels?|count)\b/i,
+  /\b(company|compa[ñn][ií]a)\s+(id\s*)?#?\d{2,}\b/i,
+  /\b(?:shortages?\b[^.?!]{0,40}\b(?:company|compa[ñn][ií]a|line|l[ií]nea|order|orden|part|material|sku|item|planta)s?\b|(?:company|compa[ñn][ií]a|line|l[ií]nea|order|orden|part|material|sku|item|planta)s?\b[^.?!]{0,40}\bshortages?\b)/i,
+  /\b(?:(?:production|producci[oó]n)\s+(?:data|status|numbers|datos|estado|cifras)\b[^.?!]{0,40}\b(?:line|l[ií]nea|order|orden|planta|plant)s?\b|(?:line|l[ií]nea|order|orden|planta|plant)s?\b[^.?!]{0,40}\b(?:production|producci[oó]n)\s+(?:data|status|numbers|datos|estado|cifras)\b)/i,
+  /\b(estado|status)\s+de\s+(producci[oó]n|production)\b/i,
+  /\b(im_db|as_db)\b[^.?!]{0,40}\b(quer\w*|consult\w*|check\w*|revis\w*)\b/i,
+  /\b(quer\w*|consult\w*|check\w*|revis\w*)\b[^.?!]{0,40}\b(im_db|as_db)\b/i,
+  /\b(quer\w*|consult\w*|check\w*|revis\w*)\b[^.?!]{0,40}\b(el\s+|the\s+)?bridge\b/i,
+];
+
+export function isNovalinkDataTurn(message: string): boolean {
+  return NOVALINK_DATA_PATTERNS.some((p) => p.test(message));
+}
+
+// Pipeline surgery Task 9 — soft Claude fallback for pinned local turns.
+// NovaLink-data turns are pinned to Ollama for data governance (Task 8), but
+// a pinned turn that fails locally (timeout, unreachable, agentic loop death)
+// would otherwise strand the user with an error. Bilingual disclosure makes
+// the degraded-context cloud answer visible rather than silent.
+export const FALLBACK_DISCLOSURE =
+  '⚠️ Answered via cloud fallback — local AI unavailable. / Respondido vía nube — IA local no disponible.\n\n';
+
+/** Fallback fires only when a pinned turn's local response reports failure. */
+export function shouldFallbackToClaude(args: { pinned: boolean; response: AIResponse }): boolean {
+  return args.pinned && args.response.failed === true;
+}
+
+/** Idempotent — a response already carrying the disclosure is returned unchanged. */
+export function applyFallbackDisclosure(response: AIResponse): AIResponse {
+  if (response.text?.startsWith(FALLBACK_DISCLOSURE)) return response;
+  return { ...response, text: `${FALLBACK_DISCLOSURE}${response.text ?? ''}` };
+}
 
 /**
  * Heuristic patterns that suggest Claude is the better provider.
@@ -815,11 +891,58 @@ async function prefetchDataForClaude(chatId: string, message: string): Promise<s
   return sections.join('\n\n');
 }
 
+/** Pipeline surgery Task 2 — pure extraction of the Claude-branch prompt
+ * composition so a snapshot test can freeze it byte-for-byte. MUST keep the
+ * exact same block list and order as before the extraction. */
+export interface ClaudePromptParts {
+  platformIdentity: string;
+  voiceHint: string;
+  systemPrompt?: string;
+  skillPrompt: string;
+  fullCapabilities: string;
+  mfgHint: string | null;
+  uploadsManifest: string;
+  deliverableReminder: string;
+  simulationScaffolding: string;
+  languageOverride: string;
+}
+
+export function composeClaudeSystemPrompt(p: ClaudePromptParts): string {
+  return [
+    p.platformIdentity, p.voiceHint, p.systemPrompt, p.skillPrompt,
+    p.fullCapabilities, p.mfgHint, p.uploadsManifest,
+    CLAUDE_PROVIDER_NOTICE, NOVALINK_BRIDGE_PROMPT, CLAUDE_DOCUMENT_PROMPT,
+    CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST,
+    p.deliverableReminder, p.simulationScaffolding, LANGUAGE_HINT, p.languageOverride,
+  ].filter(Boolean).join('\n\n');
+}
+
+/** Pure core of the Ollama-branch turn wiring (exported for testing). */
+export function resolveLocalTurnConfig(
+  message: string,
+  currentBucket: BucketId | undefined,
+  skillAllowedTools: string[] | undefined,
+  deliverableIntent: { isDeliverable: boolean; allowedTools?: string[] | null },
+): { bucket: BucketId; allowedTools: string[] } {
+  const bucket = selectBucket(message, currentBucket);
+  if (deliverableIntent.isDeliverable && deliverableIntent.allowedTools) {
+    return { bucket, allowedTools: deliverableIntent.allowedTools };
+  }
+  if (skillAllowedTools?.length) {
+    return { bucket, allowedTools: skillAllowedTools };
+  }
+  return { bucket, allowedTools: toolNamesForBucket(bucket) };
+}
+
 export class ProviderRouter {
   private claude: ClaudeProvider;
   private ollama: OllamaProvider;
   /** Tracks the last provider actually used per chat (for /provider status in auto mode) */
   private lastUsedProvider = new Map<string, 'claude' | 'ollama'>();
+  /** Tracks the active tool bucket per chat for local (Ollama) turns — hysteresis state (pipeline surgery Task 5) */
+  private chatBuckets = new Map<string, BucketId>();
+  /** Chats whose current turn is pinned to local (NovaLink-data governance) — per-turn, reset at the top of the auto-route block (pipeline surgery Task 9) */
+  private pinnedTurns = new Set<string>();
 
   constructor() {
     this.claude = new ClaudeProvider();
@@ -833,11 +956,35 @@ export class ProviderRouter {
    * Auto-routing has stickiness: if the last message used a provider, prefer it
    * unless the classifier strongly disagrees (prevents mid-conversation switching).
    */
-  private async getProviderForChat(chatId: string, message?: string): Promise<AIProvider> {
+  private async getProviderForChat(
+    chatId: string,
+    message?: string,
+    rawMessage?: string,
+  ): Promise<AIProvider> {
+    // Per-turn reset — pin status must not leak across turns (pipeline surgery
+    // Task 9). Unconditional: if this ran only inside the auto_route branch,
+    // a chat that pinned once and then had auto_route disabled would keep a
+    // stale pin forever, over-firing the governance fallback below on every
+    // later (non-pinned) failed turn.
+    this.pinnedTurns.delete(chatId);
+
     const session = await getSession(chatId);
 
     // Auto-routing: classify message and pick provider
     if (session?.auto_route && message) {
+      // Phase 2 pin: NovaLink-data turns stay on-LAN, overriding both the
+      // classifier and Claude-stickiness (data governance, spec 2026-07-06).
+      // Classifies the RAW user text (pre-memory-prefix) — the memory-enriched
+      // `message` can surface past NovaLink content (e.g. recalled shortage/
+      // company chatter) and pin an otherwise-innocent turn. classifyMessage
+      // below still reads `message` unchanged — routing behavior stays as-is.
+      if (config.NOVALINK_PIN_LOCAL && isNovalinkDataTurn(rawMessage ?? message)) {
+        logger.info({ chatId }, 'novalink-data turn — pinned to local provider');
+        this.lastUsedProvider.set(chatId, this.ollama.name);
+        this.pinnedTurns.add(chatId);
+        return this.ollama;
+      }
+
       const autoChoice = classifyMessage(message);
       const lastUsed = this.lastUsedProvider.get(chatId);
 
@@ -871,7 +1018,7 @@ export class ProviderRouter {
    */
   async sendMessage(params: SendMessageParams): Promise<AIResponse> {
     const { chatId } = params;
-    const provider = await this.getProviderForChat(chatId, params.message);
+    const provider = await this.getProviderForChat(chatId, params.message, params.rawUserMessage);
 
     // Rate limiting — check before sending to provider
     const { getRateLimiter } = await import('../rate-limiter.js');
@@ -950,6 +1097,12 @@ export class ProviderRouter {
     const webAppsPrompt = buildWebAppsPrompt();
     const webUIAwareness = buildWebUIAwarenessPrompt();
     const fullCapabilities = [getCapabilitiesPrompt(), packCaps, webAppsPrompt, webUIAwareness].filter(Boolean).join('\n\n');
+    // Task 7b — pipeline surgery: the Ollama branch uses a condensed variant
+    // of the same information (small-model context budget); the Claude
+    // branch keeps `fullCapabilities` above byte-identical (frozen by
+    // tests/claude-prompt-freeze.test.ts). Cheap to compute unconditionally —
+    // it's pure string assembly, no I/O — so no provider branch needed here.
+    const localCapabilities = buildLocalCapabilitiesPrompt();
 
     // rc.71: upload manifest — short list of recently uploaded files
     // with their exact absolute paths, so small models don't invent
@@ -1000,16 +1153,77 @@ export class ProviderRouter {
         ? SIMULATION_SCAFFOLDING_HINT
         : '';
 
+    // rc.75 — when the user's raw message requests a deliverable,
+    // narrow the tool allowlist so the model literally cannot propose
+    // kanban, memory, screenshots etc. and deflect the user's ask.
+    // Override the skill-based allowedTools when deliverable is
+    // detected: user's explicit ask beats background skill context.
+    // Pipeline surgery Task 5: moved above the systemPrompt composition
+    // because the Ollama branch's resolveLocalTurnConfig() needs
+    // deliverableIntent as an input (deliverable narrowing beats bucket tools).
+    const deliverableIntent = classifyDeliverableIntent(params.rawUserMessage ?? params.message);
+
+    if (deliverableIntent.isDeliverable) {
+      logger.info(
+        {
+          chatId,
+          provider: provider.name,
+          needsSimulation: deliverableIntent.needsSimulation,
+          allowedTools: deliverableIntent.allowedTools,
+        },
+        'Deliverable intent detected — narrowing tool allowlist',
+      );
+    }
+
+    // Pipeline surgery Task 5 — local (Ollama) turn wiring: resolve the
+    // hysteresis bucket + effective tool allowlist for this turn and
+    // remember the bucket for the next turn in this chat.
+    let localTurn: { bucket: BucketId; allowedTools: string[] } | undefined;
+    if (provider.name === 'ollama') {
+      localTurn = resolveLocalTurnConfig(
+        params.rawUserMessage ?? params.message,
+        this.chatBuckets.get(chatId),
+        allowedTools ?? undefined,
+        deliverableIntent,
+      );
+      this.chatBuckets.set(chatId, localTurn.bucket);
+      logger.info({ chatId, bucket: localTurn.bucket, toolCount: localTurn.allowedTools.length }, 'Local turn bucket selected');
+    }
+
+    // Capture the caller's system prompt (e.g. learning.getSessionSystemPrompt —
+    // persona + active learning-session context + assessment-mode instructions)
+    // BEFORE composing — the spread below (`...params, systemPrompt`) overwrites
+    // params.systemPrompt with the composed prompt, so it must be read out first.
+    const callerSystemPrompt = params.systemPrompt ?? '';
+
     // Provider-aware system prompt composition:
     // - BOTH providers: platformIdentity comes FIRST (prevents Claude identity confusion)
     // - Claude: CLAUDE_PROVIDER_NOTICE (tool access via JSON blocks) + CLAUDE_KANBAN_PROMPT + LANGUAGE_HINT
-    // - Ollama: OLLAMA_KANBAN_PROMPT + LANGUAGE_HINT (rc.75 — English requests were getting Spanish replies
-    //   when continuity bridge seeded Spanish history; hint forces language parity with the user's latest)
+    // - Ollama: buildLocalSystemPrompt() (Task 4 assembler) — frozen persona/rules/kanban/capabilities/skill
+    //   prefix + bucket-specific doc prose + a volatile "## This turn" tail (rc.75/rc.76 hints included).
+    //   callerSystemPrompt is threaded in as the `sessionPrompt` volatile (first among volatiles —
+    //   it's the most instruction-like) so it isn't silently dropped by the spread below.
     // - rc.74: deliverableReminder injected near the end when applicable, so it's read last (high recency weight)
     // - rc.76: simulationScaffolding + languageOverride placed at the VERY end for maximum recency weight
     const systemPrompt = provider.name === 'claude'
-      ? [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_PROVIDER_NOTICE, NOVALINK_BRIDGE_PROMPT, CLAUDE_DOCUMENT_PROMPT, CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, simulationScaffolding, LANGUAGE_HINT, languageOverride].filter(Boolean).join('\n\n')
-      : [platformIdentity, voiceHint, params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, CLAUDE_DOCUMENT_PROMPT, OLLAMA_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST, deliverableReminder, simulationScaffolding, LANGUAGE_HINT, languageOverride].filter(Boolean).join('\n\n') || undefined;
+      ? composeClaudeSystemPrompt({ platformIdentity, voiceHint, systemPrompt: params.systemPrompt, skillPrompt, fullCapabilities, mfgHint, uploadsManifest, deliverableReminder, simulationScaffolding, languageOverride })
+      : buildLocalSystemPrompt({
+          bucket: localTurn!.bucket,
+          skillPrompt,
+          fullCapabilities: localCapabilities,
+          volatiles: {
+            sessionPrompt: callerSystemPrompt,
+            platformNote: `The user is chatting via ${platformName}.`,
+            voiceHint,
+            mfgHint: mfgHint ?? '',
+            uploadsManifest,
+            deliverableReminder,
+            simulationScaffolding,
+            languageHint: LANGUAGE_HINT,
+            languageOverride,
+            continuityAppend: '',
+          },
+        });
 
     // When a skill is active, don't resume Claude sessions — the skill's system prompt
     // needs a fresh session to take effect (resumed sessions keep their original system prompt)
@@ -1064,27 +1278,12 @@ export class ProviderRouter {
       }
     }
 
-    // rc.75 — when the user's raw message requests a deliverable,
-    // narrow the tool allowlist so the model literally cannot propose
-    // kanban, memory, screenshots etc. and deflect the user's ask.
-    // Override the skill-based allowedTools when deliverable is
-    // detected: user's explicit ask beats background skill context.
-    const deliverableIntent = classifyDeliverableIntent(params.rawUserMessage ?? params.message);
-    const effectiveAllowedTools = deliverableIntent.isDeliverable
-      ? deliverableIntent.allowedTools!
-      : (allowedTools ?? undefined);
-
-    if (deliverableIntent.isDeliverable) {
-      logger.info(
-        {
-          chatId,
-          provider: provider.name,
-          needsSimulation: deliverableIntent.needsSimulation,
-          allowedTools: effectiveAllowedTools,
-        },
-        'Deliverable intent detected — narrowing tool allowlist',
-      );
-    }
+    // Pipeline surgery Task 5: effectiveAllowedTools for Ollama now comes
+    // from localTurn (bucket tools, narrowed by deliverable/skill intent
+    // inside resolveLocalTurnConfig); Claude keeps the pre-surgery formula.
+    const effectiveAllowedTools = provider.name === 'ollama'
+      ? localTurn!.allowedTools
+      : (deliverableIntent.isDeliverable ? deliverableIntent.allowedTools! : (allowedTools ?? undefined));
 
     let response = await provider.sendMessage({
       ...params,
@@ -1094,6 +1293,7 @@ export class ProviderRouter {
       systemPromptAppend: continuityAppend,
       allowedTools: effectiveAllowedTools,
       modelOverride,
+      assembledSystemPrompt: provider.name === 'ollama' ? true : undefined,
     });
 
     // rc.75 — post-loop validator: when the user asked for a
@@ -1124,6 +1324,11 @@ export class ProviderRouter {
         modelOverride,
         skipTurnLog: true,
         skipAutoTrigger: true,
+        // This retry branch only fires for provider.name === 'ollama' (see guard
+        // above) and reuses the already-assembled local systemPrompt — without
+        // this flag ollama.ts would re-prepend the fat TOOL_MODEL_SYSTEM_PROMPT
+        // persona on top of it (pipeline surgery Task 5).
+        assembledSystemPrompt: true,
       });
       if (retryResponse.toolsUsed?.includes('generate_document')) {
         logger.info({ chatId }, 'Deliverable retry succeeded');
@@ -1143,6 +1348,39 @@ export class ProviderRouter {
             + 'El modelo siguio respondiendo con texto en lugar de llamar a generate_document. '
             + 'Intenta simplificar la solicitud, o cambia a un modelo mas capaz con /model qwen3.5:latest o /claude.',
         };
+      }
+    }
+
+    // Pipeline surgery Task 9 — soft Claude fallback for pinned NovaLink-data
+    // turns whose local response failed (timeout, unreachable, loop death).
+    // Placed after the deliverable-retry block (not immediately after the
+    // primary sendMessage call) so it sees the FINAL local outcome: if the
+    // deliverable retry above already recovered on Ollama, `response.failed`
+    // is no longer set and no fallback fires; if it also failed, `failed`
+    // still carries through (the retry's hard-error branch spreads the
+    // original `response`), so the fallback below still catches it. Firing
+    // right after the primary call instead would let this block hand back a
+    // good Claude answer only to have the deliverable-retry logic below
+    // immediately overwrite it with another (likely also-failing) Ollama
+    // attempt, since that logic keys off `provider.name === 'ollama'`
+    // (the static provider selection), not the live `response.provider`.
+    // Tracks who actually produced `response.text`, since a successful
+    // fallback below replaces `response` with a Claude reply while `provider`
+    // (the static pre-fallback selection) stays 'ollama' — chat_log and
+    // session bookkeeping must attribute to the true responder, not the
+    // provider that was originally picked for this turn.
+    let respondedVia: 'claude' | 'ollama' = provider.name;
+
+    if (provider.name === 'ollama' && shouldFallbackToClaude({ pinned: this.pinnedTurns.has(chatId), response })) {
+      logger.warn({ chatId, reason: response.text }, 'Pinned local turn failed — soft fallback to Claude');
+      try {
+        const fallback = await this.claude.sendMessage({
+          ...params, message: effectiveMessage, systemPrompt: undefined, sessionId: undefined,
+        });
+        response = applyFallbackDisclosure(fallback);
+        respondedVia = 'claude';
+      } catch (err) {
+        logger.error({ err, chatId }, 'Cloud fallback also failed — returning local error');
       }
     }
 
@@ -1175,9 +1413,13 @@ export class ProviderRouter {
       return retryResponse;
     }
 
-    // Persist new session ID for Claude
+    // Persist new session ID for Claude. Only Claude ever sets
+    // `newSessionId` (Ollama has no such concept), so this only fires for a
+    // genuine Claude response — attribute it with `respondedVia`, not the
+    // static `provider.name`, so a post-fallback Claude session id is never
+    // stored under the 'ollama' provider label.
     if (response.newSessionId) {
-      await setSession(chatId, response.newSessionId, provider.name);
+      await setSession(chatId, response.newSessionId, respondedVia);
     }
 
     if (autoTriggerNotice) response.autoTriggerNotice = autoTriggerNotice;
@@ -1189,10 +1431,12 @@ export class ProviderRouter {
     // later provider switch can seed the incoming provider with it.
     // rc.70: use rawUserMessage (before memory/enrichment prefix) so
     // the log stores clean user text; skip entirely for internal calls.
+    // Attribute to `respondedVia` (not `provider.name`) so a soft fallback
+    // that swapped the response in above logs correctly as 'claude'.
     if (!params.skipTurnLog) {
       await this.logConversationTurn(
         chatId,
-        provider.name,
+        respondedVia,
         params.rawUserMessage ?? params.message,
         response.text,
       );
@@ -1305,6 +1549,7 @@ export class ProviderRouter {
     await clearSession(chatId);
     clearOllamaHistory(chatId);
     this.lastUsedProvider.delete(chatId); // Reset auto-routing stickiness
+    this.chatBuckets.delete(chatId); // New conversations start in core — no bucket hysteresis carryover
     logger.info({ chatId }, 'New chat started');
   }
 

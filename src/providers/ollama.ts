@@ -5,6 +5,8 @@ import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { getToolDefinitions, executeTool } from './tools/index.js';
 import { getOllamaTimeoutMs, buildOllamaTimeoutError } from '../circuit-breaker.js';
+import { bucketForTool, toolNamesForBucket } from './local-buckets.js';
+import { estimateTokens } from '../context-budget.js';
 
 const MAX_HISTORY_TURNS = 20; // 20 turns = 40 messages (user + assistant)
 const MAX_HISTORY_MESSAGES = MAX_HISTORY_TURNS * 2;
@@ -99,6 +101,64 @@ export function buildToolErrorRecoveryNote(toolName: string): string {
   return `The tool "${toolName}" returned an error. Inspect the error and change your approach — `
     + `do not call the same tool with the same arguments again. If you cannot recover, explain the `
     + `problem to the user instead of repeating the call.`;
+}
+
+/**
+ * Pipeline surgery Task 6: context-budget backstop for the local path.
+ * Drops the oldest history messages first until system + history fits
+ * maxInputTokens. Never drops the last message (the current user turn),
+ * even if it alone exceeds the budget. Does not mutate `history` — returns
+ * a new array via spread, since `history` is the live per-chat array and
+ * mutating it would corrupt persistent history. Exported for testing.
+ */
+export function capHistoryToBudget(
+  history: Message[],
+  systemTokens: number,
+  maxInputTokens: number,
+): { kept: Message[]; dropped: number } {
+  const kept = [...history];
+  let dropped = 0;
+  const total = () =>
+    systemTokens + kept.reduce((s, m) => s + estimateTokens(typeof m.content === 'string' ? m.content : ''), 0);
+  while (kept.length > 1 && total() > maxInputTokens) {
+    kept.shift();
+    dropped++;
+  }
+  return { kept, dropped };
+}
+
+/**
+ * Pipeline surgery Task 9 — breaker-open failure detection. Finds the last
+ * *assistant* message with non-empty content, searching backwards. At every
+ * real agentic-loop exit the trailing message is a `role: 'tool'` message
+ * (JSON.stringify'd tool result), which is never empty — reading
+ * `messages.at(-1)?.content` for "usable text" is always truthy and never
+ * reflects whether the model produced anything for the user. Exported for
+ * testing.
+ *
+ * Bounded to the current turn: `messages` includes the full per-chat
+ * history (prior turns' user/assistant messages), so an unbounded backward
+ * walk can find a *previous* turn's assistant reply and return it even when
+ * the current turn produced nothing — the fallback then never fires, and
+ * `failed` never flips, on a chat with any history. Only assistant messages
+ * after the last `role: 'user'` entry (the current turn's user message)
+ * count.
+ */
+export function lastAssistantText(messages: Message[]): string | null {
+  let lastUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      lastUserIndex = i;
+      break;
+    }
+  }
+  for (let i = messages.length - 1; i > lastUserIndex; i--) {
+    const m = messages[i];
+    if (m.role === 'assistant' && typeof m.content === 'string' && m.content.trim().length > 0) {
+      return m.content;
+    }
+  }
+  return null;
 }
 
 /**
@@ -350,6 +410,7 @@ export class OllamaProvider implements AIProvider {
           onTyping,
           extraSystemPrompt,
           isVoice,
+          params.assembledSystemPrompt === true,
         );
       } else {
         result = await this.runChatTurn(model, history, onTyping, extraSystemPrompt, isVoice);
@@ -374,6 +435,7 @@ export class OllamaProvider implements AIProvider {
           text: buildOllamaTimeoutError(timeoutMs, model),
           provider: 'ollama',
           model,
+          failed: true,
         };
       }
 
@@ -382,6 +444,7 @@ export class OllamaProvider implements AIProvider {
         text: `Ollama error: ${err instanceof Error ? err.message : String(err)}`,
         provider: 'ollama',
         model,
+        failed: true,
       };
     }
   }
@@ -449,16 +512,37 @@ export class OllamaProvider implements AIProvider {
     onTyping?: () => void,
     extraSystemPrompt?: string,
     isVoice?: boolean,
+    assembled?: boolean,
   ): Promise<AIResponse> {
-    const systemContent = extraSystemPrompt
-      ? `${TOOL_MODEL_SYSTEM_PROMPT}\n\n${extraSystemPrompt}`
-      : TOOL_MODEL_SYSTEM_PROMPT;
+    // Pipeline surgery Task 5: when the router already sent a complete,
+    // self-contained system prompt (Task 4's local assembler), skip the fat
+    // TOOL_MODEL_SYSTEM_PROMPT base persona — it would duplicate what the
+    // assembler already covers. Non-router callers (e.g. voice) don't set
+    // `assembled` and keep today's un-assembled behavior.
+    const systemContent = assembled && extraSystemPrompt
+      ? extraSystemPrompt
+      : extraSystemPrompt
+        ? `${TOOL_MODEL_SYSTEM_PROMPT}\n\n${extraSystemPrompt}`
+        : TOOL_MODEL_SYSTEM_PROMPT;
 
     // Build message list with system prompt
     const messages: Message[] = [
       { role: 'system', content: systemContent },
       ...history,
     ];
+
+    // Pipeline surgery Task 6: token-budget backstop. Caps what the first
+    // iteration sends by dropping the oldest history messages; later
+    // iterations grow `messages` by design and are NOT re-trimmed — this is
+    // a per-turn input backstop, not an in-loop governor. `history` (the
+    // live per-chat array) is never mutated, only `messages` is spliced.
+    const LOCAL_MAX_INPUT_TOKENS = 12000; // spec target ≤10-12k; frozen prefix + schemas excluded from trimming by construction
+    const sysTokens = estimateTokens(systemContent);
+    const { kept, dropped } = capHistoryToBudget(history, sysTokens, LOCAL_MAX_INPUT_TOKENS);
+    if (dropped > 0) {
+      logger.info({ dropped, sysTokens }, 'Local budget backstop trimmed oldest history');
+      messages.splice(1, messages.length - 1, ...kept);
+    }
 
     // rc.72: tier gates the loop ceiling and per-request options. A 2B
     // model that spirals for 10 iterations does more damage than a 2B
@@ -623,26 +707,62 @@ export class OllamaProvider implements AIProvider {
         // Circuit breaker: record result for pattern detection
         breaker.recordResult(toolName, toolArgs, result);
         // Pack tuner recording moved to executeTool() — covers both providers
+
+        // Pipeline surgery: model called a registered tool outside the current
+        // bucket's schema set (selector miss). Execute normally (registry knows
+        // it) and widen the tool set so later iterations see its whole bucket.
+        const sentNames = new Set(tools.map((t) => t.function.name));
+        if (!sentNames.has(toolName)) {
+          const bucket = bucketForTool(toolName);
+          if (bucket) {
+            const widened = getToolDefinitions(toolNamesForBucket(bucket));
+            for (const def of widened) {
+              if (!sentNames.has(def.function.name)) tools.push(def);
+            }
+            logger.info({ toolName, bucket }, 'Mid-loop bucket swap — widened tool set');
+          }
+        }
       }
 
       // Circuit breaker: record iteration end for stagnation detection
       breaker.recordIterationEnd(msg.content?.length ?? 0);
     }
 
-    // Max iterations reached (tier-dependent; 4 for small models, 10 default)
+    // Loop ended without a final no-tool-calls response: either max
+    // iterations exhausted, or the circuit breaker opened (stagnation /
+    // repetition / cascading tool errors).
+    const iterationsExhausted = iterations >= tier.maxIterations;
     logger.warn(
-      { chatId, model, iterations: tier.maxIterations, tier },
-      'Agentic loop hit max iterations',
+      { chatId, model, iterations, maxIterations: tier.maxIterations, breakerState: breaker.state },
+      iterationsExhausted ? 'Agentic loop hit max iterations' : 'Agentic loop circuit breaker opened',
     );
 
     const lastMsg = messages.at(-1);
+    // rc.9 fix: at every real loop exit the trailing message is a
+    // `role: 'tool'` message with JSON.stringify'd (never-empty) content, so
+    // `Boolean(lastMsg?.content)` was always true and `failed` never fired on
+    // breaker-open. "Usable text" means the model itself said something —
+    // check the last *assistant* message, not the last message overall.
+    const detectedText = lastAssistantText(messages);
+    const hasUsableText = detectedText !== null;
+    // Deliver what we detected: when the current turn left usable prose
+    // behind, send that to the user instead of the tool-JSON tail that
+    // `lastMsg?.content` would otherwise surface.
     const fallbackText =
-      lastMsg?.content || '[Max tool iterations reached. Please try a simpler request.]';
+      detectedText || lastMsg?.content || '[Max tool iterations reached. Please try a simpler request.]';
 
     history.push({
       role: 'assistant',
       content: fallbackText,
     });
+
+    // Pipeline surgery Task 9 — "loop death" (iteration exhaustion) always
+    // counts as a provider failure for router fallback purposes. A
+    // breaker-open exit only counts as failure when the model left no
+    // usable text behind: if it produced real content before stagnating,
+    // that's still more useful to the user than a fresh cloud turn with
+    // none of this turn's local context.
+    const failed = iterationsExhausted || !hasUsableText;
 
     return {
       text: fallbackText,
@@ -653,6 +773,7 @@ export class OllamaProvider implements AIProvider {
       toolsUsed: toolsUsedSet.size > 0 ? [...toolsUsedSet] : undefined,
       hitMaxIterations: true,
       toolErrorCount: toolErrorCount > 0 ? toolErrorCount : undefined,
+      failed,
     };
   }
 }

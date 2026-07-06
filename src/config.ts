@@ -39,6 +39,11 @@ export const config = {
   // .env to lock to the default provider unconditionally.
   AI_PROVIDER: (env.AI_PROVIDER || 'ollama') as 'claude' | 'ollama',
   AUTO_ROUTE: env.AUTO_ROUTE !== 'false',
+  // Phase 2 pipeline surgery — data-governance pin: when on (default), turns
+  // that reason over NovaLink production data stay on the local model
+  // regardless of the classifier or Claude-stickiness. Set
+  // NOVALINK_PIN_LOCAL=false to disable. Dormant while AUTO_ROUTE=false.
+  NOVALINK_PIN_LOCAL: env.NOVALINK_PIN_LOCAL !== 'false',
   // Skill self-healing validation gate: when on (default), the gate adds a
   // Claude LLM-judge signal on top of the in-process self-monitor floor.
   // Set HEAL_GATE_GRADER=false to gate on self-monitor alone (zero LLM cost).
