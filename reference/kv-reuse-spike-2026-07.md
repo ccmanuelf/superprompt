@@ -109,3 +109,49 @@ Turn (c) called `get_time` correctly and answered with the real time (America/Ma
 ### Decision point (per the task-7b brief: gate still fails → consult, no further fixes)
 
 This ships DONE_WITH_CONCERNS. The user/controller should decide the next lever: (a) shrink the manufacturing bucket's tool schema set further (currently 22, largest remaining prompt cost), (b) switch to `qwen3.5:4b` or a faster host, (c) accept a relaxed threshold given the diet's real (if insufficient) improvement, or (d) revisit whether KV-cache reuse can be forced (e.g. Ollama flags, `/api/generate` context param reuse) since neither Task 7 nor 7b's `num_ctx` change engaged it.
+
+## Deliberate Claude-prompt delta (user-approved)
+
+Task 7b review flagged the `parsePackYaml()` folded-scalar fix (above) as an
+unreviewed change to what Claude actually receives, since
+`getAggregatedCapabilities()` feeds `fullCapabilities` on **both** provider
+paths, not just the condensed local one this task set out to change. User
+call (2026-07-06): **the fix stays** — it corrects real data corruption, not
+a behavior change that needs gating.
+
+- **Before:** `manufacturing/pack.yaml`'s `capabilities: >` (folded block
+  scalar) parsed to the literal 1-character string `">"` — `parsePackYaml()`
+  only recognized `|` (literal block scalar), so the entire capabilities
+  block silently vanished from both prompts.
+- **After:** parses to real prose — verified 999 characters covering line
+  balancing, Six Sigma SPC, FMEA, RCA, DES, capacity planning, VSM, TOC,
+  CONWIP/Heijunka, DOE, and the manufacturing web dashboards (measured via
+  `parsePackYaml()` against the live `packs/manufacturing/pack.yaml`
+  fixture; see `tests/packs.test.ts`).
+- **Affects both providers:** Claude gets it via `fullCapabilities` →
+  `getAggregatedCapabilities()`; Ollama gets it via the same source through
+  `buildLocalCapabilitiesPrompt()`'s per-pack one-phrase summaries. Neither
+  path was excluded — this was a bug in shared data, not a Task-7b-local
+  change, so `tests/claude-prompt-freeze.test.ts` (which freezes prompt
+  *composition*, not upstream pack data) correctly did not catch it and
+  correctly does not need updating for it.
+- **Approved:** 2026-07-06, by the user, as an accepted delta to the Claude
+  prompt (governing call for the Task 7b review findings).
+- **Test coverage:** `tests/packs.test.ts` — regression tests pin
+  `capabilities: >` and `self_description: >` parsing against the real
+  manufacturing fixture (in addition to the pre-existing `description: >`
+  test). Verified failing against the pre-fix parser (commit `8cd8e75`,
+  extracted via `git show 8cd8e75:src/packs.ts` into a scratch module and
+  run against the same fixture — both fields parsed to `">"` there) and
+  passing against the current parser.
+
+**Reviewer note (minor, cheap to fix later, not blocking):**
+`buildLocalCapabilitiesPrompt()`'s `LOCAL_CAPABILITIES_HEADER`
+(`src/capabilities.ts`) hardcodes the dashboard list as a literal string
+(core: `/ /board /learn /docs`; mfg: `/sim /capacity /sequence /vsm /toc
+/conwip /doe /fsm`; ops: `/hub /hub/bom`) instead of calling
+`getAggregatedWebApps()` / `buildWebAppsPrompt()` the way the Claude/full
+path does. A future pack that adds new `intent_patterns[].web_apps` entries
+will auto-appear in the Claude prompt (dynamic) but **not** in the LOCAL
+(Ollama) prompt (static) until this header is hand-edited. Full/Claude
+prompt is unaffected — this is local-path-only.

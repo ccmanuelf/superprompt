@@ -81,6 +81,44 @@ describe('Pack YAML Parser', () => {
     // Folded scalars join wrapped lines with a single space, not a newline.
     expect(parsed.description).not.toContain('\n');
   });
+
+  // Task 7b review follow-up: the folded-scalar regression test above only
+  // covered `description: >`. manufacturing/pack.yaml also uses `>` for
+  // `capabilities` (feeds getAggregatedCapabilities() -> both the Claude and
+  // condensed local system prompts) and `self_description` — same bug class,
+  // same fix, needs its own pin so a future regression here isn't silently
+  // reintroduced. Pre-fix (commit 8cd8e75, verified via `git show
+  // 8cd8e75:src/packs.ts` extracted into a scratch module and run against
+  // this same fixture) both fields parsed to the literal string ">"
+  // (length 1); these assertions fail against that pre-fix parser and pass
+  // against the current one.
+  it('parses a folded block scalar (capabilities: >) into real manufacturing prose, not the literal ">"', () => {
+    const MANUFACTURING_YAML_PATH = resolve(process.cwd(), 'packs/manufacturing/pack.yaml');
+    const content = readFileSync(MANUFACTURING_YAML_PATH, 'utf-8');
+    expect(content).toContain('capabilities: >');
+
+    const parsed = parsePackYaml(content);
+    expect(parsed.capabilities).not.toBe('>');
+    expect(parsed.capabilities!.length).toBeGreaterThan(100);
+    expect(parsed.capabilities).toContain('Six Sigma');
+    expect(parsed.capabilities).toContain('Line balance');
+  });
+
+  // self_description is parsed and stored on PackMetadata, and
+  // getAggregatedSelfDescription() aggregates it, but nothing currently
+  // calls getAggregatedSelfDescription() — dead code today. Still pinning
+  // the parse here so the field doesn't silently regress to ">" and start
+  // being wrong the moment something wires it up.
+  it('parses a folded block scalar (self_description: >) into real prose, not the literal ">"', () => {
+    const MANUFACTURING_YAML_PATH = resolve(process.cwd(), 'packs/manufacturing/pack.yaml');
+    const content = readFileSync(MANUFACTURING_YAML_PATH, 'utf-8');
+    expect(content).toContain('self_description: >');
+
+    const parsed = parsePackYaml(content);
+    expect(parsed.self_description).not.toBe('>');
+    expect(parsed.self_description!.length).toBeGreaterThan(100);
+    expect(parsed.self_description).toContain('manufacturing engineering');
+  });
 });
 
 describe('Pack Tool Files', () => {
