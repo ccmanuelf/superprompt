@@ -687,6 +687,35 @@ export const NOVALINK_DATA_PATTERNS = [
   /\b(im_db|as_db)\b[^.?!]{0,40}\b(quer\w*|consult\w*|check\w*|revis\w*)\b/i,
   /\b(quer\w*|consult\w*|check\w*|revis\w*)\b[^.?!]{0,40}\b(im_db|as_db)\b/i,
   /\b(quer\w*|consult\w*|check\w*|revis\w*)\b[^.?!]{0,40}\b(el\s+|the\s+)?bridge\b/i,
+  // Catalog-vocabulary fix pass (2026-07-07, live-verified miss: "what is
+  // the inventory status for part WSCS150-US?" hit the real bridge —
+  // inventory-*/part-master-trade/part-locations endpoints per
+  // bridge-prompt.ts's 29-endpoint catalog — but never pinned). All entries
+  // below were probed standalone in node (bare regex, no router deps)
+  // against both a must-match set (the live example + ES/part-locations/
+  // movements phrasing) and a bare-word sanity set BEFORE landing here,
+  // same precision-first discipline as the Task 8 fix pass above:
+  //   - bare "inventory"/"inventario" is a magnet ("take inventory of my
+  //     life choices"), so EN requires a directly-adjacent status word
+  //     (status/levels/on-hand) and ES requires a bounded-window co-occurring
+  //     status or part anchor — neither ever fires on the bare word alone.
+  //   - the part+SKU pattern requires an UPPERCASE/digit token right after
+  //     "part"/"parte" and is deliberately NOT case-insensitive: with /i it
+  //     would also match ordinary lowercase words ("she played her part
+  //     well" — "well" is 4 letters) since /i folds the A-Z0-9 class onto
+  //     a-z too. Kept case-sensitive on the token so only SKU-shaped text
+  //     (e.g. WSCS150-US, 4711-A) qualifies; "part"/"parte" itself allows
+  //     either case via [Pp].
+  //   - "movements"/"movimientos" alone ("movements of the symphony") is
+  //     generic; requires a bounded-window co-occurring part/warehouse/
+  //     inventory anchor, either order, same 40-char window convention as
+  //     the shortage/production-status entries above.
+  /\binventory\s+(status|levels?|on.?hand)\b/i,
+  /\b(?:inventario\b[^.?!]{0,40}\b(?:estado|nivel(?:es)?|existencias?|parte?)\b|(?:estado|nivel(?:es)?|existencias?|parte?)\b[^.?!]{0,40}\binventario\b)/i,
+  /\b[Pp]arte?\s+[A-Z0-9][A-Z0-9-]{3,}\b/,
+  /\b(?:part\s+(?:master|locations?)|parte\s+(?:maestra|ubicaciones?))\b/i,
+  /\b(?:(?:movements?|movimientos?)\b[^.?!]{0,40}\b(?:part|warehouse|inventory|parte?|almac[eé]n|inventario)\b|(?:part|warehouse|inventory|parte?|almac[eé]n|inventario)\b[^.?!]{0,40}\b(?:movements?|movimientos?)\b)/i,
+  /\b(?:visa.?transactions?|transacciones?\s+(?:de\s+)?visa)\b/i,
 ];
 
 export function isNovalinkDataTurn(message: string): boolean {

@@ -77,3 +77,44 @@ describe('novalink-data classification — regex precision (Task 8 fix pass)', (
     });
   });
 });
+
+// Live-verified gap: "what is the inventory status for part WSCS150-US?" hit
+// the real bridge (inventory-* / part-master-trade / part-locations
+// endpoints, per bridge-prompt.ts's 29-endpoint catalog) but never pinned —
+// NOVALINK_DATA_PATTERNS had no coverage for inventory/part-SKU/movements/
+// visa-transactions vocabulary. Patterns below were probed standalone in
+// node (bare regex, no router deps) before landing here — see the sanity
+// probes for the precision-first bare-word traps this catalog vocabulary
+// creates ("part" of a movie, "inventory" of life choices, "movements" of a
+// symphony), the same lesson as the Task 8 fix pass above.
+describe('novalink-data classification — catalog vocabulary (inventory/part/movements/visa)', () => {
+  describe('must-match set (RED until patterns land)', () => {
+    it('detects the live-verified EN example: inventory status for a part SKU', () => {
+      expect(isNovalinkDataTurn('what is the inventory status for part WSCS150-US?')).toBe(true);
+    });
+    it('detects ES "inventario de la parte <SKU>"', () => {
+      expect(isNovalinkDataTurn('inventario de la parte WSCS150-US')).toBe(true);
+    });
+    it('detects "part locations" for a company', () => {
+      expect(isNovalinkDataTurn('show me part locations for ACME')).toBe(true);
+    });
+    it('detects warehouse movements anchored to a part', () => {
+      expect(isNovalinkDataTurn('recent warehouse movements for part 4711-A')).toBe(true);
+    });
+  });
+
+  describe('false-positive guards — bare catalog words used in everyday speech', () => {
+    it('does not fire on "take inventory of my life choices"', () => {
+      expect(isNovalinkDataTurn('take inventory of my life choices')).toBe(false);
+    });
+    it('does not fire on "the best part of the movie"', () => {
+      expect(isNovalinkDataTurn('the best part of the movie')).toBe(false);
+    });
+    it('does not fire on "she played her part well"', () => {
+      expect(isNovalinkDataTurn('she played her part well')).toBe(false);
+    });
+    it('does not fire on "movements of the symphony"', () => {
+      expect(isNovalinkDataTurn('movements of the symphony')).toBe(false);
+    });
+  });
+});
