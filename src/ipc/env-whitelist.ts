@@ -20,6 +20,13 @@ export const TOOLS_PROCESS_ENV: string[] = [
   // NovaLink Bridge (novalink_* tools)
   'NOVALINK_BRIDGE_URL',
   'NOVALINK_BRIDGE_API_KEY',
+  // Node bootstrap var: the tools child makes its own TLS connections to the
+  // bridge and must trust its self-signed IP-SAN cert, or novalink_* calls
+  // fail TLS validation immediately (observed live: prod bridge at
+  // https://192.168.2.234:5443, cert trusted via this var pointing at the
+  // mounted PEM). Read at Node startup, so it must be present in the child's
+  // spawn env, not set after the fact.
+  'NODE_EXTRA_CA_CERTS',
   // Workspace paths (for read_file, run_command)
   'WORKSPACE_DIR',
   'UPLOADS_DIR',

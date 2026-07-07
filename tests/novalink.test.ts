@@ -218,6 +218,13 @@ describe('env whitelist', () => {
     expect(TOOLS_PROCESS_ENV).toContain('NOVALINK_BRIDGE_URL');
     expect(TOOLS_PROCESS_ENV).toContain('NOVALINK_BRIDGE_API_KEY');
   });
+
+  it('forwards NODE_EXTRA_CA_CERTS so the tools process trusts the bridge cert', () => {
+    // Node bootstrap var: the tools child makes its own TLS connections to the
+    // bridge (novalink_* tools) and must trust the self-signed IP-SAN cert
+    // configured via NODE_EXTRA_CA_CERTS, or every call fails TLS validation.
+    expect(TOOLS_PROCESS_ENV).toContain('NODE_EXTRA_CA_CERTS');
+  });
 });
 
 describe('novalink pack.yaml', () => {
