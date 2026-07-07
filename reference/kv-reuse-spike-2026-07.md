@@ -281,3 +281,263 @@ avoiding oscillation, not by trying to make it as cheap as same-bucket
 turns; (c) stop using `prompt_eval_count` anywhere in this codebase's
 benchmarking for cache-engagement judgments — use `prompt_eval_duration` or
 server-log `prompt eval time` only.
+
+## Pre-flip conservative bench (useTools:true)
+
+Checklist item 1 before the AUTO_ROUTE flip: isolate the case Task 7d
+flagged but didn't measure — a warm same-bucket manufacturing follow-up
+with tool schemas actually **attached** (`useTools: true`, 22 mfg-bucket
+schemas on the wire), not a plain no-tool conversational follow-up.
+
+**Method:** same real-pipe building blocks as 7d, one persistent process/
+`chatId`, three sequential turns, `.244`'s Ollama 0.31.1 via the same SSH
+tunnel (`127.0.0.1:11435 → 192.168.2.244:11434`), `ministral-3:3b`,
+`num_ctx` 16384. Script: `.superpowers/sdd/bench-pipe-preflip.ts` (not
+committed). Messages were phrased to deliberately trip `shouldUseTools()`
+(contains "generate") while also tripping the manufacturing bucket regex
+(contains "balance"), confirmed by dry-running both regexes before the
+live call. Prod `luna-bot` containers untouched; tunnel killed after,
+confirmed via a refused `curl` afterward.
+
+| Turn | Intent | Bucket | useTools | Tool called | Wall-clock | prompt tokens | prompt-eval time (server `sim_best`) | gen time / tokens |
+|---|---|---|---|---|---:|---:|---:|---:|
+| 1 — cold mfg, tools attached | "Generate the line balance for 4 stations…" | manufacturing | true | yes (`line_balance`, malformed-input clarification; 3-call agentic loop) | 142.32s | 7,413→8,139 (grew across loop) | 49.28s cold (sim n/a) + 4.14s (sim_best 0.946) + 3.09s (sim_best 0.962) | 30.02s/345 + 19.35s/222 + 31.04s/357 |
+| 2 — **THE NUMBER**, warm same-bucket, tools attached | "Now generate the line balance again with a 35s target takt…" | manufacturing | true | no (described approach in prose, no call) | **108.82s** | 7,788 | **46.63s** (sim_best **0.179**, f_keep 0.164 — 6,395 of 7,788 tokens re-evaluated) | 61.65s / 708 |
+| 3 — warm, no tool need | "Summarize what we found…" | manufacturing | false | n/a | 34.55s | 2,632 | 12.53s (sim 0.005 — near-full miss, structurally different prompt with schemas dropped) | 21.55s / 340 |
+
+Cross-checked against `.244`'s server log (`/opt/homebrew/var/log/ollama.log`):
+task 934 (turn 2) — `slot get_availabl: selected slot by LCP similarity,
+sim_best = 0.179 (> 0.100 thold), f_keep = 0.164` then `prompt eval time =
+46634.82 ms / 6395 tokens`, matching the API's `prompt_eval_duration`
+exactly.
+
+### Verdict vs the 30s gate: **FAIL** (108.82s, ~3.6x over)
+
+Turn 2 — the conservative warm-same-bucket-with-tools case — does **not**
+meet the 30s gate, in sharp contrast to Task 7d's no-tools warm gate
+(5.69s, sim_best 0.917). Root cause is visible directly in the server log:
+attaching tool schemas plus the tool-call/tool-result messages that turn 1's
+agentic loop appended to history collapses next-turn KV-prefix similarity
+from ~0.92–0.96 (no-tools case) to **0.179** — i.e. the "same bucket, same
+tools, next turn" prompt no longer shares a long common prefix with the
+cached state, forcing an almost-full re-evaluation (6,395 of 7,788 tokens).
+Turn 3 (dropping tools again) also misses (sim 0.005) because the
+tools-attached vs. tools-free prompt shapes are structurally different from
+each other, not just longer/shorter.
+
+### Anomalies
+
+- Turn 2 did not actually call the tool despite having schemas and history
+  showing the model's own turn-1 attempt — it produced a prose plan
+  instead. Turn 1 did call `line_balance` but the input was malformed
+  (model didn't supply the tool's expected CSV/column format), producing a
+  clarifying-question response rather than a computed result. Neither turn
+  demonstrates a clean tool-call round trip; both burn the very expensive
+  "cold-shaped" prompt-eval cost anyway, since KV reuse fails regardless of
+  whether a call happens.
+- Generation speed itself also degraded turn-over-turn (11.4–11.5 tok/s in
+  turn 2 vs. ~15.8 tok/s turn 3, vs. much faster per-token rates in 7d's
+  smaller-prompt turns) — consistent with a much larger active context
+  (7,788–8,139 tokens vs. 7d's ~1.5–1.7k) rather than any server-side
+  contention; no other load was on the box.
+
+### Implication for the AUTO_ROUTE flip
+
+This is the conservative case the flip checklist asked for, and it fails
+the gate by a wide margin. The failure mode is specific and diagnosable —
+tool-call/tool-result messages appended mid-conversation break KV-prefix
+stability for the *next* turn even within the same bucket — so before
+flipping AUTO_ROUTE for manufacturing-bucket traffic that actually invokes
+tools, either (a) confirm the flip's fallback/threshold treats this as an
+expected slow path rather than a routing bug, or (b) scope a follow-up fix
+(e.g. trimming/normalizing tool-call round-trip messages out of history
+before the next turn's prompt is assembled, to restore prefix stability) —
+this should not gate the current benchmark item, but should not be silently
+absorbed into "flip and see" either.
+
+## Qwen3.5:4b full-pipe re-bench (flip decision)
+
+Re-runs the exact pre-flip conservative bench above with `OLLAMA_TOOL_MODEL`/
+`OLLAMA_CHAT_MODEL` swapped from `ministral-3:3b` to `qwen3.5:4b` — same real
+pipe, same three turns/wording, same `.244` box via the same SSH tunnel,
+`num_ctx` 16384, `OLLAMA_THINK=false` (matches .244's deployed prod `.env`).
+Script: `.superpowers/sdd/bench-pipe-qwen4b.ts` (not committed). Prod
+`luna-bot`/`luna-caddy`/`luna-speaches`/`luna-searxng` confirmed healthy
+before the run; tunnel killed after.
+
+Purpose: confirm/refute that qwen3.5:4b's chat template is KV-prefix-stable
+across tool-call/tool-result turns, where ministral-3:3b's was not
+(sim_best collapsed to 0.179 above).
+
+| Turn | Wall-clock | Sub-calls (agentic loop) | newly-eval tokens (sum) | prompt-eval time (sum) | sim_best range | gen time / tokens (sum) | tool called |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 1 cold mfg, tools attached | 131.6s | 4 | ~1,464+1,568+1,572 (+cold) | ~39.3s | 0.966–0.987 | ~51.1s / 619 | yes, errored (see anomalies) |
+| 2 **THE NUMBER**, warm same-bucket, tools attached | **87.8s** | 4 | 1,309+1,507+1,720+1,933 = 6,469 | 43.13s | **0.966–0.976** | 43.34s / 452 | yes, errored every attempt |
+| 3 warm, no tool need | 27.7s | 1 (full miss, schema shape changed) | 1,891 | 9.81s (192.8 tok/s) | n/a (full re-process, no checkpoint match) | 17.46s / 235 | n/a |
+
+Cross-checked against `.244`'s Ollama server log — every turn-2 sub-call
+selected its slot "by LCP similarity" with `sim_best` 0.966–0.976
+(`f_keep` 0.909–0.997), i.e. ~90%+ of the KV prefix reused each time,
+matching ministral's own *no-tools* warm case (0.917–0.962) and nowhere
+near ministral's *with-tools* collapse (0.179). **KV-prefix-stability claim
+for qwen3.5:4b: CONFIRMED** — tool-call/tool-result history does not break
+its cache reuse the way it broke ministral-3:3b's.
+
+### GATE: turn 2 wall-clock < 30s → **FAIL** (87.8s, ~2.9x over)
+
+Despite confirmed cache reuse, the gate still fails — for a different
+reason than ministral's. qwen3.5:4b's `line_balance` tool call never
+succeeded: turn 1 hit "Knex not initialized" (the bench harness never calls
+`initKnex()`, and every `line_balance` action — `run`/`list`/etc. —
+requires DB-backed project storage) for its first 3 attempts, then a
+correctly-formatted-CSV attempt on iteration 4 that also failed for the
+same DB reason, tripping the circuit breaker (HALF_OPEN after 3 errors);
+turn 2 then made 4 fresh attempts, first two rejected for CSV formatting
+(semicolon-delimited instead of comma, missing header), before the circuit
+breaker went OPEN after 4 consecutive errors and the loop returned the
+injected retry-guidance stub as "the answer" rather than a model-authored
+response. Each of those 4 sub-calls in turn 2 still costs ~19–24s
+(prompt-eval + generation), and 4 × ~22s ≈ 87.8s — the gate fails on
+**iteration count**, not KV-cache misses.
+
+### Anomaly: tier misresolution
+
+The task brief assumed qwen3.5:4b lands in the medium tier (maxIterations
+6 / numPredict 1024 / temp 0.3). It does not. Ollama reports this model's
+`parameter_size` as **4.7B** (confirmed via `/api/tags`), and
+`resolveModelTier()` (`src/providers/ollama.ts:55-63`) only grants the
+medium tier at `paramsInBillions <= 4` — 4.7 falls through to
+`DEFAULT_TIER` (maxIterations 10, no numPredict cap, temp 0.7). Confirmed
+directly in the bench log: `"Agentic loop circuit breaker opened" ...
+maxIterations: 10`. So this bench ran qwen3.5:4b under the *unrestricted*
+tier, not the tuned small-model tier the flip brief expected — the model
+was allowed up to 10 retries (circuit breaker cut it off at 4) and an
+uncapped `num_predict`. If the medium tier is meant to cover "4B-class"
+models by their marketing name rather than Ollama's reported
+`parameter_size`, the `<= 4` boundary in `resolveModelTier` needs
+revisiting (e.g. a small epsilon, or a name-based override) — flagged as a
+finding, not fixed here.
+
+### Answer quality
+
+Turn 3's final answer (produced after the tool never executed, using the
+model's own domain reasoning) was directionally correct: it identified that
+a 35s target takt is infeasible because one task requires 45s, correctly
+naming the bottleneck-task-vs-takt relationship that underlies line
+balancing. So despite zero successful tool calls in this bench, qwen3.5:4b's
+unaided reasoning about the manufacturing problem was sound.
+
+### Ministral-3:3b vs qwen3.5:4b comparison
+
+| | ministral-3:3b (pre-flip) | qwen3.5:4b (this bench) |
+|---|---:|---:|
+| Turn 2 wall-clock | 108.82s | 87.8s |
+| Turn 2 sim_best | 0.179 (cache broken) | 0.966–0.976 (cache stable) |
+| Turn 2 tokens re-evaluated | 6,395 / 7,788 | 6,469 total across 4 calls, each only ~1.3–1.9k new (mostly reused) |
+| Gate | FAIL | FAIL |
+| Root cause | KV-prefix collapse from tool-turn history | Tool-call formatting failures → circuit-breaker retries (DEFAULT tier, not medium) |
+
+**Net:** the KV-prefix-stability hypothesis for qwen3.5:4b is validated —
+switching models does fix the specific cache-collapse failure mode found
+with ministral-3:3b. It does **not**, by itself, clear the 30s gate in this
+run, because a second, independent bottleneck (repeated tool-call-argument
+formatting errors, compounded by the model landing in the unrestricted
+DEFAULT tier instead of the intended medium tier) drove the wall-clock over
+budget instead. The bench harness's missing `initKnex()` call also means no
+`line_balance` call could have succeeded regardless of model, which further
+confounds "did tool-calling actually work" — a follow-up bench with a real
+DB wired in is needed before drawing conclusions about qwen3.5:4b's
+tool-call success rate in production.
+
+## Decisive re-bench: qwen3.5:4b + tier fix + working tools
+
+**Date:** 2026-07-07
+**Branch/commit:** `fix/model-tier-boundary` @ `5b05d56` (medium tier now
+covers 4.7B-class — `resolveModelTier` boundary raised from ≤4 to ≤5).
+**Script:** `.superpowers/sdd/bench-pipe-decisive.ts` (not committed) —
+same real pipe, same three turns/wording as the two failed attempts above,
+with BOTH prior defects fixed:
+1. **Tier fix active and verified in-run:** the script resolves the tier
+   through the real `OllamaProvider.getModelTier()` against `.244`'s
+   `/api/tags` before any turn, and hard-stops if it still says 10.
+   Confirmed: `Resolved tier for qwen3.5:4b:
+   {"maxIterations":6,"numPredict":1024,"temperature":0.3}` — **medium**.
+2. **DB bootstrapped:** `initKnex({driver:'sqlite',
+   sqliteFilename:':memory:'})` sets the real singleton (same intent as
+   `createTestKnex()` in `tests/router-pinned-turns.test.ts`, but via the
+   production `initKnex` since a plain tsx script can't vi.mock), then
+   `initBalanceTables()`, then a direct non-LLM preflight
+   (`line_balance {action:"list"}`) proved the DB path returns no error
+   before any model time was spent.
+
+Same `.244` box via the same SSH tunnel (`127.0.0.1:11435 →
+192.168.2.244:11434`), Ollama 0.31.1, `num_ctx` 16384, `OLLAMA_THINK=false`,
+model confirmed unloaded (`/api/ps` empty) before turn 1. Prod
+`luna-bot`/`luna-caddy`/`luna-speaches`/`luna-searxng` confirmed healthy
+before and after; tunnel killed after (curl refused, no ssh process).
+
+### Numbers
+
+| Turn | Wall-clock | Sub-calls | prompt-eval per call (server log: newly-eval tokens, sim_best) | gen per call (tokens / time) | tool result | iterations used (max 6) |
+|---|---:|---:|---|---|---|---:|
+| 1 cold mfg, tools | 127.9s | 3 | 46.78s (8,114 full cold) → 8.28s (1,246, 0.973) → 12.89s (1,926, 0.924) | 118/11.1s → 216/20.6s → 250/24.3s | **SUCCEEDED** (2nd call: efficiency 86.1%, SI 8.41, 4 stations; 1st call domain-errored — model passed takt=30 < longest task 45s, then self-corrected) | 3 |
+| 2 **THE NUMBER**, warm same-bucket, tools | **41.4s** | 2 | 8.67s (1,300, 0.967) → 10.15s (1,531, 0.973) | 127/12.0s → 103/9.8s | executed cleanly; returned the domain-correct infeasibility error (takt 35s < longest task 45s — mathematically unbalanceable); model explained it correctly in one retry-free pass | 2 |
+| 3 warm, no tools | 22.7s | 1 | 10.03s (1,936 full re-eval, LRU slot — schema-free prompt shape differs, consistent with all prior benches) | 168/12.2s | n/a | 1 |
+
+Server log cross-check: every duration above matches
+`/opt/homebrew/var/log/ollama.log` to the hundredth of a ms (e.g. turn 1
+call 1 `46775.09 ms / 8114 tokens` = API `prompt_eval_duration`
+46775093000 ns).
+
+### GATE: turn 2 wall-clock < 30s → **FAIL** (41.4s, ~1.4x over)
+
+### Comparison to the two failed attempts
+
+| | ministral-3:3b (pre-flip) | qwen3.5:4b, broken harness | **qwen3.5:4b, this run** |
+|---|---:|---:|---:|
+| Turn 2 wall-clock | 108.8s | 87.8s | **41.4s** |
+| Turn 2 sub-calls | 1 (huge re-eval) | 4 (all tool errors) | **2** (clean round trip) |
+| Turn 2 sim_best | 0.179 (cache broken) | 0.966–0.976 | **0.967–0.973** |
+| Tier | n/a | DEFAULT (10 iters) | **medium (6 iters, 1024 cap)** |
+| line_balance ever succeeded | no (malformed input) | no (Knex not initialized) | **YES** (real computed result, turn 1) |
+| Gate | FAIL | FAIL | FAIL |
+
+### Verdict
+
+Both prior defects are confirmed fixed and both prior failure modes are
+gone: KV reuse holds across tool turns (sim 0.92–0.97 everywhere except
+the expected schema-drop re-eval in turn 3), and tool calls execute against
+a real DB — turn 1 produced a genuine computed line balance, and turn 2's
+"error" was the tool giving the mathematically correct infeasibility
+answer, not a harness fault. What remains is a **structural floor**: turn 2
+is a 2-call agentic round trip (model → tool → model), and at this
+host/model's speeds — ~150 tok/s incremental prompt-eval and **~10.5 tok/s
+generation** — two calls cost ~18.8s prompt-eval + ~21.9s generation ≈
+41s. The gate is no longer failing on retries, cache misses, or broken
+tools; it's failing on raw generation throughput for a 4B model on the
+16 GB M1 doing 2 sequential inference calls. A single-call turn passes
+(turn 3: 22.7s); any tool-using turn structurally cannot fit 30s at
+~10.5 tok/s unless responses are capped much tighter than 1024
+(`num_predict`) or generation gets faster. Levers if the gate must pass
+as-written: lower `num_predict` for tool-loop iterations (the 216–250-token
+intermediate responses in turn 1 are pure overhead), prompt the model to
+skip prose between tool calls, or relax the gate to distinguish "tool-turn"
+(2-call floor ≈ 40s) from "chat-turn" (<30s, passes today).
+
+### Anomalies
+
+- Turn 1's first tool call passed `takt_time: 30` (misread "cycle times
+  30,45,38,42" as a 30s takt) — a domain error, self-corrected on the next
+  iteration. Small-model arg-mapping remains imperfect even when the call
+  format is valid.
+- The `.244` server log shows two additional full cold-load sequences
+  (8,114 tokens each) before this run's — earlier bench attempts that were
+  auto-backgrounded by the runner and died silently mid-run DID reach the
+  server first. Bench runs on this project must be foreground/detached-
+  with-polling; backgrounded `npx tsx` invocations die without a trace.
+- Turn 2's tool "error" is semantically correct behavior (35s takt is
+  infeasible with a 45s task, as the pre-flip ministral bench's turn 3
+  answer also concluded) — the bench message wording bakes in an
+  infeasible request, so no turn-2 run of this scenario can ever produce a
+  `success: true` tool result. A future re-bench wanting a clean turn-2
+  success should use a feasible takt (≥45s).
