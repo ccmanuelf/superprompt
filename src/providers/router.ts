@@ -123,7 +123,7 @@ import { getAggregatedCapabilities, buildWebAppsPrompt } from '../packs.js';
 import { buildWebUIAwarenessPrompt } from '../web-ui-guide.js';
 import { getRecentUploads, formatUploadManifest } from '../upload-manifest.js';
 
-const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
+export const LANGUAGE_HINT = 'Always respond in the same language the user\'s latest message is written in. If they switch languages, you switch too — immediately, without being asked.';
 
 /**
  * Anti-rationalization rules applied to ALL responses (both providers).
@@ -961,6 +961,18 @@ export function composeClaudeSystemPrompt(p: ClaudePromptParts): string {
   ].filter(Boolean).join('\n\n');
 }
 
+/** Pipeline surgery Task 9 fix — minimal system prompt for the pinned-turn
+ * Claude fallback (rescue path). Previously this call passed
+ * systemPrompt: undefined, so a rescue turn had no identity and no bridge
+ * awareness (live prod: Claude answered as "Claude Code" doing repo
+ * analysis instead of using the bridge for a data question). Deliberately
+ * NOT the full composeClaudeSystemPrompt() — this is a degraded rescue
+ * turn, not a normal Claude turn, so it skips skill/capabilities/kanban/
+ * document prompts on purpose. */
+export function buildFallbackSystemPrompt(platformIdentity: string): string {
+  return [platformIdentity, NOVALINK_BRIDGE_PROMPT, LANGUAGE_HINT].filter(Boolean).join('\n\n');
+}
+
 // fab-guard — the three novalink tools classifyDeliverableIntent's hardcoded
 // allowlist excludes. A turn that is BOTH deliverable AND novalink-pinned
 // (e.g. "genera un informe de faltantes de la compañía 1054") needs these
@@ -1462,7 +1474,7 @@ export class ProviderRouter {
       }
       try {
         const fallback = await this.claude.sendMessage({
-          ...params, message: effectiveMessage, systemPrompt: undefined, sessionId: undefined,
+          ...params, message: effectiveMessage, systemPrompt: buildFallbackSystemPrompt(platformIdentity), sessionId: undefined,
         });
         response = applyFallbackDisclosure(fallback);
         respondedVia = 'claude';
