@@ -43,14 +43,21 @@ describe('resolveModelTier (rc.72)', () => {
     expect(resolveModelTier(2.0)).toEqual({ maxIterations: 4, numPredict: 512, temperature: 0.2 });
   });
 
-  it('>2B and ≤4B uses the medium tier (6 iterations, 1024 tokens, temp 0.3)', () => {
+  it('>2B and ≤5B uses the medium tier (6 iterations, 1024 tokens, temp 0.3)', () => {
     expect(resolveModelTier(2.01)).toEqual({ maxIterations: 6, numPredict: 1024, temperature: 0.3 });
     expect(resolveModelTier(4)).toEqual({ maxIterations: 6, numPredict: 1024, temperature: 0.3 });
     expect(resolveModelTier(4.0)).toEqual({ maxIterations: 6, numPredict: 1024, temperature: 0.3 });
   });
 
-  it('>4B uses the default tier (10 iterations, no cap, temp 0.7)', () => {
-    expect(resolveModelTier(4.1)).toEqual({ maxIterations: 10, temperature: 0.7 });
+  it('covers the qwen3.5:4b-class 4.7B report (rc.130 boundary fix)', () => {
+    expect(resolveModelTier(4.7)).toEqual({ maxIterations: 6, numPredict: 1024, temperature: 0.3 });
+    expect(resolveModelTier(5.0)).toEqual({ maxIterations: 6, numPredict: 1024, temperature: 0.3 });
+    expect(resolveModelTier(5.1)).toEqual({ maxIterations: 10, temperature: 0.7 });
+    expect(resolveModelTier(7.0)).toEqual({ maxIterations: 10, temperature: 0.7 });
+  });
+
+  it('>5B uses the default tier (10 iterations, no cap, temp 0.7)', () => {
+    expect(resolveModelTier(5.1)).toEqual({ maxIterations: 10, temperature: 0.7 });
     expect(resolveModelTier(9.7)).toEqual({ maxIterations: 10, temperature: 0.7 });
     expect(resolveModelTier(Number.POSITIVE_INFINITY)).toEqual({ maxIterations: 10, temperature: 0.7 });
   });
