@@ -701,9 +701,33 @@ export function isNovalinkDataTurn(message: string): boolean {
 export const FALLBACK_DISCLOSURE =
   '⚠️ Answered via cloud fallback — local AI unavailable. / Respondido vía nube — IA local no disponible.\n\n';
 
-/** Fallback fires only when a pinned turn's local response reports failure. */
+/**
+ * Fabrication guard — true iff EVERY novalink_* tool call this turn errored
+ * (bridge down / unreachable). Requires `novalinkToolStats` to be present
+ * with at least one call; a turn that never called a novalink tool, or one
+ * with only partial errors, is not a bridge outage.
+ *
+ * This exists because a pinned local turn whose novalink_* calls all fail
+ * does NOT set `response.failed` — that flag is transport-level (timeout,
+ * unreachable, loop death) and the agentic loop still exits cleanly via its
+ * no-tool-calls path, just with the model narrating fabricated data over
+ * the tool errors it saw. `failed` alone therefore misses this failure mode.
+ */
+export function allDataToolsFailed(response: AIResponse): boolean {
+  const stats = response.novalinkToolStats;
+  if (!stats || stats.calls === 0) return false;
+  return stats.errors === stats.calls;
+}
+
+/**
+ * Fallback fires when a pinned turn's local response reports a
+ * transport-level failure, OR when every novalink_* data-tool call this
+ * turn errored (bridge down) — the latter added so a pinned turn where the
+ * model fabricates production data over tool errors isn't mistaken for a
+ * clean answer just because `failed` never got set.
+ */
 export function shouldFallbackToClaude(args: { pinned: boolean; response: AIResponse }): boolean {
-  return args.pinned && args.response.failed === true;
+  return args.pinned && (args.response.failed === true || allDataToolsFailed(args.response));
 }
 
 /** Idempotent — a response already carrying the disclosure is returned unchanged. */
@@ -1372,7 +1396,18 @@ export class ProviderRouter {
     let respondedVia: 'claude' | 'ollama' = provider.name;
 
     if (provider.name === 'ollama' && shouldFallbackToClaude({ pinned: this.pinnedTurns.has(chatId), response })) {
-      logger.warn({ chatId, reason: response.text }, 'Pinned local turn failed — soft fallback to Claude');
+      // Fabrication guard: a bridge outage (every novalink_* call errored)
+      // never sets `failed`, so it needs its own distinct, greppable log
+      // reason — otherwise bridge downtime is invisible in the logs even
+      // though the fallback fired correctly.
+      if (allDataToolsFailed(response)) {
+        logger.warn(
+          { chatId, novalinkToolStats: response.novalinkToolStats },
+          'pinned turn data tools all failed — fallback',
+        );
+      } else {
+        logger.warn({ chatId, reason: response.text }, 'Pinned local turn failed — soft fallback to Claude');
+      }
       try {
         const fallback = await this.claude.sendMessage({
           ...params, message: effectiveMessage, systemPrompt: undefined, sessionId: undefined,
