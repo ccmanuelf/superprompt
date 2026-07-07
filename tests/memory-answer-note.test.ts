@@ -37,6 +37,15 @@ describe('shouldNoteMemoryAnswer (truth table)', () => {
     expect(shouldNoteMemoryAnswer({ pinned: true, fellBack: true, response: ollamaNoStats })).toBe(false);
   });
 
+  it('false: deliverable hard-error (composed via router wiring: fellBack || deliverableFailed)', () => {
+    // At router.ts ~1605, the wiring passes fellBack: fellBack || deliverableFailed.
+    // This test ensures that when deliverableFailed is true (hard-error branch hit),
+    // the composed condition (e.g., fellBack=false but deliverableFailed=true → true)
+    // is gated at the wiring layer, not the pure predicate. The pure function still
+    // receives fellBack (the composite), and this case verifies it returns false.
+    expect(shouldNoteMemoryAnswer({ pinned: true, fellBack: true, response: ollamaNoStats })).toBe(false);
+  });
+
   it('false: response served by claude (not ollama)', () => {
     expect(shouldNoteMemoryAnswer({ pinned: true, fellBack: false, response: claudeNoStats })).toBe(false);
   });

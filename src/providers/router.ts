@@ -1460,6 +1460,11 @@ export class ProviderRouter {
       assembledSystemPrompt: provider.name === 'ollama' ? true : undefined,
     });
 
+    // Track whether the deliverable retry hit the hard-error branch
+    // (unable to generate after two attempts). Used at the memory-answer
+    // note wiring to suppress false positives on pinned turns.
+    let deliverableFailed = false;
+
     // rc.75 — post-loop validator: when the user asked for a
     // deliverable and the Ollama agentic loop ended WITHOUT calling
     // generate_document, re-run with an even stricter allowlist and a
@@ -1517,6 +1522,10 @@ export class ProviderRouter {
           { chatId, retryToolsUsed: retryResponse.toolsUsed ?? [] },
           'Deliverable retry FAILED — surfacing hard error to user',
         );
+        // DELIVERY-HARD-ERROR: Mark hard failure so memory-answer note
+        // doesn't fire on a pinned turn with no novalinkToolStats that
+        // actually failed to generate a document (not a memory answer).
+        deliverableFailed = true;
         response = {
           ...response,
           text:
@@ -1588,7 +1597,7 @@ export class ProviderRouter {
     // claiming the data was live. When no fallback fired and Ollama produced
     // this response with no data-tool calls this turn, disclose that the
     // answer came from conversation memory, not a live fetch.
-    if (shouldNoteMemoryAnswer({ pinned: this.pinnedTurns.has(chatId), fellBack, response })) {
+    if (shouldNoteMemoryAnswer({ pinned: this.pinnedTurns.has(chatId), fellBack: fellBack || deliverableFailed, response })) {
       response = applyMemoryAnswerNote(response);
     }
 
