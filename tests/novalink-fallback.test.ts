@@ -5,7 +5,10 @@ import {
   FALLBACK_DISCLOSURE,
   applyFallbackDisclosure,
   mergeNovalinkStats,
+  buildFallbackSystemPrompt,
+  LANGUAGE_HINT,
 } from '../src/providers/router.js';
+import { NOVALINK_BRIDGE_PROMPT } from '../src/providers/bridge-prompt.js';
 import type { AIResponse } from '../src/providers/types.js';
 
 describe('soft fallback', () => {
@@ -82,6 +85,39 @@ describe('composed fallback decision (pinned + failed OR all-data-tools-failed)'
 // on attempt 1 (all novalink_* calls errored) if the retry made no novalink
 // calls at all (stats undefined) — allDataToolsFailed would then see no stats
 // and never fire, shipping a fabricated report with no disclosure.
+// rc.130+ fix — the pinned-turn Claude fallback previously passed
+// systemPrompt: undefined, so a rescue turn had no idea it was Luna or that
+// a NovaLink bridge existed (live prod: it answered as "Claude Code" doing
+// repo analysis). buildFallbackSystemPrompt gives the rescue turn a minimal
+// identity + bridge-contract + language prompt without pulling in the full
+// Claude-branch composition (composeClaudeSystemPrompt stays frozen/unused
+// here — this is a degraded rescue turn, not a normal one).
+describe('buildFallbackSystemPrompt', () => {
+  const IDENTITY = '## Identity — READ THIS FIRST\nYou are Luna, chatting via Telegram Bot.';
+
+  it('contains the platform identity', () => {
+    expect(buildFallbackSystemPrompt(IDENTITY)).toContain(IDENTITY);
+  });
+
+  it('contains the bridge contract when the bridge env is configured, omits it otherwise', () => {
+    const out = buildFallbackSystemPrompt(IDENTITY);
+    if (NOVALINK_BRIDGE_PROMPT) {
+      expect(out).toContain(NOVALINK_BRIDGE_PROMPT);
+    } else {
+      expect(out).not.toContain('NovaLink production data');
+    }
+  });
+
+  it('contains the language hint', () => {
+    expect(buildFallbackSystemPrompt(IDENTITY)).toContain(LANGUAGE_HINT);
+  });
+
+  it('contains nothing else — exactly identity + bridge + language hint, joined', () => {
+    const expected = [IDENTITY, NOVALINK_BRIDGE_PROMPT, LANGUAGE_HINT].filter(Boolean).join('\n\n');
+    expect(buildFallbackSystemPrompt(IDENTITY)).toBe(expected);
+  });
+});
+
 describe('mergeNovalinkStats', () => {
   it('attempt1 all-errored + retry no-stats → merged still shows all-errored (fallback fires)', () => {
     const merged = mergeNovalinkStats({ calls: 2, errors: 2 }, undefined);
