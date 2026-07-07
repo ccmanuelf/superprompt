@@ -48,15 +48,19 @@ export function parseParameterSize(sizeStr: string | undefined | null): number {
 /**
  * Resolve agentic-loop knobs for a given model size in billions.
  *   ≤2B   → strict: 4 iterations, 512 token cap, temp 0.2
- *   ≤4B   → medium: 6 iterations, 1024 cap, temp 0.3
- *   >4B   → default: current 10 iterations, no cap, temp 0.7
+ *   ≤5B   → medium: 6 iterations, 1024 cap, temp 0.3
+ *   >5B   → default: current 10 iterations, no cap, temp 0.7
  * Boundaries inclusive at the small end (2B fits in the strict tier).
+ * Medium's upper bound is 5B (not 4B) because `ollama.list()` reports
+ * qwen3.5:4b's `parameter_size` as 4.7B — the boundary must cover that
+ * report or the 4b-class model this tier was designed to leash (rc.72)
+ * falls through to the default tier instead (rc.130).
  */
 export function resolveModelTier(paramsInBillions: number): ModelTier {
   if (paramsInBillions <= 2) {
     return { maxIterations: 4, numPredict: 512, temperature: 0.2 };
   }
-  if (paramsInBillions <= 4) {
+  if (paramsInBillions <= 5) {
     return { maxIterations: 6, numPredict: 1024, temperature: 0.3 };
   }
   return DEFAULT_TIER;
