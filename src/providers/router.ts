@@ -808,6 +808,40 @@ export function applyFallbackDisclosure(response: AIResponse): AIResponse {
   return { ...response, text: `${FALLBACK_DISCLOSURE}${response.text ?? ''}` };
 }
 
+// Live-verified failure (2026-07-07): a pinned NovaLink-data turn answered
+// entirely from memory recall — ONE model call, zero novalink_* tool calls
+// per the ollama server log — while the reply claimed the numbers were
+// "pulled directly from NovaLink live data." Real-but-stale data presented
+// as live, with no signal to the user. This footer makes that condition
+// visible instead of silent. "fresh" is advisory-through-the-model (see
+// LOCAL_PERSONA in local-prompt.ts) — there is no keyword parser; the model
+// re-fetches when the user asks again because its persona now requires a
+// live tool call before claiming live data.
+export const MEMORY_ANSWER_NOTE =
+  '\n\nℹ️ Answered from conversation memory — no live NovaLink query this turn. Ask again with "fresh" for a live fetch. / Respondido desde la memoria de la conversación — sin consulta NovaLink en vivo. Pide de nuevo con "fresh" para consultar en vivo.';
+
+/**
+ * True iff a pinned turn was answered by Ollama with ZERO data-tool calls
+ * this turn (novalinkToolStats undefined) and no soft fallback fired. A
+ * turn where tools ran — even if every call errored — already carries the
+ * ⚠️ fallback disclosure via shouldFallbackToClaude/applyFallbackDisclosure
+ * and must not also get this note.
+ */
+export function shouldNoteMemoryAnswer(args: { pinned: boolean; fellBack: boolean; response: AIResponse }): boolean {
+  return (
+    args.pinned
+    && !args.fellBack
+    && args.response.provider === 'ollama'
+    && args.response.novalinkToolStats === undefined
+  );
+}
+
+/** Idempotent — a response already carrying the note is returned unchanged. */
+export function applyMemoryAnswerNote(response: AIResponse): AIResponse {
+  if (response.text?.endsWith(MEMORY_ANSWER_NOTE)) return response;
+  return { ...response, text: `${response.text ?? ''}${MEMORY_ANSWER_NOTE}` };
+}
+
 /**
  * Heuristic patterns that suggest Claude is the better provider.
  * These indicate complex analysis, creative writing, or document generation.
@@ -1515,8 +1549,17 @@ export class ProviderRouter {
     // session bookkeeping must attribute to the true responder, not the
     // provider that was originally picked for this turn.
     let respondedVia: 'claude' | 'ollama' = provider.name;
+    // Tracks whether the soft-fallback branch below was entered (attempted),
+    // regardless of whether it ultimately succeeded — used by
+    // shouldNoteMemoryAnswer so a local response that failed AND whose
+    // rescue attempt also failed is never mistaken for a clean memory
+    // answer (see the catch branch below: response stays 'ollama' with
+    // no novalinkToolStats, which would otherwise satisfy every other
+    // shouldNoteMemoryAnswer condition).
+    let fellBack = false;
 
     if (provider.name === 'ollama' && shouldFallbackToClaude({ pinned: this.pinnedTurns.has(chatId), response })) {
+      fellBack = true;
       // Fabrication guard: a bridge outage (every novalink_* call errored)
       // never sets `failed`, so it needs its own distinct, greppable log
       // reason — otherwise bridge downtime is invisible in the logs even
@@ -1538,6 +1581,15 @@ export class ProviderRouter {
       } catch (err) {
         logger.error({ err, chatId }, 'Cloud fallback also failed — returning local error');
       }
+    }
+
+    // Live-verified failure (2026-07-07): a pinned NovaLink-data turn
+    // answered entirely from memory recall (zero novalink_* tool calls) while
+    // claiming the data was live. When no fallback fired and Ollama produced
+    // this response with no data-tool calls this turn, disclose that the
+    // answer came from conversation memory, not a live fetch.
+    if (shouldNoteMemoryAnswer({ pinned: this.pinnedTurns.has(chatId), fellBack, response })) {
+      response = applyMemoryAnswerNote(response);
     }
 
     // Handle stale Claude session — clear and retry without --resume
