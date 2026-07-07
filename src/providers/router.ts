@@ -941,6 +941,12 @@ export function composeClaudeSystemPrompt(p: ClaudePromptParts): string {
   ].filter(Boolean).join('\n\n');
 }
 
+// fab-guard — the three novalink tools classifyDeliverableIntent's hardcoded
+// allowlist excludes. A turn that is BOTH deliverable AND novalink-pinned
+// (e.g. "genera un informe de faltantes de la compañía 1054") needs these
+// so the model can fetch real data instead of fabricating the report.
+const NOVALINK_DELIVERABLE_TOOLS = ['novalink_list_queries', 'novalink_query', 'novalink_health'];
+
 /** Pure core of the Ollama-branch turn wiring (exported for testing). */
 export function resolveLocalTurnConfig(
   message: string,
@@ -950,7 +956,18 @@ export function resolveLocalTurnConfig(
 ): { bucket: BucketId; allowedTools: string[] } {
   const bucket = selectBucket(message, currentBucket);
   if (deliverableIntent.isDeliverable && deliverableIntent.allowedTools) {
-    return { bucket, allowedTools: deliverableIntent.allowedTools };
+    // fab-guard hole: classifyDeliverableIntent's allowlist is hardcoded to
+    // parse_file/read_file/generate_document (+ simulation tools) and knows
+    // nothing about novalink. Without this, a deliverable turn that is ALSO
+    // novalink-pinned can't call novalink_query, novalinkToolStats stays
+    // undefined, and the all-errored fabrication guard (allDataToolsFailed)
+    // never fires — a fabricated production-data report ships with no
+    // disclosure, bridge up or down. Extend the allowlist here, not in
+    // classifyDeliverableIntent, so non-novalink deliverable turns are untouched.
+    const allowedTools = isNovalinkDataTurn(message)
+      ? [...deliverableIntent.allowedTools, ...NOVALINK_DELIVERABLE_TOOLS]
+      : deliverableIntent.allowedTools;
+    return { bucket, allowedTools };
   }
   if (skillAllowedTools?.length) {
     return { bucket, allowedTools: skillAllowedTools };

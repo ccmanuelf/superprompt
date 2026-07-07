@@ -571,7 +571,7 @@ export class OllamaProvider implements AIProvider {
     let iterations = 0;
     const toolsUsedSet = new Set<string>();
     let toolErrorCount = 0;
-    // Fabrication guard — per-turn novalink_* call/error counts (rc.113+).
+    // Fabrication guard — per-turn novalink_* call/error counts (rc.129+).
     let novalinkStats = { calls: 0, errors: 0 };
     let thinkingContent: string | undefined;
     const generatedFiles: { path: string; filename: string; mimeType: string }[] = [];
