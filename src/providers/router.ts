@@ -1049,8 +1049,7 @@ export class ProviderRouter {
       // classifier and Claude-stickiness (data governance, spec 2026-07-06).
       // Classifies the RAW user text (pre-memory-prefix) — the memory-enriched
       // `message` can surface past NovaLink content (e.g. recalled shortage/
-      // company chatter) and pin an otherwise-innocent turn. classifyMessage
-      // below still reads `message` unchanged — routing behavior stays as-is.
+      // company chatter) and pin an otherwise-innocent turn.
       if (config.NOVALINK_PIN_LOCAL && isNovalinkDataTurn(rawMessage ?? message)) {
         logger.info({ chatId }, 'novalink-data turn — pinned to local provider');
         this.lastUsedProvider.set(chatId, this.ollama.name);
@@ -1058,7 +1057,13 @@ export class ProviderRouter {
         return this.ollama;
       }
 
-      const autoChoice = classifyMessage(message);
+      // Live-verified bug fix: classifyMessage must ALSO read the raw user
+      // text, not the memory-enriched `message`. Memory recall (~up to 1500
+      // tokens) routinely pushes the enriched string past
+      // LONG_MESSAGE_THRESHOLD regardless of what the user actually typed,
+      // so the length heuristic was auto-routing nearly every turn to Claude.
+      // Same treatment as the pin above, same fallback (`rawMessage ?? message`).
+      const autoChoice = classifyMessage(rawMessage ?? message);
       const lastUsed = this.lastUsedProvider.get(chatId);
 
       // Stickiness: if we recently used a provider, stay with it UNLESS
