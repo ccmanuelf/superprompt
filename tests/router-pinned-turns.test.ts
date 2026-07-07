@@ -107,6 +107,54 @@ describe('pinned-turn lifecycle across auto_route toggling', () => {
   });
 });
 
+describe('auto-route classifyMessage reads rawMessage, not the memory-enriched message', () => {
+  beforeEach(async () => {
+    if (testKnex) await testKnex.destroy();
+    testKnex = createTestKnex();
+    await coreTableInit.initTables();
+  });
+
+  afterAll(async () => {
+    if (testKnex) await testKnex.destroy();
+  });
+
+  // Live-verified bug: getProviderForChat classified the memory-enriched
+  // `message` (memoryContext + '\n\n' + rawText). Memory recall routinely
+  // adds ~1500 tokens, pushing nearly every turn past LONG_MESSAGE_THRESHOLD
+  // (500 chars) regardless of what the user actually typed — a 47-char
+  // question was observed routing to Claude in prod. The pin (Gap fixed
+  // earlier on this file) already classifies `rawMessage ?? message`;
+  // classifyMessage must get the same treatment so the length heuristic
+  // judges what the user wrote, not the recalled context prepended to it.
+  it('routes a short raw message with a long memory prefix to ollama', async () => {
+    const chatId = 'chat-classify-raw-short';
+    await setSession(chatId, '', 'ollama');
+    await setAutoRoute(chatId, true);
+
+    const router = new ProviderRouter() as any;
+    const rawMessage = 'thanks, that clears it up, appreciate the help!'; // 48 chars
+    const memoryPadding = 'lorem ipsum recalled memory context filler text. '.repeat(15); // >500 chars
+    const enrichedMessage = `${memoryPadding}\n\n${rawMessage}`;
+    expect(enrichedMessage.length).toBeGreaterThan(500);
+
+    await router.getProviderForChat(chatId, enrichedMessage, rawMessage);
+    expect(router.lastUsedProvider.get(chatId)).toBe('ollama');
+  });
+
+  it('still routes a genuinely long raw message to claude', async () => {
+    const chatId = 'chat-classify-raw-long';
+    await setSession(chatId, '', 'ollama');
+    await setAutoRoute(chatId, true);
+
+    const router = new ProviderRouter() as any;
+    const rawMessage = 'please walk me through this in as much depth as possible: '.repeat(15); // >500 chars, no tool/reasoning patterns
+    expect(rawMessage.length).toBeGreaterThan(500);
+
+    await router.getProviderForChat(chatId, `${rawMessage}\n\nextra memory context`, rawMessage);
+    expect(router.lastUsedProvider.get(chatId)).toBe('claude');
+  });
+});
+
 describe('newChat clears bucket hysteresis', () => {
   beforeEach(async () => {
     if (testKnex) await testKnex.destroy();

@@ -687,6 +687,58 @@ export const NOVALINK_DATA_PATTERNS = [
   /\b(im_db|as_db)\b[^.?!]{0,40}\b(quer\w*|consult\w*|check\w*|revis\w*)\b/i,
   /\b(quer\w*|consult\w*|check\w*|revis\w*)\b[^.?!]{0,40}\b(im_db|as_db)\b/i,
   /\b(quer\w*|consult\w*|check\w*|revis\w*)\b[^.?!]{0,40}\b(el\s+|the\s+)?bridge\b/i,
+  // Catalog-vocabulary fix pass (2026-07-07, live-verified miss: "what is
+  // the inventory status for part WSCS150-US?" hit the real bridge —
+  // inventory-*/part-master-trade/part-locations endpoints per
+  // bridge-prompt.ts's 29-endpoint catalog — but never pinned). All entries
+  // below were probed standalone in node (bare regex, no router deps)
+  // against both a must-match set (the live example + ES/part-locations/
+  // movements phrasing) and a bare-word sanity set BEFORE landing here,
+  // same precision-first discipline as the Task 8 fix pass above:
+  //   - bare "inventory"/"inventario" is a magnet ("take inventory of my
+  //     life choices"), so EN requires a directly-adjacent status word
+  //     (status/levels/on-hand) and ES requires a bounded-window co-occurring
+  //     status or part anchor — neither ever fires on the bare word alone.
+  //   - the part+SKU pattern requires an UPPERCASE/digit token right after
+  //     "part"/"parte" and is deliberately NOT case-insensitive: with /i it
+  //     would also match ordinary lowercase words ("she played her part
+  //     well" — "well" is 4 letters) since /i folds the A-Z0-9 class onto
+  //     a-z too. Kept case-sensitive on the token so only SKU-shaped text
+  //     (e.g. WSCS150-US, 4711-A) qualifies; "part"/"parte" itself allows
+  //     either case via [Pp].
+  //   - "movements"/"movimientos" alone ("movements of the symphony") is
+  //     generic; requires a bounded-window co-occurring part/warehouse/
+  //     inventory anchor, either order, same 40-char window convention as
+  //     the shortage/production-status entries above.
+  /\binventory\s+(status|levels?|on.?hand)\b/i,
+  // Fix pass (2026-07-07). Reviewer-verified false positives: bare
+  // "parte?" as a co-occurrence anchor let ordinary "es parte de" /
+  // "part of a" phrasing pin alongside "inventario"/"movements". Replaced
+  // with specific anchors — almacén (warehouse) and a digit-bearing
+  // SKU-shaped token (`parte? <token-with-a-digit>`) — mirroring how the
+  // part-master pattern below anchors on a real noun phrase, not a bare word.
+  /\b(?:inventario\b[^.?!]{0,40}\b(?:estado|nivel(?:es)?|existencias?|almac[eé]n|parte?\s+[A-Za-z0-9][A-Za-z0-9-]*\d[A-Za-z0-9-]*)\b|(?:estado|nivel(?:es)?|existencias?|almac[eé]n|parte?\s+[A-Za-z0-9][A-Za-z0-9-]*\d[A-Za-z0-9-]*)\b[^.?!]{0,40}\binventario\b)/i,
+  // Fix pass (2026-07-07). The SKU token must contain at least one digit
+  // (lookahead below) so pure-letter ALL-CAPS words (IMHO, WELL, URGENT,
+  // TIME-OFF, NUMBER-ONE-FAN) never qualify as a "part <SKU>" match —
+  // those are ordinary emphasis/jargon, not catalog SKUs. Real SKUs
+  // (WSCS150-US, 4711-A) always carry a digit; kept case-sensitive on the
+  // token per the original rationale above (avoids /i folding onto
+  // ordinary lowercase words).
+  /\b[Pp]arte?\s+(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{3,}\b/,
+  /\b(?:part\s+(?:master|locations?)|parte\s+(?:maestra|ubicaciones?))\b/i,
+  // Fix pass (2026-07-07). Same bare-anchor issue as the inventario
+  // pattern above ("movements ... part of a larger symphony" pinned via
+  // bare "part"). Bare part/parte anchor removed; kept warehouse/
+  // inventory/almacén/inventario, added part-master/locations phrasing
+  // and the digit-bearing SKU-token anchor.
+  /\b(?:(?:movements?|movimientos?)\b[^.?!]{0,40}\b(?:warehouse|inventory|almac[eé]n|inventario|part\s+(?:master|locations?)|parte\s+(?:maestra|ubicaciones?)|parte?\s+[A-Za-z0-9][A-Za-z0-9-]*\d[A-Za-z0-9-]*)\b|(?:warehouse|inventory|almac[eé]n|inventario|part\s+(?:master|locations?)|parte\s+(?:maestra|ubicaciones?)|parte?\s+[A-Za-z0-9][A-Za-z0-9-]*\d[A-Za-z0-9-]*)\b[^.?!]{0,40}\b(?:movements?|movimientos?)\b)/i,
+  // Fix pass (2026-07-07). Bare "visa transactions" pinned a personal
+  // credit-card question ("why was my visa transaction declined"). Added
+  // the same bounded (40-char, either order) co-occurrence guard used by
+  // the other patterns above, requiring trade/compliance/company/bridge
+  // business context.
+  /\b(?:visa.?transactions?|transacciones?\s+(?:de\s+)?visa)\b[^.?!]{0,40}\b(?:company|compa[ñn][ií]a|trade|compliance|bridge)\b|\b(?:company|compa[ñn][ií]a|trade|compliance|bridge)\b[^.?!]{0,40}\b(?:visa.?transactions?|transacciones?\s+(?:de\s+)?visa)\b/i,
 ];
 
 export function isNovalinkDataTurn(message: string): boolean {
@@ -1049,8 +1101,7 @@ export class ProviderRouter {
       // classifier and Claude-stickiness (data governance, spec 2026-07-06).
       // Classifies the RAW user text (pre-memory-prefix) — the memory-enriched
       // `message` can surface past NovaLink content (e.g. recalled shortage/
-      // company chatter) and pin an otherwise-innocent turn. classifyMessage
-      // below still reads `message` unchanged — routing behavior stays as-is.
+      // company chatter) and pin an otherwise-innocent turn.
       if (config.NOVALINK_PIN_LOCAL && isNovalinkDataTurn(rawMessage ?? message)) {
         logger.info({ chatId }, 'novalink-data turn — pinned to local provider');
         this.lastUsedProvider.set(chatId, this.ollama.name);
@@ -1058,7 +1109,13 @@ export class ProviderRouter {
         return this.ollama;
       }
 
-      const autoChoice = classifyMessage(message);
+      // Live-verified bug fix: classifyMessage must ALSO read the raw user
+      // text, not the memory-enriched `message`. Memory recall (~up to 1500
+      // tokens) routinely pushes the enriched string past
+      // LONG_MESSAGE_THRESHOLD regardless of what the user actually typed,
+      // so the length heuristic was auto-routing nearly every turn to Claude.
+      // Same treatment as the pin above, same fallback (`rawMessage ?? message`).
+      const autoChoice = classifyMessage(rawMessage ?? message);
       const lastUsed = this.lastUsedProvider.get(chatId);
 
       // Stickiness: if we recently used a provider, stay with it UNLESS
