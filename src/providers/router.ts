@@ -711,11 +711,34 @@ export const NOVALINK_DATA_PATTERNS = [
   //     inventory anchor, either order, same 40-char window convention as
   //     the shortage/production-status entries above.
   /\binventory\s+(status|levels?|on.?hand)\b/i,
-  /\b(?:inventario\b[^.?!]{0,40}\b(?:estado|nivel(?:es)?|existencias?|parte?)\b|(?:estado|nivel(?:es)?|existencias?|parte?)\b[^.?!]{0,40}\binventario\b)/i,
-  /\b[Pp]arte?\s+[A-Z0-9][A-Z0-9-]{3,}\b/,
+  // Fix pass (2026-07-07). Reviewer-verified false positives: bare
+  // "parte?" as a co-occurrence anchor let ordinary "es parte de" /
+  // "part of a" phrasing pin alongside "inventario"/"movements". Replaced
+  // with specific anchors — almacén (warehouse) and a digit-bearing
+  // SKU-shaped token (`parte? <token-with-a-digit>`) — mirroring how the
+  // part-master pattern below anchors on a real noun phrase, not a bare word.
+  /\b(?:inventario\b[^.?!]{0,40}\b(?:estado|nivel(?:es)?|existencias?|almac[eé]n|parte?\s+[A-Za-z0-9][A-Za-z0-9-]*\d[A-Za-z0-9-]*)\b|(?:estado|nivel(?:es)?|existencias?|almac[eé]n|parte?\s+[A-Za-z0-9][A-Za-z0-9-]*\d[A-Za-z0-9-]*)\b[^.?!]{0,40}\binventario\b)/i,
+  // Fix pass (2026-07-07). The SKU token must contain at least one digit
+  // (lookahead below) so pure-letter ALL-CAPS words (IMHO, WELL, URGENT,
+  // TIME-OFF, NUMBER-ONE-FAN) never qualify as a "part <SKU>" match —
+  // those are ordinary emphasis/jargon, not catalog SKUs. Real SKUs
+  // (WSCS150-US, 4711-A) always carry a digit; kept case-sensitive on the
+  // token per the original rationale above (avoids /i folding onto
+  // ordinary lowercase words).
+  /\b[Pp]arte?\s+(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{3,}\b/,
   /\b(?:part\s+(?:master|locations?)|parte\s+(?:maestra|ubicaciones?))\b/i,
-  /\b(?:(?:movements?|movimientos?)\b[^.?!]{0,40}\b(?:part|warehouse|inventory|parte?|almac[eé]n|inventario)\b|(?:part|warehouse|inventory|parte?|almac[eé]n|inventario)\b[^.?!]{0,40}\b(?:movements?|movimientos?)\b)/i,
-  /\b(?:visa.?transactions?|transacciones?\s+(?:de\s+)?visa)\b/i,
+  // Fix pass (2026-07-07). Same bare-anchor issue as the inventario
+  // pattern above ("movements ... part of a larger symphony" pinned via
+  // bare "part"). Bare part/parte anchor removed; kept warehouse/
+  // inventory/almacén/inventario, added part-master/locations phrasing
+  // and the digit-bearing SKU-token anchor.
+  /\b(?:(?:movements?|movimientos?)\b[^.?!]{0,40}\b(?:warehouse|inventory|almac[eé]n|inventario|part\s+(?:master|locations?)|parte\s+(?:maestra|ubicaciones?)|parte?\s+[A-Za-z0-9][A-Za-z0-9-]*\d[A-Za-z0-9-]*)\b|(?:warehouse|inventory|almac[eé]n|inventario|part\s+(?:master|locations?)|parte\s+(?:maestra|ubicaciones?)|parte?\s+[A-Za-z0-9][A-Za-z0-9-]*\d[A-Za-z0-9-]*)\b[^.?!]{0,40}\b(?:movements?|movimientos?)\b)/i,
+  // Fix pass (2026-07-07). Bare "visa transactions" pinned a personal
+  // credit-card question ("why was my visa transaction declined"). Added
+  // the same bounded (40-char, either order) co-occurrence guard used by
+  // the other patterns above, requiring trade/compliance/company/bridge
+  // business context.
+  /\b(?:visa.?transactions?|transacciones?\s+(?:de\s+)?visa)\b[^.?!]{0,40}\b(?:company|compa[ñn][ií]a|trade|compliance|bridge)\b|\b(?:company|compa[ñn][ií]a|trade|compliance|bridge)\b[^.?!]{0,40}\b(?:visa.?transactions?|transacciones?\s+(?:de\s+)?visa)\b/i,
 ];
 
 export function isNovalinkDataTurn(message: string): boolean {

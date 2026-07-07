@@ -118,3 +118,63 @@ describe('novalink-data classification — catalog vocabulary (inventory/part/mo
     });
   });
 });
+
+// Fix pass (2026-07-07) — reviewer-verified false positives found in the
+// catalog-vocabulary patterns above. Each case here was probed standalone in
+// node against the pre-fix patterns (all failed as RED, confirming the bug)
+// and against the fixed patterns (all passed as GREEN) before landing.
+describe('novalink-data classification — catalog vocabulary fix pass (reviewer-verified FPs)', () => {
+  describe('part+SKU pattern requires a digit in the token', () => {
+    it('does not fire on "part IMHO" (pure-letter jargon)', () => {
+      expect(isNovalinkDataTurn('honestly the best part IMHO was the ending')).toBe(false);
+    });
+    it('does not fire on "part WELL" (pure-letter word)', () => {
+      expect(isNovalinkDataTurn('she played her part WELL in the meeting')).toBe(false);
+    });
+    it('does not fire on "part URGENT" (pure-letter word)', () => {
+      expect(isNovalinkDataTurn('mark this part URGENT before you leave')).toBe(false);
+    });
+    it('does not fire on ES "parte URGENTE" (pure-letter word)', () => {
+      expect(isNovalinkDataTurn('marca esta parte URGENTE antes de irte')).toBe(false);
+    });
+    it('does not fire on "part TIME-OFF" (pure-letter hyphenated word)', () => {
+      expect(isNovalinkDataTurn('part TIME-OFF')).toBe(false);
+    });
+    it('does not fire on "part NUMBER-ONE-FAN" (pure-letter hyphenated phrase)', () => {
+      expect(isNovalinkDataTurn('part NUMBER-ONE-FAN')).toBe(false);
+    });
+    it('keeps matching a real digit-bearing SKU (EN)', () => {
+      expect(isNovalinkDataTurn('what is the inventory status for part WSCS150-US?')).toBe(true);
+    });
+    it('keeps matching a real digit-bearing SKU (numeric)', () => {
+      expect(isNovalinkDataTurn('recent warehouse movements for part 4711-A')).toBe(true);
+    });
+    it('keeps matching a real digit-bearing SKU (ES)', () => {
+      expect(isNovalinkDataTurn('parte WSCS150-US')).toBe(true);
+    });
+  });
+
+  describe('inventario/movements co-occurrence anchors no longer accept bare part/parte', () => {
+    it('does not fire on "el inventario es parte de la auditoría anual"', () => {
+      expect(isNovalinkDataTurn('el inventario es parte de la auditoría anual')).toBe(false);
+    });
+    it('does not fire on "hacer inventario es parte de mi trabajo"', () => {
+      expect(isNovalinkDataTurn('hacer inventario es parte de mi trabajo')).toBe(false);
+    });
+    it('does not fire on "movements ... part of a larger symphony cycle"', () => {
+      expect(isNovalinkDataTurn('the piece has three movements, part of a larger symphony cycle')).toBe(false);
+    });
+    it('keeps matching "inventario de la parte <SKU>"', () => {
+      expect(isNovalinkDataTurn('inventario de la parte WSCS150-US')).toBe(true);
+    });
+  });
+
+  describe('visa transactions require bounded business-context co-occurrence', () => {
+    it('does not fire on a personal credit-card question', () => {
+      expect(isNovalinkDataTurn('why was my visa transaction declined at the store')).toBe(false);
+    });
+    it('keeps matching a company visa-transactions report request', () => {
+      expect(isNovalinkDataTurn('show me the visa transactions report for the company')).toBe(true);
+    });
+  });
+});
