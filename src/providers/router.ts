@@ -720,6 +720,26 @@ export function allDataToolsFailed(response: AIResponse): boolean {
 }
 
 /**
+ * Sums two turns' novalink_* tool-call stats, treating a missing side as
+ * zero calls/errors. The rc.75 deliverable retry spans a single logical
+ * turn across two `provider.sendMessage` attempts; on retry success the
+ * router used to replace `response` with the retry's response wholesale,
+ * discarding attempt 1's `novalinkToolStats` — laundering a bridge outage
+ * seen on attempt 1 whenever the retry made no novalink calls of its own
+ * (fab-guard fix pass 2). Returns undefined (field omitted) when the
+ * combined `calls` is 0, matching the "absent means no novalink tool was
+ * called this turn" convention `allDataToolsFailed` relies on.
+ */
+export function mergeNovalinkStats(
+  a: { calls: number; errors: number } | undefined,
+  b: { calls: number; errors: number } | undefined,
+): { calls: number; errors: number } | undefined {
+  const calls = (a?.calls ?? 0) + (b?.calls ?? 0);
+  if (calls === 0) return undefined;
+  return { calls, errors: (a?.errors ?? 0) + (b?.errors ?? 0) };
+}
+
+/**
  * Fallback fires when a pinned turn's local response reports a
  * transport-level failure, OR when every novalink_* data-tool call this
  * turn errored (bridge down) — the latter added so a pinned turn where the
@@ -1361,7 +1381,13 @@ export class ProviderRouter {
         sessionId: effectiveSessionId,
         systemPrompt,
         systemPromptAppend: DELIVERABLE_RETRY_DIRECTIVE,
-        allowedTools: deliverableIntent.allowedTools!,
+        // fab-guard fix pass 2: reuse the SAME widened allowlist attempt 1 used
+        // (localTurn.allowedTools, set above whenever provider.name === 'ollama'
+        // — the guard on this whole block — via resolveLocalTurnConfig, which
+        // widens to include the novalink_* tools for deliverable+pinned turns).
+        // The un-widened deliverableIntent.allowedTools! excludes novalink_*,
+        // so the retry could never actually reach the bridge on a pinned turn.
+        allowedTools: localTurn!.allowedTools,
         modelOverride,
         skipTurnLog: true,
         skipAutoTrigger: true,
@@ -1373,7 +1399,16 @@ export class ProviderRouter {
       });
       if (retryResponse.toolsUsed?.includes('generate_document')) {
         logger.info({ chatId }, 'Deliverable retry succeeded');
-        response = retryResponse;
+        // fab-guard fix pass 2: the turn spans both attempts — merge attempt 1's
+        // novalinkToolStats into the replacement response instead of discarding
+        // them, so an all-errored attempt 1 (bridge down) still trips
+        // allDataToolsFailed downstream even when the retry made no novalink
+        // calls of its own (stats undefined there).
+        const mergedStats = mergeNovalinkStats(response.novalinkToolStats, retryResponse.novalinkToolStats);
+        response = {
+          ...retryResponse,
+          ...(mergedStats ? { novalinkToolStats: mergedStats } : {}),
+        };
       } else {
         logger.error(
           { chatId, retryToolsUsed: retryResponse.toolsUsed ?? [] },

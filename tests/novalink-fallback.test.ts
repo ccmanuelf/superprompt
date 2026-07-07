@@ -4,6 +4,7 @@ import {
   allDataToolsFailed,
   FALLBACK_DISCLOSURE,
   applyFallbackDisclosure,
+  mergeNovalinkStats,
 } from '../src/providers/router.js';
 import type { AIResponse } from '../src/providers/types.js';
 
@@ -72,5 +73,33 @@ describe('composed fallback decision (pinned + failed OR all-data-tools-failed)'
       novalinkToolStats: { calls: 3, errors: 1 },
     };
     expect(shouldFallbackToClaude({ pinned: true, response })).toBe(false);
+  });
+});
+
+// fab-guard fix pass 2 — the rc.75 deliverable retry replaces `response` with
+// the retry's response wholesale on success. The turn spans BOTH attempts, so
+// discarding attempt 1's novalinkToolStats would launder a bridge outage seen
+// on attempt 1 (all novalink_* calls errored) if the retry made no novalink
+// calls at all (stats undefined) — allDataToolsFailed would then see no stats
+// and never fire, shipping a fabricated report with no disclosure.
+describe('mergeNovalinkStats', () => {
+  it('attempt1 all-errored + retry no-stats → merged still shows all-errored (fallback fires)', () => {
+    const merged = mergeNovalinkStats({ calls: 2, errors: 2 }, undefined);
+    expect(merged).toEqual({ calls: 2, errors: 2 });
+    expect(allDataToolsFailed({ text: 'x', provider: 'ollama', novalinkToolStats: merged })).toBe(true);
+  });
+
+  it('attempt1 stats + retry partial-success → merged is partial, no fallback', () => {
+    const merged = mergeNovalinkStats({ calls: 2, errors: 2 }, { calls: 1, errors: 0 });
+    expect(merged).toEqual({ calls: 3, errors: 2 });
+    expect(allDataToolsFailed({ text: 'x', provider: 'ollama', novalinkToolStats: merged })).toBe(false);
+  });
+
+  it('both undefined → undefined', () => {
+    expect(mergeNovalinkStats(undefined, undefined)).toBeUndefined();
+  });
+
+  it('omits the field (returns undefined) when combined calls is 0', () => {
+    expect(mergeNovalinkStats({ calls: 0, errors: 0 }, { calls: 0, errors: 0 })).toBeUndefined();
   });
 });
