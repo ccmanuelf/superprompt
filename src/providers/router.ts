@@ -701,9 +701,53 @@ export function isNovalinkDataTurn(message: string): boolean {
 export const FALLBACK_DISCLOSURE =
   '⚠️ Answered via cloud fallback — local AI unavailable. / Respondido vía nube — IA local no disponible.\n\n';
 
-/** Fallback fires only when a pinned turn's local response reports failure. */
+/**
+ * Fabrication guard — true iff EVERY novalink_* tool call this turn errored
+ * (bridge down / unreachable). Requires `novalinkToolStats` to be present
+ * with at least one call; a turn that never called a novalink tool, or one
+ * with only partial errors, is not a bridge outage.
+ *
+ * This exists because a pinned local turn whose novalink_* calls all fail
+ * does NOT set `response.failed` — that flag is transport-level (timeout,
+ * unreachable, loop death) and the agentic loop still exits cleanly via its
+ * no-tool-calls path, just with the model narrating fabricated data over
+ * the tool errors it saw. `failed` alone therefore misses this failure mode.
+ */
+export function allDataToolsFailed(response: AIResponse): boolean {
+  const stats = response.novalinkToolStats;
+  if (!stats || stats.calls === 0) return false;
+  return stats.errors === stats.calls;
+}
+
+/**
+ * Sums two turns' novalink_* tool-call stats, treating a missing side as
+ * zero calls/errors. The rc.75 deliverable retry spans a single logical
+ * turn across two `provider.sendMessage` attempts; on retry success the
+ * router used to replace `response` with the retry's response wholesale,
+ * discarding attempt 1's `novalinkToolStats` — laundering a bridge outage
+ * seen on attempt 1 whenever the retry made no novalink calls of its own
+ * (fab-guard fix pass 2). Returns undefined (field omitted) when the
+ * combined `calls` is 0, matching the "absent means no novalink tool was
+ * called this turn" convention `allDataToolsFailed` relies on.
+ */
+export function mergeNovalinkStats(
+  a: { calls: number; errors: number } | undefined,
+  b: { calls: number; errors: number } | undefined,
+): { calls: number; errors: number } | undefined {
+  const calls = (a?.calls ?? 0) + (b?.calls ?? 0);
+  if (calls === 0) return undefined;
+  return { calls, errors: (a?.errors ?? 0) + (b?.errors ?? 0) };
+}
+
+/**
+ * Fallback fires when a pinned turn's local response reports a
+ * transport-level failure, OR when every novalink_* data-tool call this
+ * turn errored (bridge down) — the latter added so a pinned turn where the
+ * model fabricates production data over tool errors isn't mistaken for a
+ * clean answer just because `failed` never got set.
+ */
 export function shouldFallbackToClaude(args: { pinned: boolean; response: AIResponse }): boolean {
-  return args.pinned && args.response.failed === true;
+  return args.pinned && (args.response.failed === true || allDataToolsFailed(args.response));
 }
 
 /** Idempotent — a response already carrying the disclosure is returned unchanged. */
@@ -917,6 +961,12 @@ export function composeClaudeSystemPrompt(p: ClaudePromptParts): string {
   ].filter(Boolean).join('\n\n');
 }
 
+// fab-guard — the three novalink tools classifyDeliverableIntent's hardcoded
+// allowlist excludes. A turn that is BOTH deliverable AND novalink-pinned
+// (e.g. "genera un informe de faltantes de la compañía 1054") needs these
+// so the model can fetch real data instead of fabricating the report.
+const NOVALINK_DELIVERABLE_TOOLS = ['novalink_list_queries', 'novalink_query', 'novalink_health'];
+
 /** Pure core of the Ollama-branch turn wiring (exported for testing). */
 export function resolveLocalTurnConfig(
   message: string,
@@ -926,7 +976,18 @@ export function resolveLocalTurnConfig(
 ): { bucket: BucketId; allowedTools: string[] } {
   const bucket = selectBucket(message, currentBucket);
   if (deliverableIntent.isDeliverable && deliverableIntent.allowedTools) {
-    return { bucket, allowedTools: deliverableIntent.allowedTools };
+    // fab-guard hole: classifyDeliverableIntent's allowlist is hardcoded to
+    // parse_file/read_file/generate_document (+ simulation tools) and knows
+    // nothing about novalink. Without this, a deliverable turn that is ALSO
+    // novalink-pinned can't call novalink_query, novalinkToolStats stays
+    // undefined, and the all-errored fabrication guard (allDataToolsFailed)
+    // never fires — a fabricated production-data report ships with no
+    // disclosure, bridge up or down. Extend the allowlist here, not in
+    // classifyDeliverableIntent, so non-novalink deliverable turns are untouched.
+    const allowedTools = isNovalinkDataTurn(message)
+      ? [...deliverableIntent.allowedTools, ...NOVALINK_DELIVERABLE_TOOLS]
+      : deliverableIntent.allowedTools;
+    return { bucket, allowedTools };
   }
   if (skillAllowedTools?.length) {
     return { bucket, allowedTools: skillAllowedTools };
@@ -1320,7 +1381,13 @@ export class ProviderRouter {
         sessionId: effectiveSessionId,
         systemPrompt,
         systemPromptAppend: DELIVERABLE_RETRY_DIRECTIVE,
-        allowedTools: deliverableIntent.allowedTools!,
+        // fab-guard fix pass 2: reuse the SAME widened allowlist attempt 1 used
+        // (localTurn.allowedTools, set above whenever provider.name === 'ollama'
+        // — the guard on this whole block — via resolveLocalTurnConfig, which
+        // widens to include the novalink_* tools for deliverable+pinned turns).
+        // The un-widened deliverableIntent.allowedTools! excludes novalink_*,
+        // so the retry could never actually reach the bridge on a pinned turn.
+        allowedTools: localTurn!.allowedTools,
         modelOverride,
         skipTurnLog: true,
         skipAutoTrigger: true,
@@ -1332,7 +1399,16 @@ export class ProviderRouter {
       });
       if (retryResponse.toolsUsed?.includes('generate_document')) {
         logger.info({ chatId }, 'Deliverable retry succeeded');
-        response = retryResponse;
+        // fab-guard fix pass 2: the turn spans both attempts — merge attempt 1's
+        // novalinkToolStats into the replacement response instead of discarding
+        // them, so an all-errored attempt 1 (bridge down) still trips
+        // allDataToolsFailed downstream even when the retry made no novalink
+        // calls of its own (stats undefined there).
+        const mergedStats = mergeNovalinkStats(response.novalinkToolStats, retryResponse.novalinkToolStats);
+        response = {
+          ...retryResponse,
+          ...(mergedStats ? { novalinkToolStats: mergedStats } : {}),
+        };
       } else {
         logger.error(
           { chatId, retryToolsUsed: retryResponse.toolsUsed ?? [] },
@@ -1372,7 +1448,18 @@ export class ProviderRouter {
     let respondedVia: 'claude' | 'ollama' = provider.name;
 
     if (provider.name === 'ollama' && shouldFallbackToClaude({ pinned: this.pinnedTurns.has(chatId), response })) {
-      logger.warn({ chatId, reason: response.text }, 'Pinned local turn failed — soft fallback to Claude');
+      // Fabrication guard: a bridge outage (every novalink_* call errored)
+      // never sets `failed`, so it needs its own distinct, greppable log
+      // reason — otherwise bridge downtime is invisible in the logs even
+      // though the fallback fired correctly.
+      if (allDataToolsFailed(response)) {
+        logger.warn(
+          { chatId, novalinkToolStats: response.novalinkToolStats },
+          'pinned turn data tools all failed — fallback',
+        );
+      } else {
+        logger.warn({ chatId, reason: response.text }, 'Pinned local turn failed — soft fallback to Claude');
+      }
       try {
         const fallback = await this.claude.sendMessage({
           ...params, message: effectiveMessage, systemPrompt: undefined, sessionId: undefined,

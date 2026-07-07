@@ -162,6 +162,25 @@ export function lastAssistantText(messages: Message[]): string | null {
 }
 
 /**
+ * Fabrication guard — derives running `novalink_*` tool-call stats from a
+ * single tool result. Reuses the exact "error-shaped result" signal the
+ * loop already checks for `toolErrorCount`/the tool-error recovery note
+ * (rc.70, B2), scoped to novalink tools, so the router can tell a bridge
+ * outage (every data-tool call this turn errored) apart from a clean
+ * answer even when the provider-level `failed` flag never fires. Pure —
+ * does not mutate `stats` — so it's unit-testable without the full loop.
+ */
+export function updateNovalinkStats(
+  stats: { calls: number; errors: number },
+  toolName: string,
+  result: unknown,
+): { calls: number; errors: number } {
+  if (!toolName.startsWith('novalink_')) return stats;
+  const isError = Boolean(result && typeof result === 'object' && 'error' in result);
+  return { calls: stats.calls + 1, errors: stats.errors + (isError ? 1 : 0) };
+}
+
+/**
  * Heuristic to detect if a message likely needs tool calls.
  * Routes to tool model when detected, chat model otherwise.
  */
@@ -552,6 +571,8 @@ export class OllamaProvider implements AIProvider {
     let iterations = 0;
     const toolsUsedSet = new Set<string>();
     let toolErrorCount = 0;
+    // Fabrication guard — per-turn novalink_* call/error counts (rc.129+).
+    let novalinkStats = { calls: 0, errors: 0 };
     let thinkingContent: string | undefined;
     const generatedFiles: { path: string; filename: string; mimeType: string }[] = [];
     let kanbanToolCalled = false;
@@ -624,6 +645,7 @@ export class OllamaProvider implements AIProvider {
           generatedFiles: generatedFiles.length ? generatedFiles : undefined,
           toolsUsed: toolsUsedSet.size > 0 ? [...toolsUsedSet] : undefined,
           toolErrorCount: toolErrorCount > 0 ? toolErrorCount : undefined,
+          novalinkToolStats: novalinkStats.calls > 0 ? novalinkStats : undefined,
         };
       }
 
@@ -704,6 +726,11 @@ export class OllamaProvider implements AIProvider {
           messages.push({ role: 'system', content: buildToolErrorRecoveryNote(toolName) });
         }
 
+        // Fabrication guard: same error signal, scoped to novalink_* data
+        // tools, so the router can detect a bridge outage even when this
+        // turn otherwise completes "successfully" (no `failed` flag).
+        novalinkStats = updateNovalinkStats(novalinkStats, toolName, result);
+
         // Circuit breaker: record result for pattern detection
         breaker.recordResult(toolName, toolArgs, result);
         // Pack tuner recording moved to executeTool() — covers both providers
@@ -773,6 +800,7 @@ export class OllamaProvider implements AIProvider {
       toolsUsed: toolsUsedSet.size > 0 ? [...toolsUsedSet] : undefined,
       hitMaxIterations: true,
       toolErrorCount: toolErrorCount > 0 ? toolErrorCount : undefined,
+      novalinkToolStats: novalinkStats.calls > 0 ? novalinkStats : undefined,
       failed,
     };
   }

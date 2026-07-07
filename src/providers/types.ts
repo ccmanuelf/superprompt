@@ -95,6 +95,14 @@ export interface AIResponse {
   toolErrorCount?: number;
   /** Provider-level failure (timeout, unreachable, loop death) — enables router fallback. */
   failed?: boolean;
+  /**
+   * Per-turn `novalink_*` tool-call outcome counts, set by the Ollama
+   * agentic loop whenever at least one novalink_* tool was called. Lets
+   * the router detect a "bridge down" turn (every data-tool call errored)
+   * even when `failed` never fires — bridge outages are data-tool errors,
+   * not the transport-level failures `failed` is designed to catch.
+   */
+  novalinkToolStats?: { calls: number; errors: number };
 }
 
 export interface AIProvider {
