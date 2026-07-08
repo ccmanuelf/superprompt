@@ -17,6 +17,7 @@ import { getKnex } from './db-knex.js';
 import { generateEmbedding } from './embeddings.js';
 import { estimateTokens } from './context-budget.js';
 import { logger } from './logger.js';
+import { MAX_FTS_QUERY_LENGTH } from './db-dialect.js';
 
 const SEMANTIC_SIGNAL =
   /\b(my|i am|i'm|i prefer|remember|always|never|my name is|i like|i hate|i love|i work|i live)\b/i;
@@ -59,14 +60,34 @@ const COMPRESSION_SALIENCE_THRESHOLD = 0.7;
  * quoting, since the quotes already make it a literal. Embedded double
  * quotes are stripped from each token first so a token can never
  * prematurely close the quoted string.
+ *
+ * Budgeted against MAX_FTS_QUERY_LENGTH (imported from db-dialect.ts, not
+ * mirrored, so the two can't drift): tokens are accumulated only while the
+ * running length stays within the cap that fullTextSearch enforces
+ * downstream. Quoting turned ordinary messages over ~150-170 raw chars
+ * into a query long enough to hit that cap, and a raw character slice at
+ * that point can land mid-token, leaving an unbalanced `"` that makes
+ * FTS5 throw `unterminated string` (silently swallowed by the caller's
+ * try/catch, degrading recall). Budgeting here, whole-token, means the
+ * string handed to fullTextSearch always arrives under the cap already,
+ * so its truncation never triggers for this caller.
  */
 export function sanitizeFtsQuery(userMessage: string): string {
-  return userMessage
+  const words = userMessage
     .trim()
     .split(/\s+/)
-    .filter((w) => w.length > 2)
-    .map((w) => `"${w.replace(/"/g, '')}"*`)
-    .join(' ');
+    .filter((w) => w.length > 2);
+
+  const tokens: string[] = [];
+  let length = 0;
+  for (const w of words) {
+    const token = `"${w.replace(/"/g, '')}"*`;
+    const nextLength = length + (tokens.length > 0 ? 1 : 0) + token.length;
+    if (nextLength > MAX_FTS_QUERY_LENGTH) break;
+    tokens.push(token);
+    length = nextLength;
+  }
+  return tokens.join(' ');
 }
 
 /**

@@ -126,3 +126,84 @@ describe('sanitizeFtsQuery — FTS5 operator/punctuation safety (live bug 2026-0
     expect(results.length).toBe(1);
   });
 });
+
+// Follow-on bug: quoting (above) made ordinary long messages produce a
+// sanitized query long enough to hit the PRE-EXISTING MAX_FTS_QUERY_LENGTH
+// (200 char) truncation in db-dialect.ts's fullTextSearch. That truncation
+// did a raw character slice — for a quoted query, slicing mid-token leaves
+// an unbalanced `"`, which FTS5 rejects with "unterminated string" (caught
+// by the caller's try/catch, silently degrading recall). Reproduced
+// empirically below against a real better-sqlite3 FTS5 table.
+describe('sanitizeFtsQuery — length-budget safety for quoted queries', () => {
+  beforeEach(async () => {
+    if (testKnex) await testKnex.destroy();
+    testKnex = createTestKnex();
+    await testKnex.schema.createTable('docs', (t) => {
+      t.increments('id').primary();
+      t.string('chat_id').notNullable();
+      t.text('content').notNullable();
+    });
+    await createFullTextSearch(testKnex, 'docs', 'content', 'docs_fts');
+  });
+
+  afterEach(async () => {
+    if (testKnex) await testKnex.destroy();
+  });
+
+  async function search(query: string) {
+    return fullTextSearch(testKnex, 'docs', 'content', 'docs_fts', 'chat1', query, 5);
+  }
+
+  // 219 raw chars — an ordinary message, no operator keywords, no unusual
+  // punctuation. Naively quoted (`"word"*` per word) this becomes 290
+  // chars, well past the 200-char cap, and a raw slice at 200 lands mid
+  // "downstream" — an odd number of `"` in the truncated string.
+  const longMessage =
+    'I really wanted to check on the delivery schedule for next week because the warehouse team mentioned a possible delay affecting the downstream production line and we need to confirm everything before the Friday deadline';
+
+  it('sanitizes an ordinary ~219-char message to a query at/under the FTS length cap', () => {
+    const query = sanitizeFtsQuery(longMessage);
+    expect(query.length).toBeLessThanOrEqual(200);
+    // Every surviving term must be a complete, well-formed quoted prefix
+    // term — never a partial token left over from a raw mid-token slice.
+    for (const term of query.split(' ').filter(Boolean)) {
+      expect(term).toMatch(/^"[^"]*"\*$/);
+    }
+  });
+
+  it('does not throw FTS5 "unterminated string" on the ordinary long message and still finds a relevant doc', async () => {
+    // FTS5 MATCH with multiple space-separated terms is an implicit AND, so
+    // (as with episodic memories, which store the verbatim prior turn) the
+    // doc needs to contain every surviving term — mirrors saveConversationTurn's
+    // `User: <msg> → Assistant: <reply>` storage shape.
+    await testKnex('docs').insert({
+      chat_id: 'chat1',
+      content: `User: ${longMessage} → Assistant: Noted, I'll follow up on that.`,
+    });
+    const query = sanitizeFtsQuery(longMessage);
+    const results = await search(query);
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it('boundary: a message landing right at the cap keeps only whole tokens that fit, never a partial one', () => {
+    // 20 repeats of a 9-char word ("warehouse") — each becomes a 12-char
+    // quoted token. 15 tokens fit in 194 chars (13*15-1); the 16th would
+    // push it to 207, so it must be dropped whole, not sliced.
+    const boundaryMessage = Array(20).fill('warehouse').join(' ');
+    const query = sanitizeFtsQuery(boundaryMessage);
+    const terms = query.split(' ').filter(Boolean);
+
+    expect(terms.length).toBe(15);
+    expect(query.length).toBe(194);
+    for (const term of terms) {
+      expect(term).toBe('"warehouse"*');
+    }
+  });
+
+  it('boundary message does not throw and still matches', async () => {
+    await testKnex('docs').insert({ chat_id: 'chat1', content: 'the warehouse is fully stocked' });
+    const boundaryMessage = Array(20).fill('warehouse').join(' ');
+    const results = await search(sanitizeFtsQuery(boundaryMessage));
+    expect(results.length).toBeGreaterThan(0);
+  });
+});
