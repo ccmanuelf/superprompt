@@ -42,6 +42,34 @@ const EPISODE_GROUP_GAP_MS = 60 * 60 * 1000; // 1 hour (was 30 min — too aggre
 const COMPRESSION_SALIENCE_THRESHOLD = 0.7;
 
 /**
+ * Sanitize a user message into an FTS5 MATCH query.
+ *
+ * Each word becomes a quoted prefix term — `"word"*` — rather than a bare
+ * `word*`. Quoting is what makes this safe: FTS5's query syntax treats
+ * barewords like AND/OR/NOT/NEAR as boolean operators, so a message
+ * containing the word "AND" (e.g. "...reoccur in the future AND how to
+ * prevent...") previously produced `... AND* how* ...`, which FTS5 rejects
+ * with a syntax error near "*" (live prod bug, 2026-07-07: both the
+ * memories_fts and episodes_fts searches failed this way for the same
+ * query string). Wrapping each term in double quotes neutralizes those
+ * operator keywords — FTS5 treats a quoted string as a literal token, and
+ * `"word"*` is valid FTS5 syntax for a quoted prefix query. Quoting also
+ * neutralizes punctuation that can otherwise break MATCH (apostrophes,
+ * parens, hyphens) — the token is no longer stripped of punctuation before
+ * quoting, since the quotes already make it a literal. Embedded double
+ * quotes are stripped from each token first so a token can never
+ * prematurely close the quoted string.
+ */
+export function sanitizeFtsQuery(userMessage: string): string {
+  return userMessage
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 2)
+    .map((w) => `"${w.replace(/"/g, '')}"*`)
+    .join(' ');
+}
+
+/**
  * Build a memory context string to prepend to user messages.
  *
  * Hybrid search:
@@ -69,14 +97,7 @@ export async function buildMemoryContext(
     logger.debug({ err, chatId }, 'Guardrails context unavailable — continuing without it');
   }
 
-  // Sanitize query for FTS5: strip non-alphanumeric, add prefix matching
-  const sanitized = userMessage
-    .replace(/[^\w\s]/g, '')
-    .trim()
-    .split(/\s+/)
-    .filter((w) => w.length > 2)
-    .map((w) => `${w}*`)
-    .join(' ');
+  const sanitized = sanitizeFtsQuery(userMessage);
 
   let ftsResults: Memory[] = [];
   let ftsEpisodes: Episode[] = [];
