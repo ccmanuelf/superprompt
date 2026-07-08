@@ -19,8 +19,13 @@ import { logger } from './logger.js';
  * Maximum length for user-supplied full-text queries. FTS5/BOOLEAN MODE
  * operators on very long strings can trigger expensive query plans; memory
  * search never benefits from more than a sentence or two of query text.
+ *
+ * Exported so callers that build the query string (e.g. memory.ts's
+ * sanitizeFtsQuery) can budget against the same cap instead of building an
+ * unbounded string and letting it land here — see the truncation note on
+ * fullTextSearch below for why that matters for quoted queries.
  */
-const MAX_FTS_QUERY_LENGTH = 200;
+export const MAX_FTS_QUERY_LENGTH = 200;
 
 /**
  * Guard for identifiers (table/column names) interpolated into raw DDL/DML.
@@ -205,7 +210,18 @@ export async function fullTextSearch(
   assertSafeIdentifier(ftsTableName);
   if (query.length > MAX_FTS_QUERY_LENGTH) {
     logger.debug({ length: query.length }, 'FTS query truncated to length cap');
-    query = query.slice(0, MAX_FTS_QUERY_LENGTH);
+    // Token-aware: a raw character slice can land mid-token, which for a
+    // quoted query (memory.ts's sanitizeFtsQuery emits `"word"*` terms)
+    // leaves an unbalanced `"` and makes FTS5 throw `unterminated string`
+    // (silently degrading recall behind the caller's try/catch). Callers
+    // that build the query should budget against MAX_FTS_QUERY_LENGTH
+    // themselves so this never triggers, but this is kept as a
+    // token-aware belt for any query that reaches here already over the
+    // cap — trim back to the last complete space-separated token instead
+    // of cutting one in half. Applies to the MariaDB AGAINST path too.
+    const sliced = query.slice(0, MAX_FTS_QUERY_LENGTH);
+    const lastSpace = sliced.lastIndexOf(' ');
+    query = lastSpace > 0 ? sliced.slice(0, lastSpace) : sliced;
   }
   const driver = getDbDriver();
 
