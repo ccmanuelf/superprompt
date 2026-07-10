@@ -179,3 +179,12 @@ design, so pinning buys no governance; revisit only on explicit request.
 - Roadmap endpoints (`/analyses/{id}/review`, `line-balance`, `estimate-sequence`,
   `/cells`) — appear in `/openapi.json` when built; add tools then.
 - SAM vocabulary in the local-model pin.
+
+## Addendum (Task 8): local-routing bucket
+
+Full verification caught a gap this spec missed: the 7 `sam_*` builtin tools had no
+bucket in `src/providers/local-buckets.ts`, failing the registry-consistency test —
+and the closest bucket (`manufacturing`) was already at the ≤22 per-turn schema cap.
+Decision (controller, Option A): a dedicated `sam` bucket (core 10 + sam 7 = 17 ≤ 22),
+with precision-first EN+ES triggers mirroring `pack.yaml` intent_patterns, checked
+before `manufacturing`; bare "sam"/"quote" and "line balance" deliberately excluded.

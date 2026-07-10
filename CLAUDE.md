@@ -147,6 +147,7 @@ All decisions are documented in `reference/decisions.md`. Do NOT re-discuss them
 - **Infra**: Docker required (sandboxes `--dangerously-skip-permissions`)
 - **Dropped**: WhatsApp, Signal, Discord, iMessage, Agent SDK, ElevenLabs, Groq
 - **NovaLink Bridge**: read-only prod-data access via the `novalink` pack (`novalink_list_queries` / `novalink_query` / `novalink_health`, tools process). Config: `NOVALINK_BRIDGE_URL` + `NOVALINK_BRIDGE_API_KEY` (.env, whitelisted to the tools process). Tools call the internal bridge directly (intentional internal call, not the declarative-HTTP SSRF path).
+- **NovaLink SAM**: full read-write access to the SAM analysis system (quoting/per-piece billing) via the `sam` pack (7 `sam_*` tools, tools process). Config: `NOVALINK_SAM_URL` + `NOVALINK_SAM_API_KEY` (.env, whitelisted to the tools process). Writes + `sam_generate` require SA4 confirmation; `sam_generate` carries a 180 s IPC budget (`ToolEntry.timeoutMs`). Handoff: `reference/novalink-sam-handoff.md`.
 
 ### Architecture Hardening (SA1-SA5)
 

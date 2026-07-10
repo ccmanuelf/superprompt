@@ -10,7 +10,7 @@
  * builtin tool is assigned to exactly one bucket.
  */
 
-export type BucketId = 'core' | 'docs' | 'manufacturing' | 'simulation' | 'devops';
+export type BucketId = 'core' | 'docs' | 'manufacturing' | 'simulation' | 'devops' | 'sam';
 
 export const CORE_TOOLS: string[] = [
   'web_search', 'summarize_url', 'query_memory', 'save_memory',
@@ -38,6 +38,10 @@ export const BUCKET_TOOLS: Record<Exclude<BucketId, 'core'>, string[]> = {
     'github_clone_repo', 'github_diff', 'github_commit_push', 'github_create_pr',
     'render_list_services', 'render_deploy_status', 'render_get_logs',
   ],
+  sam: [
+    'sam_search', 'sam_get_analysis', 'sam_create', 'sam_generate',
+    'sam_set_status', 'sam_export', 'sam_health',
+  ],
 };
 
 /**
@@ -48,6 +52,13 @@ export const BUCKET_TOOLS: Record<Exclude<BucketId, 'core'>, string[]> = {
  */
 const BUCKET_PATTERNS: Array<[Exclude<BucketId, 'core'>, RegExp]> = [
   ['simulation', /\b(simulat\w*|simulaci[oó]n|doe\b|design of experiments|experiment\w*|state machine|m[aá]quina de estados|minizinc|conwip|heijunka|sequenc\w* (the )?jobs?|secuencia\w* (de )?trabajos?)\b/i],
+  // sam before manufacturing: SAM asks often carry generic mfg words ("capacity",
+  // "production") that would otherwise capture them. Precision-first vocabulary
+  // (mirrors packs/sam/pack.yaml intent_patterns): bare "sam" is a person-name
+  // magnet, so only SAM-specific phrases match. Deliberately NOT matched: "line
+  // balance"/"balanceo" (stays manufacturing — line_balance lives there) and bare
+  // "quote"/"cotización" (too generic).
+  ['sam', /\b(standard allowed minutes?|minutos? est[aá]ndar|sam analys\w*|an[aá]lisis (de )?sam|sam (health|status|connection)|measured times?|stopwatch times?|tiempos? (medidos?|cronometrados?)|tech ?packs?|gsd|modapts|per.?piece (billing|cost|price)|(costo|precio) por pieza)\b/i],
   ['manufacturing', /\b(bom|shortage|faltante|compan(y|ies)\s+\d+|companies\b|compa[ñn][ií]as?\s+\d+|capacity|capacidad|value stream|flujo de valor|toc\b|bottleneck|cuello de botella|balance|sigma|cpk|spc|control chart|carta de control|fmea|rca|root cause|causa ra[ií]z|inventory|inventario|novalink|producci[oó]n|production data)\b/i],
   ['devops', /\b(github|repo|repos|branch|commit|push|pull request|prs?\b|issues\b|(open|creat\w*|file|list|clos\w*|track\w*)\s+(an?\s+)?issues?\b|render|deploy|deployment|clone|run command|ejecuta\w* (el )?comando)\b/i],
   ['docs', /\b(pdf|docx|xlsx|pptx|csv|report|reporte|informe|document|documento|archivo|file|spreadsheet|hoja de c[aá]lculo|citation|cita|papers?|art[ií]culos?)\b/i],

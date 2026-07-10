@@ -20,6 +20,8 @@ export const TOOLS_PROCESS_ENV: string[] = [
   // NovaLink Bridge (novalink_* tools)
   'NOVALINK_BRIDGE_URL',
   'NOVALINK_BRIDGE_API_KEY',
+  'NOVALINK_SAM_URL',
+  'NOVALINK_SAM_API_KEY',
   // Node bootstrap var: the tools child makes its own TLS connections to the
   // bridge and must trust its self-signed IP-SAN cert, or novalink_* calls
   // fail TLS validation immediately (observed live: prod bridge at
