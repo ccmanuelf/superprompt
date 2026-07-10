@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { rmSync } from 'node:fs';
+import { TOOLS_PROCESS_ENV } from '../src/ipc/env-whitelist.js';
 import {
   resolveSamConfig,
-  SEARCH_KINDS,
   buildSearchPath,
   extractErrorDetail,
   stripFullJson,
@@ -409,5 +409,23 @@ describe('sam_export (stubbed fetch, real file write)', () => {
     vi.stubGlobal('fetch', f);
     expect((await samExport({})).code).toBe('PARAM_MISSING');
     expect(f).not.toHaveBeenCalled();
+  });
+});
+
+describe('SAM wiring', () => {
+  it('P2 env whitelist forwards the SAM vars', () => {
+    expect(TOOLS_PROCESS_ENV).toContain('NOVALINK_SAM_URL');
+    expect(TOOLS_PROCESS_ENV).toContain('NOVALINK_SAM_API_KEY');
+  });
+
+  it('all 7 tool definitions exist with sam_ names', () => {
+    const names = [
+      samSearchDefinition, samGetAnalysisDefinition, samCreateDefinition,
+      samGenerateDefinition, samSetStatusDefinition, samExportDefinition, samHealthDefinition,
+    ].map((d) => d.function.name);
+    expect(names).toEqual([
+      'sam_search', 'sam_get_analysis', 'sam_create',
+      'sam_generate', 'sam_set_status', 'sam_export', 'sam_health',
+    ]);
   });
 });

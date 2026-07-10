@@ -47,6 +47,15 @@ import {
   novalinkQueryDefinition, novalinkQuery,
   novalinkHealthDefinition, novalinkHealth,
 } from './providers/tools/novalink.js';
+import {
+  samSearchDefinition, samSearch,
+  samGetAnalysisDefinition, samGetAnalysis,
+  samCreateDefinition, samCreate,
+  samGenerateDefinition, samGenerate,
+  samSetStatusDefinition, samSetStatus,
+  samExportDefinition, samExport,
+  samHealthDefinition, samHealth,
+} from './providers/tools/sam.js';
 
 import { executeInWorker } from './forge/worker-sandbox.js';
 import { executeDeclarativeHttp } from './forge/declarative-http.js';
@@ -90,6 +99,13 @@ const tools = [
   tool(novalinkListQueriesDefinition, novalinkListQueries),
   tool(novalinkQueryDefinition, novalinkQuery),
   tool(novalinkHealthDefinition, novalinkHealth),
+  tool(samSearchDefinition, samSearch),
+  tool(samGetAnalysisDefinition, samGetAnalysis),
+  tool(samCreateDefinition, samCreate),
+  tool(samGenerateDefinition, samGenerate),
+  tool(samSetStatusDefinition, samSetStatus),
+  tool(samExportDefinition, samExport),
+  tool(samHealthDefinition, samHealth),
 ];
 
 for (const { def, exec } of tools) {

@@ -47,6 +47,16 @@ import {
   novalinkQueryDefinition, novalinkQuery,
   novalinkHealthDefinition, novalinkHealth,
 } from './novalink.js';
+import {
+  samSearchDefinition, samSearch, type SamSearchArgs,
+  samGetAnalysisDefinition, samGetAnalysis,
+  samCreateDefinition, samCreate,
+  samGenerateDefinition, samGenerate, type SamGenerateArgs,
+  samSetStatusDefinition, samSetStatus,
+  samExportDefinition, samExport,
+  samHealthDefinition, samHealth,
+  SAM_GENERATE_IPC_TIMEOUT_MS,
+} from './sam.js';
 import { takeScreenshotDefinition, takeScreenshot } from './screenshot.js';
 import { kanbanManageDefinition, kanbanManage } from './kanban-manage.js';
 import {
@@ -203,6 +213,63 @@ export function registerBuiltinTools(): void {
       source: 'builtin',
       process: 'tools',
       packName: 'novalink',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
+    },
+    {
+      definition: samSearchDefinition,
+      execute: async (args) => samSearch(args as SamSearchArgs),
+      source: 'builtin',
+      process: 'tools',
+      packName: 'sam',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
+    },
+    {
+      definition: samGetAnalysisDefinition,
+      execute: async (args) => samGetAnalysis(args as { id?: number; include_full_json?: boolean }),
+      source: 'builtin',
+      process: 'tools',
+      packName: 'sam',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
+    },
+    {
+      definition: samCreateDefinition,
+      execute: async (args) => samCreate(args as { kind?: string; fields?: string }),
+      source: 'builtin',
+      process: 'tools',
+      packName: 'sam',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: true },
+    },
+    {
+      definition: samGenerateDefinition,
+      execute: async (args) => samGenerate(args as SamGenerateArgs),
+      source: 'builtin',
+      process: 'tools',
+      packName: 'sam',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: true },
+      timeoutMs: SAM_GENERATE_IPC_TIMEOUT_MS,
+    },
+    {
+      definition: samSetStatusDefinition,
+      execute: async (args) => samSetStatus(args as { analysis_id?: number; status?: string; confidence_pct?: number }),
+      source: 'builtin',
+      process: 'tools',
+      packName: 'sam',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: true },
+    },
+    {
+      definition: samExportDefinition,
+      execute: async (args) => samExport(args as { analysis_id?: number }),
+      source: 'builtin',
+      process: 'tools',
+      packName: 'sam',
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
+    },
+    {
+      definition: samHealthDefinition,
+      execute: async () => samHealth(),
+      source: 'builtin',
+      process: 'tools',
+      packName: 'sam',
       policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
