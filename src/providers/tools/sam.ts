@@ -437,3 +437,61 @@ export async function samSetStatus(args: {
     return { error: `NovaLink SAM unreachable: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
+
+export const samExportDefinition: Tool = {
+  type: 'function',
+  function: {
+    name: 'sam_export',
+    description:
+      'Download the client-facing Excel workbook for a stored SAM analysis and send it to the user in the chat. Use after an analysis is reviewed/approved when the user wants the deliverable.',
+    parameters: {
+      type: 'object',
+      properties: {
+        analysis_id: { type: 'number', description: 'Analysis id to export.' },
+      },
+      required: ['analysis_id'],
+    },
+  },
+};
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+export async function samExport(args: { analysis_id?: number }): Promise<Record<string, unknown>> {
+  const cfg = getSamConfig();
+  if (!cfg) return { error: MISSING_CONFIG };
+  if (args.analysis_id === undefined || args.analysis_id === null) {
+    return { error: 'analysis_id is required', code: 'PARAM_MISSING' };
+  }
+  const id = encodeURIComponent(String(args.analysis_id));
+  try {
+    const response = await fetch(`${cfg.url}/api/v1/analyses/${id}/export.xlsx`, {
+      headers: { Authorization: `Bearer ${cfg.key}` },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      let json: unknown = null;
+      try {
+        json = await response.json();
+      } catch {
+        /* non-JSON error body */
+      }
+      return { error: extractErrorDetail(response.status, json) };
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    mkdirSync(UPLOADS_DIR, { recursive: true });
+    const filename = `sam-analysis-${args.analysis_id}.xlsx`;
+    const filePath = resolve(UPLOADS_DIR, `${Date.now()}_${filename}`);
+    writeFileSync(filePath, buffer);
+    return {
+      __docgen: true,
+      path: filePath,
+      filename,
+      mimeType: XLSX_MIME,
+      size: buffer.length,
+      success: true,
+      message: `SAM analysis workbook "${filename}" (${buffer.length} bytes) will be sent to the user automatically. Do NOT call sam_export again for this request.`,
+    };
+  } catch (err) {
+    return { error: `NovaLink SAM export failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}

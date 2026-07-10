@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { rmSync } from 'node:fs';
 import {
   resolveSamConfig,
   SEARCH_KINDS,
@@ -19,6 +20,8 @@ import {
   samGenerateDefinition,
   samSetStatus,
   samSetStatusDefinition,
+  samExport,
+  samExportDefinition,
   SAM_GENERATE_IPC_TIMEOUT_MS,
 } from '../src/providers/tools/sam.js';
 
@@ -348,5 +351,63 @@ describe('SAM write handlers (stubbed fetch)', () => {
     );
     expect(samSetStatusDefinition.function.name).toBe('sam_set_status');
     expect(SAM_GENERATE_IPC_TIMEOUT_MS).toBe(180_000);
+  });
+});
+
+describe('sam_export (stubbed fetch, real file write)', () => {
+  const written: string[] = [];
+
+  beforeEach(() => {
+    process.env.NOVALINK_SAM_URL = 'http://sam.test:8080';
+    process.env.NOVALINK_SAM_API_KEY = 'sk_test';
+  });
+
+  afterEach(() => {
+    delete process.env.NOVALINK_SAM_URL;
+    delete process.env.NOVALINK_SAM_API_KEY;
+    vi.unstubAllGlobals();
+    for (const p of written.splice(0)) rmSync(p, { force: true });
+  });
+
+  it('downloads the xlsx with bearer auth and returns the __docgen shape', async () => {
+    const bytes = new TextEncoder().encode('PK-fake-xlsx').buffer;
+    const f = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => bytes,
+      json: async () => null,
+    });
+    vi.stubGlobal('fetch', f);
+
+    const out = await samExport({ analysis_id: 7 });
+    if (typeof out.path === 'string') written.push(out.path);
+
+    expect(out.__docgen).toBe(true);
+    expect(out.success).toBe(true);
+    expect(out.filename).toBe('sam-analysis-7.xlsx');
+    expect(out.mimeType).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(out.size).toBeGreaterThan(0);
+    const [url, opts] = f.mock.calls[0];
+    expect(url).toBe('http://sam.test:8080/api/v1/analyses/7/export.xlsx');
+    expect((opts.headers as Record<string, string>).Authorization).toBe('Bearer sk_test');
+  });
+
+  it('surfaces the JSON detail on export error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ detail: 'Analysis not found' }),
+      arrayBuffer: async () => new ArrayBuffer(0),
+    }));
+    const out = await samExport({ analysis_id: 999 });
+    expect(out.error).toBe('HTTP 404: Analysis not found');
+    expect(out.__docgen).toBeUndefined();
+  });
+
+  it('requires analysis_id', async () => {
+    const f = vi.fn();
+    vi.stubGlobal('fetch', f);
+    expect((await samExport({})).code).toBe('PARAM_MISSING');
+    expect(f).not.toHaveBeenCalled();
   });
 });
