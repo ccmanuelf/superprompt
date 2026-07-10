@@ -383,10 +383,10 @@ export async function executeTool(
     // Route to Process 2 (tools) if classified and client ready
     if (targetProcess === 'tools' && toolsProcessClient?.isReady) {
       executionProcess = 'tools';
-      result = await toolsProcessClient.execute(name, args, chatId);
+      result = await toolsProcessClient.execute(name, args, chatId, entry?.timeoutMs);
     } else if (targetProcess === 'parsers' && parsersProcessClient?.isReady) {
       executionProcess = 'parsers';
-      result = await parsersProcessClient.execute(name, args, chatId);
+      result = await parsersProcessClient.execute(name, args, chatId, entry?.timeoutMs);
     } else {
       if (targetProcess && targetProcess !== 'core') {
         logger.debug({ tool: name, targetProcess }, 'Child process unavailable — executing locally');

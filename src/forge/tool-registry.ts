@@ -17,6 +17,8 @@ export interface ToolEntry {
   policy?: ToolPolicy;
   /** Which pack owns this tool — used by pack tuner for weight tracking */
   packName?: string;
+  /** IPC execution budget for slow tools (default 30 s if unset) */
+  timeoutMs?: number;
 }
 
 const registry = new Map<string, ToolEntry>();
