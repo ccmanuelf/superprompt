@@ -13,6 +13,13 @@ import {
   samGetAnalysisDefinition,
   samHealth,
   samHealthDefinition,
+  samCreate,
+  samCreateDefinition,
+  samGenerate,
+  samGenerateDefinition,
+  samSetStatus,
+  samSetStatusDefinition,
+  SAM_GENERATE_IPC_TIMEOUT_MS,
 } from '../src/providers/tools/sam.js';
 
 describe('resolveSamConfig', () => {
@@ -212,5 +219,134 @@ describe('SAM tool definitions', () => {
     expect(samGetAnalysisDefinition.function.name).toBe('sam_get_analysis');
     expect(samGetAnalysisDefinition.function.parameters.required).toContain('id');
     expect(samHealthDefinition.function.name).toBe('sam_health');
+  });
+});
+
+describe('SAM write handlers (stubbed fetch)', () => {
+  function mockFetch(body: unknown, init: { ok?: boolean; status?: number } = {}) {
+    const { ok = true, status = 200 } = init;
+    return vi.fn().mockResolvedValue({ ok, status, json: async () => body });
+  }
+
+  beforeEach(() => {
+    process.env.NOVALINK_SAM_URL = 'http://sam.test:8080';
+    process.env.NOVALINK_SAM_API_KEY = 'sk_test';
+  });
+
+  afterEach(() => {
+    delete process.env.NOVALINK_SAM_URL;
+    delete process.env.NOVALINK_SAM_API_KEY;
+    vi.unstubAllGlobals();
+  });
+
+  it('sam_create posts parsed fields to /clients', async () => {
+    const f = mockFetch({ id: 3, name: 'Born Primitive' });
+    vi.stubGlobal('fetch', f);
+
+    const out = await samCreate({ kind: 'client', fields: '{"name":"Born Primitive"}' });
+
+    expect(out.created).toEqual({ id: 3, name: 'Born Primitive' });
+    const [url, opts] = f.mock.calls[0];
+    expect(url).toBe('http://sam.test:8080/api/v1/clients');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body as string)).toEqual({ name: 'Born Primitive' });
+    expect((opts.headers as Record<string, string>)['Content-Type']).toBe('application/json');
+  });
+
+  it('sam_create posts to /products for kind=product', async () => {
+    const f = mockFetch({ id: 12 });
+    vi.stubGlobal('fetch', f);
+    await samCreate({ kind: 'product', fields: '{"client_id":3,"name":"Op Assault Pant"}' });
+    expect(f.mock.calls[0][0]).toBe('http://sam.test:8080/api/v1/products');
+  });
+
+  it('sam_create validates kind and fields without calling fetch', async () => {
+    const f = mockFetch({});
+    vi.stubGlobal('fetch', f);
+    expect((await samCreate({ kind: 'invoice', fields: '{}' })).code).toBe('PARAM_INVALID');
+    expect((await samCreate({ kind: 'client' })).code).toBe('PARAM_MISSING');
+    expect((await samCreate({ kind: 'client', fields: 'not-json' })).code).toBe('PARAM_INVALID');
+    expect((await samCreate({ kind: 'client', fields: '[]' })).code).toBe('PARAM_INVALID');
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('sam_generate posts with persist defaulting to false and strips full_json from the draft', async () => {
+    const f = mockFetch({ draft: { total_sam_min: 12.4, full_json: { sections: 20 } } });
+    vi.stubGlobal('fetch', f);
+
+    const out = await samGenerate({ product_id: 12, input_text: 'basic crew tee' });
+
+    const [url, opts] = f.mock.calls[0];
+    expect(url).toBe('http://sam.test:8080/api/v1/analyses/generate');
+    expect(JSON.parse(opts.body as string)).toEqual({
+      product_id: 12,
+      input_text: 'basic crew tee',
+      persist: false,
+    });
+    const draft = (out.result as Record<string, unknown>).draft as Record<string, unknown>;
+    expect(draft.full_json).toBeUndefined();
+  });
+
+  it('sam_generate passes optional metadata and persist=true through', async () => {
+    const f = mockFetch({ id: 99, total_sam_min: 49.2 });
+    vi.stubGlobal('fetch', f);
+    await samGenerate({
+      product_id: 12,
+      input_text: 'tech pack text',
+      product_name: 'Op Assault Pant',
+      client_name: 'Born Primitive',
+      category: "Men's Tactical Pants",
+      persist: true,
+    });
+    expect(JSON.parse(f.mock.calls[0][1].body as string)).toEqual({
+      product_id: 12,
+      input_text: 'tech pack text',
+      product_name: 'Op Assault Pant',
+      client_name: 'Born Primitive',
+      category: "Men's Tactical Pants",
+      persist: true,
+    });
+  });
+
+  it('sam_generate requires product_id and input_text', async () => {
+    const f = mockFetch({});
+    vi.stubGlobal('fetch', f);
+    expect((await samGenerate({ input_text: 'x' })).code).toBe('PARAM_MISSING');
+    expect((await samGenerate({ product_id: 1 })).code).toBe('PARAM_MISSING');
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('sam_set_status patches status and optional confidence', async () => {
+    const f = mockFetch({ id: 7, status: 'approved' });
+    vi.stubGlobal('fetch', f);
+
+    const out = await samSetStatus({ analysis_id: 7, status: 'approved', confidence_pct: 90 });
+
+    const [url, opts] = f.mock.calls[0];
+    expect(url).toBe('http://sam.test:8080/api/v1/analyses/7');
+    expect(opts.method).toBe('PATCH');
+    expect(JSON.parse(opts.body as string)).toEqual({ status: 'approved', confidence_pct: 90 });
+    expect(out.updated).toEqual({ id: 7, status: 'approved' });
+  });
+
+  it('sam_set_status requires analysis_id and status', async () => {
+    const f = mockFetch({});
+    vi.stubGlobal('fetch', f);
+    expect((await samSetStatus({ status: 'review' })).code).toBe('PARAM_MISSING');
+    expect((await samSetStatus({ analysis_id: 7 })).code).toBe('PARAM_MISSING');
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('write definitions carry the right names and required params', () => {
+    expect(samCreateDefinition.function.name).toBe('sam_create');
+    expect(samCreateDefinition.function.parameters.required).toEqual(
+      expect.arrayContaining(['kind', 'fields']),
+    );
+    expect(samGenerateDefinition.function.name).toBe('sam_generate');
+    expect(samGenerateDefinition.function.parameters.required).toEqual(
+      expect.arrayContaining(['product_id', 'input_text']),
+    );
+    expect(samSetStatusDefinition.function.name).toBe('sam_set_status');
+    expect(SAM_GENERATE_IPC_TIMEOUT_MS).toBe(180_000);
   });
 });

@@ -279,3 +279,161 @@ export async function samHealth(): Promise<Record<string, unknown>> {
     };
   }
 }
+
+// ── Tool Definitions (Write) ────────────────────────────────
+
+export const samCreateDefinition: Tool = {
+  type: 'function',
+  function: {
+    name: 'sam_create',
+    description:
+      'Create a client or product in the NovaLink SAM system. Products must belong to an existing client (create the client first). Client fields: {name, notes?}. Product fields: {client_id, name, style_no?, category?, description?, base_size?, billing_model?, quoting_mode?}. Use meaningful names — this is quoting/billing data.',
+    parameters: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['client', 'product'], description: 'What to create.' },
+        fields: {
+          type: 'string',
+          description: 'The record fields as a JSON object string, e.g. {"client_id":3,"name":"Op Assault Pant"}.',
+        },
+      },
+      required: ['kind', 'fields'],
+    },
+  },
+};
+
+export const samGenerateDefinition: Tool = {
+  type: 'function',
+  function: {
+    name: 'sam_generate',
+    description:
+      'AI-draft a full SAM analysis from a tech-pack text / product description. SLOW (~60–120 s) and costs API credit — call once, never retry immediately. persist defaults to false (exploratory draft, not stored); set persist=true only when the user wants it stored, and product_id must then reference an existing product (sam_search kind="products", or sam_create). Returned times are touch-SAM at 15% PFD; machine dwell is excluded.',
+    parameters: {
+      type: 'object',
+      properties: {
+        product_id: { type: 'number', description: 'Existing product id (required by the API).' },
+        input_text: { type: 'string', description: 'Tech-pack text, product description, or URL.' },
+        product_name: { type: 'string', description: 'Product name, e.g. "Op Assault Pant".' },
+        client_name: { type: 'string', description: 'Client name, e.g. "Born Primitive".' },
+        category: { type: 'string', description: 'Product category, e.g. "Men\'s Tactical Pants".' },
+        persist: { type: 'boolean', description: 'Store the analysis (default false = exploratory draft).' },
+      },
+      required: ['product_id', 'input_text'],
+    },
+  },
+};
+
+export const samSetStatusDefinition: Tool = {
+  type: 'function',
+  function: {
+    name: 'sam_set_status',
+    description:
+      'Update the workflow status of a stored SAM analysis (e.g. "review", "approved") and optionally its confidence percentage.',
+    parameters: {
+      type: 'object',
+      properties: {
+        analysis_id: { type: 'number', description: 'Analysis id.' },
+        status: { type: 'string', description: 'New status, e.g. "review" or "approved".' },
+        confidence_pct: { type: 'number', description: 'Optional confidence percentage (0–100).' },
+      },
+      required: ['analysis_id', 'status'],
+    },
+  },
+};
+
+// ── Write Handlers ──────────────────────────────────────────
+
+const CREATE_PATHS: Record<string, string> = { client: '/clients', product: '/products' };
+
+export async function samCreate(args: { kind?: string; fields?: string }): Promise<Record<string, unknown>> {
+  const cfg = getSamConfig();
+  if (!cfg) return { error: MISSING_CONFIG };
+  const path = args.kind ? CREATE_PATHS[args.kind] : undefined;
+  if (args.kind !== undefined && !path) {
+    return { error: 'kind must be "client" or "product"', code: 'PARAM_INVALID' };
+  }
+  if (!args.kind || !args.fields) {
+    return { error: 'kind and fields are required', code: 'PARAM_MISSING' };
+  }
+  let fields: unknown;
+  try {
+    fields = JSON.parse(args.fields);
+  } catch {
+    return { error: 'fields must be a JSON object string, e.g. {"name":"Acme"}', code: 'PARAM_INVALID' };
+  }
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+    return { error: 'fields must be a JSON object string, e.g. {"name":"Acme"}', code: 'PARAM_INVALID' };
+  }
+  try {
+    const res = await samFetch(cfg, path!, { method: 'POST', body: fields });
+    if (!res.ok) return { error: extractErrorDetail(res.status, res.json) };
+    return { _notice: EXTERNAL_NOTICE, created: res.json };
+  } catch (err) {
+    return { error: `NovaLink SAM unreachable: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+export interface SamGenerateArgs {
+  product_id?: number;
+  input_text?: string;
+  product_name?: string;
+  client_name?: string;
+  category?: string;
+  persist?: boolean;
+}
+
+export async function samGenerate(args: SamGenerateArgs): Promise<Record<string, unknown>> {
+  const cfg = getSamConfig();
+  if (!cfg) return { error: MISSING_CONFIG };
+  if (args.product_id === undefined || args.product_id === null || !args.input_text) {
+    return { error: 'product_id and input_text are required', code: 'PARAM_MISSING' };
+  }
+  const body: Record<string, unknown> = {
+    product_id: args.product_id,
+    input_text: args.input_text,
+    persist: args.persist === true,
+  };
+  if (args.product_name) body.product_name = args.product_name;
+  if (args.client_name) body.client_name = args.client_name;
+  if (args.category) body.category = args.category;
+  try {
+    const res = await samFetch(cfg, '/analyses/generate', {
+      method: 'POST',
+      body,
+      timeoutMs: GENERATE_TIMEOUT_MS,
+    });
+    if (!res.ok) return { error: extractErrorDetail(res.status, res.json) };
+    if (!res.json || typeof res.json !== 'object' || Array.isArray(res.json)) {
+      return { error: 'Unexpected NovaLink SAM response shape', code: 'BAD_RESPONSE' };
+    }
+    return { _notice: EXTERNAL_NOTICE, result: stripFullJson(res.json as Record<string, unknown>) };
+  } catch (err) {
+    return { error: `NovaLink SAM generate failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+export async function samSetStatus(args: {
+  analysis_id?: number;
+  status?: string;
+  confidence_pct?: number;
+}): Promise<Record<string, unknown>> {
+  const cfg = getSamConfig();
+  if (!cfg) return { error: MISSING_CONFIG };
+  if (args.analysis_id === undefined || args.analysis_id === null || !args.status) {
+    return { error: 'analysis_id and status are required', code: 'PARAM_MISSING' };
+  }
+  const body: Record<string, unknown> = { status: args.status };
+  if (args.confidence_pct !== undefined && args.confidence_pct !== null) {
+    body.confidence_pct = args.confidence_pct;
+  }
+  try {
+    const res = await samFetch(cfg, `/analyses/${encodeURIComponent(String(args.analysis_id))}`, {
+      method: 'PATCH',
+      body,
+    });
+    if (!res.ok) return { error: extractErrorDetail(res.status, res.json) };
+    return { _notice: EXTERNAL_NOTICE, updated: res.json };
+  } catch (err) {
+    return { error: `NovaLink SAM unreachable: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
