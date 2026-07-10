@@ -39,6 +39,17 @@ describe('bucket selection', () => {
   it('bare singular "issue" without verb/plural context does not false-positive to devops', () => {
     expect(selectBucket('I have an issue with my order', undefined)).toBe('core');
   });
+  it('routes SAM vocabulary (EN) to sam, beating generic manufacturing words', () => {
+    expect(selectBucket('what are the standard allowed minutes for the assault pant?', undefined)).toBe('sam');
+    expect(selectBucket('draft a sam analysis from this tech pack', undefined)).toBe('sam');
+  });
+  it('routes SAM vocabulary (ES) to sam', () => {
+    expect(selectBucket('dame los minutos estándar del análisis de sam', undefined)).toBe('sam');
+    expect(selectBucket('cuál es el costo por pieza de este producto', undefined)).toBe('sam');
+  });
+  it('bare "Sam" as a person name does not false-positive to sam', () => {
+    expect(selectBucket('Sam said hi about the meeting', undefined)).toBe('core');
+  });
 });
 
 describe('bucket tool lists', () => {
