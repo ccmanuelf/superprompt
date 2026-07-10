@@ -141,3 +141,141 @@ async function samFetch(
   }
   return { ok: response.ok, status: response.status, json };
 }
+
+// ── Tool Definitions ────────────────────────────────────────
+
+export const samSearchDefinition: Tool = {
+  type: 'function',
+  function: {
+    name: 'sam_search',
+    description:
+      'Search the NovaLink SAM system (labor-cost analyses for quoting/billing). kind selects what to search: "products" (find similar past products, fuzzy on name/style/description), "analyses" (past SAM analyses, searches product + operation text), "measured_times" (the validated stopwatch library — 262 measured operation times, the defensible anchors), "machines" (canonical machine codes), "clients". Filters: q (text), client_id (products/analyses), status (analyses), machine_code (measured_times), limit. Inapplicable filters are ignored.',
+    parameters: {
+      type: 'object',
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['products', 'analyses', 'measured_times', 'machines', 'clients'],
+          description: 'What to search.',
+        },
+        q: { type: 'string', description: 'Fuzzy text search, e.g. "cargo pant" or "bastillar".' },
+        client_id: { type: 'number', description: 'Filter products/analyses by client id.' },
+        status: { type: 'string', description: 'Filter analyses by status, e.g. "draft", "review", "approved".' },
+        machine_code: { type: 'string', description: 'Filter measured_times by machine code, e.g. "SNLS".' },
+        limit: { type: 'number', description: 'Max rows to return.' },
+      },
+      required: ['kind'],
+    },
+  },
+};
+
+export const samGetAnalysisDefinition: Tool = {
+  type: 'function',
+  function: {
+    name: 'sam_get_analysis',
+    description:
+      'Fetch one SAM analysis by id: header fields (total_sam_min = touch time only, at 15% PFD) plus the operation-by-operation breakdown. The 20-section full_json document is omitted by default to save context — set include_full_json only if the user explicitly needs it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Analysis id (from sam_search kind="analyses").' },
+        include_full_json: {
+          type: 'boolean',
+          description: 'Include the full 20-section document (large). Default false.',
+        },
+      },
+      required: ['id'],
+    },
+  },
+};
+
+export const samHealthDefinition: Tool = {
+  type: 'function',
+  function: {
+    name: 'sam_health',
+    description:
+      'Check connectivity to the NovaLink SAM system: reachability, latency, whether the API key is valid, and the key role.',
+    parameters: { type: 'object', properties: {} },
+  },
+};
+
+// ── Read Handlers ───────────────────────────────────────────
+
+export interface SamSearchArgs {
+  kind?: string;
+  q?: string;
+  client_id?: number;
+  status?: string;
+  machine_code?: string;
+  limit?: number;
+}
+
+export async function samSearch(args: SamSearchArgs): Promise<Record<string, unknown>> {
+  const cfg = getSamConfig();
+  if (!cfg) return { error: MISSING_CONFIG };
+  const kind = args.kind;
+  if (!kind || !(kind in SEARCH_KINDS)) {
+    return {
+      error: `kind must be one of: ${Object.keys(SEARCH_KINDS).join(', ')}`,
+      code: 'PARAM_INVALID',
+    };
+  }
+  try {
+    const res = await samFetch(cfg, buildSearchPath(kind as SearchKind, args as Record<string, unknown>));
+    if (!res.ok) return { error: extractErrorDetail(res.status, res.json) };
+    return { _notice: EXTERNAL_NOTICE, kind, results: res.json };
+  } catch (err) {
+    return { error: `NovaLink SAM unreachable: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+export async function samGetAnalysis(args: {
+  id?: number;
+  include_full_json?: boolean;
+}): Promise<Record<string, unknown>> {
+  const cfg = getSamConfig();
+  if (!cfg) return { error: MISSING_CONFIG };
+  if (args.id === undefined || args.id === null) {
+    return { error: 'id is required', code: 'PARAM_MISSING' };
+  }
+  try {
+    const res = await samFetch(cfg, `/analyses/${encodeURIComponent(String(args.id))}`);
+    if (!res.ok) return { error: extractErrorDetail(res.status, res.json) };
+    return shapeAnalysis(res.json, args.include_full_json === true);
+  } catch (err) {
+    return { error: `NovaLink SAM unreachable: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+export async function samHealth(): Promise<Record<string, unknown>> {
+  const cfg = getSamConfig();
+  if (!cfg) return { reachable: false, error: MISSING_CONFIG };
+  const started = Date.now();
+  try {
+    const health = await samFetch(cfg, '/health');
+    const latency_ms = Date.now() - started;
+    if (!health.ok) {
+      return { reachable: false, latency_ms, http_status: health.status, api_url: cfg.url };
+    }
+    const who = await samFetch(cfg, '/whoami');
+    const role =
+      who.json && typeof who.json === 'object' && !Array.isArray(who.json)
+        ? (who.json as Record<string, unknown>).role
+        : undefined;
+    return {
+      reachable: true,
+      latency_ms,
+      auth_valid: who.status !== 401 && who.status !== 403,
+      role,
+      health: health.json,
+      api_url: cfg.url,
+    };
+  } catch (err) {
+    return {
+      reachable: false,
+      latency_ms: Date.now() - started,
+      error: err instanceof Error ? err.message : String(err),
+      api_url: cfg.url,
+    };
+  }
+}

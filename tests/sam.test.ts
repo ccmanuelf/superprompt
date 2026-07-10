@@ -7,6 +7,12 @@ import {
   stripFullJson,
   shapeAnalysis,
   EXTERNAL_NOTICE,
+  samSearch,
+  samSearchDefinition,
+  samGetAnalysis,
+  samGetAnalysisDefinition,
+  samHealth,
+  samHealthDefinition,
 } from '../src/providers/tools/sam.js';
 
 describe('resolveSamConfig', () => {
@@ -103,5 +109,108 @@ describe('stripFullJson / shapeAnalysis', () => {
   it('shapeAnalysis rejects non-object bodies', () => {
     expect(shapeAnalysis(null, false).error).toBeTruthy();
     expect(shapeAnalysis([1], false).error).toBeTruthy();
+  });
+});
+
+describe('SAM read handlers (stubbed fetch)', () => {
+  function mockFetch(body: unknown, init: { ok?: boolean; status?: number } = {}) {
+    const { ok = true, status = 200 } = init;
+    return vi.fn().mockResolvedValue({ ok, status, json: async () => body });
+  }
+
+  beforeEach(() => {
+    process.env.NOVALINK_SAM_URL = 'http://sam.test:8080';
+    process.env.NOVALINK_SAM_API_KEY = 'sk_test';
+  });
+
+  afterEach(() => {
+    delete process.env.NOVALINK_SAM_URL;
+    delete process.env.NOVALINK_SAM_API_KEY;
+    vi.unstubAllGlobals();
+  });
+
+  it('sam_search hits the right endpoint with bearer auth and frames results', async () => {
+    const f = mockFetch([{ id: 1, name: 'Op Assault Pant' }]);
+    vi.stubGlobal('fetch', f);
+
+    const out = await samSearch({ kind: 'products', q: 'pant', limit: 5 });
+
+    expect(out._notice).toBe(EXTERNAL_NOTICE);
+    expect(out.kind).toBe('products');
+    expect(out.results).toEqual([{ id: 1, name: 'Op Assault Pant' }]);
+    const [url, opts] = f.mock.calls[0];
+    expect(url).toBe('http://sam.test:8080/api/v1/products?q=pant&limit=5');
+    expect((opts.headers as Record<string, string>).Authorization).toBe('Bearer sk_test');
+  });
+
+  it('sam_search rejects an unknown kind without calling fetch', async () => {
+    const f = mockFetch([]);
+    vi.stubGlobal('fetch', f);
+    const out = await samSearch({ kind: 'invoices' });
+    expect(out.code).toBe('PARAM_INVALID');
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('sam_search surfaces the JSON detail on error', async () => {
+    vi.stubGlobal('fetch', mockFetch({ detail: 'Invalid API key' }, { ok: false, status: 401 }));
+    const out = await samSearch({ kind: 'clients' });
+    expect(out.error).toBe('HTTP 401: Invalid API key');
+  });
+
+  it('sam_search returns a config error when env is missing', async () => {
+    delete process.env.NOVALINK_SAM_URL;
+    delete process.env.NOVALINK_SAM_API_KEY;
+    const out = await samSearch({ kind: 'products' });
+    expect(String(out.error)).toContain('NOVALINK_SAM_URL');
+  });
+
+  it('sam_get_analysis omits full_json by default and includes it on request', async () => {
+    const body = { id: 7, total_sam_min: 49.2, operations: [{ seq: 1 }], full_json: { sections: 20 } };
+    vi.stubGlobal('fetch', mockFetch(body));
+
+    const out = await samGetAnalysis({ id: 7 });
+    expect((out.analysis as Record<string, unknown>).full_json).toBeUndefined();
+
+    vi.stubGlobal('fetch', mockFetch(body));
+    const full = await samGetAnalysis({ id: 7, include_full_json: true });
+    expect((full.analysis as Record<string, unknown>).full_json).toEqual({ sections: 20 });
+  });
+
+  it('sam_get_analysis requires id', async () => {
+    const f = mockFetch({});
+    vi.stubGlobal('fetch', f);
+    expect((await samGetAnalysis({})).code).toBe('PARAM_MISSING');
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('sam_health reports reachable + role from /whoami', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ status: 'ok', analyses: 42 }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ role: 'readwrite' }) });
+    vi.stubGlobal('fetch', f);
+
+    const out = await samHealth();
+    expect(out.reachable).toBe(true);
+    expect(out.auth_valid).toBe(true);
+    expect(out.role).toBe('readwrite');
+    expect(f.mock.calls[0][0]).toBe('http://sam.test:8080/api/v1/health');
+    expect(f.mock.calls[1][0]).toBe('http://sam.test:8080/api/v1/whoami');
+  });
+
+  it('sam_health reports unreachable on network error without throwing', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    const out = await samHealth();
+    expect(out.reachable).toBe(false);
+    expect(String(out.error)).toContain('ECONNREFUSED');
+  });
+});
+
+describe('SAM tool definitions', () => {
+  it('read definitions carry the right names and required params', () => {
+    expect(samSearchDefinition.function.name).toBe('sam_search');
+    expect(samSearchDefinition.function.parameters.required).toContain('kind');
+    expect(samGetAnalysisDefinition.function.name).toBe('sam_get_analysis');
+    expect(samGetAnalysisDefinition.function.parameters.required).toContain('id');
+    expect(samHealthDefinition.function.name).toBe('sam_health');
   });
 });
