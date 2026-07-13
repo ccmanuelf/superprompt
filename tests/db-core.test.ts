@@ -28,7 +28,7 @@ import {
   coreTableInit,
   // Sessions
   getSession, setSession, updateSessionProvider, updateSessionOllamaModel,
-  clearSession, setAutoRoute, isAutoRouteEnabled,
+  clearSession, setAutoRoute, isAutoRouteEnabled, setSamRoute, getSamRoute,
   // Memories
   insertMemory, getRecentMemories, touchMemory, deleteMemory, decayMemories,
   getUnembeddedMemoryCount,
@@ -105,6 +105,24 @@ describe('db-core (Knex)', () => {
       expect(await isAutoRouteEnabled('chat1')).toBe(true);
       await setAutoRoute('chat1', false);
       expect(await isAutoRouteEnabled('chat1')).toBe(false);
+    });
+
+    // spec 2026-07-13 — /sam per-chat routing mode, mirrors auto_route.
+    it('manages sam_route with auto default and session auto-creation', async () => {
+      expect(await getSamRoute('chat1')).toBe('auto'); // no session row yet
+      await setSamRoute('chat1', 'local');
+      expect(await getSamRoute('chat1')).toBe('local');
+      expect((await getSession('chat1'))!.sam_route).toBe('local');
+      await setSamRoute('chat1', 'claude');
+      expect(await getSamRoute('chat1')).toBe('claude');
+      await setSamRoute('chat1', 'auto');
+      expect(await getSamRoute('chat1')).toBe('auto');
+    });
+
+    it('sam_route defaults to auto on sessions created by other paths', async () => {
+      await setSession('chat2', 'sess-x', 'claude');
+      expect((await getSession('chat2'))!.sam_route).toBe('auto');
+      expect(await getSamRoute('chat2')).toBe('auto');
     });
   });
 
