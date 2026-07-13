@@ -14,6 +14,7 @@ import type { CardStatus, CardAssignee } from '../kanban.js';
 import type { DigestFrequency } from '../proactive.js';
 import type { CitationFormat } from '../citations.js';
 import { parseCalcModeFromText } from '../calculations/handler-boundary.js';
+import { extractSendFileMarkers, validateSendFilePath, sendFileDisplayName } from './send-file-marker.js';
 
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -355,6 +356,28 @@ export async function handleMessageInner(
           responseText = pc.docgen.stripBlock(responseText);
         } catch (err) {
           logger.warn({ err }, 'Document generation failed, sending raw response');
+        }
+      }
+    }
+
+    // 5b1a. [send-file:<path>] marker — Claude-path file delivery
+    // (spec 2026-07-13 §6; e.g. the `sam export` wrapper). Validate hard,
+    // fail soft: an invalid/missing file strips the marker, logs a warning,
+    // and the text still delivers.
+    if (responseText && responseText.includes('[send-file:')) {
+      const { cleaned, paths } = extractSendFileMarkers(responseText);
+      responseText = cleaned;
+      for (const rawPath of paths) {
+        const safePath = validateSendFilePath(rawPath, UPLOADS_DIR);
+        if (!safePath) {
+          logger.warn({ rawPath }, 'send-file marker rejected — not an absolute path under UPLOADS_DIR');
+          continue;
+        }
+        try {
+          const fileBuffer = await readFile(safePath);
+          await ctx.replyWithDocument(new InputFile(fileBuffer, sendFileDisplayName(safePath)));
+        } catch (err) {
+          logger.warn({ err, path: safePath }, 'send-file marker: file missing/unreadable — delivering text without it');
         }
       }
     }
