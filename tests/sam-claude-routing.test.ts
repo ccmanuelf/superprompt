@@ -3,7 +3,16 @@ import {
   isSamDataTurn,
   resolveSamTurnRoute,
   isNovalinkDataTurn,
+  SAM_ABORT_MESSAGE,
+  SAM_CLAUDE_FOOTER,
+  SAM_LOCAL_FOOTER,
+  SAM_UNVERIFIED_BANNER,
+  isClaudeFailureResponse,
+  finalizeSamClaudeTurn,
+  finalizeSamLocalTurn,
 } from '../src/providers/router.js';
+import { buildClaudeTimeoutError } from '../src/circuit-breaker.js';
+import type { AIResponse } from '../src/providers/types.js';
 
 // spec 2026-07-13 §3 — SAM turns must not be answered by the local model by
 // default (Task 9 live smoke 2026-07-10: qwen3.5:4b fabricated complete
@@ -56,5 +65,74 @@ describe('resolveSamTurnRoute', () => {
     expect(isSamDataTurn(both)).toBe(true);
     expect(isNovalinkDataTurn(both)).toBe(true);
     expect(resolveSamTurnRoute({ samConfigured: true, message: both, samRoute: 'auto' })).toBe('claude');
+  });
+});
+
+// Abort beats fabricate (spec 2026-07-13 §3). ClaudeProvider.sendMessage
+// never sets `failed` — it RESOLVES with error text on exit≠0
+// (claude.ts: "Claude CLI error (exit N): …") and on timeout kill
+// (buildClaudeTimeoutError), and only rejects on spawn failure (handled
+// separately in the router's try/catch). These tests mock a Claude failure
+// with those exact response shapes.
+describe('isClaudeFailureResponse', () => {
+  it('detects the exit-code error shape', () => {
+    expect(isClaudeFailureResponse({
+      provider: 'claude',
+      text: 'Claude CLI error (exit 1): fetch failed',
+    })).toBe(true);
+  });
+  it('detects the timeout shape (via the REAL builder — pins the substring coupling)', () => {
+    expect(isClaudeFailureResponse({
+      provider: 'claude',
+      text: buildClaudeTimeoutError(600_000),
+    })).toBe(true);
+  });
+  it('detects an empty (null-text) Claude response as failure', () => {
+    expect(isClaudeFailureResponse({ provider: 'claude', text: null })).toBe(true);
+  });
+  it('does not fire on a normal Claude answer or on Ollama responses', () => {
+    expect(isClaudeFailureResponse({ provider: 'claude', text: 'Analysis 3 is Hoodie+Tank, 51.148 min.' })).toBe(false);
+    expect(isClaudeFailureResponse({ provider: 'ollama', text: null })).toBe(false);
+  });
+});
+
+describe('finalizeSamClaudeTurn (abort + provenance footer)', () => {
+  it('replaces a failed Claude response with the bilingual abort message', () => {
+    const out = finalizeSamClaudeTurn({ provider: 'claude', text: 'Claude CLI error (exit 1): boom' });
+    expect(out.text).toBe(SAM_ABORT_MESSAGE);
+    expect(out.failed).toBe(true);
+  });
+  it('appends the exact footer to a successful reply', () => {
+    const out = finalizeSamClaudeTurn({ provider: 'claude', text: 'ID 3: 51.148 min (draft).' });
+    expect(out.text).toBe('ID 3: 51.148 min (draft).\n\n— via Claude + SAM API');
+    expect(out.text!.endsWith(SAM_CLAUDE_FOOTER)).toBe(true);
+  });
+  it('is idempotent — footer never doubles', () => {
+    const once = finalizeSamClaudeTurn({ provider: 'claude', text: 'x' });
+    expect(finalizeSamClaudeTurn(once).text).toBe(once.text);
+  });
+});
+
+describe('finalizeSamLocalTurn (forced footer + UNVERIFIED banner)', () => {
+  const base: AIResponse = { provider: 'ollama', text: 'the SAM for that product is 12.4 min' };
+
+  it('zero sam_* executions (samToolStats absent) → banner prepended AND footer appended', () => {
+    const out = finalizeSamLocalTurn({ ...base });
+    expect(out.text!.startsWith(SAM_UNVERIFIED_BANNER)).toBe(true);
+    expect(out.text!.endsWith(SAM_LOCAL_FOOTER)).toBe(true);
+    expect(out.text).toBe(`${SAM_UNVERIFIED_BANNER}the SAM for that product is 12.4 min${SAM_LOCAL_FOOTER}`);
+  });
+  it('with sam_* executions this turn → footer only, no banner', () => {
+    const out = finalizeSamLocalTurn({ ...base, samToolStats: { calls: 2, errors: 0 } });
+    expect(out.text!.startsWith(SAM_UNVERIFIED_BANNER)).toBe(false);
+    expect(out.text!.endsWith(SAM_LOCAL_FOOTER)).toBe(true);
+  });
+  it('all-errored sam_* calls still count as "tools ran" (errors are visible to the model, not silence)', () => {
+    const out = finalizeSamLocalTurn({ ...base, samToolStats: { calls: 2, errors: 2 } });
+    expect(out.text!.startsWith(SAM_UNVERIFIED_BANNER)).toBe(false);
+  });
+  it('is idempotent — neither banner nor footer doubles', () => {
+    const once = finalizeSamLocalTurn({ ...base });
+    expect(finalizeSamLocalTurn(once).text).toBe(once.text);
   });
 });
