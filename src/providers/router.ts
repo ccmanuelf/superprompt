@@ -924,6 +924,13 @@ export function finalizeSamClaudeTurn(response: AIResponse): AIResponse {
  * always. Idempotent.
  */
 export function finalizeSamLocalTurn(response: AIResponse): AIResponse {
+  // Cloud-fallback rescue: a hysteresis-bucketed novalink-pinned SAM turn
+  // whose failed local attempt was rescued by the Claude soft fallback
+  // reaches this finalizer with the Claude response wholesale (the fallback
+  // branch replaces `response` and sets respondedVia claude). Stamping
+  // "via local model (forced)" on it would be contradictory provenance —
+  // FALLBACK_DISCLOSURE already labels it. Signal: the provider field.
+  if (response.provider === 'claude') return response;
   let text = response.text ?? '';
   if (response.samToolStats === undefined && !text.startsWith(SAM_UNVERIFIED_BANNER)) {
     text = `${SAM_UNVERIFIED_BANNER}${text}`;
@@ -932,6 +939,31 @@ export function finalizeSamLocalTurn(response: AIResponse): AIResponse {
     text = `${text}${SAM_LOCAL_FOOTER}`;
   }
   return { ...response, text };
+}
+
+/**
+ * Abort beats fabricate (spec 2026-07-13 §3) — shared transport wrapper for
+ * BOTH `provider.sendMessage` call sites (primary send and stale-session
+ * retry). A THROWN call (spawn failure — exit-code and timeout failures
+ * resolve with error text instead and are handled by finalizeSamClaudeTurn)
+ * on a SAM→Claude turn resolves to `aborted: true` with the bilingual
+ * notice; the call sites return it immediately — never fall through to the
+ * local model. Non-SAM turns rethrow unchanged. Exported for testing.
+ */
+export async function sendWithSamAbortGuard(
+  samClaudeTurn: boolean,
+  send: () => Promise<AIResponse>,
+  logContext: { chatId: string; site: 'primary' | 'stale-retry' },
+): Promise<{ aborted: boolean; response: AIResponse }> {
+  try {
+    return { aborted: false, response: await send() };
+  } catch (err) {
+    if (samClaudeTurn) {
+      logger.error({ err, ...logContext }, 'SAM Claude-path turn threw — aborting');
+      return { aborted: true, response: { text: SAM_ABORT_MESSAGE, provider: 'claude', failed: true } };
+    }
+    throw err;
+  }
 }
 
 /**
@@ -1582,9 +1614,15 @@ export class ProviderRouter {
       ? localTurn!.allowedTools
       : (deliverableIntent.isDeliverable ? deliverableIntent.allowedTools! : (allowedTools ?? undefined));
 
-    let response: AIResponse;
-    try {
-      response = await provider.sendMessage({
+    // Abort beats fabricate (spec 2026-07-13): a SAM turn routed to Claude
+    // whose subprocess THREW (spawn failure — exit-code and timeout
+    // failures resolve with error text instead and are handled by
+    // finalizeSamClaudeTurn below) aborts with the bilingual notice.
+    // Never fall through to the local model. Guard shared with the
+    // stale-session retry below (review Minor 2026-07-13).
+    const primarySend = await sendWithSamAbortGuard(
+      this.samTurnKind.get(chatId) === 'claude',
+      () => provider.sendMessage({
         ...params,
         message: effectiveMessage,
         sessionId: effectiveSessionId,
@@ -1593,19 +1631,11 @@ export class ProviderRouter {
         allowedTools: effectiveAllowedTools,
         modelOverride,
         assembledSystemPrompt: provider.name === 'ollama' ? true : undefined,
-      });
-    } catch (err) {
-      // Abort beats fabricate (spec 2026-07-13): a SAM turn routed to Claude
-      // whose subprocess THREW (spawn failure — exit-code and timeout
-      // failures resolve with error text instead and are handled by
-      // finalizeSamClaudeTurn below) aborts with the bilingual notice.
-      // Never fall through to the local model.
-      if (this.samTurnKind.get(chatId) === 'claude') {
-        logger.error({ err, chatId }, 'SAM Claude-path turn threw — aborting');
-        return { text: SAM_ABORT_MESSAGE, provider: 'claude', failed: true };
-      }
-      throw err;
-    }
+      }),
+      { chatId, site: 'primary' },
+    );
+    if (primarySend.aborted) return primarySend.response;
+    let response = primarySend.response;
 
     // Track whether the deliverable retry hit the hard-error branch
     // (unable to generate after two attempts). Used at the memory-answer
@@ -1759,12 +1789,21 @@ export class ProviderRouter {
       logger.warn({ chatId, sessionId }, 'Stale Claude session detected, retrying without --resume');
       await clearSession(chatId);
 
-      const retryResponse = await provider.sendMessage({
-        ...params,
-        sessionId: undefined,
-        systemPrompt,
-        allowedTools: effectiveAllowedTools,
-      });
+      // Same abort-over-fabricate guard as the primary send (review Minor
+      // 2026-07-13): a SAM→Claude turn whose stale retry spawn-throws must
+      // surface SAM_ABORT_MESSAGE, not a generic propagated error.
+      const retrySend = await sendWithSamAbortGuard(
+        samKind === 'claude',
+        () => provider.sendMessage({
+          ...params,
+          sessionId: undefined,
+          systemPrompt,
+          allowedTools: effectiveAllowedTools,
+        }),
+        { chatId, site: 'stale-retry' },
+      );
+      if (retrySend.aborted) return retrySend.response;
+      const retryResponse = retrySend.response;
 
       // Persist new session ID from retry
       if (retryResponse.newSessionId) {

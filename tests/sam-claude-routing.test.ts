@@ -10,6 +10,8 @@ import {
   isClaudeFailureResponse,
   finalizeSamClaudeTurn,
   finalizeSamLocalTurn,
+  sendWithSamAbortGuard,
+  FALLBACK_DISCLOSURE,
 } from '../src/providers/router.js';
 import { buildClaudeTimeoutError } from '../src/circuit-breaker.js';
 import type { AIResponse } from '../src/providers/types.js';
@@ -134,5 +136,45 @@ describe('finalizeSamLocalTurn (forced footer + UNVERIFIED banner)', () => {
   it('is idempotent — neither banner nor footer doubles', () => {
     const once = finalizeSamLocalTurn({ ...base });
     expect(finalizeSamLocalTurn(once).text).toBe(once.text);
+  });
+  // Review Minor (2026-07-13): a hysteresis-bucketed novalink-pinned turn
+  // rescued by the Claude soft fallback reaches this finalizer with
+  // respondedVia claude — the response object is the Claude fallback
+  // wholesale (provider: 'claude', FALLBACK_DISCLOSURE-prefixed). Stamping
+  // "via local model (forced)" on it would be contradictory provenance.
+  it('cloud-fallback rescue (provider claude) → returned unchanged: no local footer, no banner', () => {
+    const rescued: AIResponse = { provider: 'claude', text: `${FALLBACK_DISCLOSURE}real answer from the fallback` };
+    const out = finalizeSamLocalTurn(rescued);
+    expect(out.text).toBe(rescued.text);
+    expect(out.text!.endsWith(SAM_LOCAL_FOOTER)).toBe(false);
+    expect(out.text!.startsWith(SAM_UNVERIFIED_BANNER)).toBe(false);
+  });
+});
+
+// Review Minor (2026-07-13): the throw→abort conversion is shared transport
+// logic for BOTH provider.sendMessage call sites — the primary send AND the
+// stale-session retry. Extracted so one tested code path covers both; a
+// SAM→Claude turn whose stale retry spawn-throws must surface
+// SAM_ABORT_MESSAGE, not a generic propagated error.
+describe('sendWithSamAbortGuard (spawn-throw abort — primary + stale-session retry)', () => {
+  const ctx = { chatId: 'c1', site: 'stale-retry' as const };
+
+  it('a thrown provider call on a SAM→Claude turn resolves to the abort response', async () => {
+    const out = await sendWithSamAbortGuard(true, async () => { throw new Error('spawn claude ENOENT'); }, ctx);
+    expect(out.aborted).toBe(true);
+    expect(out.response.text).toBe(SAM_ABORT_MESSAGE);
+    expect(out.response.failed).toBe(true);
+    expect(out.response.provider).toBe('claude');
+  });
+  it('a thrown call on a non-SAM turn rethrows unchanged', async () => {
+    await expect(
+      sendWithSamAbortGuard(false, async () => { throw new Error('boom'); }, { chatId: 'c1', site: 'primary' }),
+    ).rejects.toThrow('boom');
+  });
+  it('a successful call passes the response through un-aborted', async () => {
+    const resp: AIResponse = { provider: 'claude', text: 'ok' };
+    const out = await sendWithSamAbortGuard(true, async () => resp, { chatId: 'c1', site: 'primary' });
+    expect(out.aborted).toBe(false);
+    expect(out.response).toBe(resp);
   });
 });
