@@ -941,6 +941,29 @@ export function finalizeSamLocalTurn(response: AIResponse): AIResponse {
   return { ...response, text };
 }
 
+/** Exact footer for the rc.137 unpinned-local safety net (below). */
+export const SAM_LOCAL_UNPINNED_FOOTER = '\n\n⚠️ via local model (unpinned SAM turn)';
+
+/**
+ * Unpinned-local safety net (rc.137): mid-loop tool widening or a SAM
+ * vocabulary miss (matchesSamVocabulary) can let sam_* tools execute on a
+ * turn that was never pinned to the SAM path (samKind null/undefined).
+ * Label such answers so provenance is never silently unattributed. Never
+ * applies when samKind is set (finalizeSamClaudeTurn/finalizeSamLocalTurn
+ * above already finalize those) or to Claude-provider responses. Idempotent.
+ * Exported for testing.
+ */
+export function finalizeUnpinnedSamLocalTurn(
+  response: AIResponse,
+  samKind: 'claude' | 'local' | null | undefined,
+): AIResponse {
+  if (samKind) return response;
+  if (response.provider === 'claude') return response;
+  if (response.samToolStats === undefined) return response;
+  if (response.text?.endsWith(SAM_LOCAL_UNPINNED_FOOTER)) return response;
+  return { ...response, text: `${response.text ?? ''}${SAM_LOCAL_UNPINNED_FOOTER}` };
+}
+
 /**
  * Abort beats fabricate (spec 2026-07-13 §3) — shared transport wrapper for
  * BOTH `provider.sendMessage` call sites (primary send and stale-session
@@ -1815,6 +1838,7 @@ export class ProviderRouter {
       let finalRetry = retryResponse;
       if (samKind === 'claude') finalRetry = finalizeSamClaudeTurn(finalRetry);
       else if (samKind === 'local') finalRetry = finalizeSamLocalTurn(finalRetry);
+      else finalRetry = finalizeUnpinnedSamLocalTurn(finalRetry, samKind);
 
       if (autoTriggerNotice) finalRetry.autoTriggerNotice = autoTriggerNotice;
       if (!params.skipTurnLog) {
@@ -1828,15 +1852,19 @@ export class ProviderRouter {
       return finalRetry;
     }
 
-    // SAM turn finalization (spec 2026-07-13): Claude-path turns abort on
-    // failure (never a silent local fallback) and carry the provenance
-    // footer; local SAM turns carry the forced footer + the UNVERIFIED
-    // banner when zero sam_* tools executed. Placed after the stale-session
-    // retry so a recoverable stale session is retried BEFORE being judged.
+    // SAM turn finalization (spec 2026-07-13, safety net rc.137): Claude-path
+    // turns abort on failure (never a silent local fallback) and carry the
+    // provenance footer; local SAM turns carry the forced footer + the
+    // UNVERIFIED banner when zero sam_* tools executed; unpinned turns that
+    // still ran sam_* tools (mid-loop widening or a vocabulary miss) get the
+    // unpinned-safety-net footer. Placed after the stale-session retry so a
+    // recoverable stale session is retried BEFORE being judged.
     if (samKind === 'claude') {
       response = finalizeSamClaudeTurn(response);
     } else if (samKind === 'local') {
       response = finalizeSamLocalTurn(response);
+    } else {
+      response = finalizeUnpinnedSamLocalTurn(response, samKind);
     }
 
     // Persist new session ID for Claude. Only Claude ever sets
