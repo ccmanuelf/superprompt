@@ -83,11 +83,9 @@ case "$cmd" in
     ;;
   set-status)
     [ $# -ge 2 ] || { echo "usage: sam set-status <id> <status> [confidence_pct]" >&2; exit 2; }
-    if [ $# -ge 3 ]; then
-      body=$(printf '{"status":"%s","confidence_pct":%s}' "$2" "$3")
-    else
-      body=$(printf '{"status":"%s"}' "$2")
-    fi
+    # Build the body with JSON.stringify (not printf interpolation) so a
+    # status value containing quotes cannot inject arbitrary JSON keys.
+    body=$(node -e 'const [s, c] = process.argv.slice(1); const b = { status: s }; if (c !== undefined && c !== "") b.confidence_pct = Number(c); process.stdout.write(JSON.stringify(b));' "$2" "${3:-}")
     curl -fsS --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
       -X PATCH -d "$body" "$BASE/analyses/$1"
     ;;
