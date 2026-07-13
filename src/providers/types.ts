@@ -103,6 +103,13 @@ export interface AIResponse {
    * not the transport-level failures `failed` is designed to catch.
    */
   novalinkToolStats?: { calls: number; errors: number };
+  /**
+   * Per-turn `sam_*` tool-call outcome counts — same mechanism and
+   * absent-means-zero-calls convention as novalinkToolStats. Consumed by
+   * the router's forced-local SAM guard: a SAM turn answered locally with
+   * this field absent gets the UNVERIFIED banner (spec 2026-07-13 §5).
+   */
+  samToolStats?: { calls: number; errors: number };
 }
 
 export interface AIProvider {

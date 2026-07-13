@@ -185,6 +185,21 @@ export function updateNovalinkStats(
 }
 
 /**
+ * Forced-local SAM guard (spec 2026-07-13 §5) — sam_* twin of
+ * updateNovalinkStats above: same error-shaped-result signal, different
+ * tool prefix. Pure — does not mutate `stats`.
+ */
+export function updateSamStats(
+  stats: { calls: number; errors: number },
+  toolName: string,
+  result: unknown,
+): { calls: number; errors: number } {
+  if (!toolName.startsWith('sam_')) return stats;
+  const isError = Boolean(result && typeof result === 'object' && 'error' in result);
+  return { calls: stats.calls + 1, errors: stats.errors + (isError ? 1 : 0) };
+}
+
+/**
  * Heuristic to detect if a message likely needs tool calls.
  * Routes to tool model when detected, chat model otherwise.
  */
@@ -577,6 +592,8 @@ export class OllamaProvider implements AIProvider {
     let toolErrorCount = 0;
     // Fabrication guard — per-turn novalink_* call/error counts (rc.129+).
     let novalinkStats = { calls: 0, errors: 0 };
+    // Forced-local SAM guard — per-turn sam_* call/error counts (spec 2026-07-13).
+    let samStats = { calls: 0, errors: 0 };
     let thinkingContent: string | undefined;
     const generatedFiles: { path: string; filename: string; mimeType: string }[] = [];
     let kanbanToolCalled = false;
@@ -650,6 +667,7 @@ export class OllamaProvider implements AIProvider {
           toolsUsed: toolsUsedSet.size > 0 ? [...toolsUsedSet] : undefined,
           toolErrorCount: toolErrorCount > 0 ? toolErrorCount : undefined,
           novalinkToolStats: novalinkStats.calls > 0 ? novalinkStats : undefined,
+          samToolStats: samStats.calls > 0 ? samStats : undefined,
         };
       }
 
@@ -734,6 +752,7 @@ export class OllamaProvider implements AIProvider {
         // tools, so the router can detect a bridge outage even when this
         // turn otherwise completes "successfully" (no `failed` flag).
         novalinkStats = updateNovalinkStats(novalinkStats, toolName, result);
+        samStats = updateSamStats(samStats, toolName, result);
 
         // Circuit breaker: record result for pattern detection
         breaker.recordResult(toolName, toolArgs, result);
@@ -805,6 +824,7 @@ export class OllamaProvider implements AIProvider {
       hitMaxIterations: true,
       toolErrorCount: toolErrorCount > 0 ? toolErrorCount : undefined,
       novalinkToolStats: novalinkStats.calls > 0 ? novalinkStats : undefined,
+      samToolStats: samStats.calls > 0 ? samStats : undefined,
       failed,
     };
   }
