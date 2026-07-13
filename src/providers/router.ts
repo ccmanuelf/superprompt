@@ -5,7 +5,7 @@ import type { Message as OllamaMessage } from 'ollama';
 import { config } from '../config.js';
 import { NOVALINK_BRIDGE_PROMPT } from './bridge-prompt.js';
 import { logger } from '../logger.js';
-import { selectBucket, toolNamesForBucket, type BucketId } from './local-buckets.js';
+import { selectBucket, toolNamesForBucket, SAM_TRIGGER_PATTERN, type BucketId } from './local-buckets.js';
 import { buildLocalSystemPrompt } from './local-prompt.js';
 import {
   getSession,
@@ -840,6 +840,37 @@ export function shouldNoteMemoryAnswer(args: { pinned: boolean; fellBack: boolea
 export function applyMemoryAnswerNote(response: AIResponse): AIResponse {
   if (response.text?.endsWith(MEMORY_ANSWER_NOTE)) return response;
   return { ...response, text: `${response.text ?? ''}${MEMORY_ANSWER_NOTE}` };
+}
+
+// ── SAM → Claude pin (spec 2026-07-13) ──────────────────────────────────
+// Task 9 live smoke (2026-07-10) proved qwen3.5:4b fabricates SAM data:
+// 2 of 3 sam-bucket turns produced complete fake analyses tables with zero
+// tool calls. Abort beats fabricate — quoting/billing numbers that are
+// plausible-and-wrong are worse than "temporarily unavailable". SAM turns
+// therefore route to Claude by default; the vocabulary is the SAME regex
+// the local sam bucket uses (SAM_TRIGGER_PATTERN — single source, rc.135
+// adversarially probed).
+
+/** True iff the message carries SAM vocabulary. Exported for testing. */
+export function isSamDataTurn(message: string): boolean {
+  return SAM_TRIGGER_PATTERN.test(message);
+}
+
+/**
+ * Pure routing decision for a potential SAM turn. Returns:
+ *   'claude' — pin to the Claude provider (modes auto/claude; abort on failure)
+ *   'local'  — explicit /sam local opt-in (LAN-only reads, unverified)
+ *   null     — not a SAM turn (no vocabulary match, or SAM env not configured)
+ * Unknown/legacy sam_route values fall back to 'auto' behavior (claude) —
+ * the safe default is the one that cannot fabricate.
+ */
+export function resolveSamTurnRoute(args: {
+  samConfigured: boolean;
+  message: string;
+  samRoute: string | null | undefined;
+}): 'claude' | 'local' | null {
+  if (!args.samConfigured || !isSamDataTurn(args.message)) return null;
+  return args.samRoute === 'local' ? 'local' : 'claude';
 }
 
 /**
