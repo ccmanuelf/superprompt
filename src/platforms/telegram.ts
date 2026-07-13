@@ -14,6 +14,7 @@ import type { CardStatus, CardAssignee } from '../kanban.js';
 import type { DigestFrequency } from '../proactive.js';
 import type { CitationFormat } from '../citations.js';
 import { parseCalcModeFromText } from '../calculations/handler-boundary.js';
+import { extractSendFileMarkers, validateSendFilePath, sendFileDisplayName } from './send-file-marker.js';
 
 const TYPING_REFRESH_MS = 4000;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -355,6 +356,28 @@ export async function handleMessageInner(
           responseText = pc.docgen.stripBlock(responseText);
         } catch (err) {
           logger.warn({ err }, 'Document generation failed, sending raw response');
+        }
+      }
+    }
+
+    // 5b1a. [send-file:<path>] marker — Claude-path file delivery
+    // (spec 2026-07-13 §6; e.g. the `sam export` wrapper). Validate hard,
+    // fail soft: an invalid/missing file strips the marker, logs a warning,
+    // and the text still delivers.
+    if (responseText && responseText.includes('[send-file:')) {
+      const { cleaned, paths } = extractSendFileMarkers(responseText);
+      responseText = cleaned;
+      for (const rawPath of paths) {
+        const safePath = validateSendFilePath(rawPath, UPLOADS_DIR);
+        if (!safePath) {
+          logger.warn({ rawPath }, 'send-file marker rejected — not an absolute path under UPLOADS_DIR');
+          continue;
+        }
+        try {
+          const fileBuffer = await readFile(safePath);
+          await ctx.replyWithDocument(new InputFile(fileBuffer, sendFileDisplayName(safePath)));
+        } catch (err) {
+          logger.warn({ err, path: safePath }, 'send-file marker: file missing/unreadable — delivering text without it');
         }
       }
     }
@@ -1005,7 +1028,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
         '<b>💬 Chat &amp; AI</b>\n' +
         '/newchat — Fresh session  •  /memory — Stored memories\n' +
-        '/claude /ollama /auto — Switch AI provider\n' +
+        '/claude /ollama /auto — Switch AI provider  •  /sam — SAM routing\n' +
         '/skill — AI personas  •  /careful — Safety mode\n\n' +
 
         '<b>🏭 Manufacturing Tools</b>\n' +
@@ -1058,6 +1081,7 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         '/claude — Switch to Claude provider\n' +
         '/ollama — Switch to Ollama provider\n' +
         '/auto — Toggle auto-routing\n' +
+        '/sam claude|local|auto — SAM data routing (default: Claude, abort on failure)\n' +
         '/provider — Show current provider\n' +
         '/usage — Provider call counts (this month)\n' +
         '/models — List Ollama models\n' +
@@ -1462,6 +1486,33 @@ export function createTelegramBot(pc: PlatformContext): Bot {
         (enabled
           ? 'Provider will be selected automatically per message.\nUse /claude or /ollama to switch back to manual.'
           : 'Use /claude or /ollama to set provider manually.'),
+      { parse_mode: 'HTML' },
+    );
+  });
+
+  // /sam — per-chat SAM routing mode (spec 2026-07-13 §4). Mirrors /auto's
+  // shape; persists to sessions.sam_route. Matrix intentionally skipped
+  // (Matrix is OFF in prod — spec §4).
+  bot.command('sam', async (ctx) => {
+    if (!isAuthorised(ctx.chat.id)) return;
+    const chatId = String(ctx.chat.id);
+    const text = ctx.message?.text ?? '';
+    const arg = text.replace(/^\/sam(@\w+)?/, '').trim().toLowerCase();
+    const MODES_HELP =
+      '<b>auto</b> — SAM questions answered by Claude; aborts if Claude is down (default) / preguntas SAM respondidas por Claude; aborta si Claude falla (predeterminado)\n' +
+      '<b>claude</b> — force Claude; aborts on failure / forzar Claude; aborta si falla\n' +
+      '<b>local</b> — LAN-only local model; replies are ⚠️ unverified unless SAM tools ran / modelo local solo-LAN; respuestas ⚠️ no verificadas si no se consultó SAM';
+    if (arg === 'auto' || arg === 'claude' || arg === 'local') {
+      await router.setSamRouteMode(chatId, arg);
+      await ctx.reply(`🧭 SAM routing set to <b>${arg}</b>. / Ruteo SAM: <b>${arg}</b>.\n\n${MODES_HELP}`, {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+    const mode = await router.getSamRouteMode(chatId);
+    await ctx.reply(
+      `🧭 SAM routing: <b>${mode}</b>\n\n` +
+        `Use /sam claude | local | auto to change. / Usa /sam claude | local | auto para cambiar.\n\n${MODES_HELP}`,
       { parse_mode: 'HTML' },
     );
   });

@@ -4,8 +4,9 @@ import { OllamaProvider, clearOllamaHistory, seedOllamaHistory } from './ollama.
 import type { Message as OllamaMessage } from 'ollama';
 import { config } from '../config.js';
 import { NOVALINK_BRIDGE_PROMPT } from './bridge-prompt.js';
+import { NOVALINK_SAM_PROMPT, SAM_CONFIGURED } from './sam-prompt.js';
 import { logger } from '../logger.js';
-import { selectBucket, toolNamesForBucket, type BucketId } from './local-buckets.js';
+import { selectBucket, toolNamesForBucket, SAM_TRIGGER_PATTERN, type BucketId } from './local-buckets.js';
 import { buildLocalSystemPrompt } from './local-prompt.js';
 import {
   getSession,
@@ -16,6 +17,9 @@ import {
   clearSession,
   setAutoRoute,
   isAutoRouteEnabled,
+  setSamRoute,
+  getSamRoute,
+  type SamRouteMode,
   appendChatLog,
   getRecentChatLog,
   type ChatLogEntry,
@@ -842,6 +846,126 @@ export function applyMemoryAnswerNote(response: AIResponse): AIResponse {
   return { ...response, text: `${response.text ?? ''}${MEMORY_ANSWER_NOTE}` };
 }
 
+// ── SAM → Claude pin (spec 2026-07-13) ──────────────────────────────────
+// Task 9 live smoke (2026-07-10) proved qwen3.5:4b fabricates SAM data:
+// 2 of 3 sam-bucket turns produced complete fake analyses tables with zero
+// tool calls. Abort beats fabricate — quoting/billing numbers that are
+// plausible-and-wrong are worse than "temporarily unavailable". SAM turns
+// therefore route to Claude by default; the vocabulary is the SAME regex
+// the local sam bucket uses (SAM_TRIGGER_PATTERN — single source, rc.135
+// adversarially probed).
+
+/** True iff the message carries SAM vocabulary. Exported for testing. */
+export function isSamDataTurn(message: string): boolean {
+  return SAM_TRIGGER_PATTERN.test(message);
+}
+
+/**
+ * Pure routing decision for a potential SAM turn. Returns:
+ *   'claude' — pin to the Claude provider (modes auto/claude; abort on failure)
+ *   'local'  — explicit /sam local opt-in (LAN-only reads, unverified)
+ *   null     — not a SAM turn (no vocabulary match, or SAM env not configured)
+ * Unknown/legacy sam_route values fall back to 'auto' behavior (claude) —
+ * the safe default is the one that cannot fabricate.
+ */
+export function resolveSamTurnRoute(args: {
+  samConfigured: boolean;
+  message: string;
+  samRoute: string | null | undefined;
+}): 'claude' | 'local' | null {
+  if (!args.samConfigured || !isSamDataTurn(args.message)) return null;
+  return args.samRoute === 'local' ? 'local' : 'claude';
+}
+
+/** Exact abort copy (spec 2026-07-13 §3) — shown INSTEAD of any reply when a
+ * SAM turn's Claude path fails. Never fall through to the local model. */
+export const SAM_ABORT_MESSAGE =
+  '⚠️ SAM is temporarily unavailable via Claude — retry shortly, or use /sam local for LAN-only reads (unverified). / SAM no está disponible vía Claude por el momento — reintenta en un momento, o usa /sam local para lecturas solo-LAN (no verificadas).';
+
+/** Exact provenance strings (spec 2026-07-13 §5). */
+export const SAM_CLAUDE_FOOTER = '\n\n— via Claude + SAM API';
+export const SAM_LOCAL_FOOTER = '\n\n⚠️ via local model (forced)';
+export const SAM_UNVERIFIED_BANNER =
+  '⚠️ UNVERIFIED — no live SAM data was fetched this turn. / NO VERIFICADO — no se consultó SAM en este turno.\n\n';
+
+/**
+ * Claude failure detection for the SAM abort. ClaudeProvider.sendMessage
+ * never sets `failed`: it resolves with error TEXT on exit≠0
+ * ("Claude CLI error (exit N): …", claude.ts) and on timeout kill
+ * (buildClaudeTimeoutError → "…Claude response timed out after Ns…",
+ * circuit-breaker.ts), and rejects only on spawn failure (caught at the
+ * router's call site). Null text from Claude is also a failure — an empty
+ * SAM answer must abort, not ship a blank footer.
+ */
+export function isClaudeFailureResponse(response: AIResponse): boolean {
+  if (response.provider !== 'claude') return false;
+  if (!response.text) return true;
+  return (
+    response.text.startsWith('Claude CLI error')
+    || response.text.includes('Claude response timed out after')
+  );
+}
+
+/** Claude-path SAM turn: abort on failure, provenance footer on success. Idempotent. */
+export function finalizeSamClaudeTurn(response: AIResponse): AIResponse {
+  if (response.text === SAM_ABORT_MESSAGE) return response;
+  if (isClaudeFailureResponse(response)) {
+    logger.warn({ replacedText: response.text?.slice(0, 200) ?? null }, 'SAM Claude-path turn failed — aborting (abort beats fabricate)');
+    return { ...response, text: SAM_ABORT_MESSAGE, failed: true };
+  }
+  if (response.text?.endsWith(SAM_CLAUDE_FOOTER)) return response;
+  return { ...response, text: `${response.text ?? ''}${SAM_CLAUDE_FOOTER}` };
+}
+
+/**
+ * Forced-local SAM turn: UNVERIFIED banner when ZERO sam_* tools executed
+ * this turn (samToolStats absent — same absent-means-no-calls convention as
+ * shouldNoteMemoryAnswer/novalinkToolStats), plus the forced-local footer
+ * always. Idempotent.
+ */
+export function finalizeSamLocalTurn(response: AIResponse): AIResponse {
+  // Cloud-fallback rescue: a hysteresis-bucketed novalink-pinned SAM turn
+  // whose failed local attempt was rescued by the Claude soft fallback
+  // reaches this finalizer with the Claude response wholesale (the fallback
+  // branch replaces `response` and sets respondedVia claude). Stamping
+  // "via local model (forced)" on it would be contradictory provenance —
+  // FALLBACK_DISCLOSURE already labels it. Signal: the provider field.
+  if (response.provider === 'claude') return response;
+  let text = response.text ?? '';
+  if (response.samToolStats === undefined && !text.startsWith(SAM_UNVERIFIED_BANNER)) {
+    text = `${SAM_UNVERIFIED_BANNER}${text}`;
+  }
+  if (!text.endsWith(SAM_LOCAL_FOOTER)) {
+    text = `${text}${SAM_LOCAL_FOOTER}`;
+  }
+  return { ...response, text };
+}
+
+/**
+ * Abort beats fabricate (spec 2026-07-13 §3) — shared transport wrapper for
+ * BOTH `provider.sendMessage` call sites (primary send and stale-session
+ * retry). A THROWN call (spawn failure — exit-code and timeout failures
+ * resolve with error text instead and are handled by finalizeSamClaudeTurn)
+ * on a SAM→Claude turn resolves to `aborted: true` with the bilingual
+ * notice; the call sites return it immediately — never fall through to the
+ * local model. Non-SAM turns rethrow unchanged. Exported for testing.
+ */
+export async function sendWithSamAbortGuard(
+  samClaudeTurn: boolean,
+  send: () => Promise<AIResponse>,
+  logContext: { chatId: string; site: 'primary' | 'stale-retry' },
+): Promise<{ aborted: boolean; response: AIResponse }> {
+  try {
+    return { aborted: false, response: await send() };
+  } catch (err) {
+    if (samClaudeTurn) {
+      logger.error({ err, ...logContext }, 'SAM Claude-path turn threw — aborting');
+      return { aborted: true, response: { text: SAM_ABORT_MESSAGE, provider: 'claude', failed: true } };
+    }
+    throw err;
+  }
+}
+
 /**
  * Heuristic patterns that suggest Claude is the better provider.
  * These indicate complex analysis, creative writing, or document generation.
@@ -1041,7 +1165,7 @@ export function composeClaudeSystemPrompt(p: ClaudePromptParts): string {
   return [
     p.platformIdentity, p.voiceHint, p.systemPrompt, p.skillPrompt,
     p.fullCapabilities, p.mfgHint, p.uploadsManifest,
-    CLAUDE_PROVIDER_NOTICE, NOVALINK_BRIDGE_PROMPT, CLAUDE_DOCUMENT_PROMPT,
+    CLAUDE_PROVIDER_NOTICE, NOVALINK_BRIDGE_PROMPT, NOVALINK_SAM_PROMPT, CLAUDE_DOCUMENT_PROMPT,
     CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST,
     p.deliverableReminder, p.simulationScaffolding, LANGUAGE_HINT, p.languageOverride,
   ].filter(Boolean).join('\n\n');
@@ -1102,6 +1226,10 @@ export class ProviderRouter {
   private chatBuckets = new Map<string, BucketId>();
   /** Chats whose current turn is pinned to local (NovaLink-data governance) — per-turn, reset at the top of the auto-route block (pipeline surgery Task 9) */
   private pinnedTurns = new Set<string>();
+  /** SAM-turn kind per chat — 'claude' (pin, abort on failure) or 'local'
+   * (forced /sam local OR sam-bucket hysteresis turn). Per-turn, reset at
+   * the top of getProviderForChat like pinnedTurns (spec 2026-07-13). */
+  private samTurnKind = new Map<string, 'claude' | 'local'>();
 
   constructor() {
     this.claude = new ClaudeProvider();
@@ -1126,8 +1254,36 @@ export class ProviderRouter {
     // stale pin forever, over-firing the governance fallback below on every
     // later (non-pinned) failed turn.
     this.pinnedTurns.delete(chatId);
+    this.samTurnKind.delete(chatId);
 
     const session = await getSession(chatId);
+
+    // SAM → Claude pin (spec 2026-07-13). Evaluated BEFORE the NovaLink pin
+    // inside the auto-route block below: a turn matching both vocabularies
+    // is a SAM turn — data-quality wins. Applies regardless of auto_route
+    // and manual /ollama selection: the fabrication risk this exists for is
+    // mode-independent, and /sam local is the sanctioned escape hatch.
+    // Classifies the RAW user text (pre-memory-prefix), same as the
+    // novalink pin below.
+    if (message) {
+      const samRoute = resolveSamTurnRoute({
+        samConfigured: SAM_CONFIGURED,
+        message: rawMessage ?? message,
+        samRoute: session?.sam_route,
+      });
+      if (samRoute === 'claude') {
+        logger.info({ chatId, samMode: session?.sam_route ?? 'auto' }, 'SAM data turn — routed to Claude (abort on failure)');
+        this.samTurnKind.set(chatId, 'claude');
+        this.lastUsedProvider.set(chatId, this.claude.name);
+        return this.claude;
+      }
+      if (samRoute === 'local') {
+        logger.info({ chatId }, 'SAM data turn — forced local (/sam local); zero-tool guard active');
+        this.samTurnKind.set(chatId, 'local');
+        this.lastUsedProvider.set(chatId, this.ollama.name);
+        return this.ollama;
+      }
+    }
 
     // Auto-routing: classify message and pick provider
     if (session?.auto_route && message) {
@@ -1352,6 +1508,15 @@ export class ProviderRouter {
       );
       this.chatBuckets.set(chatId, localTurn.bucket);
       logger.info({ chatId, bucket: localTurn.bucket, toolCount: localTurn.allowedTools.length }, 'Local turn bucket selected');
+
+      // Footer keys on the turn BEING a SAM turn — isSamDataTurn OR the sam
+      // bucket selected (spec §5). A hysteresis follow-up ("what about ID 3?")
+      // carries no SAM vocabulary, never pins, and runs locally in the sam
+      // bucket — it still gets the local-provenance disclosure + zero-tool
+      // banner so no locally-produced SAM number ships unlabeled.
+      if (SAM_CONFIGURED && localTurn.bucket === 'sam' && !this.samTurnKind.has(chatId)) {
+        this.samTurnKind.set(chatId, 'local');
+      }
     }
 
     // Capture the caller's system prompt (e.g. learning.getSessionSystemPrompt —
@@ -1449,16 +1614,28 @@ export class ProviderRouter {
       ? localTurn!.allowedTools
       : (deliverableIntent.isDeliverable ? deliverableIntent.allowedTools! : (allowedTools ?? undefined));
 
-    let response = await provider.sendMessage({
-      ...params,
-      message: effectiveMessage,
-      sessionId: effectiveSessionId,
-      systemPrompt,
-      systemPromptAppend: continuityAppend,
-      allowedTools: effectiveAllowedTools,
-      modelOverride,
-      assembledSystemPrompt: provider.name === 'ollama' ? true : undefined,
-    });
+    // Abort beats fabricate (spec 2026-07-13): a SAM turn routed to Claude
+    // whose subprocess THREW (spawn failure — exit-code and timeout
+    // failures resolve with error text instead and are handled by
+    // finalizeSamClaudeTurn below) aborts with the bilingual notice.
+    // Never fall through to the local model. Guard shared with the
+    // stale-session retry below (review Minor 2026-07-13).
+    const primarySend = await sendWithSamAbortGuard(
+      this.samTurnKind.get(chatId) === 'claude',
+      () => provider.sendMessage({
+        ...params,
+        message: effectiveMessage,
+        sessionId: effectiveSessionId,
+        systemPrompt,
+        systemPromptAppend: continuityAppend,
+        allowedTools: effectiveAllowedTools,
+        modelOverride,
+        assembledSystemPrompt: provider.name === 'ollama' ? true : undefined,
+      }),
+      { chatId, site: 'primary' },
+    );
+    if (primarySend.aborted) return primarySend.response;
+    let response = primarySend.response;
 
     // Track whether the deliverable retry hit the hard-error branch
     // (unable to generate after two attempts). Used at the memory-answer
@@ -1513,9 +1690,11 @@ export class ProviderRouter {
         // allDataToolsFailed downstream even when the retry made no novalink
         // calls of its own (stats undefined there).
         const mergedStats = mergeNovalinkStats(response.novalinkToolStats, retryResponse.novalinkToolStats);
+        const mergedSamStats = mergeNovalinkStats(response.samToolStats, retryResponse.samToolStats);
         response = {
           ...retryResponse,
           ...(mergedStats ? { novalinkToolStats: mergedStats } : {}),
+          ...(mergedSamStats ? { samToolStats: mergedSamStats } : {}),
         };
       } else {
         logger.error(
@@ -1601,33 +1780,63 @@ export class ProviderRouter {
       response = applyMemoryAnswerNote(response);
     }
 
+    // SAM-turn kind, resolved once — both the stale-session early return
+    // and the main return below must finalize (spec 2026-07-13 §3/§5).
+    const samKind = this.samTurnKind.get(chatId);
+
     // Handle stale Claude session — clear and retry without --resume
     if (response.staleSession && sessionId) {
       logger.warn({ chatId, sessionId }, 'Stale Claude session detected, retrying without --resume');
       await clearSession(chatId);
 
-      const retryResponse = await provider.sendMessage({
-        ...params,
-        sessionId: undefined,
-        systemPrompt,
-        allowedTools: effectiveAllowedTools,
-      });
+      // Same abort-over-fabricate guard as the primary send (review Minor
+      // 2026-07-13): a SAM→Claude turn whose stale retry spawn-throws must
+      // surface SAM_ABORT_MESSAGE, not a generic propagated error.
+      const retrySend = await sendWithSamAbortGuard(
+        samKind === 'claude',
+        () => provider.sendMessage({
+          ...params,
+          sessionId: undefined,
+          systemPrompt,
+          allowedTools: effectiveAllowedTools,
+        }),
+        { chatId, site: 'stale-retry' },
+      );
+      if (retrySend.aborted) return retrySend.response;
+      const retryResponse = retrySend.response;
 
       // Persist new session ID from retry
       if (retryResponse.newSessionId) {
         await setSession(chatId, retryResponse.newSessionId, provider.name);
       }
 
-      if (autoTriggerNotice) retryResponse.autoTriggerNotice = autoTriggerNotice;
+      // A stale-session retry is Claude→Claude (recovery, not fallback) —
+      // it still needs SAM finalization: footer on success, abort on failure.
+      let finalRetry = retryResponse;
+      if (samKind === 'claude') finalRetry = finalizeSamClaudeTurn(finalRetry);
+      else if (samKind === 'local') finalRetry = finalizeSamLocalTurn(finalRetry);
+
+      if (autoTriggerNotice) finalRetry.autoTriggerNotice = autoTriggerNotice;
       if (!params.skipTurnLog) {
         await this.logConversationTurn(
           chatId,
           provider.name,
           params.rawUserMessage ?? params.message,
-          retryResponse.text,
+          finalRetry.text,
         );
       }
-      return retryResponse;
+      return finalRetry;
+    }
+
+    // SAM turn finalization (spec 2026-07-13): Claude-path turns abort on
+    // failure (never a silent local fallback) and carry the provenance
+    // footer; local SAM turns carry the forced footer + the UNVERIFIED
+    // banner when zero sam_* tools executed. Placed after the stale-session
+    // retry so a recoverable stale session is retried BEFORE being judged.
+    if (samKind === 'claude') {
+      response = finalizeSamClaudeTurn(response);
+    } else if (samKind === 'local') {
+      response = finalizeSamLocalTurn(response);
     }
 
     // Persist new session ID for Claude. Only Claude ever sets
@@ -1730,6 +1939,17 @@ export class ProviderRouter {
     this.lastUsedProvider.delete(chatId); // Reset stickiness on toggle
     logger.info({ chatId, autoRoute: newState }, 'Toggled auto-routing');
     return newState;
+  }
+
+  /** Set the per-chat SAM routing mode (/sam command, spec 2026-07-13 §4). */
+  async setSamRouteMode(chatId: string, mode: SamRouteMode): Promise<void> {
+    await setSamRoute(chatId, mode);
+    logger.info({ chatId, samRoute: mode }, 'SAM routing mode set');
+  }
+
+  /** Read the per-chat SAM routing mode (default 'auto'). */
+  async getSamRouteMode(chatId: string): Promise<SamRouteMode> {
+    return getSamRoute(chatId);
   }
 
   /**

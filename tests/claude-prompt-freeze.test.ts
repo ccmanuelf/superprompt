@@ -12,6 +12,9 @@ import { describe, it, expect, vi } from 'vitest';
 vi.hoisted(() => {
   process.env.NOVALINK_BRIDGE_URL = 'https://bridge.test:5443';
   process.env.NOVALINK_BRIDGE_API_KEY = 'nlb_test_fixture_key';
+  // spec 2026-07-13 — pin the SAM block present too, for the same reason.
+  process.env.NOVALINK_SAM_URL = 'http://sam.test:8080';
+  process.env.NOVALINK_SAM_API_KEY = 'sam_test_fixture_key';
 });
 
 import { composeClaudeSystemPrompt } from '../src/providers/router.js';

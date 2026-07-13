@@ -45,6 +45,18 @@ export const BUCKET_TOOLS: Record<Exclude<BucketId, 'core'>, string[]> = {
 };
 
 /**
+ * SAM trigger vocabulary — the SINGLE source consumed by BOTH the bucket
+ * table below and the router's Claude-path SAM pin (spec 2026-07-13 §3).
+ * Adversarially probed in rc.135; precision-first (mirrors
+ * packs/sam/pack.yaml intent_patterns): bare "sam" is a person-name magnet,
+ * so only SAM-specific phrases match. Deliberately NOT matched: "line
+ * balance"/"balanceo" (stays manufacturing — line_balance lives there) and
+ * bare "quote"/"cotización" (too generic). No /g flag: this object is shared
+ * across callers, and a sticky lastIndex would corrupt .test() results.
+ */
+export const SAM_TRIGGER_PATTERN = /\b(standard allowed minutes?|minutos? est[aá]ndar|sam analys\w*|an[aá]lisis (de )?sam|sam (health|status|connection)|measured times?|stopwatch times?|tiempos? (medidos?|cronometrados?)|tech ?packs?|gsd|modapts|per.?piece (billing|cost|price)|(costo|precio) por pieza)\b/i;
+
+/**
  * Bucket trigger regexes, EN+ES, checked in declaration order. Specific-vocabulary
  * buckets (simulation, manufacturing, devops) are checked before the generic
  * docs bucket, so domain-specific phrases containing generic doc words (e.g.
@@ -53,12 +65,9 @@ export const BUCKET_TOOLS: Record<Exclude<BucketId, 'core'>, string[]> = {
 const BUCKET_PATTERNS: Array<[Exclude<BucketId, 'core'>, RegExp]> = [
   ['simulation', /\b(simulat\w*|simulaci[oó]n|doe\b|design of experiments|experiment\w*|state machine|m[aá]quina de estados|minizinc|conwip|heijunka|sequenc\w* (the )?jobs?|secuencia\w* (de )?trabajos?)\b/i],
   // sam before manufacturing: SAM asks often carry generic mfg words ("capacity",
-  // "production") that would otherwise capture them. Precision-first vocabulary
-  // (mirrors packs/sam/pack.yaml intent_patterns): bare "sam" is a person-name
-  // magnet, so only SAM-specific phrases match. Deliberately NOT matched: "line
-  // balance"/"balanceo" (stays manufacturing — line_balance lives there) and bare
-  // "quote"/"cotización" (too generic).
-  ['sam', /\b(standard allowed minutes?|minutos? est[aá]ndar|sam analys\w*|an[aá]lisis (de )?sam|sam (health|status|connection)|measured times?|stopwatch times?|tiempos? (medidos?|cronometrados?)|tech ?packs?|gsd|modapts|per.?piece (billing|cost|price)|(costo|precio) por pieza)\b/i],
+  // "production") that would otherwise capture them. Vocabulary lives in the
+  // exported SAM_TRIGGER_PATTERN above (shared with the router's Claude pin).
+  ['sam', SAM_TRIGGER_PATTERN],
   ['manufacturing', /\b(bom|shortage|faltante|compan(y|ies)\s+\d+|companies\b|compa[ñn][ií]as?\s+\d+|capacity|capacidad|value stream|flujo de valor|toc\b|bottleneck|cuello de botella|balance|sigma|cpk|spc|control chart|carta de control|fmea|rca|root cause|causa ra[ií]z|inventory|inventario|novalink|producci[oó]n|production data)\b/i],
   ['devops', /\b(github|repo|repos|branch|commit|push|pull request|prs?\b|issues\b|(open|creat\w*|file|list|clos\w*|track\w*)\s+(an?\s+)?issues?\b|render|deploy|deployment|clone|run command|ejecuta\w* (el )?comando)\b/i],
   ['docs', /\b(pdf|docx|xlsx|pptx|csv|report|reporte|informe|document|documento|archivo|file|spreadsheet|hoja de c[aá]lculo|citation|cita|papers?|art[ií]culos?)\b/i],

@@ -168,8 +168,11 @@ describe('SAM read handlers (stubbed fetch)', () => {
   });
 
   it('sam_search returns a config error when env is missing', async () => {
-    delete process.env.NOVALINK_SAM_URL;
-    delete process.env.NOVALINK_SAM_API_KEY;
+    // Empty strings (not `delete`) so the dev machine's .env values can't
+    // show through the { ...readEnvFile(), ...process.env } merge —
+    // resolveSamConfig treats empty as missing either way.
+    process.env.NOVALINK_SAM_URL = '';
+    process.env.NOVALINK_SAM_API_KEY = '';
     const out = await samSearch({ kind: 'products' });
     expect(String(out.error)).toContain('NOVALINK_SAM_URL');
   });

@@ -72,6 +72,13 @@ COPY docs/ ./docs/
 # Colima daemon on the prod box runs the legacy builder.
 COPY docker/bridge /usr/local/bin/bridge
 RUN chmod 755 /usr/local/bin/bridge
+# NovaLink SAM wrapper for the claude -p subprocess (bearer curl; key/URL
+# from env; JSON filtered with node — no jq in the image). Referenced by
+# the SAM system-prompt block (src/providers/sam-prompt.ts). Same plain
+# COPY + chmod rationale as the bridge wrapper above: never COPY --chmod —
+# the Colima daemon on the prod box runs the legacy (non-BuildKit) builder.
+COPY docker/sam /usr/local/bin/sam
+RUN chmod 755 /usr/local/bin/sam
 # Copy domain packs (tools, skills, templates for department customization)
 COPY packs/ ./packs/
 # Copy forge directory (user tools and skills for auto-import)

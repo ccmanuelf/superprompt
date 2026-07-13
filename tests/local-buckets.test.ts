@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  selectBucket, toolNamesForBucket, bucketForTool, CORE_TOOLS, BUCKET_TOOLS,
+  selectBucket, toolNamesForBucket, bucketForTool, CORE_TOOLS, BUCKET_TOOLS, SAM_TRIGGER_PATTERN,
 } from '../src/providers/local-buckets.js';
 
 describe('bucket selection', () => {
@@ -70,5 +70,22 @@ describe('bucket tool lists', () => {
   it('per-turn schema count target: core + largest bucket ≤ 22', () => {
     const counts = Object.keys(BUCKET_TOOLS).map((b) => toolNamesForBucket(b as never).length);
     expect(Math.max(...counts)).toBeLessThanOrEqual(22);
+  });
+});
+
+// spec 2026-07-13 — the sam trigger vocabulary is exported so the router's
+// Claude-path pin and the bucket table share ONE source (no drift).
+describe('SAM_TRIGGER_PATTERN export (single vocabulary source)', () => {
+  it('matches exactly what the sam bucket matches', () => {
+    const samAsk = 'draft a sam analysis from this tech pack';
+    expect(SAM_TRIGGER_PATTERN.test(samAsk)).toBe(true);
+    expect(selectBucket(samAsk, undefined)).toBe('sam');
+    const personName = 'Sam said hi about the meeting';
+    expect(SAM_TRIGGER_PATTERN.test(personName)).toBe(false);
+    expect(selectBucket(personName, undefined)).toBe('core');
+  });
+  it('has no global flag (shared RegExp object — no lastIndex statefulness across the two consumers)', () => {
+    expect(SAM_TRIGGER_PATTERN.global).toBe(false);
+    expect(SAM_TRIGGER_PATTERN.flags).toBe('i');
   });
 });

@@ -26,6 +26,7 @@ export interface Session {
   ollama_model: string | null;
   claude_model: string | null;
   auto_route: number;
+  sam_route: string;
   updated_at: number;
 }
 
@@ -133,6 +134,7 @@ async function createCoreTables(db: Knex): Promise<void> {
       t.string('provider').notNullable().defaultTo('claude');
       t.string('ollama_model').nullable();
       t.integer('auto_route').notNullable().defaultTo(0);
+      t.string('sam_route').notNullable().defaultTo('auto');
       t.bigInteger('updated_at').notNullable();
     });
   }
@@ -147,6 +149,10 @@ async function createCoreTables(db: Knex): Promise<void> {
   // Migration: claude_model (rc.68) — per-chat Claude model override
   if (!(await columnExists(db, 'sessions', 'claude_model'))) {
     await db.schema.alterTable('sessions', (t) => { t.string('claude_model').nullable(); });
+  }
+  // Migration: sam_route (rc.136) — per-chat SAM routing mode (spec 2026-07-13)
+  if (!(await columnExists(db, 'sessions', 'sam_route'))) {
+    await db.schema.alterTable('sessions', (t) => { t.string('sam_route').notNullable().defaultTo('auto'); });
   }
 
   // chat_log (rc.69) — provider-agnostic turn log for cross-provider continuity
@@ -555,6 +561,28 @@ export async function setAutoRoute(chatId: string, enabled: boolean): Promise<vo
 export async function isAutoRouteEnabled(chatId: string): Promise<boolean> {
   const session = await getSession(chatId);
   return session?.auto_route === 1;
+}
+
+export type SamRouteMode = 'auto' | 'claude' | 'local';
+
+/** Set the per-chat SAM routing mode. Mirrors setAutoRoute (creates the
+ * session row if the chat has none yet). spec 2026-07-13 §4. */
+export async function setSamRoute(chatId: string, mode: SamRouteMode): Promise<void> {
+  const db = getKnex();
+  const session = await getSession(chatId);
+  if (session) {
+    await db('sessions').where({ chat_id: chatId }).update({ sam_route: mode, updated_at: Date.now() });
+  } else {
+    await db('sessions').insert({ chat_id: chatId, session_id: '', provider: 'claude', sam_route: mode, updated_at: Date.now() });
+  }
+}
+
+/** Read the per-chat SAM routing mode; anything unrecognized reads as 'auto'
+ * (the safe default — Claude-with-abort cannot fabricate). */
+export async function getSamRoute(chatId: string): Promise<SamRouteMode> {
+  const session = await getSession(chatId);
+  const v = session?.sam_route;
+  return v === 'claude' || v === 'local' ? v : 'auto';
 }
 
 // ── Memories CRUD ───────────────────────────────────────────
