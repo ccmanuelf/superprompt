@@ -27,8 +27,8 @@ cmd="$1"; shift
 
 case "$cmd" in
   health)
-    curl -fsS --max-time 30 -H "$AUTH" "$BASE/health"; echo
-    curl -fsS --max-time 30 -H "$AUTH" "$BASE/whoami"; echo
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/health"; echo
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/whoami"; echo
     ;;
   search)
     [ $# -ge 1 ] || { echo "usage: sam search <kind> [querystring]" >&2; exit 2; }
@@ -41,16 +41,16 @@ case "$cmd" in
       clients)        path="/clients" ;;
       *) echo "unknown kind '$1' (products|analyses|measured_times|machines|clients)" >&2; exit 2 ;;
     esac
-    curl -fsS --max-time 30 -H "$AUTH" "$BASE$path${2:+?$2}"
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE$path${2:+?$2}"
     ;;
   get)
     [ $# -ge 1 ] || { echo "usage: sam get <id> [--full]" >&2; exit 2; }
     if [ "${2:-}" = "--full" ]; then
-      curl -fsS --max-time 30 -H "$AUTH" "$BASE/analyses/$1"
+      curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/analyses/$1"
     else
       # Default: drop the 20-section full_json blob (context economy). The
       # image has node (node:26-slim base) but no jq — filter with node.
-      curl -fsS --max-time 30 -H "$AUTH" "$BASE/analyses/$1" | node -e '
+      curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/analyses/$1" | node -e '
         let s = "";
         process.stdin.on("data", (d) => { s += d; });
         process.stdin.on("end", () => {
@@ -72,13 +72,13 @@ case "$cmd" in
       product) path="/products" ;;
       *) echo "unknown create kind '$1' (client|product)" >&2; exit 2 ;;
     esac
-    curl -fsS --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
       -X POST -d "$2" "$BASE$path"
     ;;
   generate)
     [ $# -ge 1 ] || { echo "usage: sam generate <json>" >&2; exit 2; }
     # Server-side AI draft: ~60-120 s, costs the SAM server's own credits.
-    curl -fsS --max-time 180 -H "$AUTH" -H 'Content-Type: application/json' \
+    curl -sS --fail-with-body --max-time 180 -H "$AUTH" -H 'Content-Type: application/json' \
       -X POST -d "$1" "$BASE/analyses/generate"
     ;;
   set-status)
@@ -86,13 +86,16 @@ case "$cmd" in
     # Build the body with JSON.stringify (not printf interpolation) so a
     # status value containing quotes cannot inject arbitrary JSON keys.
     body=$(node -e 'const [s, c] = process.argv.slice(1); const b = { status: s }; if (c !== undefined && c !== "") b.confidence_pct = Number(c); process.stdout.write(JSON.stringify(b));' "$2" "${3:-}")
-    curl -fsS --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
       -X PATCH -d "$body" "$BASE/analyses/$1"
     ;;
   export)
     [ $# -ge 1 ] || { echo "usage: sam export <id>" >&2; exit 2; }
     out="$UPLOADS_DIR/$(date +%s%3N)_sam-analysis-$1.xlsx"
-    curl -fsS --max-time 30 -H "$AUTH" -o "$out" "$BASE/analyses/$1/export.xlsx"
+    # On HTTP error --fail-with-body writes the error body into $out, but
+    # curl still exits non-zero, so set -e aborts before the path is echoed
+    # — a bad .xlsx is never announced.
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -o "$out" "$BASE/analyses/$1/export.xlsx"
     echo "$out"
     ;;
   *)
