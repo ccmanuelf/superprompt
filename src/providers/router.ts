@@ -4,6 +4,7 @@ import { OllamaProvider, clearOllamaHistory, seedOllamaHistory } from './ollama.
 import type { Message as OllamaMessage } from 'ollama';
 import { config } from '../config.js';
 import { NOVALINK_BRIDGE_PROMPT } from './bridge-prompt.js';
+import { NOVALINK_SAM_PROMPT } from './sam-prompt.js';
 import { logger } from '../logger.js';
 import { selectBucket, toolNamesForBucket, SAM_TRIGGER_PATTERN, type BucketId } from './local-buckets.js';
 import { buildLocalSystemPrompt } from './local-prompt.js';
@@ -1072,7 +1073,7 @@ export function composeClaudeSystemPrompt(p: ClaudePromptParts): string {
   return [
     p.platformIdentity, p.voiceHint, p.systemPrompt, p.skillPrompt,
     p.fullCapabilities, p.mfgHint, p.uploadsManifest,
-    CLAUDE_PROVIDER_NOTICE, NOVALINK_BRIDGE_PROMPT, CLAUDE_DOCUMENT_PROMPT,
+    CLAUDE_PROVIDER_NOTICE, NOVALINK_BRIDGE_PROMPT, NOVALINK_SAM_PROMPT, CLAUDE_DOCUMENT_PROMPT,
     CLAUDE_KANBAN_PROMPT, QUALITY_RULES, COMMAND_LIST,
     p.deliverableReminder, p.simulationScaffolding, LANGUAGE_HINT, p.languageOverride,
   ].filter(Boolean).join('\n\n');
