@@ -6,7 +6,7 @@ import { config } from '../config.js';
 import { NOVALINK_BRIDGE_PROMPT } from './bridge-prompt.js';
 import { NOVALINK_SAM_PROMPT, SAM_CONFIGURED } from './sam-prompt.js';
 import { logger } from '../logger.js';
-import { selectBucket, toolNamesForBucket, SAM_TRIGGER_PATTERN, type BucketId } from './local-buckets.js';
+import { selectBucket, toolNamesForBucket, matchesSamVocabulary, type BucketId } from './local-buckets.js';
 import { buildLocalSystemPrompt } from './local-prompt.js';
 import {
   getSession,
@@ -851,13 +851,13 @@ export function applyMemoryAnswerNote(response: AIResponse): AIResponse {
 // 2 of 3 sam-bucket turns produced complete fake analyses tables with zero
 // tool calls. Abort beats fabricate — quoting/billing numbers that are
 // plausible-and-wrong are worse than "temporarily unavailable". SAM turns
-// therefore route to Claude by default; the vocabulary is the SAME regex
-// the local sam bucket uses (SAM_TRIGGER_PATTERN — single source, rc.135
-// adversarially probed).
+// therefore route to Claude by default; the vocabulary is
+// matchesSamVocabulary (SAM_TRIGGER_PATTERN + SAM_ACRONYM_PATTERN — single
+// source, rc.135 adversarially probed, rc.137 acronym recall fix).
 
 /** True iff the message carries SAM vocabulary. Exported for testing. */
 export function isSamDataTurn(message: string): boolean {
-  return SAM_TRIGGER_PATTERN.test(message);
+  return matchesSamVocabulary(message);
 }
 
 /**
@@ -939,6 +939,29 @@ export function finalizeSamLocalTurn(response: AIResponse): AIResponse {
     text = `${text}${SAM_LOCAL_FOOTER}`;
   }
   return { ...response, text };
+}
+
+/** Exact footer for the rc.137 unpinned-local safety net (below). */
+export const SAM_LOCAL_UNPINNED_FOOTER = '\n\n⚠️ via local model (unpinned SAM turn)';
+
+/**
+ * Unpinned-local safety net (rc.137): mid-loop tool widening or a SAM
+ * vocabulary miss (matchesSamVocabulary) can let sam_* tools execute on a
+ * turn that was never pinned to the SAM path (samKind null/undefined).
+ * Label such answers so provenance is never silently unattributed. Never
+ * applies when samKind is set (finalizeSamClaudeTurn/finalizeSamLocalTurn
+ * above already finalize those) or to Claude-provider responses. Idempotent.
+ * Exported for testing.
+ */
+export function finalizeUnpinnedSamLocalTurn(
+  response: AIResponse,
+  samKind: 'claude' | 'local' | null | undefined,
+): AIResponse {
+  if (samKind) return response;
+  if (response.provider === 'claude') return response;
+  if (response.samToolStats === undefined) return response;
+  if (response.text?.endsWith(SAM_LOCAL_UNPINNED_FOOTER)) return response;
+  return { ...response, text: `${response.text ?? ''}${SAM_LOCAL_UNPINNED_FOOTER}` };
 }
 
 /**
@@ -1815,6 +1838,7 @@ export class ProviderRouter {
       let finalRetry = retryResponse;
       if (samKind === 'claude') finalRetry = finalizeSamClaudeTurn(finalRetry);
       else if (samKind === 'local') finalRetry = finalizeSamLocalTurn(finalRetry);
+      else finalRetry = finalizeUnpinnedSamLocalTurn(finalRetry, samKind);
 
       if (autoTriggerNotice) finalRetry.autoTriggerNotice = autoTriggerNotice;
       if (!params.skipTurnLog) {
@@ -1828,15 +1852,19 @@ export class ProviderRouter {
       return finalRetry;
     }
 
-    // SAM turn finalization (spec 2026-07-13): Claude-path turns abort on
-    // failure (never a silent local fallback) and carry the provenance
-    // footer; local SAM turns carry the forced footer + the UNVERIFIED
-    // banner when zero sam_* tools executed. Placed after the stale-session
-    // retry so a recoverable stale session is retried BEFORE being judged.
+    // SAM turn finalization (spec 2026-07-13, safety net rc.137): Claude-path
+    // turns abort on failure (never a silent local fallback) and carry the
+    // provenance footer; local SAM turns carry the forced footer + the
+    // UNVERIFIED banner when zero sam_* tools executed; unpinned turns that
+    // still ran sam_* tools (mid-loop widening or a vocabulary miss) get the
+    // unpinned-safety-net footer. Placed after the stale-session retry so a
+    // recoverable stale session is retried BEFORE being judged.
     if (samKind === 'claude') {
       response = finalizeSamClaudeTurn(response);
     } else if (samKind === 'local') {
       response = finalizeSamLocalTurn(response);
+    } else {
+      response = finalizeUnpinnedSamLocalTurn(response, samKind);
     }
 
     // Persist new session ID for Claude. Only Claude ever sets

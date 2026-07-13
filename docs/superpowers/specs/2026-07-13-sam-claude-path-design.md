@@ -152,3 +152,19 @@ calls. Recorded, accepted.
    show banner-or-tools behavior; simulated Claude outage → abort message
    (kill switch: temporarily unset OAuth token in a test container, or defer
    this leg to a documented manual test).
+
+## Addendum (rc.137): pin recall
+
+Live re-smoke (2026-07-13) found "What analyses are stored in SAM right
+now?" dodged `SAM_TRIGGER_PATTERN`'s phrase-adjacency requirement and
+answered unpinned. Fix: `SAM_ACRONYM_PATTERN`, a case-SENSITIVE uppercase
+"SAM" + data/analysis-anchor co-occurrence regex (deliberately not `/i` — the
+person name "Sam" must never match), combined with the existing pattern via
+`matchesSamVocabulary`; the router pin now consumes the combined test. A
+safety net (`finalizeUnpinnedSamLocalTurn`) also labels any local turn that
+executed `sam_*` tools without being pinned (mid-loop widening or a residual
+vocabulary miss) with an explicit unpinned-footer, so an unlabeled fabricated
+SAM answer is no longer possible even on a pin miss. Residual accepted:
+lowercase "sam" phrasings without one of the specific `SAM_TRIGGER_PATTERN`
+phrases still miss the pin (by design — the person-name guard requires the
+acronym to be uppercase).

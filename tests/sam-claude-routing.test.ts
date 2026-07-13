@@ -10,6 +10,8 @@ import {
   isClaudeFailureResponse,
   finalizeSamClaudeTurn,
   finalizeSamLocalTurn,
+  finalizeUnpinnedSamLocalTurn,
+  SAM_LOCAL_UNPINNED_FOOTER,
   sendWithSamAbortGuard,
   FALLBACK_DISCLOSURE,
 } from '../src/providers/router.js';
@@ -35,6 +37,11 @@ describe('isSamDataTurn', () => {
   it('does not fire on bare "Sam" as a person name or general chat', () => {
     expect(isSamDataTurn('Sam said hi about the meeting')).toBe(false);
     expect(isSamDataTurn('write me a poem about the ocean')).toBe(false);
+  });
+  // rc.137 — live-evidence re-smoke (2026-07-13): the exact miss from the
+  // spec addendum, now caught via the acronym co-occurrence vocabulary.
+  it('detects the rc.137 live-miss phrase via the acronym co-occurrence pattern', () => {
+    expect(isSamDataTurn('What analyses are stored in SAM right now?')).toBe(true);
   });
 });
 
@@ -148,6 +155,40 @@ describe('finalizeSamLocalTurn (forced footer + UNVERIFIED banner)', () => {
     expect(out.text).toBe(rescued.text);
     expect(out.text!.endsWith(SAM_LOCAL_FOOTER)).toBe(false);
     expect(out.text!.startsWith(SAM_UNVERIFIED_BANNER)).toBe(false);
+  });
+});
+
+// rc.137 — unpinned-local safety net: mid-loop widening or a vocabulary miss
+// can let sam_* tools execute on a turn that was never pinned to the SAM
+// path (samKind null/undefined). Label such answers so provenance is never
+// silently unattributed — but never touch pinned turns (already finalized
+// above) or Claude-path responses.
+describe('finalizeUnpinnedSamLocalTurn (rc.137 safety net)', () => {
+  it('unpinned ollama turn with samToolStats → footer appended exactly once', () => {
+    const resp: AIResponse = { provider: 'ollama', text: 'SAM analysis 3 is 51.148 min', samToolStats: { calls: 1, errors: 0 } };
+    const out = finalizeUnpinnedSamLocalTurn(resp, null);
+    expect(out.text).toBe(`SAM analysis 3 is 51.148 min${SAM_LOCAL_UNPINNED_FOOTER}`);
+  });
+  it('is idempotent — passed through twice, footer does not duplicate', () => {
+    const resp: AIResponse = { provider: 'ollama', text: 'SAM analysis 3 is 51.148 min', samToolStats: { calls: 1, errors: 0 } };
+    const once = finalizeUnpinnedSamLocalTurn(resp, null);
+    const twice = finalizeUnpinnedSamLocalTurn(once, undefined);
+    expect(twice.text).toBe(once.text);
+  });
+  it('Claude-path response with no samToolStats → untouched', () => {
+    const resp: AIResponse = { provider: 'claude', text: 'a normal claude answer' };
+    const out = finalizeUnpinnedSamLocalTurn(resp, null);
+    expect(out.text).toBe(resp.text);
+  });
+  it('ollama response WITHOUT samToolStats → untouched', () => {
+    const resp: AIResponse = { provider: 'ollama', text: 'just a normal chat reply' };
+    const out = finalizeUnpinnedSamLocalTurn(resp, null);
+    expect(out.text).toBe(resp.text);
+  });
+  it('never applies when samKind is set — pinned turns already finalize elsewhere', () => {
+    const resp: AIResponse = { provider: 'ollama', text: 'x', samToolStats: { calls: 1, errors: 0 } };
+    expect(finalizeUnpinnedSamLocalTurn(resp, 'local').text).toBe('x');
+    expect(finalizeUnpinnedSamLocalTurn(resp, 'claude').text).toBe('x');
   });
 });
 

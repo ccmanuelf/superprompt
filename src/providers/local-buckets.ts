@@ -57,6 +57,23 @@ export const BUCKET_TOOLS: Record<Exclude<BucketId, 'core'>, string[]> = {
 export const SAM_TRIGGER_PATTERN = /\b(standard allowed minutes?|minutos? est[aá]ndar|sam analys\w*|an[aá]lisis (de )?sam|sam (health|status|connection)|measured times?|stopwatch times?|tiempos? (medidos?|cronometrados?)|tech ?packs?|gsd|modapts|per.?piece (billing|cost|price)|(costo|precio) por pieza)\b/i;
 
 /**
+ * Case-SENSITIVE acronym co-occurrence: uppercase "SAM" within a bounded
+ * same-sentence window of a data/analysis anchor word, either order.
+ * Deliberately NOT /i — the person name "Sam" must never match (same
+ * case-sensitivity trick as the part-SKU pattern in router.ts). Window and
+ * anchor style follow the NOVALINK_DATA_PATTERNS conventions. rc.137 — live
+ * miss: "What analyses are stored in SAM right now?" dodged SAM_TRIGGER_PATTERN's
+ * phrase-adjacency requirement.
+ */
+export const SAM_ACRONYM_PATTERN =
+  /\b(?:SAM\b[^.?!]{0,40}\b(?:[Aa]nalys\w*|[Aa]n[aá]lisis|[Dd]at(?:a|os)\b|[Ss]tored|[Aa]lmacenad\w*|[Ss]ystem|[Ss]istema|[Mm]inut\w*|[Qq]uot\w*|[Cc]otiza\w*|[Ee]xport\w*|[Ll]ist\w*|[Ll]ibrar\w*|[Ll]ibrer\w*|[Mm]easured|[Mm]edid\w*|[Ww]orkbook)|(?:[Aa]nalys\w*|[Aa]n[aá]lisis|[Dd]at(?:a|os)\b|[Ss]tored|[Aa]lmacenad\w*|[Ss]ystem|[Ss]istema|[Mm]inut\w*|[Qq]uot\w*|[Cc]otiza\w*|[Ee]xport\w*|[Ll]ist\w*|[Ll]ibrar\w*|[Ll]ibrer\w*|[Mm]easured|[Mm]edid\w*|[Ww]orkbook)\b[^.?!]{0,40}\bSAM\b)/;
+
+/** Combined SAM vocabulary test — the router pin's single entry point. */
+export function matchesSamVocabulary(message: string): boolean {
+  return SAM_TRIGGER_PATTERN.test(message) || SAM_ACRONYM_PATTERN.test(message);
+}
+
+/**
  * Bucket trigger regexes, EN+ES, checked in declaration order. Specific-vocabulary
  * buckets (simulation, manufacturing, devops) are checked before the generic
  * docs bucket, so domain-specific phrases containing generic doc words (e.g.
@@ -67,6 +84,9 @@ const BUCKET_PATTERNS: Array<[Exclude<BucketId, 'core'>, RegExp]> = [
   // sam before manufacturing: SAM asks often carry generic mfg words ("capacity",
   // "production") that would otherwise capture them. Vocabulary lives in the
   // exported SAM_TRIGGER_PATTERN above (shared with the router's Claude pin).
+  // rc.137: intentionally NOT SAM_ACRONYM_PATTERN/matchesSamVocabulary — a
+  // bucket miss here is benign (mid-loop widening covers tool reachability;
+  // the router's Claude pin is the one that must not miss).
   ['sam', SAM_TRIGGER_PATTERN],
   ['manufacturing', /\b(bom|shortage|faltante|compan(y|ies)\s+\d+|companies\b|compa[ñn][ií]as?\s+\d+|capacity|capacidad|value stream|flujo de valor|toc\b|bottleneck|cuello de botella|balance|sigma|cpk|spc|control chart|carta de control|fmea|rca|root cause|causa ra[ií]z|inventory|inventario|novalink|producci[oó]n|production data)\b/i],
   ['devops', /\b(github|repo|repos|branch|commit|push|pull request|prs?\b|issues\b|(open|creat\w*|file|list|clos\w*|track\w*)\s+(an?\s+)?issues?\b|render|deploy|deployment|clone|run command|ejecuta\w* (el )?comando)\b/i],
