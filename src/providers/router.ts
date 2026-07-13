@@ -6,7 +6,7 @@ import { config } from '../config.js';
 import { NOVALINK_BRIDGE_PROMPT } from './bridge-prompt.js';
 import { NOVALINK_SAM_PROMPT, SAM_CONFIGURED } from './sam-prompt.js';
 import { logger } from '../logger.js';
-import { selectBucket, toolNamesForBucket, SAM_TRIGGER_PATTERN, type BucketId } from './local-buckets.js';
+import { selectBucket, toolNamesForBucket, matchesSamVocabulary, type BucketId } from './local-buckets.js';
 import { buildLocalSystemPrompt } from './local-prompt.js';
 import {
   getSession,
@@ -851,13 +851,13 @@ export function applyMemoryAnswerNote(response: AIResponse): AIResponse {
 // 2 of 3 sam-bucket turns produced complete fake analyses tables with zero
 // tool calls. Abort beats fabricate — quoting/billing numbers that are
 // plausible-and-wrong are worse than "temporarily unavailable". SAM turns
-// therefore route to Claude by default; the vocabulary is the SAME regex
-// the local sam bucket uses (SAM_TRIGGER_PATTERN — single source, rc.135
-// adversarially probed).
+// therefore route to Claude by default; the vocabulary is
+// matchesSamVocabulary (SAM_TRIGGER_PATTERN + SAM_ACRONYM_PATTERN — single
+// source, rc.135 adversarially probed, rc.137 acronym recall fix).
 
 /** True iff the message carries SAM vocabulary. Exported for testing. */
 export function isSamDataTurn(message: string): boolean {
-  return SAM_TRIGGER_PATTERN.test(message);
+  return matchesSamVocabulary(message);
 }
 
 /**

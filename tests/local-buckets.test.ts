@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   selectBucket, toolNamesForBucket, bucketForTool, CORE_TOOLS, BUCKET_TOOLS, SAM_TRIGGER_PATTERN,
+  SAM_ACRONYM_PATTERN, matchesSamVocabulary,
 } from '../src/providers/local-buckets.js';
 
 describe('bucket selection', () => {
@@ -87,5 +88,38 @@ describe('SAM_TRIGGER_PATTERN export (single vocabulary source)', () => {
   it('has no global flag (shared RegExp object — no lastIndex statefulness across the two consumers)', () => {
     expect(SAM_TRIGGER_PATTERN.global).toBe(false);
     expect(SAM_TRIGGER_PATTERN.flags).toBe('i');
+  });
+});
+
+// rc.137 — live-evidence re-smoke (2026-07-13) showed "What analyses are
+// stored in SAM right now?" dodges SAM_TRIGGER_PATTERN's phrase-adjacency
+// requirement. SAM_ACRONYM_PATTERN adds a case-SENSITIVE uppercase-"SAM" +
+// anchor-word co-occurrence net; matchesSamVocabulary is the combined,
+// single entry point the router's pin consumes.
+describe('SAM_ACRONYM_PATTERN + matchesSamVocabulary (rc.137 pin recall)', () => {
+  it('matches uppercase SAM co-occurring with a data/analysis anchor, either order', () => {
+    expect(matchesSamVocabulary('What analyses are stored in SAM right now?')).toBe(true);
+    expect(matchesSamVocabulary('Give me the SAM data for last week')).toBe(true);
+    expect(matchesSamVocabulary('qué análisis hay en SAM')).toBe(true);
+    expect(matchesSamVocabulary('export the SAM workbook')).toBe(true);
+    expect(matchesSamVocabulary('SAM measured times list')).toBe(true);
+    expect(matchesSamVocabulary('how many minutes in SAM for the hoodie')).toBe(true);
+  });
+  it('never matches lowercase/titlecase "Sam" — the person-name guard', () => {
+    expect(matchesSamVocabulary('Sam said the data looks fine')).toBe(false);
+    expect(matchesSamVocabulary('ask Sam for the list')).toBe(false);
+    expect(matchesSamVocabulary('sam gave me his analysis')).toBe(false);
+  });
+  it('respects the \\bSAM\\b boundary — "samples" does not match', () => {
+    expect(matchesSamVocabulary('the samples data look wrong')).toBe(false);
+  });
+  it('requires an anchor word in the window — bare SAM does not match', () => {
+    expect(matchesSamVocabulary('SAM is a nice guy')).toBe(false);
+  });
+  it('SAM_ACRONYM_PATTERN is case-sensitive (no /i flag)', () => {
+    expect(SAM_ACRONYM_PATTERN.flags).toBe('');
+  });
+  it('selectBucket is unaffected — the live-miss phrase still falls through to core (bucket vocabulary untouched)', () => {
+    expect(selectBucket('What analyses are stored in SAM right now?', undefined)).toBe('core');
   });
 });

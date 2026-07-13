@@ -36,6 +36,11 @@ describe('isSamDataTurn', () => {
     expect(isSamDataTurn('Sam said hi about the meeting')).toBe(false);
     expect(isSamDataTurn('write me a poem about the ocean')).toBe(false);
   });
+  // rc.137 — live-evidence re-smoke (2026-07-13): the exact miss from the
+  // spec addendum, now caught via the acronym co-occurrence vocabulary.
+  it('detects the rc.137 live-miss phrase via the acronym co-occurrence pattern', () => {
+    expect(isSamDataTurn('What analyses are stored in SAM right now?')).toBe(true);
+  });
 });
 
 describe('resolveSamTurnRoute', () => {
