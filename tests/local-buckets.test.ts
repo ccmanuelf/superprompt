@@ -122,4 +122,27 @@ describe('SAM_ACRONYM_PATTERN + matchesSamVocabulary (rc.137 pin recall)', () =>
   it('selectBucket is unaffected — the live-miss phrase still falls through to core (bucket vocabulary untouched)', () => {
     expect(selectBucket('What analyses are stored in SAM right now?', undefined)).toBe('core');
   });
+  // rc.138 (spec 2026-07-14 §4) — Phase-2 analytics anchor words, added to
+  // BOTH alternation halves; the uppercase-SAM window requirement is
+  // preserved so precision holds (probed standalone before this test).
+  it('matches Phase-2 analytics anchors co-occurring with uppercase SAM', () => {
+    expect(matchesSamVocabulary('run the SAM line balance')).toBe(true);
+    expect(matchesSamVocabulary('SAM cell viability')).toBe(true);
+    expect(matchesSamVocabulary('takt time in SAM')).toBe(true);
+    expect(matchesSamVocabulary('what staffing does SAM compute for 1200/day')).toBe(true);
+    expect(matchesSamVocabulary('total headcount from SAM')).toBe(true);
+    expect(matchesSamVocabulary('SAM estimate for these three steps')).toBe(true);
+    expect(matchesSamVocabulary('guarda el escenario en SAM')).toBe(true);
+    expect(matchesSamVocabulary('viabilidad de la celda según SAM')).toBe(true);
+  });
+  it('adversarial set: person-name/brand phrases with analytics words still never match', () => {
+    expect(matchesSamVocabulary('Sam balanced the books')).toBe(false);
+    expect(matchesSamVocabulary("sam's cell phone")).toBe(false);
+    expect(matchesSamVocabulary('SAMSUNG cell')).toBe(false);
+    expect(matchesSamVocabulary('Sam has a good scenario')).toBe(false);
+    expect(matchesSamVocabulary('ask Sam for a headcount estimate')).toBe(false);
+  });
+  it('rc.138 pattern remains case-sensitive (no flags)', () => {
+    expect(SAM_ACRONYM_PATTERN.flags).toBe('');
+  });
 });

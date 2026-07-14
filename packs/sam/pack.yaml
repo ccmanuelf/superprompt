@@ -19,6 +19,7 @@ capabilities: |
   - `sam_set_status` — move an analysis to review/approved, set confidence.
   - `sam_export` — send the client-facing Excel workbook in chat.
   - `sam_health` — reachability + key check.
+  - Phase-2 analytics (review, line balance, scenarios, estimate-sequence, cells viability, calc library) are NOT in this local tool set — they live on the Claude path via the `sam` wrapper; if asked here, say so instead of improvising.
 
   Interpretation rules (these numbers drive real quotes and invoices — never invent figures, always state your basis):
   - SAM = touch time ONLY, at 15% PFD (basic × 1.15) — NovaLink's standard, not the generic 30%.
