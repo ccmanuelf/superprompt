@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # sam <subcommand> — NovaLink SAM API wrapper for the claude -p subprocess.
-# (spec docs/superpowers/specs/2026-07-13-sam-claude-path-design.md §1)
+# (specs docs/superpowers/specs/2026-07-13-sam-claude-path-design.md §1 and
+#  docs/superpowers/specs/2026-07-14-sam-phase2-analytics-design.md §1)
 #
 #   sam health                           GET /health + /whoami
 #   sam search <kind> [querystring]      kinds: products|analyses|measured_times|machines|clients
@@ -8,8 +9,26 @@
 #   sam create <client|product> <json>   POST /clients | /products
 #   sam generate <json>                  POST /analyses/generate  (--max-time 180)
 #   sam set-status <id> <status> [pct]   PATCH /analyses/{id}
-#   sam export <id>                      GET /analyses/{id}/export.xlsx → uploads dir,
-#                                        prints the absolute file path on stdout
+#   sam export <id>                      GET /analyses/{id}/export.xlsx → uploads dir, prints path
+#   sam update <id> <json>               PATCH /analyses/{id} (operations[], balance_defaults, total_sam_min, …)
+#   sam review <id> [--no-ai]            POST /analyses/{id}/review?use_ai=true|false
+#   sam balance <id> [querystring]       GET /analyses/{id}/line-balance[?qs]
+#   sam balance-whatif <id> <json>       POST /analyses/{id}/line-balance  (recompute, saves nothing)
+#   sam scenarios <id>                   GET /analyses/{id}/scenarios
+#   sam scenario-save <id> <json>        POST /analyses/{id}/scenarios
+#   sam estimate <json>                  POST /estimate-sequence
+#   sam cells | sam cell <id>            GET /cells | /cells/{id}
+#   sam cell-create <json>               POST /cells
+#   sam cell-update <id> <json>          PATCH /cells/{id}
+#   sam cell-simulate <id> <json>        POST /cells/{id}/simulate
+#   sam cell-erv <id> <json>             POST /cells/{id}/compute-erv
+#   sam cell-export <id>                 GET /cells/{id}/export.xlsx → uploads dir, prints path
+#   sam calc <operation|sequence|line-balance> <json>   POST /calc/{…}
+#   sam library [querystring]            GET /library[?qs]
+#   sam candidates-scan <json>           POST /library/candidates/scan
+#   sam candidates [querystring]         GET /library/candidates[?qs]
+#   sam api <METHOD> <path> [json]       generic /api/v1 passthrough
+#                                        (GET|POST|PUT|PATCH only; path must start with /)
 #
 # Auth key and base URL come from the environment; the key is never echoed
 # or logged. Error bodies are the API's JSON with a `detail` field (FastAPI).
@@ -20,7 +39,7 @@ set -euo pipefail
 BASE="${NOVALINK_SAM_URL%/}/api/v1"
 AUTH="Authorization: Bearer $NOVALINK_SAM_API_KEY"
 UPLOADS_DIR="${SAM_UPLOADS_DIR:-/app/workspace/uploads}"
-USAGE="usage: sam health | search <kind> [qs] | get <id> [--full] | create <client|product> <json> | generate <json> | set-status <id> <status> [pct] | export <id>"
+USAGE="usage: sam health | search <kind> [qs] | get <id> [--full] | create <client|product> <json> | generate <json> | set-status <id> <status> [pct] | export <id> | update <id> <json> | review <id> [--no-ai] | balance <id> [qs] | balance-whatif <id> <json> | scenarios <id> | scenario-save <id> <json> | estimate <json> | cells | cell <id> | cell-create <json> | cell-update <id> <json> | cell-simulate <id> <json> | cell-erv <id> <json> | cell-export <id> | calc <operation|sequence|line-balance> <json> | library [qs] | candidates-scan <json> | candidates [qs] | api <METHOD> <path> [json]"
 
 [ $# -ge 1 ] || { echo "$USAGE" >&2; exit 2; }
 cmd="$1"; shift
@@ -97,6 +116,123 @@ case "$cmd" in
     # — a bad .xlsx is never announced.
     curl -sS --fail-with-body --max-time 30 -H "$AUTH" -o "$out" "$BASE/analyses/$1/export.xlsx"
     echo "$out"
+    ;;
+  update)
+    [ $# -ge 2 ] || { echo "usage: sam update <id> <json>" >&2; exit 2; }
+    # Extended PATCH (handoff v1.1 §4): status / confidence_pct / full_json /
+    # balance_defaults / total_sam_min / operations[] (replaces the set).
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+      -X PATCH -d "$2" "$BASE/analyses/$1"
+    ;;
+  review)
+    [ $# -ge 1 ] || { echo "usage: sam review <id> [--no-ai]" >&2; exit 2; }
+    use_ai=true
+    if [ "${2:-}" = "--no-ai" ]; then use_ai=false; fi
+    # use_ai=true runs an AI verdict leg on the SAM server — allow 120 s.
+    curl -sS --fail-with-body --max-time 120 -H "$AUTH" \
+      -X POST "$BASE/analyses/$1/review?use_ai=$use_ai"
+    ;;
+  balance)
+    [ $# -ge 1 ] || { echo "usage: sam balance <id> [querystring]" >&2; exit 2; }
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/analyses/$1/line-balance${2:+?$2}"
+    ;;
+  balance-whatif)
+    [ $# -ge 2 ] || { echo "usage: sam balance-whatif <id> <json>" >&2; exit 2; }
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+      -X POST -d "$2" "$BASE/analyses/$1/line-balance"
+    ;;
+  scenarios)
+    [ $# -ge 1 ] || { echo "usage: sam scenarios <id>" >&2; exit 2; }
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/analyses/$1/scenarios"
+    ;;
+  scenario-save)
+    [ $# -ge 2 ] || { echo "usage: sam scenario-save <id> <json>" >&2; exit 2; }
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+      -X POST -d "$2" "$BASE/analyses/$1/scenarios"
+    ;;
+  estimate)
+    [ $# -ge 1 ] || { echo "usage: sam estimate <json>" >&2; exit 2; }
+    # use_ai_for_gaps:true fills unmatched steps with GSD/MOST — allow 120 s.
+    curl -sS --fail-with-body --max-time 120 -H "$AUTH" -H 'Content-Type: application/json' \
+      -X POST -d "$1" "$BASE/estimate-sequence"
+    ;;
+  cells)
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/cells"
+    ;;
+  cell)
+    [ $# -ge 1 ] || { echo "usage: sam cell <id>" >&2; exit 2; }
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/cells/$1"
+    ;;
+  cell-create)
+    [ $# -ge 1 ] || { echo "usage: sam cell-create <json>" >&2; exit 2; }
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+      -X POST -d "$1" "$BASE/cells"
+    ;;
+  cell-update)
+    [ $# -ge 2 ] || { echo "usage: sam cell-update <id> <json>" >&2; exit 2; }
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+      -X PATCH -d "$2" "$BASE/cells/$1"
+    ;;
+  cell-simulate)
+    [ $# -ge 2 ] || { echo "usage: sam cell-simulate <id> <json>" >&2; exit 2; }
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+      -X POST -d "$2" "$BASE/cells/$1/simulate"
+    ;;
+  cell-erv)
+    [ $# -ge 2 ] || { echo "usage: sam cell-erv <id> <json>" >&2; exit 2; }
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+      -X POST -d "$2" "$BASE/cells/$1/compute-erv"
+    ;;
+  cell-export)
+    [ $# -ge 1 ] || { echo "usage: sam cell-export <id>" >&2; exit 2; }
+    out="$UPLOADS_DIR/$(date +%s%3N)_sam-cell-$1.xlsx"
+    # Same shape as sam export: on HTTP error --fail-with-body writes the
+    # error body into $out but curl exits non-zero, so set -e aborts before
+    # the path is echoed — a bad .xlsx is never announced.
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -o "$out" "$BASE/cells/$1/export.xlsx"
+    echo "$out"
+    ;;
+  calc)
+    [ $# -ge 2 ] || { echo "usage: sam calc <operation|sequence|line-balance> <json>" >&2; exit 2; }
+    case "$1" in
+      operation|sequence|line-balance) ;;
+      *) echo "unknown calc kind '$1' (operation|sequence|line-balance)" >&2; exit 2 ;;
+    esac
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+      -X POST -d "$2" "$BASE/calc/$1"
+    ;;
+  library)
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/library${1:+?$1}"
+    ;;
+  candidates-scan)
+    [ $# -ge 1 ] || { echo "usage: sam candidates-scan <json>" >&2; exit 2; }
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+      -X POST -d "$1" "$BASE/library/candidates/scan"
+    ;;
+  candidates)
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/library/candidates${1:+?$1}"
+    ;;
+  api)
+    # Generic /api/v1 passthrough for the long tail + future endpoints
+    # (discovery surface: sam api GET /openapi.json). Guards per spec §1:
+    # METHOD whitelist (no DELETE unless SAM ships one — then via spec
+    # update); path must start with /; body passed through as-is.
+    [ $# -ge 2 ] || { echo "usage: sam api <METHOD> <path> [json]" >&2; exit 2; }
+    method="$1"; apipath="$2"; apibody="${3:-}"
+    case "$method" in
+      GET|POST|PUT|PATCH) ;;
+      *) echo "method '$method' not allowed (GET|POST|PUT|PATCH)" >&2; exit 2 ;;
+    esac
+    case "$apipath" in
+      /*) ;;
+      *) echo "path must start with '/' (got '$apipath')" >&2; exit 2 ;;
+    esac
+    if [ -n "$apibody" ]; then
+      curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
+        -X "$method" -d "$apibody" "$BASE$apipath"
+    else
+      curl -sS --fail-with-body --max-time 30 -H "$AUTH" -X "$method" "$BASE$apipath"
+    fi
     ;;
   *)
     echo "$USAGE" >&2; exit 2
