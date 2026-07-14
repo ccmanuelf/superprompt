@@ -1,14 +1,16 @@
 # NovaLink SAM — Agent Handoff for Luna
 
-> Received 2026-07-10 from the SAM team (Manuel Campos). Source of truth for the
-> Luna-side integration; the pack implementing it is `packs/sam` +
-> `src/providers/tools/sam.ts`. The API key is NOT in this file — it lives in
-> `.env` (`NOVALINK_SAM_API_KEY`), injected by the operator from the SAM
-> server's `app_keys.txt`.
+> Received 2026-07-14 from the SAM team (Manuel Campos) — v1.1, replaces the
+> 2026-07-10 v1.0 copy verbatim. Source of truth for the Luna-side
+> integration; implemented by `packs/sam` + `src/providers/tools/sam.ts`
+> (local v1.0 surface) and `docker/sam` + `src/providers/sam-prompt.ts`
+> (Claude path, incl. Phase-2 analytics). The API key is NOT in this file —
+> it lives in `.env` (`NOVALINK_SAM_API_KEY`), injected by the operator from
+> the SAM server's `app_keys.txt`.
 
 **Document type:** System handoff / integration brief
 **Audience:** the Luna agent (192.168.2.244) and its operator
-**Version:** 1.0 · **Date:** 2026-07-10 · **Owner:** Manuel Campos, Head of Engineering, NovaLink
+**Version:** 1.1 · **Date:** 2026-07-14 · **Owner:** Manuel Campos, Head of Engineering, NovaLink
 **Status:** the SAM application is deployed, live, and verified.
 
 ---
@@ -74,6 +76,7 @@ All paths are under `/api/v1`. All require the bearer header. Times are minutes;
 | POST | `/products` | `{client_id, name, style_no?, category?, description?, base_size?, billing_model?, quoting_mode?}` |
 | GET | `/machines` | canonical machine codes (e.g. SNLS, OL-5T-516) |
 | GET | `/measured-times?q=&machine_code=&limit=` | **the validated stopwatch library** — search measured operation times |
+| GET/PUT | `/machine-costs` | per-machine-type replacement cost (`{machine_type, replacement_cost, category?, notes?}`); drives cell ERV auto-compute. PUT upserts a list. |
 
 ### Analyses
 | Method | Path | Notes |
@@ -81,25 +84,65 @@ All paths are under `/api/v1`. All require the bearer header. Times are minutes;
 | GET | `/analyses?q=&client_id=&status=&limit=` | search across product name/description and operation text |
 | GET | `/analyses/{id}` | full analysis incl. `operations[]` and `full_json` (20 sections) |
 | POST | `/analyses` | store an analysis directly (fields + optional `operations[]` + `full_json`) |
-| PATCH | `/analyses/{id}` | update `status` / `confidence_pct` / `full_json` |
-| POST | `/analyses/generate` | **AI draft** — see below |
+| PATCH | `/analyses/{id}` | update in place: `status` / `confidence_pct` / `full_json` / `balance_defaults` / `total_sam_min` / `operations[]` (replaces the operation set). Used to save an edited sequence without creating a duplicate analysis. |
+| POST | `/analyses/generate`, `/analyses/generate-mm` | **AI draft** (text / text+image+PDF) — see below |
 | GET | `/analyses/{id}/export.xlsx` | download the client-facing Excel workbook |
+
+### Analytics (Phase-2)
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/analyses/{id}/review?use_ai=true` | **re-validate** an analysis: deterministic benchmark-band + reconciliation check, plus an AI verdict `good / too strict / too relaxed / outlier` with flagged operations. `use_ai=false` for a fast deterministic-only check. |
+| GET | `/analyses/{id}/line-balance?daily_target=&work_min=480&efficiency=0.85&shifts=1` | deterministic balance modelled on the manual Takt-Balance sheet. takt = available ÷ target; **operators pooled by phase** (Σ sam ÷ takt, rounded up), **machines counted per type** independently — the two are decoupled (machines may exceed operators). Returns `operators_by_phase[]`, `machines_by_type[]`, per-resource capacity/day, `line_output_per_day`, `bottleneck`, `line_efficiency`, `meets_target`. Omitting query params uses the analysis's saved `balance_defaults`. |
+| POST | `/analyses/{id}/line-balance` | what-if: body `{config:{daily_target,work_min,efficiency,shifts, uplift_pct,mgr_ratio,tech_ratio,planners,qc,ie}, overrides:{operators:{"<phase>":n}, machines:{"<TYPE>":n}}}` → recomputes with your resource edits without saving. Response includes a `staffing` block: Layer-1 **direct uplift** (default 15% for handling/feeding/setup/thread — distinct from PFD) and Layer-2 **support** (managers = ceil(operators÷`mgr_ratio`), technicians = ceil(machines÷`tech_ratio`), planners, QC, IE; a role is off when its ratio/count is 0). Buildup: direct → +uplift → +support = `total_headcount`. |
+| GET/POST | `/analyses/{id}/scenarios` | list / save named balance scenarios (config + overrides), e.g. "2 shifts @ 1500/day". |
+| PATCH | `/analyses/{id}` | now also accepts `{balance_defaults:{...}}` to store default work-hours/shifts/efficiency/target for the analysis. |
+| POST | `/estimate-sequence` | body `{steps:[{operation, machine?, length_cm?}], use_ai_for_gaps:false, min_score:0.35}` → assigns a time to each step from the **measured library** first (tier VALIDATED). Matching maps steps (English or Spanish) into a unified **concept space** and ranks by **IDF-weighted concept overlap**, so distinctive objects (collar/cuello) dominate over common verbs (attach/poner) — object-precise, not verb-fooled. Each step returns `match_score` (0–1 = share of the query's information content matched) and ranked `alternates`; steps below `min_score` (default 0.35) are left `unmatched` rather than force-matched. Set `use_ai_for_gaps:true` to have GSD/MOST fill unmatched steps (tier REFERENCE). |
+| GET/POST | `/cells`, `GET /cells/{id}` | shared-cell **viability**. POST body `{name, client_id?, analysis_ids:[...], weekly_volumes:{"<id>": units_wk}}`. GET returns full viability: **equipment** (ERV→capital recovery + AEMC = TAEF, MAR, per-unit rates), **labor** (combined operators vs min-headcount floor, coverage), **management** floor (role table), **P&L** (revenue = labor + management + equipment; floor; weekly/annual surplus; viable?), and a **stress test** (remove each product → remaining coverage). Models the SharedCell PARAMETERS + CELL_VIABILITY sheet. |
+| PATCH | `/cells/{id}` | update `params` blocks: `equipment` (erv, prior_recovery, recovery_years, maintenance_rate, mar_threshold), `labor` (min_headcount, weekly_hours, hourly_rate, efficiency, weeks_year), `management` (role table), `overrides` (per-analysis `revenue_wk` / `equip_fee_unit`). |
+| POST | `/cells/{id}/simulate` | partial-award: body `{included_analysis_ids:[...]}` → recomputes viability for that subset. |
+| POST | `/cells/{id}/compute-erv` | auto-compute ERV = Σ(machines needed × replacement cost) across the cell's products + optional `other_equipment` lump. Body `{work_min,efficiency,shifts,days_per_week,other_equipment,apply}`; `apply:true` writes ERV into cell params. Returns per-type breakdown + `unmatched_types` (machine types with no cost row). |
+| GET | `/cells/{id}/export.xlsx` | client-facing shared-cell workbook: Cell Summary (P&L, equipment recovery, per-unit cost), Products (incl. labor & total cost/unit), Stress Test, Parameters. |
 
 ### Ingest
 | Method | Path | Notes |
 |--------|------|-------|
 | POST | `/ingest/workbook?product_id=` | multipart file upload of a historical `.xls/.xlsx`; parses the Takt-Balance sheet into a standardized, stored analysis |
 
-### `POST /analyses/generate` (AI drafting)
-Body:
-```json
-{ "product_id": 12, "product_name": "Op Assault Pant", "client_name": "Born Primitive",
-  "category": "Men's Tactical Pants", "input_text": "<tech-pack text / description / URL>",
-  "model": null, "persist": true }
-```
-- Feeds the unified engine prompt + references to Claude and returns the drafted analysis (persisted when `persist=true`, returns `{"draft": …}` when `false`).
-- **Latency ~60–120 s** (a full analysis) — set generous timeouts and do not retry prematurely.
-- `product_id` must reference an existing product when `persist=true` (create the product first).
+### Calc library (governed multi-method engine)
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/library` | the full live calculation library: `length_bands`, `machines`, `fabrics`, `categories`, `operations`, `multipliers`, `consts`. This is the DB-backed, governed source of truth for every calculation — **live and growing**. |
+| PUT | `/library/{table}` | upsert rows into a library table (`operations`, `machines`, `fabrics`, `length_bands`, `categories`, `multipliers`, `machine_catalog`, `machine_costs`; `measured_times` is update-only). Admin/API-key only. Every write bumps a DB cache version so all server workers reload instantly. |
+| POST | `/calc/operation?allowance_pct=15` | compute one operation. Body is a row: `{op_id, machine_id?, fabric_id?, length_band?, length_in?, folder?, plies?, mixed_material?, feed_type?, difficulty_pct?, rep_count?}`. Returns `unit_min`, `sam_min`, `method`, `tier`, `source`, `measured_ref?`, `conformance`, `benchmark`, and a step-by-step `math[]`. |
+| POST | `/calc/sequence` | body `{rows:[...], allowance_pct}` → each row calculated, plus `total_sam_min`. Rows carry `method`/`tier`/`source`/`measured_ref` for provenance. |
+| POST | `/calc/line-balance` | **stateless** balance over ad-hoc rows (no saved analysis): body `{rows:[{sam_min, phase, machine_id}], config:{...}, overrides:{...}}` → same output as `/analyses/{id}/line-balance` incl. `staffing`. |
+
+**Three calculation methods, one model** (an operation's `method` column selects it):
+- **`gsd`** — band-anchored sewing/fixed/manual: `base = handle(band×folder) + sew(rate/in × inches × fabric) + dispose`, × plies × mixed(1.08) × feed × duty × difficulty × rep, then × (1+allowance). Length anchors to the band's 75th-pct unless a positive `length_in` is given.
+- **`most` / `modapts`** — non-textile assembly/wiring: time = `base_min` × difficulty × rep, then × (1+allowance). 13 grounded ops are seeded (`wiring`, `mech_assembly` categories).
+- **measured anchor** — if an operation's `measured_ref` points at a validated `measured_time_study` row, that standard **wins** (it already carries the allowance; only difficulty/rep apply). `source:"measured"`, `tier:"validated"`.
+
+**Provenance:** every calc returns `method` (gsd/most/modapts/measured) and `tier` (`validated` > `provisional` > `reference`). Prefer higher-tier results; when presenting a SAM, state its method and tier. To **promote** a rate, `PUT /library/operations` with a raised `tier` and/or a `measured_ref` link.
+
+### Library growth from AI analyses (admin-gated review queue)
+AI-generated operations **never** write to `sam.lib_operation` directly — they are staged and approved.
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/library/candidates/scan` | body `{analysis_id}` → matches each of the analysis's operations against the library (token overlap) and stages them in `sam.lib_op_candidate` (deduped by name). Admin only. |
+| GET | `/library/candidates?status=pending` | review queue: each candidate carries `raw_name`, `proposed_sam`, and `match_op_id` + `match_score` (closest existing op). |
+| POST | `/library/candidates/{id}/approve` | body `{op_id, method, tier?(default provisional), cat, es, en, machine?, def_band?, base_min?}` → creates the governed `lib_operation` (GSD computes from band+machine; MOST/MODAPTS uses `base_min`). Admin only. Never enters `validated`. |
+| POST | `/library/candidates/{id}/merge` | body `{into_op_id}` → mark as duplicate of an existing op (no new row). |
+| POST | `/library/candidates/{id}/reject` | discard. |
+
+Rule: **match before create.** On a high `match_score`, merge rather than approve, or you get near-duplicate ops with divergent times.
+
+### AI analysis engine (`POST /analyses/generate` · `POST /analyses/generate-mm`)
+Engine model defaults to **`claude-opus-4-8`** (best methodology + tech-pack vision); light helpers (review, gap-fill) stay on Sonnet. Output is capped at 32k tokens with a JSON-salvage fallback.
+
+- **`/analyses/generate`** (JSON) — text-only draft. Body: `{product_id, product_name, client_name?, category?, input_text, model?, persist?}`. `persist=false` returns `{"draft": …}`.
+- **`/analyses/generate-mm`** (multipart form) — **text and/or tech-pack files**. Form fields: `product_id, product_name, client_name?, category?, input_text?, model?` plus one or more `files` (images `png/jpg/webp/gif` or `application/pdf`, ≤12 MB, ≤8 files). Opus reads specs/measurements straight from the images/PDF.
+- Both return the full persisted analysis (20-section `full_json` + `operations[]`); `section_02_operations` may be a list or `{operations:[...]}`.
+- **Latency ~60–120 s** — generous timeouts, no premature retries. `product_id` must exist when `persist=true`.
 
 ---
 
@@ -129,13 +172,11 @@ Ensure a client + product exist (`POST /clients`, `POST /products`) → `POST /a
 
 ---
 
-## 7. Roadmap (endpoints planned, not yet live)
+## 7. Roadmap
 
-These will appear in `/openapi.json` when built; design your integration to discover them:
-- `POST /analyses/{id}/review` — verdict on an existing analysis: **good / too strict / too relaxed / outlier**, vs benchmarks + measured times.
-- `GET /analyses/{id}/line-balance?daily_target=&shift_min=&efficiency=` — takt, operators, station grouping, bottlenecks (deterministic).
-- `POST /estimate-sequence` — assign times to a supplied list of steps, anchored to the measured/GSD libraries.
-- `POST /cells` — combine multiple products into a shared-cell / comparative rollup (consolidated SAM, viability, award-mix).
+The four Phase-2 analytics endpoints (review, line-balance, estimate-sequence, cells) are **now live** — see §4 Analytics. Planned next:
+- Richer cell **viability / capital-recovery** (ERV, MAR, partial-award simulation) on top of the `/cells` rollup.
+- UI panels surfacing review and line-balance for human analysts (the API is already usable by you now).
 
 ---
 
