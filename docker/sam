@@ -8,6 +8,8 @@
 #   sam get <id> [--full]                GET /analyses/{id}  (--full keeps full_json)
 #   sam create <client|product> <json>   POST /clients | /products
 #   sam generate <json>                  POST /analyses/generate  (--max-time 180)
+#   sam generate-mm <json> --file <path> [--file <path>]...
+#                                        multipart POST /analyses/generate-mm (--max-time 180, <=8 files)
 #   sam set-status <id> <status> [pct]   PATCH /analyses/{id}
 #   sam export <id>                      GET /analyses/{id}/export.xlsx → uploads dir, prints path
 #   sam update <id> <json>               PATCH /analyses/{id} (operations[], balance_defaults, total_sam_min, …)
@@ -39,7 +41,7 @@ set -euo pipefail
 BASE="${NOVALINK_SAM_URL%/}/api/v1"
 AUTH="Authorization: Bearer $NOVALINK_SAM_API_KEY"
 UPLOADS_DIR="${SAM_UPLOADS_DIR:-/app/workspace/uploads}"
-USAGE="usage: sam health | search <kind> [qs] | get <id> [--full] | create <client|product> <json> | generate <json> | set-status <id> <status> [pct] | export <id> | update <id> <json> | review <id> [--no-ai] | balance <id> [qs] | balance-whatif <id> <json> | scenarios <id> | scenario-save <id> <json> | estimate <json> | cells | cell <id> | cell-create <json> | cell-update <id> <json> | cell-simulate <id> <json> | cell-erv <id> <json> | cell-export <id> | calc <operation|sequence|line-balance> <json> | library [qs] | candidates-scan <json> | candidates [qs] | api <METHOD> <path> [json]"
+USAGE="usage: sam health | search <kind> [qs] | get <id> [--full] | create <client|product> <json> | generate <json> | generate-mm <json> --file <path>... | set-status <id> <status> [pct] | export <id> | update <id> <json> | review <id> [--no-ai] | balance <id> [qs] | balance-whatif <id> <json> | scenarios <id> | scenario-save <id> <json> | estimate <json> | cells | cell <id> | cell-create <json> | cell-update <id> <json> | cell-simulate <id> <json> | cell-erv <id> <json> | cell-export <id> | calc <operation|sequence|line-balance> <json> | library [qs] | candidates-scan <json> | candidates [qs] | api <METHOD> <path> [json]"
 
 [ $# -ge 1 ] || { echo "$USAGE" >&2; exit 2; }
 cmd="$1"; shift
@@ -99,6 +101,50 @@ case "$cmd" in
     # Server-side AI draft: ~60-120 s, costs the SAM server's own credits.
     curl -sS --fail-with-body --max-time 180 -H "$AUTH" -H 'Content-Type: application/json' \
       -X POST -d "$1" "$BASE/analyses/generate"
+    ;;
+  generate-mm)
+    # Multimodal AI draft from tech-pack images/PDF (handoff v1.1 §4).
+    # json fields → individual multipart form fields via node (same
+    # no-eval-JSON-in-shell rationale as set-status); each --file → a
+    # files=@ part. Server limits: <=8 files, <=12 MB each,
+    # png/jpg/webp/gif/pdf; the <=8 is also enforced here.
+    [ $# -ge 3 ] || { echo "usage: sam generate-mm <json> --file <path> [--file <path>]..." >&2; exit 2; }
+    mmjson="$1"; shift
+    mmfiles=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --file)
+          [ $# -ge 2 ] || { echo "--file needs a path" >&2; exit 2; }
+          mmfiles+=("$2"); shift 2 ;;
+        *) echo "unexpected argument '$1' (only --file <path> after the json)" >&2; exit 2 ;;
+      esac
+    done
+    [ ${#mmfiles[@]} -ge 1 ] || { echo "at least one --file <path> is required" >&2; exit 2; }
+    [ ${#mmfiles[@]} -le 8 ] || { echo "too many files: ${#mmfiles[@]} (server limit is 8)" >&2; exit 2; }
+    for f in "${mmfiles[@]}"; do
+      [ -f "$f" ] || { echo "file not found: $f" >&2; exit 2; }
+    done
+    # Validate the json up front — the emitter below runs in a process
+    # substitution whose exit code set -e cannot see.
+    node -e 'const o = JSON.parse(process.argv[1]); if (!o || typeof o !== "object" || Array.isArray(o)) { console.error("json must be an object"); process.exit(1); }' "$mmjson" \
+      || { echo "invalid json for generate-mm" >&2; exit 2; }
+    # Emit NUL-separated name=value pairs (nested objects JSON-encoded;
+    # null/undefined skipped). --form-string, not -F, for these: a value
+    # starting with @ or < must be sent literally, never read a local file.
+    form_args=()
+    while IFS= read -r -d '' pair; do
+      form_args+=(--form-string "$pair")
+    done < <(node -e '
+      const o = JSON.parse(process.argv[1]);
+      for (const [k, v] of Object.entries(o)) {
+        if (v === null || v === undefined) continue;
+        const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+        process.stdout.write(`${k}=${s}\u0000`);
+      }' "$mmjson")
+    for f in "${mmfiles[@]}"; do form_args+=(-F "files=@$f"); done
+    # Opus multimodal draft: ~60-120 s, costs the SAM server's own credits.
+    curl -sS --fail-with-body --max-time 180 -H "$AUTH" \
+      -X POST "${form_args[@]}" "$BASE/analyses/generate-mm"
     ;;
   set-status)
     [ $# -ge 2 ] || { echo "usage: sam set-status <id> <status> [confidence_pct]" >&2; exit 2; }
