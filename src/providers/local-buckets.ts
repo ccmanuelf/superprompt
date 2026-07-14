@@ -64,9 +64,12 @@ export const SAM_TRIGGER_PATTERN = /\b(standard allowed minutes?|minutos? est[a�
  * anchor style follow the NOVALINK_DATA_PATTERNS conventions. rc.137 — live
  * miss: "What analyses are stored in SAM right now?" dodged SAM_TRIGGER_PATTERN's
  * phrase-adjacency requirement.
+ * rc.138 (spec 2026-07-14 §4): Phase-2 analytics anchors (takt/balance/
+ * viability/staffing/headcount/cells/estimate/scenarios, EN+ES) added to
+ * BOTH alternation halves — keep the two lists identical.
  */
 export const SAM_ACRONYM_PATTERN =
-  /\b(?:SAM\b[^.?!]{0,40}\b(?:[Aa]nalys\w*|[Aa]n[aá]lisis|[Dd]at(?:a|os)\b|[Ss]tored|[Aa]lmacenad\w*|[Ss]ystem|[Ss]istema|[Mm]inut\w*|[Qq]uot\w*|[Cc]otiza\w*|[Ee]xport\w*|[Ll]ist\w*|[Ll]ibrar\w*|[Ll]ibrer\w*|[Mm]easured|[Mm]edid\w*|[Ww]orkbook)|(?:[Aa]nalys\w*|[Aa]n[aá]lisis|[Dd]at(?:a|os)\b|[Ss]tored|[Aa]lmacenad\w*|[Ss]ystem|[Ss]istema|[Mm]inut\w*|[Qq]uot\w*|[Cc]otiza\w*|[Ee]xport\w*|[Ll]ist\w*|[Ll]ibrar\w*|[Ll]ibrer\w*|[Mm]easured|[Mm]edid\w*|[Ww]orkbook)\b[^.?!]{0,40}\bSAM\b)/;
+  /\b(?:SAM\b[^.?!]{0,40}\b(?:[Aa]nalys\w*|[Aa]n[aá]lisis|[Dd]at(?:a|os)\b|[Ss]tored|[Aa]lmacenad\w*|[Ss]ystem|[Ss]istema|[Mm]inut\w*|[Qq]uot\w*|[Cc]otiza\w*|[Ee]xport\w*|[Ll]ist\w*|[Ll]ibrar\w*|[Ll]ibrer\w*|[Mm]easured|[Mm]edid\w*|[Ww]orkbook|[Tt]akt|[Bb]alanc\w*|[Vv]iab\w*|[Ss]taffing|[Hh]eadcount|[Cc]ell\w*|[Cc]elda\w*|[Ee]stimat\w*|[Ss]cenario\w*|[Ee]scenario\w*)|(?:[Aa]nalys\w*|[Aa]n[aá]lisis|[Dd]at(?:a|os)\b|[Ss]tored|[Aa]lmacenad\w*|[Ss]ystem|[Ss]istema|[Mm]inut\w*|[Qq]uot\w*|[Cc]otiza\w*|[Ee]xport\w*|[Ll]ist\w*|[Ll]ibrar\w*|[Ll]ibrer\w*|[Mm]easured|[Mm]edid\w*|[Ww]orkbook|[Tt]akt|[Bb]alanc\w*|[Vv]iab\w*|[Ss]taffing|[Hh]eadcount|[Cc]ell\w*|[Cc]elda\w*|[Ee]stimat\w*|[Ss]cenario\w*|[Ee]scenario\w*)\b[^.?!]{0,40}\bSAM\b)/;
 
 /** Combined SAM vocabulary test — the router pin's single entry point. */
 export function matchesSamVocabulary(message: string): boolean {
