@@ -122,6 +122,11 @@ case "$cmd" in
     [ ${#mmfiles[@]} -ge 1 ] || { echo "at least one --file <path> is required" >&2; exit 2; }
     [ ${#mmfiles[@]} -le 8 ] || { echo "too many files: ${#mmfiles[@]} (server limit is 8)" >&2; exit 2; }
     for f in "${mmfiles[@]}"; do
+      # Reject curl -F microsyntax metacharacters: a path with ';' or ','
+      # lets curl parse ';type='/';filename=' suffixes and spoof the part's
+      # content-type/filename, independent of bash quoting. Uploads are
+      # timestamp_name.ext — no legitimate path reaches here with these.
+      case "$f" in *[";,"]*) echo "generate-mm: file path may not contain ';' or ',': $f" >&2; exit 2 ;; esac
       [ -f "$f" ] || { echo "file not found: $f" >&2; exit 2; }
     done
     # Validate the json up front — the emitter below runs in a process
@@ -141,7 +146,9 @@ case "$cmd" in
         const s = typeof v === "object" ? JSON.stringify(v) : String(v);
         process.stdout.write(`${k}=${s}\u0000`);
       }' "$mmjson")
-    for f in "${mmfiles[@]}"; do form_args+=(-F "files=@$f"); done
+    # Pin filename explicitly so even an odd-but-allowed name can't influence
+    # the part metadata; basename is safe — ';'/',' already rejected above.
+    for f in "${mmfiles[@]}"; do form_args+=(-F "files=@$f;filename=$(basename "$f")"); done
     # Opus multimodal draft: ~60-120 s, costs the SAM server's own credits.
     curl -sS --fail-with-body --max-time 180 -H "$AUTH" \
       -X POST "${form_args[@]}" "$BASE/analyses/generate-mm"
