@@ -110,6 +110,8 @@ case "$cmd" in
     ;;
   export)
     [ $# -ge 1 ] || { echo "usage: sam export <id>" >&2; exit 2; }
+    # $1 lands raw in the uploads filename — constrain to the API's integer ids.
+    case "$1" in ''|*[!0-9]*) echo "sam export: id must be numeric" >&2; exit 2 ;; esac
     out="$UPLOADS_DIR/$(date +%s%3N)_sam-analysis-$1.xlsx"
     # On HTTP error --fail-with-body writes the error body into $out, but
     # curl still exits non-zero, so set -e aborts before the path is echoed
@@ -185,6 +187,8 @@ case "$cmd" in
     ;;
   cell-export)
     [ $# -ge 1 ] || { echo "usage: sam cell-export <id>" >&2; exit 2; }
+    # $1 lands raw in the uploads filename — constrain to the API's integer ids.
+    case "$1" in ''|*[!0-9]*) echo "sam cell-export: id must be numeric" >&2; exit 2 ;; esac
     out="$UPLOADS_DIR/$(date +%s%3N)_sam-cell-$1.xlsx"
     # Same shape as sam export: on HTTP error --fail-with-body writes the
     # error body into $out but curl exits non-zero, so set -e aborts before
@@ -226,6 +230,12 @@ case "$cmd" in
     case "$apipath" in
       /*) ;;
       *) echo "path must start with '/' (got '$apipath')" >&2; exit 2 ;;
+    esac
+    # Reject '..' path segments: curl normalizes $BASE/api/v1/../../x to /x
+    # on the wire BEFORE sending — escaping the /api/v1 scope with the
+    # bearer key attached. Covers leading, trailing, embedded, and bare '..'.
+    case "$apipath" in
+      */../*|*/..|../*|..) echo "sam api: path may not contain '..' segments" >&2; exit 2 ;;
     esac
     if [ -n "$apibody" ]; then
       curl -sS --fail-with-body --max-time 30 -H "$AUTH" -H 'Content-Type: application/json' \
