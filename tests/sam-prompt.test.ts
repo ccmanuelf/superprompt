@@ -107,8 +107,10 @@ describe('NOVALINK_SAM_PROMPT / SAM_CONFIGURED', () => {
     expect(p).toContain('candidates-scan');
     expect(p).toContain('sam candidates');
     expect(p).toContain('sam api <METHOD> <path>');
-    expect(p).toContain('/openapi.json');
+    expect(p).toContain('sam openapi');
     expect(p).toContain("sam generate-mm '<json>' --file <path>");
+    // generate-mm has no persist field — it always stores (rc.139 live-verified)
+    expect(p).toContain('generate-mm ALWAYS stores the analysis');
     // Analytics semantics (spec §2)
     expect(p).toContain('takt = available minutes ÷ daily target');
     expect(p).toContain('round UP');

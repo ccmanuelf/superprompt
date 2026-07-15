@@ -38,10 +38,11 @@ set -euo pipefail
 : "${NOVALINK_SAM_URL:?NOVALINK_SAM_URL not set}"
 : "${NOVALINK_SAM_API_KEY:?NOVALINK_SAM_API_KEY not set}"
 
-BASE="${NOVALINK_SAM_URL%/}/api/v1"
+ROOT="${NOVALINK_SAM_URL%/}"
+BASE="$ROOT/api/v1"
 AUTH="Authorization: Bearer $NOVALINK_SAM_API_KEY"
 UPLOADS_DIR="${SAM_UPLOADS_DIR:-/app/workspace/uploads}"
-USAGE="usage: sam health | search <kind> [qs] | get <id> [--full] | create <client|product> <json> | generate <json> | generate-mm <json> --file <path>... | set-status <id> <status> [pct] | export <id> | update <id> <json> | review <id> [--no-ai] | balance <id> [qs] | balance-whatif <id> <json> | scenarios <id> | scenario-save <id> <json> | estimate <json> | cells | cell <id> | cell-create <json> | cell-update <id> <json> | cell-simulate <id> <json> | cell-erv <id> <json> | cell-export <id> | calc <operation|sequence|line-balance> <json> | library [qs] | candidates-scan <json> | candidates [qs] | api <METHOD> <path> [json]"
+USAGE="usage: sam health | openapi | search <kind> [qs] | get <id> [--full] | create <client|product> <json> | generate <json> | generate-mm <json> --file <path>... | set-status <id> <status> [pct] | export <id> | update <id> <json> | review <id> [--no-ai] | balance <id> [qs] | balance-whatif <id> <json> | scenarios <id> | scenario-save <id> <json> | estimate <json> | cells | cell <id> | cell-create <json> | cell-update <id> <json> | cell-simulate <id> <json> | cell-erv <id> <json> | cell-export <id> | calc <operation|sequence|line-balance> <json> | library [qs] | candidates-scan <json> | candidates [qs] | api <METHOD> <path> [json]"
 
 [ $# -ge 1 ] || { echo "$USAGE" >&2; exit 2; }
 cmd="$1"; shift
@@ -50,6 +51,12 @@ case "$cmd" in
   health)
     curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/health"; echo
     curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/whoami"; echo
+    ;;
+  openapi)
+    # Machine-readable API contract. FastAPI serves it at the APP ROOT
+    # (/openapi.json), NOT under /api/v1 — so this is a dedicated subcommand,
+    # not `sam api GET /openapi.json` (which 404s against the /api/v1 base).
+    curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$ROOT/openapi.json"
     ;;
   search)
     [ $# -ge 1 ] || { echo "usage: sam search <kind> [querystring]" >&2; exit 2; }
@@ -271,7 +278,7 @@ case "$cmd" in
     ;;
   api)
     # Generic /api/v1 passthrough for the long tail + future endpoints
-    # (discovery surface: sam api GET /openapi.json). Guards per spec §1:
+    # (discovery surface: `sam openapi`, served at the app root). Guards per spec §1:
     # METHOD whitelist (no DELETE unless SAM ships one — then via spec
     # update); path must start with /; body passed through as-is.
     [ $# -ge 2 ] || { echo "usage: sam api <METHOD> <path> [json]" >&2; exit 2; }
