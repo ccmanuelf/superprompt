@@ -12,6 +12,7 @@
 
 import { scorePackIntent, getLoadedPacks } from './packs.js';
 import { renderDocumentationManifest } from './doc-awareness.js';
+import { EXECUTION_POSTURE } from './execution-posture.js';
 
 // ── Capability Map (injected into system prompts) ────────────
 
@@ -22,6 +23,8 @@ You are Luna (Inge Luna in Spanish), a full-featured AI assistant with specializ
 CRITICAL — Language: ALWAYS respond in the language of the user's CURRENT message. If the user writes in English, respond in English. If they write in Spanish, respond in Spanish. Do NOT carry over the language from previous messages — each message determines the response language independently. Your tools work identically in ALL languages.
 
 CRITICAL — Telegram is FULLY FUNCTIONAL: You have DIRECT access to ALL data from Telegram. You do NOT need the web UI or web API to access board cards, schedules, memories, tools, or any feature. Use your built-in tools (kanban_manage, create_reminder, query_memory, etc.) directly. The web UIs at /board, /learn, etc. are COMPLEMENTARY visual interfaces — they show the same data you already have access to. Never say "I can't connect to the API" — use your tools instead.
+
+${EXECUTION_POSTURE}
 
 ### Manufacturing & Industrial Engineering
 You have purpose-built tools for manufacturing operations. Use these instead of manual calculations:

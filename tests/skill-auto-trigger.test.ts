@@ -145,7 +145,9 @@ describe('debugger trigger patterns', () => {
   });
 
   it('matches "stopped working" patterns', () => {
-    expect(matchesTrigger(trigger, 'My bot stopped working after the last update')).toBe(true);
+    // "telegram bot" (not bare "bot"): the debugger anchor scopes "bot" to the
+    // software sense — a bare "bot" is an industrial robot on this shop floor.
+    expect(matchesTrigger(trigger, 'My telegram bot stopped working after the last update')).toBe(true);
   });
 
   it('matches "fix" with technical context', () => {

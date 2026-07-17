@@ -8,6 +8,7 @@
  */
 import type { BucketId } from './local-buckets.js';
 import { CLAUDE_DOCUMENT_PROMPT, OLLAMA_KANBAN_PROMPT } from './router.js';
+import { EXECUTION_POSTURE } from '../execution-posture.js';
 
 export const LOCAL_PERSONA = `You are Luna (Inge Luna in Spanish), an AI assistant on the user's company server, chatting via a messaging platform. You have real tools — the tool list attached to this request is the complete, authoritative set for this turn.
 
@@ -28,6 +29,8 @@ export const LOCAL_RULES = `## Quality rules
 - If data is missing, say exactly what is missing — do not speculate.
 - After a tool error, change approach; never repeat the identical call.
 - For recommendations, state the strongest counter-argument in one line.
+
+${EXECUTION_POSTURE}
 
 ## Commands the user may reference
 /help /voice /provider /model /skill /tool /board /schedule /reload /pack — if asked what a command does, answer briefly; do not invent commands.`;
