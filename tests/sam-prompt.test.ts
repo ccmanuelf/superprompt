@@ -64,8 +64,12 @@ describe('NOVALINK_SAM_PROMPT / SAM_CONFIGURED', () => {
     expect(p).toContain('[VALIDATED]');
     expect(p).toContain('262 measured');
     expect(p).toContain('never invent figures');
-    // Write confirmation rule (SA4 bypass tradeoff moves into the prompt)
-    expect(p).toContain('explicit confirmation');
+    // Write posture (spec 2026-07-17 §C): ordinary writes execute directly;
+    // generate keeps ONE heads-up; governed library writes keep per-item gates.
+    expect(p).toContain('### Write posture (execute, then report)');
+    expect(p).toContain('need NO confirmation: execute directly');
+    expect(p).toContain('costs SAM-server credits, and the result will be stored');
+    expect(p).not.toContain('Write confirmation rule (MANDATORY)');
     // generate cost/latency guidance
     expect(p).toContain('60–120 s');
     expect(p).toContain('"persist": false');
@@ -132,10 +136,12 @@ describe('NOVALINK_SAM_PROMPT / SAM_CONFIGURED', () => {
     expect(p).toContain('Match before create');
     expect(p).toContain('never auto-approve');
     expect(p).toContain('Approvals never enter tier validated');
-    // Extended write-confirmation list
-    expect(p).toContain('ANY mutating');
+    // Relaxed write gate (spec 2026-07-17 §C): the blanket mutating-api
+    // confirm is gone; cell-erv apply and governed writes keep their gates.
+    expect(p).not.toContain('ANY mutating');
     expect(p).toContain('"apply": true');
     expect(p).toContain('cell-simulate (read-like)');
+    expect(p).toContain('per-item confirmation, unchanged');
     // generate-mm guidance
     expect(p).toContain('at most 8 files');
     expect(p).toContain('12 MB');
