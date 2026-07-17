@@ -42,21 +42,41 @@ export interface SkillTrigger {
  *
  * Exported for testing.
  */
+// ── Debugger trigger anchors (spec 2026-07-17 §A) ───────────
+// The debugger auto-trigger requires a SOFTWARE/SYSTEM anchor: for a
+// manufacturing-ops assistant, "the line isn't working" / "arregla el
+// faltante" is everyday shop-floor language, not a request to debug
+// software. Data discrepancies route to the data tools (bridge/inventory),
+// not into a debugging interview. EN/ES lists are separate so each pattern
+// stays readable; both carry the same anchor requirement (bilingual by
+// design — the old set was EN-only, so genuine Spanish software problems
+// triggered nothing while English over-fired).
+const DEBUG_ANCHOR_EN = String.raw`(code|scripts?|configs?|configuration|servers?|databases?|db|api|endpoints?|deploy(ment|s|ing|ed)?|containers?|docker|logs?|apps?|bots?|luna|web ?ui|website)`;
+const DEBUG_ANCHOR_ES = String.raw`(c[oó]digo|scripts?|api|servidor(es)?|bases? de datos|endpoints?|despliegues?|contenedor(es)?|docker|registros?|logs?|aplicaci[oó]n|aplicaciones|bots?|luna|p[aá]gina web|sitio web)`;
+
 export const SKILL_TRIGGERS: SkillTrigger[] = [
   {
     skillName: 'debugger',
     mode: 'auto',
     patterns: [
-      // Explicit debugging language
-      /\b(debug|debugging|troubleshoot|troubleshooting)\b/i,
-      // Error descriptions — matches both "error when X" and "every time X errors"
-      /\b(error|bug|crash(es|ed|ing)?|broken|not working|fails?|failing|exception|stack\s*trace)\b.*\b(when|after|every\s*time|keeps?|always)\b/i,
-      /\b(when|after|every\s*time|keeps?|always)\b.*\b(error|bug|crash(es|ed|ing)?|broken|not working|fails?|failing|exception)\b/i,
-      // "Why does X not work" / "X stopped working"
-      /\bwhy\s+(does|is|did|doesn't|won't|can't)\b.*\b(work|function|respond|connect|load|run|start)\b/i,
-      /\b(stopped|quit|ceased)\s+working\b/i,
-      // "Fix" requests with technical context
-      /\bfix\b.*\b(error|bug|issue|problem|code|script|config|server|database|api)\b/i,
+      // Explicit debugging verbs (EN + ES) — the verb IS the anchor
+      /\b(debug(ging|s|ged)?|troubleshoot(ing|s)?|depura(r|ndo|me|lo|la)?|depuraci[oó]n)\b/i,
+      // EN: problem word + temporal marker + software anchor (each anywhere
+      // in the message — the ^ + lookaheads make the test order-free).
+      // [45]\d\d covers HTTP-status reports ("the API returns 500 every time").
+      new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_EN}\b)(?=[\s\S]*\b(errors?|bugs?|crash(es|ed|ing)?|broken|not working|isn'?t working|fails?|failing|exceptions?|stack\s*trace|[45]\d\d|timed? ?out|timeouts?)\b)(?=[\s\S]*\b(when|after|every\s*time|keeps?|always)\b)`, 'i'),
+      // EN: "why doesn't X work" — anchored
+      new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_EN}\b)[\s\S]*\bwhy\s+(does|is|did|doesn'?t|won'?t|can'?t)\b[\s\S]*\b(work(ing)?|function|respond|connect|load|run|start|crash(es|ing)?)\b`, 'i'),
+      // EN: "stopped working" — anchored
+      new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_EN}\b)[\s\S]*\b(stopped|quit|ceased)\s+working\b`, 'i'),
+      // EN: "fix <software thing>" — the fix TARGET must itself be technical
+      new RegExp(String.raw`\bfix(ing|es)?\b[\s\S]*\b${DEBUG_ANCHOR_EN}\b`, 'i'),
+      // ES: incident verb + anchor (order-free)
+      new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_ES}\b)(?=[\s\S]*\b(se cae|se ca[ií]a|se cay[oó]|se reinicia|se congela|se traba|truena|no responde|no arranca|no inicia|no carga|no funciona|dej[oó] de funcionar|deja de funcionar|se detiene)\b)`, 'i'),
+      // ES: error noun + temporal marker + anchor
+      new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_ES}\b)(?=[\s\S]*\b(error(es)?|falla(s|r)?|excepci[oó]n|excepciones|bugs?)\b)(?=[\s\S]*\b(cuando|despu[eé]s de|cada vez|cada que|siempre)\b)`, 'i'),
+      // ES: "arregla/repara/corrige <software thing>"
+      new RegExp(String.raw`\b(arregla(r|me|lo|la)?|repara(r|me|lo|la)?|corrige|corr[ií]ge(me|lo|la)?)\b[\s\S]*\b${DEBUG_ANCHOR_ES}\b`, 'i'),
     ],
   },
   {
