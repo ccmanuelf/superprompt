@@ -51,7 +51,12 @@ export interface SkillTrigger {
 // stays readable; both carry the same anchor requirement (bilingual by
 // design — the old set was EN-only, so genuine Spanish software problems
 // triggered nothing while English over-fired).
-const DEBUG_ANCHOR_EN = String.raw`(code|scripts?|configs?|configuration|servers?|databases?|db|api|endpoints?|deploy(ment|s|ing|ed)?|containers?|docker|logs?|apps?|bots?|luna|web ?ui|website)`;
+// "bot" is scoped to the SOFTWARE sense: on a manufacturing shop floor a bare
+// "bot" is an industrial robot (assembly/packing/pick-and-place bot), so only
+// chat/telegram/matrix/discord/slack-qualified bots anchor here. A genuine
+// software-bot report still triggers via this qualifier OR the explicit
+// debug/troubleshoot/depurar verb.
+const DEBUG_ANCHOR_EN = String.raw`(code|scripts?|configs?|configuration|servers?|databases?|db|api|endpoints?|deploy(ment|s|ing|ed)?|containers?|docker|logs?|apps?|(chat|telegram|matrix|discord|slack)[- ]?bots?|luna|web ?ui|website)`;
 const DEBUG_ANCHOR_ES = String.raw`(c[oó]digo|scripts?|api|servidor(es)?|bases? de datos|endpoints?|despliegues?|contenedor(es)?|docker|registros?|logs?|aplicaci[oó]n|aplicaciones|bots?|luna|p[aá]gina web|sitio web)`;
 
 export const SKILL_TRIGGERS: SkillTrigger[] = [
@@ -64,7 +69,7 @@ export const SKILL_TRIGGERS: SkillTrigger[] = [
       // EN: problem word + temporal marker + software anchor (each anywhere
       // in the message — the ^ + lookaheads make the test order-free).
       // [45]\d\d covers HTTP-status reports ("the API returns 500 every time").
-      new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_EN}\b)(?=[\s\S]*\b(errors?|bugs?|crash(es|ed|ing)?|broken|not working|isn'?t working|fails?|failing|exceptions?|stack\s*trace|[45]\d\d|timed? ?out|timeouts?)\b)(?=[\s\S]*\b(when|after|every\s*time|keeps?|always)\b)`, 'i'),
+      new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_EN}\b)(?=[\s\S]*\b(errors?|bugs?|crash(es|ed|ing)?|broken|not working|isn'?t working|fails?|failing|exceptions?|stack\s*trace|[45]\d\d|timing ?out|timed? ?out|timeouts?)\b)(?=[\s\S]*\b(when|after|every\s*time|keeps?|always)\b)`, 'i'),
       // EN: "why doesn't X work" — anchored
       new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_EN}\b)[\s\S]*\bwhy\s+(does|is|did|doesn'?t|won'?t|can'?t)\b[\s\S]*\b(work(ing)?|function|respond|connect|load|run|start|crash(es|ing)?)\b`, 'i'),
       // EN: "stopped working" — anchored
@@ -75,6 +80,10 @@ export const SKILL_TRIGGERS: SkillTrigger[] = [
       new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_ES}\b)(?=[\s\S]*\b(se cae|se ca[ií]a|se cay[oó]|se reinicia|se congela|se traba|truena|no responde|no arranca|no inicia|no carga|no funciona|dej[oó] de funcionar|deja de funcionar|se detiene)\b)`, 'i'),
       // ES: error noun + temporal marker + anchor
       new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_ES}\b)(?=[\s\S]*\b(error(es)?|falla(s|r)?|excepci[oó]n|excepciones|bugs?)\b)(?=[\s\S]*\b(cuando|despu[eé]s de|cada vez|cada que|siempre)\b)`, 'i'),
+      // ES: "(revisa) por qué X falla/no responde" — anchor-only, no temporal
+      // marker (mirrors the EN "why doesn't X work" pattern). Still anchored,
+      // so ops ES ("por qué la línea no funciona") stays quiet.
+      new RegExp(String.raw`^(?=[\s\S]*\b${DEBUG_ANCHOR_ES}\b)(?=[\s\S]*\b(por qu[eé]|porque|revisa)\b)(?=[\s\S]*\b(falla|no funciona|no responde|no arranca|se cae)\b)`, 'i'),
       // ES: "arregla/repara/corrige <software thing>"
       new RegExp(String.raw`\b(arregla(r|me|lo|la)?|repara(r|me|lo|la)?|corrige|corr[ií]ge(me|lo|la)?)\b[\s\S]*\b${DEBUG_ANCHOR_ES}\b`, 'i'),
     ],
