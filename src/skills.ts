@@ -7,6 +7,9 @@ import {
   decrementSkillTurns,
   clearActiveSkill,
   listSkills,
+  getSkill,
+  getSkillRevisions,
+  updateSkill,
   type Skill,
 } from './db-core.js';
 import { getKnex } from './db-knex.js';
@@ -251,6 +254,8 @@ export const BUILTIN_SKILLS: BuiltinSkillDef[] = [
     name: 'debugger',
     description: 'Systematic problem-solving — root cause investigation before solutions.',
     systemPrompt: `You are in systematic debugging mode. Follow this process strictly:
+
+TASK-FIRST OVERRIDE: If the user's message is actually a task or a data lookup, do it first and investigate only what actually fails; do not preface execution with an investigation phase or clarifying questions the user already answered.
 
 PHASE 1 — INVESTIGATE (do this FIRST, before suggesting ANY fix):
 - Ask clarifying questions about the problem (what happened, when, what changed)
@@ -780,6 +785,20 @@ export async function initBuiltinSkills(): Promise<void> {
       skill.allowedTools,
       true, // isBuiltin
     );
+  }
+
+  // spec 2026-07-17 §A — builtin prompts are code-owned: propagate shipped
+  // edits to rows seeded by an older build (createSkillIfNotExists is
+  // insert-or-ignore, so without this a prompt edit never reaches an
+  // existing DB). Skip any skill the user has revised via the AI fixer
+  // (skill_revisions rows) — user feedback outranks the shipped default.
+  for (const skill of BUILTIN_SKILLS) {
+    const existing = await getSkill(skill.id);
+    if (!existing || existing.system_prompt === skill.systemPrompt) continue;
+    const revisions = await getSkillRevisions(skill.id, 1);
+    if (revisions.length > 0) continue;
+    await updateSkill(skill.id, { description: skill.description, systemPrompt: skill.systemPrompt });
+    logger.info({ skillId: skill.id }, 'Builtin skill prompt synced to current build');
   }
 
   const total = (await listSkills()).length;
