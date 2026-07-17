@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { buildLocalSystemPrompt, LOCAL_PERSONA, LOCAL_RULES } from '../src/providers/local-prompt.js';
 import { estimateTokens } from '../src/context-budget.js';
+import { EXECUTION_POSTURE } from '../src/execution-posture.js';
+import { CAPABILITIES_PROMPT } from '../src/capabilities.js';
 
 const VOLATILES = {
   sessionPrompt: '', platformNote: 'via Telegram Bot', voiceHint: '', mfgHint: 'MFG_HINT',
@@ -52,5 +54,20 @@ describe('LocalPromptAssembler', () => {
   it('frozen prefix snapshot (regression guard for KV stability)', () => {
     const out = buildLocalSystemPrompt({ bucket: 'core', skillPrompt: '', fullCapabilities: '', volatiles: { ...VOLATILES, mfgHint: '', uploadsManifest: '', languageHint: '', languageOverride: '', platformNote: '' } });
     expect(out).toMatchSnapshot();
+  });
+
+  // spec 2026-07-17 §B — the execution-posture block must be present on BOTH
+  // provider paths with byte-identical wording. Single-sourced from
+  // src/execution-posture.ts so drift is structurally impossible: this test
+  // proves both prompt strings actually interpolate the shared constant.
+  it('execution posture is present on BOTH paths, byte-identical (parity checklist row B)', () => {
+    expect(EXECUTION_POSTURE).toContain('**Execution posture.**');
+    expect(EXECUTION_POSTURE).toContain('Execute a clear instruction directly');
+    expect(EXECUTION_POSTURE).toContain('A fresh explicit instruction outranks your memory');
+    expect(EXECUTION_POSTURE).toContain('expected for new work — create it');
+    expect(EXECUTION_POSTURE).toContain('only when genuinely blocked');
+    expect(EXECUTION_POSTURE).toContain('Never invent a number.');
+    expect(CAPABILITIES_PROMPT).toContain(EXECUTION_POSTURE);   // Claude path
+    expect(LOCAL_RULES).toContain(EXECUTION_POSTURE);           // Ollama path
   });
 });
