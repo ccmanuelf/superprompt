@@ -237,7 +237,8 @@ export function registerBuiltinTools(): void {
       source: 'builtin',
       process: 'tools',
       packName: 'sam',
-      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: true },
+      // spec 2026-07-17 §C: ordinary record write — execute, then report.
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: samGenerateDefinition,
@@ -254,7 +255,8 @@ export function registerBuiltinTools(): void {
       source: 'builtin',
       process: 'tools',
       packName: 'sam',
-      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: true },
+      // spec 2026-07-17 §C: reversible status change — execute, then report.
+      policy: { riskLevel: 'high', scopes: ['network'], requiresConfirmation: false },
     },
     {
       definition: samExportDefinition,
