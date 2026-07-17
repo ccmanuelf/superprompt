@@ -20,9 +20,11 @@
  * Post-review adversarial fixes (2026-07-17):
  * - EN problem list gains `timing ?out` (present participle) so "the database
  *   keeps timing out" — a real software failure — fires.
- * - "bot" is scoped to `(chat|telegram|matrix|discord|slack)[- ]?bots?`: on a
- *   shop floor a bare "bot" is an industrial robot (assembly/packing/
- *   pick-and-place), so those must NOT fire; qualified software bots DO.
+ * - "bot" is scoped to a software qualifier in BOTH languages: on a shop
+ *   floor a bare "bot" is an industrial robot (assembly/packing/pick-and-
+ *   place), so those must NOT fire; qualified software bots DO. EN uses the
+ *   prefixed form (`chat|telegram|…[- ]?bots?`); ES adds the postfixed form
+ *   (`bots?\s+de\s+telegram|…`) for Spanish word order ("bot de telegram").
  * - New ES anchor-only pattern (`por qué … <anchor> … falla/no responde`)
  *   mirrors the EN "why doesn't X work" recall path so ES software problems
  *   with no temporal marker still fire, while ops ES stays quiet.
@@ -69,6 +71,12 @@ describe('debugger trigger — spec 2026-07-17 §A adversarial sets', () => {
       'el inventario no cuadra',
       'el BOM no carga bien',
       'arregla la máquina de coser de la estación 4',
+      // Industrial-robot "bot" in Spanish (Mexican-plant Spanglish register):
+      // "el bot de ensamble/empacador" is a shop-floor robot, NOT a chatbot.
+      'el bot empacador no funciona',
+      'arregla el bot de la línea 3',
+      'el bot de la línea 3 no responde',
+      'revisa por qué el bot de ensamble falla',
     ];
     for (const m of cases) expect(fires(m), `should NOT fire: ${m}`).toBe(false);
   });
@@ -99,7 +107,10 @@ describe('debugger trigger — spec 2026-07-17 §A adversarial sets', () => {
       '¿por qué la API se cae cada vez?',
       'depura este script',
       'el servidor se reinicia solo',
+      // Software bot requires a qualifier — "bot de telegram" (postfixed,
+      // Spanish word order) and "chatbot" (prefixed) both anchor.
       'el bot de telegram no responde',
+      'el chatbot no responde',
       'la aplicación truena cuando subo un archivo',
       // ES anchor-only recall path (no temporal marker).
       'revisa por qué el script falla',

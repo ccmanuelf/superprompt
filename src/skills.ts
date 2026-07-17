@@ -57,7 +57,12 @@ export interface SkillTrigger {
 // software-bot report still triggers via this qualifier OR the explicit
 // debug/troubleshoot/depurar verb.
 const DEBUG_ANCHOR_EN = String.raw`(code|scripts?|configs?|configuration|servers?|databases?|db|api|endpoints?|deploy(ment|s|ing|ed)?|containers?|docker|logs?|apps?|(chat|telegram|matrix|discord|slack)[- ]?bots?|luna|web ?ui|website)`;
-const DEBUG_ANCHOR_ES = String.raw`(c[oó]digo|scripts?|api|servidor(es)?|bases? de datos|endpoints?|despliegues?|contenedor(es)?|docker|registros?|logs?|aplicaci[oó]n|aplicaciones|bots?|luna|p[aá]gina web|sitio web)`;
+// ES "bot" is scoped to the software sense too (parity with EN): in Mexican-
+// plant Spanglish "el bot de ensamble/empacador" is an industrial robot, so
+// bare "bot" must not anchor. Spanish word order puts the qualifier AFTER
+// ("bot de telegram"), so both prefixed ("chatbot") and postfixed ("bot de
+// whatsapp") software-bot forms are matched.
+const DEBUG_ANCHOR_ES = String.raw`(c[oó]digo|scripts?|api|servidor(es)?|bases? de datos|endpoints?|despliegues?|contenedor(es)?|docker|registros?|logs?|aplicaci[oó]n|aplicaciones|(chat|whats?app|telegram|matrix|discord|slack)[- ]?bots?|bots?\s+de\s+(telegram|whats?app|discord|matrix|slack)|luna|p[aá]gina web|sitio web)`;
 
 export const SKILL_TRIGGERS: SkillTrigger[] = [
   {
