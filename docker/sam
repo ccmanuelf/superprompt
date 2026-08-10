@@ -7,9 +7,9 @@
 #   sam search <kind> [querystring]      kinds: products|analyses|measured_times|machines|clients
 #   sam get <id> [--full]                GET /analyses/{id}  (--full keeps full_json)
 #   sam create <client|product> <json>   POST /clients | /products
-#   sam generate <json>                  POST /analyses/generate  (--max-time 180)
+#   sam generate <json>                  POST /analyses/generate  (--max-time 420)
 #   sam generate-mm <json> --file <path> [--file <path>]...
-#                                        multipart POST /analyses/generate-mm (--max-time 180, <=8 files)
+#                                        multipart POST /analyses/generate-mm (--max-time 420, <=8 files)
 #   sam set-status <id> <status> [pct]   PATCH /analyses/{id}
 #   sam export <id>                      GET /analyses/{id}/export.xlsx → uploads dir, prints path
 #   sam update <id> <json>               PATCH /analyses/{id} (operations[], balance_defaults, total_sam_min, …)
@@ -105,8 +105,9 @@ case "$cmd" in
     ;;
   generate)
     [ $# -ge 1 ] || { echo "usage: sam generate <json>" >&2; exit 2; }
-    # Server-side AI draft: ~60-120 s, costs the SAM server's own credits.
-    curl -sS --fail-with-body --max-time 180 -H "$AUTH" -H 'Content-Type: application/json' \
+    # Server-side AI draft: ~2-6 min since SAM moved to the subscription
+    # backend (claude -p); must stay under Luna's CLAUDE_TIMEOUT_MS turn budget.
+    curl -sS --fail-with-body --max-time 420 -H "$AUTH" -H 'Content-Type: application/json' \
       -X POST -d "$1" "$BASE/analyses/generate"
     ;;
   generate-mm)
@@ -156,8 +157,9 @@ case "$cmd" in
     # Pin filename explicitly so even an odd-but-allowed name can't influence
     # the part metadata; basename is safe — ';'/',' already rejected above.
     for f in "${mmfiles[@]}"; do form_args+=(-F "files=@$f;filename=$(basename "$f")"); done
-    # Opus multimodal draft: ~60-120 s, costs the SAM server's own credits.
-    curl -sS --fail-with-body --max-time 180 -H "$AUTH" \
+    # Opus multimodal draft: ~2-6 min on the subscription backend (tech-pack
+    # files make this the slowest call SAM serves).
+    curl -sS --fail-with-body --max-time 420 -H "$AUTH" \
       -X POST "${form_args[@]}" "$BASE/analyses/generate-mm"
     ;;
   set-status)
@@ -190,8 +192,9 @@ case "$cmd" in
     [ $# -ge 1 ] || { echo "usage: sam review <id> [--no-ai]" >&2; exit 2; }
     use_ai=true
     if [ "${2:-}" = "--no-ai" ]; then use_ai=false; fi
-    # use_ai=true runs an AI verdict leg on the SAM server — allow 120 s.
-    curl -sS --fail-with-body --max-time 120 -H "$AUTH" \
+    # use_ai=true runs an AI verdict leg on the SAM server — ~1-3 min on the
+    # subscription backend, so allow 240 s.
+    curl -sS --fail-with-body --max-time 240 -H "$AUTH" \
       -X POST "$BASE/analyses/$1/review?use_ai=$use_ai"
     ;;
   balance)
@@ -214,8 +217,9 @@ case "$cmd" in
     ;;
   estimate)
     [ $# -ge 1 ] || { echo "usage: sam estimate <json>" >&2; exit 2; }
-    # use_ai_for_gaps:true fills unmatched steps with GSD/MOST — allow 120 s.
-    curl -sS --fail-with-body --max-time 120 -H "$AUTH" -H 'Content-Type: application/json' \
+    # use_ai_for_gaps:true fills unmatched steps with GSD/MOST — ~1-3 min on
+    # the subscription backend, so allow 240 s.
+    curl -sS --fail-with-body --max-time 240 -H "$AUTH" -H 'Content-Type: application/json' \
       -X POST -d "$1" "$BASE/estimate-sequence"
     ;;
   cells)

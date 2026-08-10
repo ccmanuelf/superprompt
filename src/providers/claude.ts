@@ -26,21 +26,39 @@ interface StreamJsonEvent {
 }
 
 /**
+ * Ceiling for the Claude CLI's own Bash tool. The CLI defaults to killing
+ * each bash command after 120 s, which silently capped every long tool
+ * wrapper regardless of the wrapper's `--max-time` — `sam generate` now
+ * takes ~2–6 min on the subscription backend, so the curl budget alone is
+ * not enough. Nesting ladder: curl 420 s < bash 450 s < CLAUDE_TIMEOUT_MS.
+ */
+const CLAUDE_BASH_TIMEOUT_MS = 450_000;
+
+/**
  * Build a subprocess env that cannot cause the Claude CLI to switch auth
  * from our OAuth subscription to pay-per-token API billing. Explicitly
  * strips ANTHROPIC_API_KEY (and related standard names) even if they're
  * set in the parent process — the CLI reads these and, when present,
  * uses them for inference. Our discovery-only key lives under a
  * distinct name (ANTHROPIC_DISCOVERY_API_KEY) the CLI does not know.
+ *
+ * Also raises the CLI's per-bash-command budget, clamped to the turn
+ * timeout so a bash call can never outlive the subprocess that runs it.
  */
-function buildClaudeSubprocessEnv(): NodeJS.ProcessEnv {
+export function buildClaudeSubprocessEnv(): NodeJS.ProcessEnv {
   const {
     ANTHROPIC_API_KEY: _stripApiKey,
     ANTHROPIC_AUTH_TOKEN: _stripAuthToken,
     ANTHROPIC_DISCOVERY_API_KEY: _stripDiscovery,
     ...safe
   } = process.env;
-  return { ...safe, TERM: 'dumb' };
+  const bashTimeoutMs = Math.min(CLAUDE_BASH_TIMEOUT_MS, getClaudeTimeoutMs());
+  return {
+    ...safe,
+    TERM: 'dumb',
+    BASH_DEFAULT_TIMEOUT_MS: String(bashTimeoutMs),
+    BASH_MAX_TIMEOUT_MS: String(bashTimeoutMs),
+  };
 }
 
 /** In-memory cache for the /v1/models discovery response. */

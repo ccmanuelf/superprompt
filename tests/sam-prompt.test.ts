@@ -71,7 +71,7 @@ describe('NOVALINK_SAM_PROMPT / SAM_CONFIGURED', () => {
     expect(p).toContain('costs SAM-server credits, and the result will be stored');
     expect(p).not.toContain('Write confirmation rule (MANDATORY)');
     // generate cost/latency guidance
-    expect(p).toContain('60–120 s');
+    expect(p).toContain('2–6 min');
     expect(p).toContain('"persist": false');
     // File delivery marker
     expect(p).toContain('[send-file:');

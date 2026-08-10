@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   isSamDataTurn,
   resolveSamTurnRoute,
@@ -16,6 +16,7 @@ import {
   FALLBACK_DISCLOSURE,
 } from '../src/providers/router.js';
 import { buildClaudeTimeoutError } from '../src/circuit-breaker.js';
+import { buildClaudeSubprocessEnv } from '../src/providers/claude.js';
 import type { AIResponse } from '../src/providers/types.js';
 
 // spec 2026-07-13 §3 — SAM turns must not be answered by the local model by
@@ -217,5 +218,39 @@ describe('sendWithSamAbortGuard (spawn-throw abort — primary + stale-session r
     const out = await sendWithSamAbortGuard(true, async () => resp, { chatId: 'c1', site: 'primary' });
     expect(out.aborted).toBe(false);
     expect(out.response).toBe(resp);
+  });
+});
+
+// rc.141 — the Claude route reaches SAM through the `sam` bash wrapper, so the
+// CLI's own per-command bash budget is part of the timeout ladder: curl 420 s
+// < bash 450 s < CLAUDE_TIMEOUT_MS 600 s. Without this the CLI's 120 s bash
+// default killed every ~2–6 min generate no matter how high --max-time went.
+describe('buildClaudeSubprocessEnv (bash budget)', () => {
+  const original = process.env.CLAUDE_TIMEOUT_MS;
+  afterEach(() => {
+    if (original === undefined) delete process.env.CLAUDE_TIMEOUT_MS;
+    else process.env.CLAUDE_TIMEOUT_MS = original;
+  });
+
+  it('grants 450 s per bash command under the deployed 600 s turn budget', () => {
+    process.env.CLAUDE_TIMEOUT_MS = '600000';
+    const env = buildClaudeSubprocessEnv();
+    expect(env.BASH_DEFAULT_TIMEOUT_MS).toBe('450000');
+    expect(env.BASH_MAX_TIMEOUT_MS).toBe('450000');
+  });
+
+  it('clamps to the turn budget so a bash call cannot outlive the subprocess', () => {
+    process.env.CLAUDE_TIMEOUT_MS = '90000';
+    const env = buildClaudeSubprocessEnv();
+    expect(env.BASH_DEFAULT_TIMEOUT_MS).toBe('90000');
+    expect(env.BASH_MAX_TIMEOUT_MS).toBe('90000');
+  });
+
+  it('still strips the API-key names that would switch billing off the subscription', () => {
+    process.env.ANTHROPIC_API_KEY = 'billing-sentinel-key-DO-NOT-USE';
+    const env = buildClaudeSubprocessEnv();
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.TERM).toBe('dumb');
+    delete process.env.ANTHROPIC_API_KEY;
   });
 });

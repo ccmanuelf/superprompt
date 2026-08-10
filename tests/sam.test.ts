@@ -353,7 +353,7 @@ describe('SAM write handlers (stubbed fetch)', () => {
       expect.arrayContaining(['product_id', 'input_text']),
     );
     expect(samSetStatusDefinition.function.name).toBe('sam_set_status');
-    expect(SAM_GENERATE_IPC_TIMEOUT_MS).toBe(180_000);
+    expect(SAM_GENERATE_IPC_TIMEOUT_MS).toBe(450_000);
   });
 });
 
