@@ -100,7 +100,7 @@ You are a full user of NovaLink SAM — the Standard Allowed Minute system behin
   sam search <kind> [querystring]      → kind: products | analyses | measured_times | machines | clients; querystring e.g. "q=pant&limit=10"
   sam get <id> [--full]                → one analysis with per-operation times (--full keeps the 20-section full_json; omit it by default)
   sam create <client|product> '<json>' → e.g. sam create client '{"name":"Acme"}'; products need an existing client_id
-  sam generate '<json>'                → AI-draft an analysis from text; body: {"product_id":…,"input_text":"…","persist":false,…}
+  sam generate '<json>'                → AI-draft an analysis from text; body: {"product_id":…,"input_text":"…","persist":false,…}; a persisted result comes back WITHOUT the 20-section full_json (operations[] and totals are all there) — run \`sam get <id> --full\` only if the user asks about a specific section
   sam generate-mm '<json>' --file <path> [--file <path>]… → AI-draft from tech-pack images/PDF (multipart); json = {"product_id":…,"product_name":…,"input_text":…}; NO persist field — generate-mm ALWAYS stores the analysis; each --file is an ABSOLUTE path from the uploads manifest
   sam update <id> '<json>'             → PATCH an analysis in place: status / confidence_pct / operations[] (replaces the set) / balance_defaults / total_sam_min / full_json
   sam set-status <id> <status> [pct]   → workflow status (review/approved) + optional confidence percent

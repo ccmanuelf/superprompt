@@ -7,9 +7,11 @@
 #   sam search <kind> [querystring]      kinds: products|analyses|measured_times|machines|clients
 #   sam get <id> [--full]                GET /analyses/{id}  (--full keeps full_json)
 #   sam create <client|product> <json>   POST /clients | /products
-#   sam generate <json>                  POST /analyses/generate  (--max-time 420)
+#   sam generate <json>                  POST /analyses/generate  (--max-time 420;
+#                                        full_json stripped when persisted)
 #   sam generate-mm <json> --file <path> [--file <path>]...
-#                                        multipart POST /analyses/generate-mm (--max-time 420, <=8 files)
+#                                        multipart POST /analyses/generate-mm (--max-time 420, <=8 files;
+#                                        always persists, so full_json is always stripped)
 #   sam set-status <id> <status> [pct]   PATCH /analyses/{id}
 #   sam export <id>                      GET /analyses/{id}/export.xlsx → uploads dir, prints path
 #   sam update <id> <json>               PATCH /analyses/{id} (operations[], balance_defaults, total_sam_min, …)
@@ -47,6 +49,28 @@ USAGE="usage: sam health | openapi | search <kind> [qs] | get <id> [--full] | cr
 [ $# -ge 1 ] || { echo "$USAGE" >&2; exit 2; }
 cmd="$1"; shift
 
+# Drop the 20-section full_json blob from an analysis payload (context economy
+# — a fresh generate returns ~66 operations AND every section, and the model
+# then has to read all of it inside the turn budget). Only strips when the
+# payload carries an `id`: a persist=false draft is never stored, so its
+# full_json is the only copy in existence and must pass through untouched.
+# The image has node (node:26-slim base) but no jq — filter with node.
+strip_full_json() {
+  node -e '
+    let s = "";
+    process.stdin.on("data", (d) => { s += d; });
+    process.stdin.on("end", () => {
+      try {
+        const o = JSON.parse(s);
+        if (o && typeof o === "object" && !Array.isArray(o) && "full_json" in o && o.id != null) {
+          delete o.full_json;
+          o._full_json_omitted = "full_json omitted; re-run `sam get <id> --full` if the user explicitly needs it";
+        }
+        console.log(JSON.stringify(o));
+      } catch { process.stdout.write(s); }
+    });'
+}
+
 case "$cmd" in
   health)
     curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/health"; echo
@@ -76,21 +100,7 @@ case "$cmd" in
     if [ "${2:-}" = "--full" ]; then
       curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/analyses/$1"
     else
-      # Default: drop the 20-section full_json blob (context economy). The
-      # image has node (node:26-slim base) but no jq — filter with node.
-      curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/analyses/$1" | node -e '
-        let s = "";
-        process.stdin.on("data", (d) => { s += d; });
-        process.stdin.on("end", () => {
-          try {
-            const o = JSON.parse(s);
-            if (o && typeof o === "object" && !Array.isArray(o) && "full_json" in o) {
-              delete o.full_json;
-              o._full_json_omitted = "full_json omitted; re-run with --full if the user explicitly needs it";
-            }
-            console.log(JSON.stringify(o));
-          } catch { process.stdout.write(s); }
-        });'
+      curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/analyses/$1" | strip_full_json
     fi
     ;;
   create)
@@ -107,8 +117,10 @@ case "$cmd" in
     [ $# -ge 1 ] || { echo "usage: sam generate <json>" >&2; exit 2; }
     # Server-side AI draft: ~2-6 min since SAM moved to the subscription
     # backend (claude -p); must stay under Luna's CLAUDE_TIMEOUT_MS turn budget.
+    # persist=true → strip full_json (re-fetchable via `sam get`); a
+    # persist=false draft has no id and passes through whole (see helper).
     curl -sS --fail-with-body --max-time 420 -H "$AUTH" -H 'Content-Type: application/json' \
-      -X POST -d "$1" "$BASE/analyses/generate"
+      -X POST -d "$1" "$BASE/analyses/generate" | strip_full_json
     ;;
   generate-mm)
     # Multimodal AI draft from tech-pack images/PDF (handoff v1.1 §4).
@@ -158,9 +170,11 @@ case "$cmd" in
     # the part metadata; basename is safe — ';'/',' already rejected above.
     for f in "${mmfiles[@]}"; do form_args+=(-F "files=@$f;filename=$(basename "$f")"); done
     # Opus multimodal draft: ~2-6 min on the subscription backend (tech-pack
-    # files make this the slowest call SAM serves).
+    # files make this the slowest call SAM serves). Always persists, so the
+    # full_json strip always applies — the sections stay one `sam get --full`
+    # away and the model gets its turn budget back for the reply.
     curl -sS --fail-with-body --max-time 420 -H "$AUTH" \
-      -X POST "${form_args[@]}" "$BASE/analyses/generate-mm"
+      -X POST "${form_args[@]}" "$BASE/analyses/generate-mm" | strip_full_json
     ;;
   set-status)
     [ $# -ge 2 ] || { echo "usage: sam set-status <id> <status> [confidence_pct]" >&2; exit 2; }
