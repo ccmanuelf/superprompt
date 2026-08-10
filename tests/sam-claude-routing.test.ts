@@ -221,10 +221,11 @@ describe('sendWithSamAbortGuard (spawn-throw abort — primary + stale-session r
   });
 });
 
-// rc.141 — the Claude route reaches SAM through the `sam` bash wrapper, so the
-// CLI's own per-command bash budget is part of the timeout ladder: curl 420 s
-// < bash 450 s < CLAUDE_TIMEOUT_MS 600 s. Without this the CLI's 120 s bash
-// default killed every ~2–6 min generate no matter how high --max-time went.
+// rc.141/rc.143 — the Claude route reaches SAM through the `sam` bash wrapper,
+// so the CLI's own per-command bash budget is part of the timeout ladder:
+// wrapper 900 s (600 s connection + 300 s poll recovery) < bash 930 s <
+// CLAUDE_TIMEOUT_MS 1200 s. Left at its default the CLI auto-backgrounds
+// anything past ~120 s, so the generate result never reaches the model.
 describe('buildClaudeSubprocessEnv (bash budget)', () => {
   const original = process.env.CLAUDE_TIMEOUT_MS;
   afterEach(() => {
@@ -232,11 +233,17 @@ describe('buildClaudeSubprocessEnv (bash budget)', () => {
     else process.env.CLAUDE_TIMEOUT_MS = original;
   });
 
-  it('grants 450 s per bash command under the deployed 600 s turn budget', () => {
-    process.env.CLAUDE_TIMEOUT_MS = '600000';
+  it('grants 930 s per bash command under the deployed 1200 s turn budget', () => {
+    process.env.CLAUDE_TIMEOUT_MS = '1200000';
     const env = buildClaudeSubprocessEnv();
-    expect(env.BASH_DEFAULT_TIMEOUT_MS).toBe('450000');
-    expect(env.BASH_MAX_TIMEOUT_MS).toBe('450000');
+    expect(env.BASH_DEFAULT_TIMEOUT_MS).toBe('930000');
+    expect(env.BASH_MAX_TIMEOUT_MS).toBe('930000');
+  });
+
+  it('covers the sam wrapper ceiling — connection 600 s + poll recovery 300 s', () => {
+    process.env.CLAUDE_TIMEOUT_MS = '1200000';
+    const budget = Number(buildClaudeSubprocessEnv().BASH_DEFAULT_TIMEOUT_MS);
+    expect(budget).toBeGreaterThan(600_000 + 300_000);
   });
 
   it('clamps to the turn budget so a bash call cannot outlive the subprocess', () => {

@@ -26,13 +26,14 @@ interface StreamJsonEvent {
 }
 
 /**
- * Ceiling for the Claude CLI's own Bash tool. The CLI defaults to killing
- * each bash command after 120 s, which silently capped every long tool
- * wrapper regardless of the wrapper's `--max-time` — `sam generate` now
- * takes ~2–6 min on the subscription backend, so the curl budget alone is
- * not enough. Nesting ladder: curl 420 s < bash 450 s < CLAUDE_TIMEOUT_MS.
+ * Ceiling for the Claude CLI's own Bash tool. Left at its default, the CLI
+ * auto-backgrounds any command that outlives ~120 s — the model then gets a
+ * background task id instead of the tool's output, which for a SAM generate
+ * means the analysis is never reported. Must cover the `sam` wrapper's whole
+ * budget, connection plus poll recovery. Ladder: curl 600 s + poll 300 s
+ * < bash 930 s < CLAUDE_TIMEOUT_MS.
  */
-const CLAUDE_BASH_TIMEOUT_MS = 450_000;
+const CLAUDE_BASH_TIMEOUT_MS = 930_000;
 
 /**
  * Build a subprocess env that cannot cause the Claude CLI to switch auth
