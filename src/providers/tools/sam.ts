@@ -19,13 +19,16 @@ import { UPLOADS_DIR } from '../../config.js';
 
 const TIMEOUT_MS = 15_000;
 /**
- * /analyses/generate runs a full AI draft server-side. Since SAM moved to the
- * subscription backend (`claude -p`) this takes ~2–6 min, not the ~60–120 s the
- * old API path took — the previous 150 s budget aborted every real generate.
+ * /analyses/generate runs a full AI draft server-side. On the subscription
+ * backend (`claude -p`) that measured ~12 min for a multi-file draft, so this
+ * budget matches the `sam` wrapper's total ceiling (600 s connection + 300 s
+ * poll). Unlike the wrapper, this path has NO poll recovery — a timeout here
+ * loses the result even though SAM still stores it. SAM turns pin to Claude,
+ * so this is the rarely-taken branch; add recovery here if that changes.
  */
-const GENERATE_TIMEOUT_MS = 420_000;
+const GENERATE_TIMEOUT_MS = 900_000;
 /** IPC budget for sam_generate — must exceed the fetch timeout above. */
-export const SAM_GENERATE_IPC_TIMEOUT_MS = 450_000;
+export const SAM_GENERATE_IPC_TIMEOUT_MS = 960_000;
 
 /** Framing for SAM rows entering the model's context (treat as data). */
 export const EXTERNAL_NOTICE =
@@ -311,7 +314,7 @@ export const samGenerateDefinition: Tool = {
   function: {
     name: 'sam_generate',
     description:
-      'AI-draft a full SAM analysis from a tech-pack text / product description. SLOW (~2–6 min) and costs API credit — call once, never retry immediately. persist defaults to false (exploratory draft, not stored); set persist=true only when the user wants it stored, and product_id must then reference an existing product (sam_search kind="products", or sam_create). Returned times are touch-SAM at 15% PFD; machine dwell is excluded.',
+      'AI-draft a full SAM analysis from a tech-pack text / product description. SLOW (~5–15 min) and costs API credit — call once, never retry immediately; a timeout usually means SAM stored it anyway, so check sam_search before ever calling again. persist defaults to false (exploratory draft, not stored); set persist=true only when the user wants it stored, and product_id must then reference an existing product (sam_search kind="products", or sam_create). Returned times are touch-SAM at 15% PFD; machine dwell is excluded.',
     parameters: {
       type: 'object',
       properties: {

@@ -7,11 +7,12 @@
 #   sam search <kind> [querystring]      kinds: products|analyses|measured_times|machines|clients
 #   sam get <id> [--full]                GET /analyses/{id}  (--full keeps full_json)
 #   sam create <client|product> <json>   POST /clients | /products
-#   sam generate <json>                  POST /analyses/generate  (--max-time 420;
-#                                        full_json stripped when persisted)
+#   sam generate <json>                  POST /analyses/generate  (600 s connection +
+#                                        300 s poll recovery when persisted; full_json stripped)
 #   sam generate-mm <json> --file <path> [--file <path>]...
-#                                        multipart POST /analyses/generate-mm (--max-time 420, <=8 files;
-#                                        always persists, so full_json is always stripped)
+#                                        multipart POST /analyses/generate-mm (<=8 files; same
+#                                        600 s + 300 s budget; always persists, so a dropped
+#                                        connection is always recovered and full_json stripped)
 #   sam set-status <id> <status> [pct]   PATCH /analyses/{id}
 #   sam export <id>                      GET /analyses/{id}/export.xlsx → uploads dir, prints path
 #   sam update <id> <json>               PATCH /analyses/{id} (operations[], balance_defaults, total_sam_min, …)
@@ -71,6 +72,145 @@ strip_full_json() {
     });'
 }
 
+# ── Generate timeouts + client-timeout recovery ──────────────────────
+# Measured 2026-08-10 on the subscription backend: a 4-file generate-mm
+# takes ~7 min to insert the analysis row and ~12 min to finish writing it
+# (analysis 46: created 19:41:43, finished 19:49:17; analysis 47: created
+# 20:28:43, finished 20:33:37). A synchronous HTTP call that long is not
+# reliable, and when curl gives up the SERVER KEEPS GOING and stores the
+# analysis anyway — which is how the same draft got generated repeatedly
+# and looked like a failure every time.
+#
+# So: bound the connection, then recover by polling for what the server
+# actually stored. Ladder — curl 600 s + poll 300 s = 900 s wrapper ceiling
+# < bash/IPC 930 s < CLAUDE_TIMEOUT_MS.
+# Overridable only so the recovery path can be exercised in a test harness
+# with a stub curl; production never sets these.
+GEN_MAX_TIME="${SAM_GEN_MAX_TIME:-600}"
+POLL_BUDGET="${SAM_POLL_BUDGET:-300}"
+POLL_INTERVAL="${SAM_POLL_INTERVAL:-20}"
+
+# Extract a field from a JSON object argument (prints empty on any problem).
+json_field() {
+  node -e '
+    try {
+      const o = JSON.parse(process.argv[1]);
+      const v = o?.[process.argv[2]];
+      if (v !== undefined && v !== null) process.stdout.write(String(v));
+    } catch {}' "$1" "$2"
+}
+
+# After the client connection times out, find the analysis SAM created for
+# this request and wait for it to finish. Args: <product_id> <since_iso>.
+# Prints the completed analysis JSON on success; prints nothing on failure.
+#
+# "Finished" = has operations AND updated_at held steady across two polls.
+# That covers both shapes seen in the wild: the row is inserted first and
+# post-processed later (updated_at moves), or written in one shot.
+poll_for_analysis() {
+  local pid="$1" since="$2"
+  local deadline id="" detail created updated prev_updated="" ops=0
+  deadline=$(( $(date +%s) + POLL_BUDGET ))
+
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    sleep "$POLL_INTERVAL"
+
+    # Identify the candidate once: newest analysis for this product whose
+    # created_at is at/after the moment we fired the request.
+    if [ -z "$id" ]; then
+      local listing newest
+      listing=$(curl -sS --max-time 30 -H "$AUTH" "$BASE/analyses?limit=10&sort=-created_at" 2>/dev/null || true)
+      [ -n "$listing" ] || continue
+      newest=$(node -e '
+        try {
+          const rows = JSON.parse(process.argv[1]);
+          const pid = String(process.argv[2]);
+          const hit = (Array.isArray(rows) ? rows : []).find((r) => String(r.product_id) === pid);
+          if (hit?.id != null) process.stdout.write(String(hit.id));
+        } catch {}' "$listing" "$pid")
+      [ -n "$newest" ] || continue
+      detail=$(curl -sS --max-time 30 -H "$AUTH" "$BASE/analyses/$newest" 2>/dev/null || true)
+      created=$(json_field "$detail" created_at)
+      # String compare is correct here — both are ISO-8601 UTC from the API.
+      [ -n "$created" ] && [ "$created" \> "$since" ] || continue
+      id="$newest"
+      >&2 echo "sam: found analysis $id created at $created — waiting for it to finish"
+    fi
+
+    detail=$(curl -sS --max-time 30 -H "$AUTH" "$BASE/analyses/$id" 2>/dev/null || true)
+    [ -n "$detail" ] || continue
+    updated=$(json_field "$detail" updated_at)
+    ops=$(node -e '
+      try {
+        const o = JSON.parse(process.argv[1]);
+        process.stdout.write(String((o?.operations ?? []).length));
+      } catch { process.stdout.write("0"); }' "$detail")
+
+    if [ "$ops" -gt 0 ] && [ -n "$updated" ] && [ "$updated" = "$prev_updated" ]; then
+      printf '%s' "$detail" | node -e '
+        let s = "";
+        process.stdin.on("data", (d) => { s += d; });
+        process.stdin.on("end", () => {
+          try {
+            const o = JSON.parse(s);
+            delete o.full_json;
+            o._full_json_omitted = "full_json omitted; re-run `sam get <id> --full` if the user explicitly needs it";
+            o._recovered_after_client_timeout =
+              "The HTTP connection timed out but SAM finished the draft and stored it. "
+              + "This IS the result of that call — report it as such. Do NOT generate again.";
+            console.log(JSON.stringify(o));
+          } catch { process.stdout.write(s); }
+        });'
+      return 0
+    fi
+    prev_updated="$updated"
+  done
+  return 1
+}
+
+# Run a generate call, recovering the persisted result if the connection
+# times out. Args: <product_id> <persisted:0|1> <curl args...>
+generate_with_recovery() {
+  local pid="$1" persisted="$2"; shift 2
+  local started resp rc recovered
+  started=$(date -u +%Y-%m-%dT%H:%M:%S)
+
+  set +e
+  resp=$(curl -sS --fail-with-body --max-time "$GEN_MAX_TIME" "$@")
+  rc=$?
+  set -e
+
+  if [ "$rc" -eq 0 ]; then
+    printf '%s' "$resp" | strip_full_json
+    return 0
+  fi
+
+  # 28 = curl's own operation timeout. Any other failure is a real API
+  # error whose body curl already emitted — pass it through untouched.
+  if [ "$rc" -ne 28 ]; then
+    [ -n "$resp" ] && printf '%s' "$resp"
+    return "$rc"
+  fi
+
+  if [ "$persisted" != "1" ] || [ -z "$pid" ]; then
+    >&2 echo "sam: connection timed out after ${GEN_MAX_TIME}s and this call does not persist — nothing to recover; the draft is lost. Do NOT retry blind; ask the user first."
+    return 28
+  fi
+
+  >&2 echo "sam: connection timed out after ${GEN_MAX_TIME}s with no response body. SAM keeps working server-side, so polling for the stored analysis (up to ${POLL_BUDGET}s)…"
+  set +e
+  recovered=$(poll_for_analysis "$pid" "$started")
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ] && [ -n "$recovered" ]; then
+    printf '%s' "$recovered"
+    return 0
+  fi
+
+  >&2 echo "sam: no completed analysis appeared within ${POLL_BUDGET}s. SAM is very likely STILL generating it — do NOT call generate again. Wait, then run: sam search analyses \"limit=5&sort=-created_at\""
+  return 28
+}
+
 case "$cmd" in
   health)
     curl -sS --fail-with-body --max-time 30 -H "$AUTH" "$BASE/health"; echo
@@ -115,12 +255,15 @@ case "$cmd" in
     ;;
   generate)
     [ $# -ge 1 ] || { echo "usage: sam generate <json>" >&2; exit 2; }
-    # Server-side AI draft: ~2-6 min since SAM moved to the subscription
-    # backend (claude -p); must stay under Luna's CLAUDE_TIMEOUT_MS turn budget.
-    # persist=true → strip full_json (re-fetchable via `sam get`); a
-    # persist=false draft has no id and passes through whole (see helper).
-    curl -sS --fail-with-body --max-time 420 -H "$AUTH" -H 'Content-Type: application/json' \
-      -X POST -d "$1" "$BASE/analyses/generate" | strip_full_json
+    # Server-side AI draft on the subscription backend. persist=true → the
+    # result is recoverable by polling if the connection dies (and full_json
+    # is stripped, re-fetchable via `sam get`). A persist=false draft is
+    # never stored, so it can be neither recovered nor stripped.
+    gen_persist=0
+    [ "$(json_field "$1" persist)" = "true" ] && gen_persist=1
+    generate_with_recovery "$(json_field "$1" product_id)" "$gen_persist" \
+      -H "$AUTH" -H 'Content-Type: application/json' \
+      -X POST -d "$1" "$BASE/analyses/generate"
     ;;
   generate-mm)
     # Multimodal AI draft from tech-pack images/PDF (handoff v1.1 §4).
@@ -169,12 +312,13 @@ case "$cmd" in
     # Pin filename explicitly so even an odd-but-allowed name can't influence
     # the part metadata; basename is safe — ';'/',' already rejected above.
     for f in "${mmfiles[@]}"; do form_args+=(-F "files=@$f;filename=$(basename "$f")"); done
-    # Opus multimodal draft: ~2-6 min on the subscription backend (tech-pack
-    # files make this the slowest call SAM serves). Always persists, so the
-    # full_json strip always applies — the sections stay one `sam get --full`
-    # away and the model gets its turn budget back for the reply.
-    curl -sS --fail-with-body --max-time 420 -H "$AUTH" \
-      -X POST "${form_args[@]}" "$BASE/analyses/generate-mm" | strip_full_json
+    # Opus multimodal draft — the slowest call SAM serves (~12 min measured
+    # with 4 tech-pack files). ALWAYS persists, so a connection timeout is
+    # always recoverable by polling, and full_json is always stripped: the
+    # sections stay one `sam get --full` away and the model gets its turn
+    # budget back for the reply.
+    generate_with_recovery "$(json_field "$mmjson" product_id)" 1 \
+      -H "$AUTH" -X POST "${form_args[@]}" "$BASE/analyses/generate-mm"
     ;;
   set-status)
     [ $# -ge 2 ] || { echo "usage: sam set-status <id> <status> [confidence_pct]" >&2; exit 2; }

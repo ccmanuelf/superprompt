@@ -71,7 +71,12 @@ describe('NOVALINK_SAM_PROMPT / SAM_CONFIGURED', () => {
     expect(p).toContain('costs SAM-server credits, and the result will be stored');
     expect(p).not.toContain('Write confirmation rule (MANDATORY)');
     // generate cost/latency guidance
-    expect(p).toContain('2–6 min');
+    expect(p).toContain('5–15 min');
+    // rc.143 — a client timeout is NOT a failure: SAM stores the draft anyway
+    // and the wrapper polls it back. The model must report the recovered
+    // result instead of firing a second generate (duplicate-analysis guard).
+    expect(p).toContain('_recovered_after_client_timeout');
+    expect(p).toContain('never fire a second generate');
     expect(p).toContain('"persist": false');
     // File delivery marker
     expect(p).toContain('[send-file:');
