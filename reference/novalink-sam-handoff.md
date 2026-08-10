@@ -142,7 +142,7 @@ Engine model defaults to **`claude-opus-4-8`** (best methodology + tech-pack vis
 - **`/analyses/generate`** (JSON) — text-only draft. Body: `{product_id, product_name, client_name?, category?, input_text, model?, persist?}`. `persist=false` returns `{"draft": …}`.
 - **`/analyses/generate-mm`** (multipart form) — **text and/or tech-pack files**. Form fields: `product_id, product_name, client_name?, category?, input_text?, model?` plus one or more `files` (images `png/jpg/webp/gif` or `application/pdf`, ≤12 MB, ≤8 files). Opus reads specs/measurements straight from the images/PDF.
 - Both return the full persisted analysis (20-section `full_json` + `operations[]`); `section_02_operations` may be a list or `{operations:[...]}`.
-- **Latency ~60–120 s** — generous timeouts, no premature retries. `product_id` must exist when `persist=true`.
+- **Latency ~2–6 min** (was ~60–120 s before SAM moved its AI legs to the subscription backend, `claude -p`) — generous timeouts, no premature retries. `product_id` must exist when `persist=true`.
 
 ---
 

@@ -15,7 +15,7 @@ capabilities: |
   - `sam_search` — find products (fuzzy; check for similar past quotes FIRST), analyses, measured times (262 validated stopwatch anchors), machines, clients.
   - `sam_get_analysis` — one analysis with per-operation times (full_json omitted by default).
   - `sam_create` — create a client or product (products need an existing client).
-  - `sam_generate` — AI-draft an analysis from tech-pack text. SLOW (~60–120 s), costs credit; persist=false for exploration, persist=true only when the user wants it stored.
+  - `sam_generate` — AI-draft an analysis from tech-pack text. SLOW (~2–6 min), costs credit; persist=false for exploration, persist=true only when the user wants it stored.
   - `sam_set_status` — move an analysis to review/approved, set confidence.
   - `sam_export` — send the client-facing Excel workbook in chat.
   - `sam_health` — reachability + key check.
