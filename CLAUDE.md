@@ -60,8 +60,17 @@ before claiming done:
 - `npx vitest run` — full test suite (don't hardcode the count in docs; it drifts)
 - `npm run smoke` — dist-level ESM smoke (catches `require()`-in-ESM and similar
   runtime mismatches that vitest/tsx hide; run `npm run build` first)
-- `docker compose build luna && docker compose up -d luna` — container rebuild
-  when the change touches anything Dockerized
+- `docker compose build luna && docker compose up -d luna && docker image prune -f`
+  — container rebuild when the change touches anything Dockerized. **The prune is
+  not optional.** Every rebuild orphans ~6 GB of layers; on 2026-08-11 those had
+  accumulated to 51 GB and filled Colima's 60 GiB VM disk, at which point
+  `claude -p` exits **0 with zero output** and Luna reports "SAM is temporarily
+  unavailable via Claude" — an error that names the wrong component entirely.
+  Host `df` looks fine (the host had 755 GB free); only
+  `docker exec luna-bot df -h /` and `docker system df` show it. Diagnose via the
+  CLI's own log at `/home/node/.claude/debug/latest` inside the container — Luna's
+  pino logs never see it. Use `-f` (dangling only), not `-af`, so the `node:26-slim`
+  base image survives for the next build
 - pre-commit hook (`.githooks/pre-commit`) — secret-leak scan; never bypass
   with `--no-verify` unless you can name why the match is a false positive
 
