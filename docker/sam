@@ -104,12 +104,17 @@ json_field() {
 # this request and wait for it to finish. Args: <product_id> <since_iso>.
 # Prints the completed analysis JSON on success; prints nothing on failure.
 #
-# "Finished" = has operations AND updated_at held steady across two polls.
-# That covers both shapes seen in the wild: the row is inserted first and
-# post-processed later (updated_at moves), or written in one shot.
+# "Finished" = SAM's own `generation_status` says so (rc.147). It replaces an
+# `updated_at`-held-steady-across-two-polls heuristic that could return EARLY
+# AND WRONG: the engine review is a SEPARATE 5-8 min AI call, so updated_at
+# sits unchanged for minutes between the analysis committing and the review
+# writing its verdict — far longer than two POLL_INTERVALs. The old check
+# would have handed back a `pending` draft (no engine_review, non-final status
+# and quote_gate) tagged as the finished result of the call. Never fired in
+# production, so it was undetected rather than fixed.
 poll_for_analysis() {
   local pid="$1" since="$2"
-  local deadline id="" detail created updated prev_updated="" ops=0
+  local deadline id="" detail created gen
   deadline=$(( $(date +%s) + POLL_BUDGET ))
 
   while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -139,14 +144,15 @@ poll_for_analysis() {
 
     detail=$(curl -sS --max-time 30 -H "$AUTH" "$BASE/analyses/$id" 2>/dev/null || true)
     [ -n "$detail" ] || continue
-    updated=$(json_field "$detail" updated_at)
-    ops=$(node -e '
-      try {
-        const o = JSON.parse(process.argv[1]);
-        process.stdout.write(String((o?.operations ?? []).length));
-      } catch { process.stdout.write("0"); }' "$detail")
+    gen=$(json_field "$detail" generation_status)
 
-    if [ "$ops" -gt 0 ] && [ -n "$updated" ] && [ "$updated" = "$prev_updated" ]; then
+    # complete = the engine review landed; status and quote_gate are final.
+    # failed   = the draft saved but the review errored — usable, uncertified,
+    #            and no further polling will change it, so return it rather
+    #            than burn the remaining budget. The payload carries
+    #            generation_status itself, so the model can see which it got.
+    # anything else (pending) = the second AI call is still running; keep waiting.
+    if [ "$gen" = "complete" ] || [ "$gen" = "failed" ]; then
       printf '%s' "$detail" | node -e '
         let s = "";
         process.stdin.on("data", (d) => { s += d; });
@@ -163,7 +169,6 @@ poll_for_analysis() {
         });'
       return 0
     fi
-    prev_updated="$updated"
   done
   return 1
 }
@@ -322,6 +327,21 @@ case "$cmd" in
     ;;
   set-status)
     [ $# -ge 2 ] || { echo "usage: sam set-status <id> <status> [confidence_pct]" >&2; exit 2; }
+    # Approvals need a NAMED human actor and this wrapper cannot supply one:
+    # it authenticates with a service key, and API-key principals have no
+    # username, so an approval made here records as `service:readwrite`.
+    # `review` means the engine refused to certify the number, so approving is
+    # a person overriding that refusal — "a machine approved it" is not an
+    # audit answer. SAM moved approvals to the Web UI, which records who
+    # decided, why, and the gate verdict frozen as it stood. Refused in the
+    # wrapper rather than the prompt on purpose: a prompt rule is probabilistic
+    # and a persuasive "just approve it, I'll take responsibility" could talk
+    # the model past it. `superseded` stays allowed — bookkeeping, not a
+    # judgement about whether a number is defensible.
+    if [ "$2" = "approved" ]; then
+      echo "sam set-status: refusing to set 'approved'. Approvals must be made by a named person in the SAM Web UI — https://192.168.2.234:8443/ui/ (or http://192.168.2.234:8080/ui/ on the LAN) — which records the actor, the reason, and the quote-gate verdict as it stood at decision time. This wrapper's service key would record the approver as 'service:readwrite', which is not an audit trail. Tell the user to approve it there; 'superseded' is still fine from here." >&2
+      exit 3
+    fi
     # Build the body with JSON.stringify (not printf interpolation) so a
     # status value containing quotes cannot inject arbitrary JSON keys.
     body=$(node -e 'const [s, c] = process.argv.slice(1); const b = { status: s }; if (c !== undefined && c !== "") b.confidence_pct = Number(c); process.stdout.write(JSON.stringify(b));' "$2" "${3:-}")

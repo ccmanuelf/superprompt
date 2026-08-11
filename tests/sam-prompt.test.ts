@@ -101,6 +101,15 @@ describe('NOVALINK_SAM_PROMPT / SAM_CONFIGURED', () => {
     expect(p).toContain('draft is the GOOD state');
     expect(p).toContain('NOT a promotion from draft');
     expect(p).toContain('superseded');
+    // rc.147 — approvals moved to the SAM Web UI. Our service key has no
+    // username, so an approval made through the API records as
+    // `service:readwrite`; approving a `review` analysis is a person
+    // overriding the engine's refusal to certify it, and that needs a name.
+    expect(p).toContain('approved` you cannot set at all');
+    expect(p).toContain('/ui/');
+    // rc.147 — completion is SAM's to declare, never inferred from timestamps.
+    expect(p).toContain('generation_status');
+    expect(p).toContain('Do not quote from it');
     // File delivery marker
     expect(p).toContain('[send-file:');
     // rc.144 — the marker is an ACTION, not an illustration. Live 2026-08-10
