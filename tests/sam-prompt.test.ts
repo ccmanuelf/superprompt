@@ -78,6 +78,14 @@ describe('NOVALINK_SAM_PROMPT / SAM_CONFIGURED', () => {
     expect(p).toContain('_recovered_after_client_timeout');
     expect(p).toContain('never fire a second generate');
     expect(p).toContain('"persist": false');
+    // rc.145 — the turn is ONE-SHOT. Live 2026-08-11 the model called
+    // generate-mm with run_in_background:true (confirmed in the CLI session
+    // transcript), replied "I'll report back as soon as it completes", and
+    // ended the turn. SAM finished analysis 48 at 15:05:23 UTC and the user
+    // was never told. Backgrounding also bypasses rc.143's curl+poll recovery
+    // entirely, since the model never sees the wrapper's return value.
+    expect(p).toContain('run_in_background');
+    expect(p).toContain('ONE-SHOT');
     // File delivery marker
     expect(p).toContain('[send-file:');
     // rc.144 — the marker is an ACTION, not an illustration. Live 2026-08-10
