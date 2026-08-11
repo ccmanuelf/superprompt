@@ -80,6 +80,13 @@ describe('NOVALINK_SAM_PROMPT / SAM_CONFIGURED', () => {
     expect(p).toContain('"persist": false');
     // File delivery marker
     expect(p).toContain('[send-file:');
+    // rc.144 — the marker is an ACTION, not an illustration. Live 2026-08-10
+    // 20:14:29 UTC the model wrote it as a placeholder while merely offering an
+    // export it had not run (`(\`[send-file:...]\`)`); the platform strips every
+    // occurrence, so the user saw "te exporto el Excel ahora mismo (``)." A
+    // placeholder mangles the sentence; a copied stale path would ship the
+    // wrong workbook — neither is catchable at the platform layer.
+    expect(p).toContain('never as an example or placeholder');
     // Ingest redirect
     expect(p).toContain('web UI');
     // Never teach the raw key
