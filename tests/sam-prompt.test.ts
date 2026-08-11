@@ -86,6 +86,21 @@ describe('NOVALINK_SAM_PROMPT / SAM_CONFIGURED', () => {
     // entirely, since the model never sees the wrapper's return value.
     expect(p).toContain('run_in_background');
     expect(p).toContain('ONE-SHOT');
+    // rc.146 — SAM's own stop-the-line verdict. It rides at the TOP level of
+    // every analysis (SAM projected it out of full_json on 2026-08-11), so it
+    // survives `strip_full_json`; before that it sat at
+    // full_json.recompute.quote_gate and our strip deleted it, which is why
+    // analyses 45-49 were reported as clean results while SAM was refusing to
+    // certify all five. Report it, never enforce it.
+    expect(p).toContain('quote_gate');
+    expect(p).toContain('"quotable": false');
+    expect(p).toContain('reporting the gate, NOT enforcing it');
+    // rc.146 — status semantics read backwards: `review` is the engine saying
+    // it does NOT stand behind the analysis, not a workflow promotion. Writing
+    // draft/review ourselves would forge an engine verdict.
+    expect(p).toContain('draft is the GOOD state');
+    expect(p).toContain('NOT a promotion from draft');
+    expect(p).toContain('superseded');
     // File delivery marker
     expect(p).toContain('[send-file:');
     // rc.144 — the marker is an ACTION, not an illustration. Live 2026-08-10
