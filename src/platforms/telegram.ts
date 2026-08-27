@@ -205,8 +205,9 @@ async function handleMessage(
   forceVoiceReply: boolean = false,
   skipTools: boolean = false,
   isVoice: boolean = false,
+  rawUserMessageOverride?: string,
 ): Promise<void> {
-  return withTrace(generateTraceId(), () => handleMessageInner(ctx, rawText, pc, forceVoiceReply, skipTools, isVoice));
+  return withTrace(generateTraceId(), () => handleMessageInner(ctx, rawText, pc, forceVoiceReply, skipTools, isVoice, rawUserMessageOverride));
 }
 
 export async function handleMessageInner(
@@ -216,6 +217,12 @@ export async function handleMessageInner(
   forceVoiceReply: boolean = false,
   skipTools: boolean = false,
   isVoice: boolean = false,
+  // The user's OWN words for this turn. Attachment handlers wrap the user's
+  // caption in synthetic scaffolding ("...saved to: /path\nPlease read/view
+  // this image file..."); classifying intent on that text made
+  // DELIVERABLE_FORMAT_REGEX match our own word "file" on every photo turn.
+  // Defaults to rawText for plain text turns, where they are the same thing.
+  rawUserMessageOverride?: string,
 ): Promise<void> {
   const chatId = String(ctx.chat!.id);
   const io = makeGateIO(ctx);
@@ -258,7 +265,7 @@ export async function handleMessageInner(
     const response = await pc.router.sendMessage({
       chatId,
       message: fullMessage,
-      rawUserMessage: rawText,
+      rawUserMessage: rawUserMessageOverride ?? rawText,
       onTyping: refreshTyping,
       skipTools,
       isVoice,
@@ -1014,6 +1021,90 @@ async function handleToolUpload(ctx: Context, pc: PlatformContext): Promise<void
 }
 
 // ── Bot Factory ─────────────────────────────────────────────
+
+/**
+ * Download an attachment from the Telegram file endpoint.
+ *
+ * Telegram can accept the connection and then stall without ever sending the
+ * body. `fetch()` carries no default request deadline, so a stall used to hang
+ * the entire turn until undici's 300s bodyTimeout fired — from the user's side
+ * Luna simply stopped responding (2026-08-27 incident: two photos lost, and the
+ * `[Photo received]` fallback then told the model an image HAD arrived, so it
+ * invented a PNG/Telegram explanation). Bound every attempt, retry the
+ * transient case, and log enough to tell WHICH step failed next time.
+ *
+ * Returns null when the file could not be retrieved — callers must treat that
+ * as "the user's attachment does not exist", never as an empty success.
+ */
+const ATTACHMENT_TIMEOUT_MS = 45_000;
+const ATTACHMENT_ATTEMPTS = 3;
+
+/**
+ * Bound a promise that has no deadline of its own. grammy types its own
+ * `signal` against the `abort-controller` package rather than the native
+ * AbortSignal, so racing a timer is cleaner than casting across the two.
+ */
+async function withDeadline<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function downloadTelegramFile(
+  url: string,
+  meta: Record<string, unknown>,
+): Promise<Buffer | null> {
+  for (let attempt = 1; attempt <= ATTACHMENT_ATTEMPTS; attempt++) {
+    const started = Date.now();
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(ATTACHMENT_TIMEOUT_MS) });
+      if (!res.ok) {
+        logger.warn({ ...meta, attempt, status: res.status }, 'Attachment download rejected');
+        // 4xx is a verdict, not a hiccup — retrying cannot change it.
+        if (res.status < 500) return null;
+        continue;
+      }
+      const buffer = Buffer.from(await res.arrayBuffer());
+      logger.info(
+        { ...meta, attempt, bytes: buffer.length, ms: Date.now() - started },
+        'Attachment downloaded',
+      );
+      return buffer;
+    } catch (err) {
+      logger.warn(
+        { ...meta, attempt, ms: Date.now() - started, err },
+        'Attachment download attempt failed',
+      );
+    }
+  }
+  return null;
+}
+
+/**
+ * An image sent as a *file* is still an image. Telegram routes those to
+ * `message:document`, where they used to be handed to the text parser — which
+ * supports no image format, so Luna answered "Unsupported file format: png"
+ * and never looked at the picture.
+ */
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'heic', 'heif']);
+
+function isImageAttachment(fileName: string, mimeType?: string): boolean {
+  if (mimeType?.startsWith('image/')) return true;
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  return !!ext && IMAGE_EXTENSIONS.has(ext);
+}
+
+const ATTACHMENT_FAILED_NOTICE =
+  '\u26a0\ufe0f I could not download that attachment from Telegram — it never reached me, '
+  + 'so I cannot see it. Please send it again.';
 
 export function createTelegramBot(pc: PlatformContext): Bot {
   const router = pc.router;
@@ -3632,6 +3723,82 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     }
   });
 
+  /**
+   * Hand a saved image to the active provider. Shared by the photo handler and
+   * the document handler — an image sent as a *file* is still an image, and
+   * used to be routed into the text parser instead (which supports no image
+   * format at all, so it answered "Unsupported file format: png").
+   */
+  const deliverImageToProvider = async (
+    ctx: Context,
+    localPath: string,
+    buffer: Buffer,
+    caption: string,
+  ): Promise<void> => {
+    // Branch based on provider: Ollama gets base64 images, Claude gets file path
+    const providerName = await router.getProviderName(String(ctx.chat!.id));
+
+    if (providerName === 'ollama') {
+      // Ollama vision: pass image as base64 via images param
+      const base64Image = buffer.toString('base64');
+      const chatId = String(ctx.chat!.id);
+      const memoryContext = await pc.memory.buildContext(chatId, caption);
+      const fullMessage = memoryContext
+        ? `${memoryContext}\n\n${caption}`
+        : caption;
+
+      let typingInterval: ReturnType<typeof setInterval> | undefined;
+      const refreshTyping = () => {
+        ctx.replyWithChatAction('typing').catch(() => {});
+      };
+      refreshTyping();
+      typingInterval = setInterval(refreshTyping, TYPING_REFRESH_MS);
+
+      try {
+        const response = await router.sendMessage({
+          chatId,
+          message: fullMessage,
+          rawUserMessage: caption,
+          onTyping: refreshTyping,
+          images: [base64Image],
+        });
+
+        clearInterval(typingInterval);
+        typingInterval = undefined;
+
+        if (!response.text) {
+          await ctx.reply('(No response from AI provider)');
+          return;
+        }
+
+        pc.memory.saveConversationTurn(chatId, `[Photo] ${caption}`, response.text).catch((err) => {
+          logger.warn({ err }, 'Failed to save conversation memory');
+        });
+
+        const formatted = formatForTelegram(response.text);
+        const chunks = splitMessage(formatted);
+        for (const chunk of chunks) {
+          await replyChunkWithFallback(ctx, chunk);
+        }
+      } finally {
+        if (typingInterval) clearInterval(typingInterval);
+      }
+    } else {
+      // Claude: pass file path so CLI can read the image via its Read tool.
+      // `caption` is threaded as rawUserMessage so deliverable-intent
+      // classification reads the USER's words, not this scaffolding.
+      await handleMessage(
+        ctx,
+        `The user sent a photo. It has been saved to: ${localPath}\nPlease read/view this image file and respond to: ${caption}`,
+        pc,
+        false,
+        false,
+        false,
+        caption,
+      );
+    }
+  };
+
   // ── Photo Handler ─────────────────────────────────────────
 
   bot.on('message:photo', async (ctx) => {
@@ -3642,19 +3809,33 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       // Get highest-resolution photo (last in array)
       const photos = ctx.message.photo;
       const photo = photos[photos.length - 1];
-      const file = await ctx.api.getFile(photo.file_id);
+      const file = await withDeadline(
+        ctx.api.getFile(photo.file_id),
+        ATTACHMENT_TIMEOUT_MS,
+        'getFile(photo)',
+      );
       const filePath = file.file_path;
 
       if (!filePath) {
-        await handleMessage(ctx, `[Photo received] ${caption}`, pc);
+        logger.warn(
+          { chatId: ctx.chat.id, fileSize: photo.file_size },
+          'Telegram returned no file_path for photo',
+        );
+        await ctx.reply(ATTACHMENT_FAILED_NOTICE);
         return;
       }
 
       // Download to workspace/uploads/
       const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${filePath}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        await handleMessage(ctx, `[Photo received] ${caption}`, pc);
+      const buffer = await downloadTelegramFile(url, {
+        chatId: ctx.chat.id,
+        kind: 'photo',
+        fileSize: photo.file_size,
+      });
+      if (!buffer) {
+        // The image is NOT on disk. Say so deterministically instead of routing
+        // a "[Photo received]" line that would make the model claim otherwise.
+        await ctx.reply(ATTACHMENT_FAILED_NOTICE);
         return;
       }
 
@@ -3665,70 +3846,14 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       mkdirSync(UPLOADS_DIR, { recursive: true });
       const ext = filePath.split('.').pop() || 'jpg';
       const localPath = resolve(UPLOADS_DIR, `${Date.now()}_photo.${ext}`);
-      const buffer = Buffer.from(await res.arrayBuffer());
       writeFileSync(localPath, buffer);
 
       logger.info({ chatId: ctx.chat.id, path: localPath }, 'Photo downloaded');
 
-      // Branch based on provider: Ollama gets base64 images, Claude gets file path
-      const providerName = await router.getProviderName(String(ctx.chat.id));
-
-      if (providerName === 'ollama') {
-        // Ollama vision: pass image as base64 via images param
-        const base64Image = buffer.toString('base64');
-        const chatId = String(ctx.chat.id);
-        const memoryContext = await pc.memory.buildContext(chatId, caption);
-        const fullMessage = memoryContext
-          ? `${memoryContext}\n\n${caption}`
-          : caption;
-
-        let typingInterval: ReturnType<typeof setInterval> | undefined;
-        const refreshTyping = () => {
-          ctx.replyWithChatAction('typing').catch(() => {});
-        };
-        refreshTyping();
-        typingInterval = setInterval(refreshTyping, TYPING_REFRESH_MS);
-
-        try {
-          const response = await router.sendMessage({
-            chatId,
-            message: fullMessage,
-            rawUserMessage: caption,
-            onTyping: refreshTyping,
-            images: [base64Image],
-          });
-
-          clearInterval(typingInterval);
-          typingInterval = undefined;
-
-          if (!response.text) {
-            await ctx.reply('(No response from AI provider)');
-            return;
-          }
-
-          pc.memory.saveConversationTurn(chatId, `[Photo] ${caption}`, response.text).catch((err) => {
-            logger.warn({ err }, 'Failed to save conversation memory');
-          });
-
-          const formatted = formatForTelegram(response.text);
-          const chunks = splitMessage(formatted);
-          for (const chunk of chunks) {
-            await replyChunkWithFallback(ctx, chunk);
-          }
-        } finally {
-          if (typingInterval) clearInterval(typingInterval);
-        }
-      } else {
-        // Claude: pass file path so CLI can read the image via its Read tool
-        await handleMessage(
-          ctx,
-          `The user sent a photo. It has been saved to: ${localPath}\nPlease read/view this image file and respond to: ${caption}`,
-          pc,
-        );
-      }
+      await deliverImageToProvider(ctx, localPath, buffer, caption);
     } catch (err) {
       logger.error({ err }, 'Photo handler failed');
-      await handleMessage(ctx, `[Photo received] ${caption}`, pc);
+      await ctx.reply(ATTACHMENT_FAILED_NOTICE).catch(() => {});
     }
   });
 
@@ -4245,18 +4370,28 @@ export function createTelegramBot(pc: PlatformContext): Bot {
     }
 
     try {
-      const file = await ctx.getFile();
+      const file = await withDeadline(ctx.getFile(), ATTACHMENT_TIMEOUT_MS, 'getFile(document)');
       const filePath = file.file_path;
       if (!filePath) {
-        await handleMessage(ctx, `[Document received: ${fileName}] ${caption}`, pc);
+        logger.warn(
+          { chatId: ctx.chat.id, fileName, fileSize: doc.file_size },
+          'Telegram returned no file_path for document',
+        );
+        await ctx.reply(ATTACHMENT_FAILED_NOTICE);
         return;
       }
 
       // Download to workspace/uploads/
       const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${filePath}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        await handleMessage(ctx, `[Document received: ${fileName}] ${caption}`, pc);
+      const buffer = await downloadTelegramFile(url, {
+        chatId: ctx.chat.id,
+        kind: 'document',
+        fileName,
+        mimeType: doc.mime_type,
+        fileSize: doc.file_size,
+      });
+      if (!buffer) {
+        await ctx.reply(ATTACHMENT_FAILED_NOTICE);
         return;
       }
 
@@ -4265,8 +4400,14 @@ export function createTelegramBot(pc: PlatformContext): Bot {
 
       mkdirSync(UPLOADS_DIR, { recursive: true });
       const localPath = resolve(UPLOADS_DIR, `${Date.now()}_${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
-      const buffer = Buffer.from(await res.arrayBuffer());
       writeFileSync(localPath, buffer);
+
+      // Images go to the vision path, not the text parser.
+      if (isImageAttachment(fileName, doc.mime_type)) {
+        logger.info({ chatId: ctx.chat.id, path: localPath, fileName }, 'Image document downloaded');
+        await deliverImageToProvider(ctx, localPath, buffer, caption);
+        return;
+      }
 
       // Parse the file
       const parsed = await pc.files.parse(localPath, doc.mime_type);
@@ -4288,10 +4429,10 @@ export function createTelegramBot(pc: PlatformContext): Bot {
       if (parsed.truncated) meta.push('(Content was truncated)');
 
       const message = `${meta.join(' | ')}\n\n${parsed.text}${caption ? `\n\nUser caption: ${caption}` : ''}`;
-      await handleMessage(ctx, message, pc, false, true);
+      await handleMessage(ctx, message, pc, false, true, false, caption);
     } catch (err) {
       logger.error({ err }, 'Document handler failed');
-      await handleMessage(ctx, `[Document received: ${fileName}] ${caption}`, pc);
+      await ctx.reply(ATTACHMENT_FAILED_NOTICE).catch(() => {});
     }
   });
 

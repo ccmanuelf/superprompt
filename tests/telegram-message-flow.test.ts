@@ -148,7 +148,12 @@ function run(
   ctx: FakeCtx,
   rawText: string,
   pc: FakePc,
-  opts: { forceVoiceReply?: boolean; skipTools?: boolean; isVoice?: boolean } = {},
+  opts: {
+    forceVoiceReply?: boolean;
+    skipTools?: boolean;
+    isVoice?: boolean;
+    rawUserMessageOverride?: string;
+  } = {},
 ): Promise<void> {
   return handleMessageInner(
     ctx as unknown as Context,
@@ -157,6 +162,7 @@ function run(
     opts.forceVoiceReply ?? false,
     opts.skipTools ?? false,
     opts.isVoice ?? false,
+    opts.rawUserMessageOverride,
   );
 }
 
@@ -556,5 +562,42 @@ describe('handleMessageInner — quality-triggered heal is non-blocking (rc.119,
       expect.stringContaining('a normal answer'),
       expect.objectContaining({ parse_mode: 'HTML' }),
     ); // main reply delivered after the (non-awaited) enqueue
+  });
+});
+
+
+// ── Attachment scaffolding must not be classified as the user's words ──
+//
+// Regression (2026-08-27): the photo handler wraps the caption in
+// "...saved to: <path>\nPlease read/view this image file...". That text was
+// passed as rawUserMessage, so DELIVERABLE_FORMAT_REGEX matched our OWN word
+// "file" and every photo turn was treated as a document request.
+describe('rawUserMessage override (attachment scaffolding)', () => {
+  const SCAFFOLD =
+    'The user sent a photo. It has been saved to: /app/workspace/uploads/1_photo.jpg\n'
+    + 'Please read/view this image file and respond to: Reference image for tampography';
+  const CAPTION = 'Reference image for tampography';
+
+  it('sends the user caption as rawUserMessage, not the scaffolding', async () => {
+    const ctx = makeCtx();
+    const pc = makePc();
+    await run(ctx as unknown as FakeCtx, SCAFFOLD, pc, { rawUserMessageOverride: CAPTION });
+
+    expect(pc.router.sendMessage).toHaveBeenCalledTimes(1);
+    const arg = pc.router.sendMessage.mock.calls[0][0] as Record<string, unknown>;
+    expect(arg.rawUserMessage).toBe(CAPTION);
+    // the model still receives the full scaffolding as the message body
+    expect(String(arg.message)).toContain('Please read/view this image file');
+    // and the caption alone must not look like a deliverable request
+    expect(String(arg.rawUserMessage)).not.toMatch(/\bfile\b/i);
+  });
+
+  it('falls back to rawText when no override is given', async () => {
+    const ctx = makeCtx();
+    const pc = makePc();
+    await run(ctx as unknown as FakeCtx, 'plain question', pc);
+
+    const arg = pc.router.sendMessage.mock.calls[0][0] as Record<string, unknown>;
+    expect(arg.rawUserMessage).toBe('plain question');
   });
 });
