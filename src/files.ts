@@ -54,6 +54,18 @@ export async function parseFile(
         return parsePlainText(filePath, format);
       case 'pptx':
         return await parsePptx(filePath);
+      case 'image':
+        // Images carry no extractable text. Say so precisely — the old
+        // "Unsupported file format" reply made the model conclude the format
+        // was rejected, when the right move is to VIEW the file instead.
+        return {
+          text: '',
+          format: 'image',
+          truncated: false,
+          error:
+            `${ext || mimeType} is an image, not a text document. `
+            + 'Do not parse it — view the image file directly at the path given.',
+        };
       default:
         return {
           text: '',
@@ -82,6 +94,8 @@ function resolveFormat(ext: string, mimeType?: string): string {
     csv: 'csv', tsv: 'csv',
     json: 'json',
     md: 'md', markdown: 'md',
+    png: 'image', jpg: 'image', jpeg: 'image', gif: 'image',
+    webp: 'image', bmp: 'image', heic: 'image', heif: 'image',
     txt: 'txt', text: 'txt', log: 'txt',
     pptx: 'pptx', ppt: 'pptx',
   };
@@ -104,6 +118,7 @@ function resolveFormat(ext: string, mimeType?: string): string {
       'application/vnd.ms-powerpoint': 'pptx',
     };
     if (mimeMap[mimeType]) return mimeMap[mimeType];
+    if (mimeType.startsWith('image/')) return 'image';
   }
 
   return ext;

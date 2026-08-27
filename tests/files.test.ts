@@ -110,3 +110,41 @@ describe('parseFile', () => {
     });
   });
 });
+
+
+// ── Images ───────────────────────────────────────────────────
+//
+// Regression (2026-08-27): a PNG sent as a *file* reached parseFile, which had
+// no image branch and answered "Unsupported file format: png". The model read
+// that as "this format is rejected" rather than "view it instead of parsing".
+describe('image attachments', () => {
+  const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const JPG_MAGIC = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+
+  it('identifies .png as an image and tells the caller to view it', async () => {
+    const path = writeFixture('shape.png', PNG_MAGIC);
+    const result = await parseFile(path, 'image/png');
+    expect(result.format).toBe('image');
+    expect(result.error).toMatch(/is an image, not a text document/);
+    expect(result.error).not.toMatch(/Unsupported file format/);
+  });
+
+  it('identifies .jpg as an image', async () => {
+    const path = writeFixture('photo.jpg', JPG_MAGIC);
+    const result = await parseFile(path, 'image/jpeg');
+    expect(result.format).toBe('image');
+    expect(result.error).toMatch(/is an image, not a text document/);
+  });
+
+  it('classifies by mime type even when the extension is missing', async () => {
+    const path = writeFixture('noext', PNG_MAGIC);
+    const result = await parseFile(path, 'image/png');
+    expect(result.format).toBe('image');
+  });
+
+  it('still rejects genuinely unsupported formats as unsupported', async () => {
+    const path = writeFixture('archive.zip', Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    const result = await parseFile(path, 'application/zip');
+    expect(result.error).toMatch(/Unsupported file format/);
+  });
+});

@@ -112,8 +112,9 @@ async function handleMessage(
   body: string,
   ctx: PlatformContext,
   isVoice: boolean = false,
+  rawUserMessageOverride?: string,
 ): Promise<void> {
-  return withTrace(generateTraceId(), () => handleMessageInner(client, roomId, body, ctx, isVoice));
+  return withTrace(generateTraceId(), () => handleMessageInner(client, roomId, body, ctx, isVoice, rawUserMessageOverride));
 }
 
 async function handleMessageInner(
@@ -122,6 +123,10 @@ async function handleMessageInner(
   body: string,
   ctx: PlatformContext,
   isVoice: boolean = false,
+  // The user's OWN words. Attachment handlers wrap the caption in synthetic
+  // scaffolding containing the word "file", which otherwise trips
+  // DELIVERABLE_FORMAT_REGEX on every image turn. See telegram.ts.
+  rawUserMessageOverride?: string,
 ): Promise<void> {
   const router = ctx.router;
 
@@ -234,7 +239,7 @@ async function handleMessageInner(
     const response = await router.sendMessage({
       chatId: roomId,
       message: fullMessage,
-      rawUserMessage: body,
+      rawUserMessage: rawUserMessageOverride ?? body,
       isVoice,
       platform: 'matrix',
     });
@@ -1330,6 +1335,8 @@ export async function createMatrixBot(
             roomId,
             `The user sent a photo. It has been saved to: ${localPath}\nPlease read/view this image file and respond to: ${caption}`,
             ctx,
+            false,
+            caption,
           );
           return;
         } catch (err) {
@@ -1337,7 +1344,18 @@ export async function createMatrixBot(
         }
       }
 
-      await handleMessage(client, roomId, `[Image received] ${caption}`, ctx);
+      // The image is NOT on disk — never imply otherwise, or the model will
+      // answer as though it had seen the picture.
+      await handleMessage(
+        client,
+        roomId,
+        `[An image was sent but it FAILED to download, so you cannot see it. `
+        + `Tell the user it did not arrive and ask them to resend it. Do not `
+        + `speculate about its contents.] The user's caption was: ${caption}`,
+        ctx,
+        false,
+        caption,
+      );
       return;
     }
 
